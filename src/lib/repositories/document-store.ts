@@ -10,6 +10,7 @@ import {
     relationalGetByFilter,
     relationalGetById,
     relationalList,
+    relationalPatchDocument,
     relationalUpsertDocument,
     supportsRelationalDocType,
 } from '@/lib/supabase-relational';
@@ -193,6 +194,14 @@ export async function updateDocument<T = Record<string, unknown>>(
     updates: Record<string, unknown>,
     docType?: string
 ) {
+    if (docType && supportsRelationalDocType(docType)) {
+        const updated = await relationalPatchDocument<T>(docType, id, updates);
+        if (!updated) {
+            throw new Error(`Document not found: ${id}`);
+        }
+        return updated;
+    }
+
     const existing = await getDocumentById<Record<string, unknown> & { _type?: string }>(id, docType);
     if (!existing?._type) {
         throw new Error(`Document not found: ${id}`);
@@ -215,6 +224,11 @@ export async function updateDocument<T = Record<string, unknown>>(
 }
 
 export async function deleteDocument(id: string, docType?: string) {
+    if (docType && supportsRelationalDocType(docType)) {
+        await relationalDeleteDocument(docType, id);
+        return true;
+    }
+
     const existing = await getDocumentById<{ _type?: string }>(id, docType);
     if (!existing?._type) {
         return true;

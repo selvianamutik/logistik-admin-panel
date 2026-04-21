@@ -502,10 +502,9 @@ export async function handleDriverBoronganCreate(
     const mutationTimestamp = new Date().toISOString();
     await createDocument(boronganDoc);
     if (selectedDriver?._id) {
-        await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp });
+        await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp }, 'driver');
     }
-    for (const row of rows) {
-        await createDocument({
+    await Promise.all(rows.map(row => createDocument({
             _id: crypto.randomUUID(),
             _type: 'driverBoronganItem',
             boronganRef: boronganId,
@@ -521,12 +520,11 @@ export async function handleDriverBoronganCreate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
-        });
-    }
+        })));
     if (uniqueDoRefs.length > 0) {
-        for (const deliveryOrder of deliveryOrders) {
-            await updateDocument(deliveryOrder._id, { updatedAt: mutationTimestamp });
-        }
+        await Promise.all(deliveryOrders.map(deliveryOrder =>
+            updateDocument(deliveryOrder._id, { updatedAt: mutationTimestamp }, 'deliveryOrder')
+        ));
     }
     await addAuditLog(session, 'CREATE', 'driver-borongans', boronganId, `Created driver-borongans: ${boronganNumber}`);
     return NextResponse.json({ data: boronganDoc, id: boronganId });
@@ -557,9 +555,9 @@ export async function handleDriverBoronganDelete(
 
     const itemDocs = await listDocumentsByFilter<Array<{ _id: string }>[number]>('driverBoronganItem', { boronganRef: id });
     for (const item of itemDocs) {
-        await deleteDocument(item._id);
+        await deleteDocument(item._id, 'driverBoronganItem');
     }
-    await deleteDocument(id);
+    await deleteDocument(id, 'driverBorongan');
 
     await addAuditLog(session, 'DELETE', 'driver-borongans', id, `Deleted driver-borongans ${borongan.boronganNumber || id}`);
     return NextResponse.json({ success: true });
@@ -718,7 +716,7 @@ export async function handleBoronganPayment(
         paidBankRef: bankAccountRef,
         paidBankName: bankAccount?.bankName,
         paidBankNumber: bankAccount?.accountNumber,
-    });
+    }, 'driverBorongan');
 
     if (bankAccount && bankAccountRef) {
         const { nextBalance: newBalance } = computeLedgerDebitBalance(bankAccount.currentBalance, derivedTotalAmount);
@@ -735,7 +733,7 @@ export async function handleBoronganPayment(
             balanceAfter: newBalance,
             relatedExpenseRef: expenseId,
         });
-        await updateDocument(bankAccountRef, { currentBalance: newBalance });
+        await updateDocument(bankAccountRef, { currentBalance: newBalance }, 'bankAccount');
     }
 
     await addAuditLog(
@@ -1022,8 +1020,10 @@ export async function handleDriverVoucherCreate(
     };
 
     const now = new Date().toISOString();
-    await updateDocument(deliveryOrderRef, { updatedAt: now });
-    await updateDocument(driverRef, { updatedAt: now });
+    await Promise.all([
+        updateDocument(deliveryOrderRef, { updatedAt: now }, 'deliveryOrder'),
+        updateDocument(driverRef, { updatedAt: now }, 'driver'),
+    ]);
     await createDocument(voucherDoc);
     await createDocument({
         _id: initialDisbursementId,
@@ -1052,9 +1052,9 @@ export async function handleDriverVoucherCreate(
         balanceAfter: newBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(issueBankRef, { currentBalance: newBalance });
+    await updateDocument(issueBankRef, { currentBalance: newBalance }, 'bankAccount');
     if (linkedVehicle) {
-        await updateDocument(linkedVehicle._id, { updatedAt: now });
+        await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
     }
 
     await addAuditLog(
@@ -1154,14 +1154,14 @@ export async function handleDriverVoucherTopUp(
         balanceAfter: nextBankBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(bankAccountRef, { currentBalance: nextBankBalance });
+    await updateDocument(bankAccountRef, { currentBalance: nextBankBalance }, 'bankAccount');
     await updateDocument(voucherId, {
         totalIssuedAmount: nextIssuedAmount,
         topUpCount: nextTopUpCount,
         totalSpent: totals.totalSpent,
         totalClaimAmount: totals.totalClaimAmount,
         balance: totals.balance,
-    });
+    }, 'driverVoucher');
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1260,7 +1260,7 @@ export async function handleDriverVoucherItemCreate(
         totalSpent: nextTotals.totalSpent,
         totalClaimAmount: nextTotals.totalClaimAmount,
         balance: nextTotals.balance,
-    });
+    }, 'driverVoucher');
 
     await addAuditLog(
         session,
@@ -1315,12 +1315,12 @@ export async function handleDriverVoucherItemDelete(
         normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
     );
 
-    await deleteDocument(itemId);
+    await deleteDocument(itemId, 'driverVoucherItem');
     await updateDocument(initialItem.voucherRef, {
         totalSpent: nextTotals.totalSpent,
         totalClaimAmount: nextTotals.totalClaimAmount,
         balance: nextTotals.balance,
-    });
+    }, 'driverVoucher');
 
     await addAuditLog(
         session,
@@ -1402,14 +1402,14 @@ export async function handleDriverVoucherDisbursementDelete(
         normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
     );
 
-    await deleteDocument(disbursementId);
+    await deleteDocument(disbursementId, 'driverVoucherDisbursement');
     if (disbursement.bankTransactionRef) {
-        await deleteDocument(disbursement.bankTransactionRef);
+        await deleteDocument(disbursement.bankTransactionRef, 'bankTransaction');
     }
     if (bank && disbursement.bankAccountRef) {
         await updateDocument(disbursement.bankAccountRef, {
             currentBalance: readLedgerBalance(bank.currentBalance) + amount,
-        });
+        }, 'bankAccount');
     }
     await updateDocument(initialDisbursement.voucherRef, {
         totalIssuedAmount: nextIssuedAmount,
@@ -1417,7 +1417,7 @@ export async function handleDriverVoucherDisbursementDelete(
         totalSpent: totals.totalSpent,
         totalClaimAmount: totals.totalClaimAmount,
         balance: totals.balance,
-    });
+    }, 'driverVoucher');
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1620,7 +1620,7 @@ export async function handleDriverVoucherSettlement(
                 balanceAfter: nextBankBalance,
                 relatedVoucherRef: voucherId,
             });
-            await updateDocument(settlementBankRef, { currentBalance: nextBankBalance });
+            await updateDocument(settlementBankRef, { currentBalance: nextBankBalance }, 'bankAccount');
         }
     }
 
@@ -1635,7 +1635,7 @@ export async function handleDriverVoucherSettlement(
         balance: totals.balance,
         settlementBankRef,
         settlementBankName: settlementBank?.bankName,
-    });
+    }, 'driverVoucher');
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1720,13 +1720,13 @@ export async function handleDriverVoucherIssueRepair(
         balanceAfter: newBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(issueBankRef, { currentBalance: newBalance });
+    await updateDocument(issueBankRef, { currentBalance: newBalance }, 'bankAccount');
     await updateDocument(voucherId, {
         issueBankRef,
         issueBankName: bank.bankName,
         initialCashGiven: initialAmount,
         totalIssuedAmount: getDriverVoucherIssuedAmount(voucher),
-    });
+    }, 'driverVoucher');
     if (!existingInitialDisbursement) {
         await createDocument({
             _id: crypto.randomUUID(),

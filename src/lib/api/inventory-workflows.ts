@@ -300,13 +300,11 @@ export async function handlePurchaseCreate(
         };
 
         await createDocument(purchaseDoc as unknown as { _type: string; [key: string]: unknown });
-        await updateDocument(supplier._id, { updatedAt: purchaseDoc.updatedAt });
-        for (const item of itemSnapshots) {
-            await updateDocument(item._id, { updatedAt: purchaseDoc.updatedAt });
-        }
-        for (const item of items) {
-            await createDocument(item);
-        }
+        await Promise.all([
+            updateDocument(supplier._id, { updatedAt: purchaseDoc.updatedAt }, 'supplier'),
+            ...itemSnapshots.map(item => updateDocument(item._id, { updatedAt: purchaseDoc.updatedAt }, 'warehouseItem')),
+            ...items.map(item => createDocument(item)),
+        ]);
 
         await addAuditLog(
             session,
@@ -437,8 +435,8 @@ export async function handlePurchaseReceive(
             const nextStockQty = currentStockQty + receipt.receivedQty;
             const nextReceivedQty = Math.max(parseInventoryQuantity(item.receivedQty ?? 0), 0) + receipt.receivedQty;
 
-            await updateDocument(item._id, { receivedQty: nextReceivedQty });
-            await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty });
+            await updateDocument(item._id, { receivedQty: nextReceivedQty }, 'purchaseItem');
+            await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty }, 'warehouseItem');
 
             const movementDoc = buildTrackedTireStockMovementDoc({
                 warehouseItem,
@@ -520,7 +518,7 @@ export async function handlePurchaseReceive(
             status: nextStatus,
             lastReceivedAt: receiveDate,
             updatedAt: new Date().toISOString(),
-        });
+        }, 'purchase');
 
         await addAuditLog(
             session,
@@ -605,7 +603,7 @@ export async function handleStockMovementCreate(
             createdByName: session.name,
         };
 
-        await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty });
+        await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty }, 'warehouseItem');
         await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
 
         await addAuditLog(
@@ -742,14 +740,14 @@ export async function handlePurchasePaymentCreate(
             relatedPurchasePaymentRef: paymentId,
             relatedPurchaseRef: bundle.purchase._id,
         });
-        await updateDocument(bankAccount._id, { currentBalance: ledger.nextBalance });
+        await updateDocument(bankAccount._id, { currentBalance: ledger.nextBalance }, 'bankAccount');
         await updateDocument(bundle.purchase._id, {
             paidAmount: nextSummary.paidAmount,
             outstandingAmount: nextSummary.outstandingAmount,
             status: nextStatus,
             lastPaidAt: date,
             updatedAt: new Date().toISOString(),
-        });
+        }, 'purchase');
 
         await addAuditLog(
             session,

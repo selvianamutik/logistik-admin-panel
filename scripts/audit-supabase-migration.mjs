@@ -43,15 +43,22 @@ const functionChecks = [
   },
   {
     name: 'handleOrderDelete',
-    mustInclude: ['isSupabaseBackendEnabled()', "listDocumentsByFilter<{ _id: string }>('deliveryOrder'", "listDocumentsByFilter<{ _id: string }>('invoice'", 'deleteDocument(orderItem._id)', 'deleteDocument(id)'],
+    mustInclude: [
+      'isSupabaseBackendEnabled()',
+      "listDocumentsByFilter<{ _id: string }>('deliveryOrder'",
+      "listDocumentsByFilter<{ _id: string }>('invoice'",
+      "Promise.all(orderItems.map(orderItem => deleteDocument(orderItem._id, 'orderItem')))",
+      "await deleteDocument(id, 'order');",
+    ],
   },
   {
     name: 'handleOrderCreate',
     mustInclude: [
       "const masterResi = await getNextNumber('resi')",
       'await createDocument(orderDoc);',
-      "await updateDocument(customer._id, { updatedAt: createdAt }, 'customer');",
-      'await createDocument(buildOrderItemDraftDocument(orderId, item));',
+      'const touchPromises: Array<Promise<unknown>> = [',
+      "updateDocument(customer._id, { updatedAt: createdAt }, 'customer'),",
+      '...items.map(item => createDocument(buildOrderItemDraftDocument(orderId, item)))',
     ],
   },
   {
@@ -59,9 +66,10 @@ const functionChecks = [
     mustInclude: [
       "const order = await getDocumentById<{",
       "listDocumentsByFilter<{ _id: string }>('deliveryOrder', { orderRef: id })",
-      "await updateDocument(id, {",
-      'await deleteDocument(existingItem._id);',
-      'await createDocument(buildOrderItemDraftDocument(id, item));',
+      'const touchPromises: Array<Promise<unknown>> = [',
+      "updateDocument(id, {",
+      "Promise.all(existingItems.map(existingItem => deleteDocument(existingItem._id, 'orderItem')))",
+      'Promise.all(items.map(item => createDocument(buildOrderItemDraftDocument(id, item))))',
     ],
   },
   {
@@ -179,12 +187,12 @@ const genericWorkflowChecks = [
     name: 'handleGenericCreate',
     mode: 'file',
     mustInclude: [
-      "const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef)",
-      "const orderItem = await getDocumentById<{ _id: string }>(orderItemRef)",
+      "const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef, 'deliveryOrder')",
+      "const orderItem = await getDocumentById<{ _id: string }>(orderItemRef, 'orderItem')",
       "const assignments = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string; orderItemRef?: string }>('deliveryOrderItem', {",
       'if (isSupabaseBackendEnabled()) {',
       'created = await createDocument<Record<string, unknown> & { _id: string }>(newDoc);',
-      "await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() });",
+      "await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() }, 'driver');",
     ],
   },
 ];

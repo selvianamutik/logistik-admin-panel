@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { createSession, setSessionCookie } from '@/lib/auth';
 import { isSupabaseBackendEnabled } from '@/lib/data-backend';
+import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import {
     createDocument,
     deleteDocument,
@@ -220,7 +221,7 @@ async function sanitizeCompanyInvoiceSettings(
     );
     const uniqueRefs = Array.from(new Set(selectedRefs));
     const validRows = uniqueRefs.length > 0
-        ? (await Promise.all(uniqueRefs.map(ref => getDocumentById<BankAccountSummary>(ref))))
+        ? (await Promise.all(uniqueRefs.map(ref => getDocumentById<BankAccountSummary>(ref, 'bankAccount'))))
             .filter((row): row is BankAccountSummary => row !== null && row.active !== false && row.accountType !== 'CASH')
             .map(row => ({ _id: row._id }))
         : [];
@@ -416,9 +417,9 @@ async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | '
         return;
     }
 
-    await updateDocument(keepId, { isDefault: true });
+    await updateDocument(keepId, { isDefault: true }, docType);
     for (const doc of docsToUnset) {
-        await updateDocument(doc._id, { isDefault: false });
+        await updateDocument(doc._id, { isDefault: false }, docType);
     }
 }
 
@@ -567,7 +568,7 @@ function buildCreateAuditSummary(entity: string, newDoc: Record<string, unknown>
 }
 
 async function resolveTrackedTireWarehouseItem(itemRef: string) {
-    const item = await getDocumentById<WarehouseItem & { _rev?: string }>(itemRef);
+    const item = await getDocumentById<WarehouseItem & { _rev?: string }>(itemRef, 'warehouseItem');
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Master barang gudang ban tidak ditemukan');
     }
@@ -612,7 +613,7 @@ async function appendTrackedTireWarehouseSync(params: {
     const nextPlacement = resolveTrackedTirePlacementLabel(params.nextDoc);
     const tireCode = normalizeOptionalText(params.nextDoc.tireCode) || normalizeOptionalText(params.previousDoc?.tireCode) || itemRef;
 
-    await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty });
+    await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty }, 'warehouseItem');
     await createDocument(buildTrackedTireStockMovementDoc({
         warehouseItem,
         quantity: 1,
@@ -695,6 +696,7 @@ export async function handleGenericUpdate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    const docType = DOCUMENT_TYPE_MAP[entity];
     const id = typeof data.id === 'string' ? data.id : '';
     const updatesInput = isPlainObject(data.updates) ? data.updates : null;
     if (!id || !updatesInput) {
@@ -747,7 +749,7 @@ export async function handleGenericUpdate(
             serviceRef?: string;
             baseTaripBorongan?: number;
             overtonaseDriverAmount?: number;
-        }>(id);
+        }>(id, 'deliveryOrder');
         if (!existingDeliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -901,7 +903,7 @@ export async function handleGenericUpdate(
             if (!customerRef) {
                 return NextResponse.json({ error: 'Customer order wajib dipilih' }, { status: 400 });
             }
-            const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+            const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef, 'customer');
             if (!customer) {
                 return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
             }
@@ -918,7 +920,7 @@ export async function handleGenericUpdate(
                 updates.serviceRef = '';
                 updates.serviceName = undefined;
             } else {
-                const service = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+                const service = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(serviceRef, 'service');
                 if (!service) {
                     return NextResponse.json({ error: 'Kategori armada order tidak ditemukan' }, { status: 404 });
                 }
@@ -936,7 +938,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'employees') {
-        const existingEmployee = await getDocumentById<Record<string, unknown>>(id);
+        const existingEmployee = await getDocumentById<Record<string, unknown>>(id, 'employee');
         if (!existingEmployee) {
             return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
         }
@@ -955,7 +957,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'employee-attendance-records') {
-        const existingAttendance = await getDocumentById<Record<string, unknown>>(id);
+        const existingAttendance = await getDocumentById<Record<string, unknown>>(id, 'employeeAttendanceRecord');
         if (!existingAttendance) {
             return NextResponse.json({ error: 'Absensi karyawan tidak ditemukan' }, { status: 404 });
         }
@@ -971,7 +973,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customers') {
-        const existingCustomer = await getDocumentById<Record<string, unknown>>(id);
+        const existingCustomer = await getDocumentById<Record<string, unknown>>(id, 'customer');
         if (!existingCustomer) {
             return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
         }
@@ -987,7 +989,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'suppliers') {
-        const existingSupplier = await getDocumentById<Record<string, unknown>>(id);
+        const existingSupplier = await getDocumentById<Record<string, unknown>>(id, 'supplier');
         if (!existingSupplier) {
             return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
         }
@@ -1003,7 +1005,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'warehouse-items') {
-        const existingWarehouseItem = await getDocumentById<Record<string, unknown>>(id);
+        const existingWarehouseItem = await getDocumentById<Record<string, unknown>>(id, 'warehouseItem');
         if (!existingWarehouseItem) {
             return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
         }
@@ -1019,7 +1021,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-products') {
-        const existingCustomerProduct = await getDocumentById<Record<string, unknown>>(id);
+        const existingCustomerProduct = await getDocumentById<Record<string, unknown>>(id, 'customerProduct');
         if (!existingCustomerProduct) {
             return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
         }
@@ -1035,7 +1037,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-billing-rates') {
-        const existingCustomerBillingRate = await getDocumentById<Record<string, unknown>>(id);
+        const existingCustomerBillingRate = await getDocumentById<Record<string, unknown>>(id, 'customerBillingRate');
         if (!existingCustomerBillingRate) {
             return NextResponse.json({ error: 'Tarif customer tidak ditemukan' }, { status: 404 });
         }
@@ -1051,7 +1053,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-recipients') {
-        const existingCustomerRecipient = await getDocumentById<Record<string, unknown>>(id);
+        const existingCustomerRecipient = await getDocumentById<Record<string, unknown>>(id, 'customerRecipient');
         if (!existingCustomerRecipient) {
             return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
         }
@@ -1067,7 +1069,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-pickups') {
-        const existingCustomerPickup = await getDocumentById<Record<string, unknown>>(id);
+        const existingCustomerPickup = await getDocumentById<Record<string, unknown>>(id, 'customerPickupLocation');
         if (!existingCustomerPickup) {
             return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
         }
@@ -1083,7 +1085,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'trip-route-rates') {
-        const existingTripRouteRate = await getDocumentById<Record<string, unknown>>(id);
+        const existingTripRouteRate = await getDocumentById<Record<string, unknown>>(id, 'tripRouteRate');
         if (!existingTripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
@@ -1112,7 +1114,7 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Field maintenance ini tidak boleh diubah lewat API umum' }, { status: 400 });
         }
 
-        const existingMaintenance = await getDocumentById<{ status?: string }>(id);
+        const existingMaintenance = await getDocumentById<{ status?: string }>(id, 'maintenance');
         if (!existingMaintenance) {
             return NextResponse.json({ error: 'Maintenance tidak ditemukan' }, { status: 404 });
         }
@@ -1147,7 +1149,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'tire-events') {
-        const existingTire = await getDocumentById<Record<string, unknown> & { _rev?: string }>(id);
+        const existingTire = await getDocumentById<Record<string, unknown> & { _rev?: string }>(id, 'tireEvent');
         if (!existingTire) {
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
@@ -1208,7 +1210,7 @@ export async function handleGenericUpdate(
             await updateDocument(id, {
                 ...tireSetPayload,
                 ...Object.fromEntries(tireUnsetFields.map(field => [field, null])),
-            });
+            }, 'tireEvent');
             await createDocument(historyLogDoc);
             if (nextTireCodeConstraint) {
                 await createDocument(nextTireCodeConstraint);
@@ -1230,7 +1232,7 @@ export async function handleGenericUpdate(
             }
             return buildTireEventResponseError(error, 'Data ban tidak valid');
         }
-        const updated = await getDocumentById<Record<string, unknown>>(id);
+        const updated = await getDocumentById<Record<string, unknown>>(id, 'tireEvent');
         await addAuditLog(
             session,
             'UPDATE',
@@ -1260,7 +1262,7 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Tipe dan kunci sistem rekening tidak boleh diubah manual' }, { status: 409 });
         }
 
-        const existingAccount = await getDocumentById<BankAccountSummary>(id);
+        const existingAccount = await getDocumentById<BankAccountSummary>(id, 'bankAccount');
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
         }
@@ -1322,7 +1324,7 @@ export async function handleGenericUpdate(
             )
             : normalizedUpdates;
 
-    const currentDoc = await getDocumentById<Record<string, unknown> & { _id: string; _rev?: string }>(id);
+    const currentDoc = await getDocumentById<Record<string, unknown> & { _id: string; _rev?: string }>(id, docType);
     if (!currentDoc) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
@@ -1343,7 +1345,7 @@ export async function handleGenericUpdate(
                     ? (normalizedUpdates.tireLayoutConfig as Record<string, unknown> | undefined)
                     : (isPlainObject(currentDoc.tireLayoutConfig) ? currentDoc.tireLayoutConfig as Record<string, unknown> : undefined);
             const relatedVehicles = await listDocumentsByFilter<{ _id: string; vehicleType?: string }>('vehicle', { serviceRef: id });
-            updated = await updateDocument(id, normalizedUpdates);
+            updated = await updateDocument(id, normalizedUpdates, 'service');
             for (const vehicle of relatedVehicles) {
                 await updateDocument(vehicle._id, {
                     serviceName: nextServiceName,
@@ -1351,13 +1353,13 @@ export async function handleGenericUpdate(
                         nextServiceTireLayoutConfig,
                         buildDefaultTireLayoutConfig(vehicle.vehicleType || '', nextServiceName)
                     ),
-                });
+                }, 'vehicle');
             }
-            updated = await getDocumentById(id);
+            updated = await getDocumentById(id, 'service');
         } else if (entity === 'delivery-orders' && selectedTripRouteRateRevision) {
-            await updateDocument(selectedTripRouteRateRevision._id, { updatedAt: new Date().toISOString() });
-            await updateDocument(id, normalizedUpdates);
-            updated = await getDocumentById(id);
+            await updateDocument(selectedTripRouteRateRevision._id, { updatedAt: new Date().toISOString() }, 'tripRouteRate');
+            await updateDocument(id, normalizedUpdates, 'deliveryOrder');
+            updated = await getDocumentById(id, 'deliveryOrder');
         } else if (entity === 'users') {
             const mutationTimestamp = new Date().toISOString();
             const userUnsetFields = Object.entries(persistedNormalizedUpdates)
@@ -1367,14 +1369,14 @@ export async function handleGenericUpdate(
                 Object.entries(persistedNormalizedUpdates).filter(([, value]) => value !== undefined)
             );
             if (userDriverRevision) {
-                await updateDocument(userDriverRevision._id, { updatedAt: mutationTimestamp });
+                await updateDocument(userDriverRevision._id, { updatedAt: mutationTimestamp }, 'driver');
             }
             updated = await updateDocument(id, {
                 ...userSetUpdates,
                 ...Object.fromEntries(userUnsetFields.map(field => [field, null])),
-            });
+            }, 'user');
         } else {
-            updated = await updateDocument(id, persistedNormalizedUpdates);
+            updated = await updateDocument(id, persistedNormalizedUpdates, docType);
         }
     } catch (error) {
         if (isMutationConflictError(error)) {
@@ -1463,6 +1465,7 @@ export async function handleGenericDelete(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    const docType = DOCUMENT_TYPE_MAP[entity];
     if (entity === 'driver-voucher-disbursements') {
         return handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
     }
@@ -1497,7 +1500,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Barang customer tidak valid' }, { status: 400 });
         }
 
-        const customerProduct = await getDocumentById<{ _id: string; _rev?: string; code?: string; name?: string }>(id);
+        const customerProduct = await getDocumentById<{ _id: string; _rev?: string; code?: string; name?: string }>(id, 'customerProduct');
         if (!customerProduct) {
             return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
         }
@@ -1511,7 +1514,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'customerProduct');
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1537,7 +1540,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Supplier tidak valid' }, { status: 400 });
         }
 
-        const supplier = await getDocumentById<{ _id: string; _rev?: string; name?: string }>(id);
+        const supplier = await getDocumentById<{ _id: string; _rev?: string; name?: string }>(id, 'supplier');
         if (!supplier) {
             return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
         }
@@ -1554,7 +1557,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'supplier');
             await addAuditLog(session, 'DELETE', entity, id, `Deleted supplier ${supplier.name || id}`);
             return NextResponse.json({ success: true });
         } catch (error) {
@@ -1574,7 +1577,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Barang gudang tidak valid' }, { status: 400 });
         }
 
-        const warehouseItem = await getDocumentById<{ _id: string; _rev?: string; itemCode?: string; name?: string }>(id);
+        const warehouseItem = await getDocumentById<{ _id: string; _rev?: string; itemCode?: string; name?: string }>(id, 'warehouseItem');
         if (!warehouseItem) {
             return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
         }
@@ -1591,7 +1594,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'warehouseItem');
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1617,7 +1620,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master penerima tidak valid' }, { status: 400 });
         }
 
-        const recipient = await getDocumentById<{ _id: string; _rev?: string; label?: string; receiverName?: string }>(id);
+        const recipient = await getDocumentById<{ _id: string; _rev?: string; label?: string; receiverName?: string }>(id, 'customerRecipient');
         if (!recipient) {
             return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
         }
@@ -1631,7 +1634,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'customerRecipient');
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1657,7 +1660,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master pickup tidak valid' }, { status: 400 });
         }
 
-        const pickup = await getDocumentById<{ _id: string; _rev?: string; label?: string; pickupAddress?: string }>(id);
+        const pickup = await getDocumentById<{ _id: string; _rev?: string; label?: string; pickupAddress?: string }>(id, 'customerPickupLocation');
         if (!pickup) {
             return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
         }
@@ -1671,7 +1674,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'customerPickupLocation');
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1697,7 +1700,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master biaya rute trip tidak valid' }, { status: 400 });
         }
 
-        const tripRouteRate = await getDocumentById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string }>(id);
+        const tripRouteRate = await getDocumentById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string }>(id, 'tripRouteRate');
         if (!tripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
@@ -1711,7 +1714,7 @@ export async function handleGenericDelete(
         }
 
         try {
-            await deleteDocument(id);
+            await deleteDocument(id, 'tripRouteRate');
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1803,7 +1806,7 @@ export async function handleGenericDelete(
     }
 
     if (entity === 'bank-accounts') {
-        const existingAccount = await getDocumentById<BankAccountSummary & { active?: boolean }>(id);
+        const existingAccount = await getDocumentById<BankAccountSummary & { active?: boolean }>(id, 'bankAccount');
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
         }
@@ -1834,11 +1837,11 @@ export async function handleGenericDelete(
         }
 
         try {
-            await updateDocument(id, { active: false });
+            await updateDocument(id, { active: false }, 'bankAccount');
             if (companyInvoiceCleanup) {
                 await updateDocument(companyInvoiceCleanup.companyId, {
                     invoiceSettings: companyInvoiceCleanup.invoiceSettings,
-                });
+                }, 'companyProfile');
             }
         } catch (error) {
             if (isMutationConflictError(error)) {
@@ -1859,7 +1862,7 @@ export async function handleGenericDelete(
         return NextResponse.json({ success: true });
     }
 
-    const existing = await getDocumentById<{ _id: string; _rev?: string }>(id);
+    const existing = await getDocumentById<{ _id: string; _rev?: string }>(id, docType);
     if (!existing) {
         return NextResponse.json({ error: 'Dokumen tidak ditemukan' }, { status: 404 });
     }
@@ -1868,7 +1871,7 @@ export async function handleGenericDelete(
     }
 
     try {
-        await deleteDocument(id);
+        await deleteDocument(id, docType);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1911,7 +1914,7 @@ export async function handleGenericCreate(
 
             let updated: unknown;
             try {
-                updated = await updateDocument(existing._id, sanitizedCompanyData);
+                updated = await updateDocument(existing._id, sanitizedCompanyData, 'companyProfile');
             } catch (error) {
                 if (isMutationConflictError(error)) {
                     return NextResponse.json(
@@ -1950,7 +1953,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Relasi DO item tidak valid' }, { status: 400 });
         }
 
-        const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef);
+        const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef, 'deliveryOrder');
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -1958,7 +1961,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Tidak bisa menambah item ke surat jalan yang dibatalkan' }, { status: 409 });
         }
 
-        const orderItem = await getDocumentById<{ _id: string }>(orderItemRef);
+        const orderItem = await getDocumentById<{ _id: string }>(orderItemRef, 'orderItem');
         if (!orderItem) {
             return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
         }
@@ -1973,7 +1976,7 @@ export async function handleGenericCreate(
                     continue;
                 }
                 const linkedDeliveryOrder = assignment.deliveryOrderRef
-                    ? await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef)
+                    ? await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef, 'deliveryOrder')
                     : null;
                 if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
                     activeAssignment = { _id: assignment._id };
@@ -1986,7 +1989,7 @@ export async function handleGenericCreate(
                 if (!assignment.deliveryOrderRef || assignment.deliveryOrderRef === deliveryOrderRef) {
                     continue;
                 }
-                const linkedDeliveryOrder = await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef);
+                const linkedDeliveryOrder = await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef, 'deliveryOrder');
                 if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
                     activeAssignment = { _id: assignment._id };
                     break;
@@ -2307,7 +2310,7 @@ export async function handleGenericCreate(
         }
         try {
             created = await createDocument<Record<string, unknown> & { _id: string }>(newDoc);
-            await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() });
+            await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() }, 'driver');
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(

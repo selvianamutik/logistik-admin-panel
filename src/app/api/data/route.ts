@@ -800,7 +800,7 @@ export async function GET(request: Request) {
                         ? await getDriverBoronganById(id)
                     : entity === 'driver-vouchers'
                         ? await getDriverVoucherById(id)
-                    : await getDocumentById(id);
+                    : await getDocumentById(id, docType);
             if (!item) return jsonNoStore({ error: 'Not found' }, { status: 404 });
             if ((item as { _type?: string })._type !== docType) {
                 return jsonNoStore({ error: 'Not found' }, { status: 404 });

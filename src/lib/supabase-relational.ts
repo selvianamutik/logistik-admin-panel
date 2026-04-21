@@ -1720,6 +1720,97 @@ export async function relationalUpsertDocument<T = Record<string, unknown>>(
     }
 }
 
+export async function relationalPatchDocument<T = Record<string, unknown>>(
+    docType: SupportedDocType,
+    id: string,
+    updates: Record<string, unknown>,
+): Promise<T | null> {
+    const config = RELATIONAL_CONFIG[docType];
+    const patch: Record<string, unknown> = {};
+    const extraUpdates: Record<string, unknown> = {};
+    let hasExtraUpdates = false;
+
+    for (const [field, value] of Object.entries(updates)) {
+        if (field === '_id' || field === '_type' || field === '_rev') {
+            continue;
+        }
+
+        if (field === '_createdAt') {
+            if (value !== undefined) {
+                patch.document_created_at = value;
+            }
+            continue;
+        }
+
+        if (field === '_updatedAt') {
+            if (value !== undefined) {
+                patch.document_updated_at = value;
+            }
+            continue;
+        }
+
+        const column = config.fieldMap[field];
+        if (column) {
+            if (value !== undefined) {
+                patch[column] = value;
+            }
+            continue;
+        }
+
+        extraUpdates[field] = value;
+        hasExtraUpdates = true;
+    }
+
+    try {
+        if (hasExtraUpdates) {
+            const params = new URLSearchParams();
+            params.set('select', 'source_document_id,extra_data');
+            params.set('source_document_id', `eq.${id}`);
+            params.set('limit', '1');
+
+            const { rows } = await fetchRows(buildQueryPath(config.table, params));
+            const existingRow = rows[0];
+            if (!existingRow) {
+                return null;
+            }
+
+            const nextExtraData = isRecord(existingRow.extra_data)
+                ? { ...existingRow.extra_data }
+                : {};
+            for (const [field, value] of Object.entries(extraUpdates)) {
+                if (value === undefined) {
+                    delete nextExtraData[field];
+                } else {
+                    nextExtraData[field] = value;
+                }
+            }
+            patch.extra_data = nextExtraData;
+        }
+
+        if (Object.keys(patch).length === 0) {
+            return relationalGetById<T>(docType, id);
+        }
+
+        const response = await getSupabaseClient().fetch(
+            `${config.table}?source_document_id=eq.${encodeURIComponent(id)}`,
+            {
+                method: 'PATCH',
+                headers: {
+                    Prefer: 'return=representation',
+                },
+                body: JSON.stringify(patch),
+            }
+        );
+        const rows = await response.json() as RelationalRow[];
+        return rows[0] ? mapRowToDocument(docType, rows[0]) as T : null;
+    } catch (error) {
+        if (isMissingRelationalTableError(error)) {
+            return null;
+        }
+        throw error;
+    }
+}
+
 export async function relationalDeleteDocument(docType: SupportedDocType, id: string) {
     const config = RELATIONAL_CONFIG[docType];
 

@@ -179,19 +179,15 @@ async function syncFreightNotaDeliveryOrderLinks(params: {
         .filter((value): value is string => Boolean(value));
     const refsToClear = currentlyLinkedRefs.filter(ref => !nextDeliveryOrderRefs.includes(ref));
 
-    for (const deliveryOrderRef of refsToClear) {
-        await updateDocument(deliveryOrderRef, {
+    await Promise.all(refsToClear.map(deliveryOrderRef => updateDocument(deliveryOrderRef, {
             freightNotaRef: null,
             freightNotaNumber: null,
-        });
-    }
+        }, 'deliveryOrder')));
 
-    for (const deliveryOrderRef of nextDeliveryOrderRefs) {
-        await updateDocument(deliveryOrderRef, {
+    await Promise.all(nextDeliveryOrderRefs.map(deliveryOrderRef => updateDocument(deliveryOrderRef, {
             freightNotaRef: params.notaId,
             freightNotaNumber: params.notaNumber,
-        });
-    }
+        }, 'deliveryOrder')));
 }
 
 function normalizeWholeMoneyAmount(value: unknown) {
@@ -659,7 +655,7 @@ export async function handlePaymentCreate(
         amount,
         note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran arsip invoice',
     });
-    await updateDocument(invoiceRef, buildReceivablePatch(loaded, nextTotalPaid, loaded.totalAdjustmentAmount));
+    await updateDocument(invoiceRef, buildReceivablePatch(loaded, nextTotalPaid, loaded.totalAdjustmentAmount), 'invoice');
 
     if (bankAcc) {
         const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + amount;
@@ -681,7 +677,7 @@ export async function handlePaymentCreate(
             balanceAfter: nextBankBalance,
             relatedPaymentRef: paymentId,
         });
-        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance });
+        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
     }
 
     await addAuditLog(
@@ -869,7 +865,7 @@ export async function handleCustomerReceiptCreate(
         note: `Penerimaan customer ${receiptNumber}`,
     });
     if (linkedCustomer) {
-        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() });
+        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() }, 'customer');
     }
 
     if (bankAcc) {
@@ -890,7 +886,7 @@ export async function handleCustomerReceiptCreate(
             balanceAfter: nextBankBalance,
             relatedReceiptRef: receiptId,
         });
-        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance });
+        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
     }
 
     const createdPaymentIds: string[] = [];
@@ -917,7 +913,7 @@ export async function handleCustomerReceiptCreate(
             snapshot,
             snapshot.totalPaid + allocation.amount,
             snapshot.totalAdjustmentAmount,
-        ));
+        ), 'invoice');
     }
 
     await addAuditLog(
@@ -1011,7 +1007,7 @@ export async function handleInvoiceAdjustmentCreate(
         createdBy: session._id,
         createdByName: session.name,
     });
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount));
+    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
 
     await addAuditLog(
         session,
@@ -1094,8 +1090,8 @@ export async function handleInvoiceAdjustmentUpdate(
         editedAt: new Date().toISOString(),
         editedBy: session._id,
         editedByName: session.name,
-    }));
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount));
+    }), 'invoiceAdjustment');
+    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
 
     await addAuditLog(
         session,
@@ -1149,8 +1145,8 @@ async function finalizeInvoiceAdjustmentDelete(
         voidedAt: new Date().toISOString(),
         voidedBy: session._id,
         voidedByName: session.name,
-    });
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount));
+    }, 'invoiceAdjustment');
+    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
 
     await addAuditLog(
         session,
@@ -1351,14 +1347,14 @@ export async function handleCustomerOverpaymentRefund(
         balanceAfter: nextBalance,
         relatedOverpaymentRefundRef: refundId,
     });
-    await updateDocument(bankAcc._id, { currentBalance: nextBalance });
+    await updateDocument(bankAcc._id, { currentBalance: nextBalance }, 'bankAccount');
 
     if (receiptPatch) {
         await updateDocument(receiptPatch.receiptRef, buildCustomerReceiptOverpaymentPatch({
             totalAmount: receiptPatch.totalAmount,
             allocatedAmount: receiptPatch.allocatedAmount,
             refundedOverpaymentAmount: receiptPatch.nextRefundedOverpaymentAmount,
-        }));
+        }), 'customerReceipt');
     }
 
     if (invoicePatch) {
@@ -1366,7 +1362,7 @@ export async function handleCustomerOverpaymentRefund(
             invoicePatch.snapshot,
             invoicePatch.nextTotalPaid,
             invoicePatch.totalAdjustmentAmount
-        ));
+        ), 'invoice');
     }
 
     const refundSourceLabel =
@@ -1453,8 +1449,8 @@ export async function handleBankTransfer(
         balanceAfter: toBalance,
         relatedTransferRef: transferId,
     });
-    await updateDocument(fromAccountRef, { currentBalance: fromBalance });
-    await updateDocument(toAccountRef, { currentBalance: toBalance });
+    await updateDocument(fromAccountRef, { currentBalance: fromBalance }, 'bankAccount');
+    await updateDocument(toAccountRef, { currentBalance: toBalance }, 'bankAccount');
 
     await addAuditLog(
         session,
@@ -1761,12 +1757,12 @@ export async function handleExpenseCreate(
             ...expenseDocBase,
         };
         await createDocument(expenseDoc);
-        await updateDocument(categoryRef, { updatedAt: now });
-        if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now });
-        if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now });
-        if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now });
-        if (linkedVehicle) await updateDocument(linkedVehicle._id, { updatedAt: now });
-        if (linkedBorongan) await updateDocument(linkedBorongan._id, { updatedAt: now });
+        await updateDocument(categoryRef, { updatedAt: now }, 'expenseCategory');
+        if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now }, 'incident');
+        if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now }, 'maintenance');
+        if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now }, 'driverVoucher');
+        if (linkedVehicle) await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
+        if (linkedBorongan) await updateDocument(linkedBorongan._id, { updatedAt: now }, 'driverBorongan');
         if (incidentSettlementLine) {
             const lineRef = relatedIncidentSettlementLineRef as string;
             await updateDocument(lineRef, sanitizePatchSet({
@@ -1782,7 +1778,7 @@ export async function handleExpenseCreate(
                 updatedAt: now,
                 updatedBy: session._id,
                 updatedByName: session.name,
-            }));
+            }), 'incidentSettlementLine');
             await createDocument({
                 _id: crypto.randomUUID(),
                 _type: 'incidentActionLog',
@@ -1860,13 +1856,13 @@ export async function handleExpenseCreate(
             balanceAfter: newBalance,
             relatedExpenseRef: expenseId,
         });
-        await updateDocument(categoryRef, { updatedAt: now });
-        await updateDocument(selectedAccountRef, { currentBalance: newBalance });
-        if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now });
-        if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now });
-        if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now });
-        if (linkedVehicle) await updateDocument(linkedVehicle._id, { updatedAt: now });
-        if (linkedBoronganForAttempt) await updateDocument(linkedBoronganForAttempt._id, { updatedAt: now });
+        await updateDocument(categoryRef, { updatedAt: now }, 'expenseCategory');
+        await updateDocument(selectedAccountRef, { currentBalance: newBalance }, 'bankAccount');
+        if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now }, 'incident');
+        if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now }, 'maintenance');
+        if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now }, 'driverVoucher');
+        if (linkedVehicle) await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
+        if (linkedBoronganForAttempt) await updateDocument(linkedBoronganForAttempt._id, { updatedAt: now }, 'driverBorongan');
         if (incidentSettlementLine && typeof relatedIncidentSettlementLineRef === 'string') {
             const lineRef = relatedIncidentSettlementLineRef;
             await updateDocument(lineRef, sanitizePatchSet({
@@ -1882,7 +1878,7 @@ export async function handleExpenseCreate(
                 updatedAt: now,
                 updatedBy: session._id,
                 updatedByName: session.name,
-            }));
+            }), 'incidentSettlementLine');
             await createDocument({
                 _id: crypto.randomUUID(),
                 _type: 'incidentActionLog',
@@ -2716,10 +2712,9 @@ export async function handleFreightNotaCreate(
 
     await createDocument(notaDoc);
     if (linkedCustomer) {
-        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() });
+        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() }, 'customer');
     }
-    for (const row of rows) {
-        await createDocument({
+    await Promise.all(rows.map(row => createDocument({
             _id: crypto.randomUUID(),
             _type: 'freightNotaItem',
             notaRef: notaId,
@@ -2741,8 +2736,7 @@ export async function handleFreightNotaCreate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
-        });
-    }
+        })));
     await syncFreightNotaDeliveryOrderLinks({
         notaId,
         notaNumber,
@@ -3244,7 +3238,7 @@ export async function handleFreightNotaUpdate(
     );
 
     if (linkedCustomer) {
-        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() });
+        await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() }, 'customer');
     }
     await updateDocument(notaId, sanitizePatchSet({
         issuerCompanyName,
@@ -3279,12 +3273,9 @@ export async function handleFreightNotaUpdate(
         instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
         footerNote,
         notes: normalizedNotes,
-    }));
-    for (const item of existingNotaItems) {
-        await deleteDocument(item._id);
-    }
-    for (const row of rows) {
-        await createDocument({
+    }), 'freightNota');
+    await Promise.all(existingNotaItems.map(item => deleteDocument(item._id, 'freightNotaItem')));
+    await Promise.all(rows.map(row => createDocument({
             _id: crypto.randomUUID(),
             _type: 'freightNotaItem',
             notaRef: notaId,
@@ -3306,8 +3297,7 @@ export async function handleFreightNotaUpdate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
-        });
-    }
+        })));
     await syncFreightNotaDeliveryOrderLinks({
         notaId,
         notaNumber,
@@ -3360,7 +3350,7 @@ export async function handleFreightNotaPph23Update(
 
     const patch = buildReceivablePatch(snapshot, snapshot.totalPaid, snapshot.totalAdjustmentAmount, pph23Settings);
 
-    await updateDocument(notaId, patch);
+    await updateDocument(notaId, patch, 'freightNota');
 
     await addAuditLog(
         session,
@@ -3433,21 +3423,19 @@ export async function handleFreightNotaDelete(
         { freightNotaRef: id }
     );
     try {
-        for (const item of notaItems) {
-            await deleteDocument(item._id);
-        }
+        await Promise.all(notaItems.map(item => deleteDocument(item._id, 'freightNotaItem')));
 
-        for (const deliveryOrder of relatedDeliveryOrders) {
-            await updateDocument(
+        await Promise.all(relatedDeliveryOrders.map(deliveryOrder =>
+            updateDocument(
                 deliveryOrder._id,
                 {
                     freightNotaRef: null,
                     freightNotaNumber: null,
                 }
-            );
-        }
+            , 'deliveryOrder')
+        ));
 
-        await deleteDocument(id);
+        await deleteDocument(id, 'freightNota');
     } catch (error) {
         const message = error instanceof Error ? error.message : '';
         if (/revision|conflict|document|not found/i.test(message)) {

@@ -834,27 +834,30 @@ export async function handleOrderCreate(
 
     try {
         await createDocument(orderDoc);
-        await updateDocument(customer._id, { updatedAt: createdAt }, 'customer');
-        if (serviceRef && service?._id) {
-            await updateDocument(service._id, { updatedAt: createdAt }, 'service');
-        }
         const seenProductRefs = new Set<string>();
+        const touchPromises: Array<Promise<unknown>> = [
+            updateDocument(customer._id, { updatedAt: createdAt }, 'customer'),
+        ];
+        if (serviceRef && service?._id) {
+            touchPromises.push(updateDocument(service._id, { updatedAt: createdAt }, 'service'));
+        }
         for (const item of items) {
             if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                 continue;
             }
-            await updateDocument(item.customerProductRef, { updatedAt: createdAt }, 'customerProduct');
+            touchPromises.push(updateDocument(item.customerProductRef, { updatedAt: createdAt }, 'customerProduct'));
             seenProductRefs.add(item.customerProductRef);
         }
         if (customerRecipientRef && customerRecipient?._id) {
-            await updateDocument(customerRecipient._id, { updatedAt: createdAt }, 'customerRecipient');
+            touchPromises.push(updateDocument(customerRecipient._id, { updatedAt: createdAt }, 'customerRecipient'));
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickup');
+            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickup'));
         }
-        for (const item of items) {
-            await createDocument(buildOrderItemDraftDocument(orderId, item));
-        }
+        await Promise.all([
+            ...touchPromises,
+            ...items.map(item => createDocument(buildOrderItemDraftDocument(orderId, item))),
+        ]);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1012,8 +1015,9 @@ export async function handleOrderUpdateWithItems(
 
     const mutationTimestamp = new Date().toISOString();
     try {
-        await updateDocument(customer._id, { updatedAt: mutationTimestamp }, 'customer');
-        await updateDocument(id, {
+        const touchPromises: Array<Promise<unknown>> = [
+            updateDocument(customer._id, { updatedAt: mutationTimestamp }, 'customer'),
+            updateDocument(id, {
             cargoEntryMode: 'ORDER',
             customerRef,
             customerName: customer.name,
@@ -1027,30 +1031,28 @@ export async function handleOrderUpdateWithItems(
             serviceRef: serviceRef || '',
             serviceName,
             notes: normalizeOptionalText(data.notes),
-        }, 'order');
+            }, 'order'),
+        ];
         if (serviceRef && service?._id) {
-            await updateDocument(service._id, { updatedAt: mutationTimestamp }, 'service');
+            touchPromises.push(updateDocument(service._id, { updatedAt: mutationTimestamp }, 'service'));
         }
         const seenProductRefs = new Set<string>();
         for (const item of items) {
             if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                 continue;
             }
-            await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct');
+            touchPromises.push(updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct'));
             seenProductRefs.add(item.customerProductRef);
         }
         if (customerRecipientRef && customerRecipient?._id) {
-            await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient');
+            touchPromises.push(updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient'));
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup');
+            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup'));
         }
-        for (const existingItem of existingItems) {
-            await deleteDocument(existingItem._id);
-        }
-        for (const item of items) {
-            await createDocument(buildOrderItemDraftDocument(id, item));
-        }
+        await Promise.all(touchPromises);
+        await Promise.all(existingItems.map(existingItem => deleteDocument(existingItem._id, 'orderItem')));
+        await Promise.all(items.map(item => createDocument(buildOrderItemDraftDocument(id, item))));
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -4291,10 +4293,8 @@ export async function handleOrderDelete(
     }>[number]>('orderItem', { orderRef: id });
 
     try {
-        for (const orderItem of orderItems) {
-            await deleteDocument(orderItem._id);
-        }
-        await deleteDocument(id);
+        await Promise.all(orderItems.map(orderItem => deleteDocument(orderItem._id, 'orderItem')));
+        await deleteDocument(id, 'order');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
