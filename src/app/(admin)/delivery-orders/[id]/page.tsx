@@ -1089,31 +1089,30 @@ export default function DODetailPage() {
     };
 
     const applyActualDropShipperReference = (draftKey: string, optionValue: string) => {
-        const selectedReference = shipperReferenceDisplayList.find(reference => {
-            const referenceOptionValue = reference.referenceKey || reference.draftKey || reference.referenceNumber;
-            return referenceOptionValue === optionValue;
-        });
+        const selectedTarget = actualDropTargetOptions.find(target => target.optionValue === optionValue);
         setActualDropPoints(previous => previous.map(item => {
             if (item.draftKey !== draftKey) {
                 return item;
             }
-            if (!selectedReference) {
+            if (!selectedTarget) {
                 return {
                     ...item,
+                    deliveryOrderItemRef: '',
                     shipperReferenceKey: '',
                     shipperReferenceNumber: '',
                 };
             }
             return {
                 ...item,
-                shipperReferenceKey: selectedReference.referenceKey || '',
-                shipperReferenceNumber: selectedReference.referenceNumber || '',
+                deliveryOrderItemRef: selectedTarget.deliveryOrderItemRef || '',
+                shipperReferenceKey: selectedTarget.referenceKey || '',
+                shipperReferenceNumber: selectedTarget.referenceNumber || '',
                 locationName:
-                    selectedReference.receiverCompany?.trim()
-                    || selectedReference.receiverName?.trim()
-                    || selectedReference.receiverAddress?.trim()
+                    selectedTarget.receiverCompany?.trim()
+                    || selectedTarget.receiverName?.trim()
+                    || selectedTarget.receiverAddress?.trim()
                     || item.locationName,
-                locationAddress: selectedReference.receiverAddress || item.locationAddress,
+                locationAddress: selectedTarget.receiverAddress || item.locationAddress,
             };
         }));
     };
@@ -1488,14 +1487,59 @@ export default function DODetailPage() {
             ? pickupStopMap.get(reference.pickupStopKey)?.pickupAddress || reference.pickupAddress
             : reference.pickupAddress,
     }));
-    const resolveActualDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
+    const actualDropTargetOptions = [
+        ...shipperReferenceDisplayList.map(reference => {
+            const optionValue = `sj:${reference.referenceKey || reference.draftKey || reference.referenceNumber}`;
+            return {
+                ...reference,
+                optionValue,
+                optionLabel: `${reference.referenceNumber}${reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''} (semua barang)`,
+                deliveryOrderItemRef: '',
+            };
+        }),
+        ...doItems.map(item => {
+            const matchedReference = shipperReferenceDisplayList.find(reference =>
+                (item.shipperReferenceKey && reference.referenceKey === item.shipperReferenceKey) ||
+                (item.shipperReferenceNumber && reference.referenceNumber === item.shipperReferenceNumber)
+            );
+            const fallbackReferenceNumber = item.shipperReferenceNumber || doData.customerDoNumber || doData.doNumber || 'Tanpa SJ';
+            return {
+                ...(matchedReference || {
+                    draftKey: `item-target-${item._id}`,
+                    referenceKey: item.shipperReferenceKey || '',
+                    referenceNumber: fallbackReferenceNumber,
+                    pickupStopKey: item.pickupStopKey || '',
+                    pickupLabel: '',
+                    pickupAddress: item.pickupAddress || '',
+                    billingCustomerRef: '',
+                    billingCustomerName: '',
+                    receiverName: doData.receiverName || '',
+                    receiverPhone: doData.receiverPhone || '',
+                    receiverAddress: doData.receiverAddress || '',
+                    receiverCompany: doData.receiverCompany || '',
+                }),
+                optionValue: `item:${item._id}`,
+                optionLabel: `${fallbackReferenceNumber} - ${item.orderItemDescription || 'Barang'}${matchedReference ? '' : ' (barang)'}`,
+                deliveryOrderItemRef: item._id,
+            };
+        }),
+    ];
+    const resolveActualDropShipperReferenceValue = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+    ) => {
+        if (drop.deliveryOrderItemRef) {
+            return `item:${drop.deliveryOrderItemRef}`;
+        }
         const matchedReference = shipperReferenceDisplayList.find(reference =>
             (drop.shipperReferenceKey && reference.referenceKey === drop.shipperReferenceKey) ||
             (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
         );
-        return matchedReference?.referenceKey || matchedReference?.draftKey || matchedReference?.referenceNumber || '';
+        const referenceValue = matchedReference?.referenceKey || matchedReference?.draftKey || matchedReference?.referenceNumber;
+        return referenceValue ? `sj:${referenceValue}` : '';
     };
-    const getActualDropCargoSummary = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
+    const getActualDropCargoSummary = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+    ) =>
         summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, actualCargoItems));
     const cargoGroups = (() => {
         const groups = new Map<string, {
@@ -1568,6 +1612,8 @@ export default function DODetailPage() {
     const totalTripFee = doData.taripBorongan || 0;
     const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
     const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
+    const effectiveOvertonaseLimitKg = doData.vehicleCapacityKg || doData.serviceMaxPayloadKg || 0;
+    const effectiveOvertonaseLimitSource = doData.vehicleCapacityKg ? 'Kapasitas kendaraan' : 'Referensi layanan';
     const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || exceedsVehicleCapacity;
     const settledVoucherNeedsManualAdjustment = Boolean(
         linkedVoucher?.status === 'SETTLED' &&
@@ -2157,15 +2203,16 @@ export default function DODetailPage() {
                                     </div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Batas Normal Layanan</div>
+                                    <div className="detail-label">Acuan Batas Overtonase</div>
                                     <div className="detail-value">
-                                        {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
+                                        {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
                                     </div>
+                                    <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? effectiveOvertonaseLimitSource : ''}</div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Kapasitas Kendaraan</div>
+                                    <div className="detail-label">Referensi Layanan</div>
                                     <div className="detail-value">
-                                        {doData.vehicleCapacityKg ? `${doData.vehicleCapacityKg} kg` : '-'}
+                                        {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
                                     </div>
                                 </div>
                             </div>
@@ -2763,7 +2810,7 @@ export default function DODetailPage() {
                                                                 )}
                                                             </div>
                                                             <div className="form-row">
-                                                                {shipperReferenceDisplayList.length > 0 && (
+                                                                {actualDropTargetOptions.length > 0 && (
                                                                     <div className="form-group">
                                                                         <label className="form-label">No. SJ / Barang</label>
                                                                         <select
@@ -2773,15 +2820,11 @@ export default function DODetailPage() {
                                                                             disabled={updatingStatus}
                                                                         >
                                                                             <option value="">Tidak spesifik / semua barang</option>
-                                                                            {shipperReferenceDisplayList.map(reference => {
-                                                                                const optionValue = reference.referenceKey || reference.draftKey || reference.referenceNumber;
-                                                                                return (
-                                                                                    <option key={optionValue} value={optionValue}>
-                                                                                        {reference.referenceNumber}
-                                                                                        {reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''}
-                                                                                    </option>
-                                                                                );
-                                                                            })}
+                                                                            {actualDropTargetOptions.map(target => (
+                                                                                <option key={target.optionValue} value={target.optionValue}>
+                                                                                    {target.optionLabel}
+                                                                                </option>
+                                                                            ))}
                                                                         </select>
                                                                         <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                                                             Barang: {getActualDropCargoSummary(item)}

@@ -640,6 +640,8 @@ export interface DeliveryActualDropPoint {
   _key?: string;
   sequence: number;
   stopType: DeliveryActualDropType;
+  deliveryOrderItemRef?: string;
+  deliveryOrderItemRefs?: string[];
   shipperReferenceKey?: string;
   shipperReferenceNumber?: string;
   locationName: string;
