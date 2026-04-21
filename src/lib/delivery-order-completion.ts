@@ -203,9 +203,11 @@ export function getDeliveryOrderActualDropDestinations(
     options?: {
         shipperReferenceNumber?: string;
         billableOnly?: boolean;
+        deliveryOrderItemRef?: string;
     }
 ) {
     const normalizedReference = normalizeText(options?.shipperReferenceNumber);
+    const normalizedItemRef = normalizeText(options?.deliveryOrderItemRef);
     const points = Array.isArray(deliveryOrder?.actualDropPoints) ? deliveryOrder.actualDropPoints : [];
 
     return [
@@ -215,6 +217,10 @@ export function getDeliveryOrderActualDropDestinations(
                 .filter(point =>
                     !normalizedReference ||
                     normalizeText(point.shipperReferenceNumber) === normalizedReference
+                )
+                .filter(point =>
+                    !normalizedItemRef ||
+                    hasDeliveryOrderItemRef(point, normalizedItemRef)
                 )
                 .map(point => normalizeText(point.locationAddress) || normalizeText(point.locationName))
                 .filter((value): value is string => Boolean(value))

@@ -39,7 +39,7 @@ const functionChecks = [
   },
   {
     name: 'handleOrderItemHoldRelease',
-    mustInclude: ['isSupabaseBackendEnabled()', 'getDocumentById<OrderItemProgressSnapshot', 'updateDocument(id, updates)'],
+    mustInclude: ['isSupabaseBackendEnabled()', 'getDocumentById<OrderItemProgressSnapshot', "updateDocument(id, updates, 'orderItem')"],
   },
   {
     name: 'handleOrderDelete',
@@ -50,7 +50,7 @@ const functionChecks = [
     mustInclude: [
       "const masterResi = await getNextNumber('resi')",
       'await createDocument(orderDoc);',
-      'await updateDocument(customer._id, { updatedAt: createdAt });',
+      "await updateDocument(customer._id, { updatedAt: createdAt }, 'customer');",
       'await createDocument(buildOrderItemDraftDocument(orderId, item));',
     ],
   },
@@ -69,15 +69,15 @@ const functionChecks = [
     mustInclude: [
       "const order = await getDocumentById<{",
       "listDocumentsByFilter<{ _id: string }>('deliveryOrder', { orderRef: id })",
-      "await updateDocument(id, { notes })",
+      "await updateDocument(id, { notes }, 'order')",
       "updatedOrder = await updateDocument(id, {",
     ],
   },
   {
     name: 'handleOrderTargetRevision',
     mustInclude: [
-      "const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id)",
-      'const updatedOrder = await getDocumentById(id)',
+      "const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id, 'order')",
+      "const updatedOrder = await getDocumentById(id, 'order')",
     ],
   },
   {
@@ -91,7 +91,7 @@ const functionChecks = [
       "listDocumentsByFilter<{ _id: string; bonNumber?: string }>('driverVoucher', {",
       "listDocumentsByFilter<{ _id: string }>('driverBoronganItem', {",
       "await updateDocument(id, {",
-      'const unchangedDeliveryOrder = await getDocumentById(id)',
+      "const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder')",
     ],
   },
   {
@@ -100,8 +100,8 @@ const functionChecks = [
       "const deliveryOrder = await getDocumentById<{",
       "listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {",
       "listDocumentsByFilter<{ _id: string; boronganRef?: string }>('driverBoronganItem', {",
-      'const unchangedDeliveryOrder = await getDocumentById(id)',
-      "await updateDocument(id, { customerDoNumber })",
+      "const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder')",
+      "await updateDocument(id, {",
     ],
   },
   {
@@ -154,17 +154,17 @@ const supportFunctionChecks = [
   {
     name: 'resolveOrderPartyData',
     mode: 'file',
-    mustInclude: ['getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef)', 'getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef)'],
+    mustInclude: ["getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef, 'customer')", "getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef, 'service')"],
   },
   {
     name: 'resolveOrderRecipientData',
     mode: 'file',
-    mustInclude: ['getDocumentById<ResolvedCustomerRecipientData>(customerRecipientRef)'],
+    mustInclude: ["getDocumentById<ResolvedCustomerRecipientData>(customerRecipientRef, 'customerRecipient')"],
   },
   {
     name: 'resolveOrderPickupData',
     mode: 'file',
-    mustInclude: ['getDocumentById<ResolvedCustomerPickupData>(customerPickupRef)'],
+    mustInclude: ["getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickup')"],
   },
   {
     name: 'normalizeOrderItemsInput',
@@ -196,8 +196,8 @@ const supportWorkflowChecks = [
     mustInclude: [
       'isSupabaseBackendEnabled()',
       "listDocumentsByFilter<{ _id: string; email?: string }>('user', { email })",
-      "const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef)",
-      "await listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string }>('user', {",
+      'validateDriverAccountLink(data.driverRef)',
+      "listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string }>('user', {",
     ],
   },
 ];

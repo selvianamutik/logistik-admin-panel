@@ -240,8 +240,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
             tujuan:
+                (hasActualDropPoints && destinationSummary) ||
                 matchedReference?.receiverAddress ||
-                destinationSummary ||
                 baseRow.tujuan,
             barang: itemDescriptions,
             collie: hasActualDropPoints
@@ -271,6 +271,11 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             shipperReferenceNumber,
             item._id
         );
+        const destinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
+            shipperReferenceNumber,
+            billableOnly: true,
+            deliveryOrderItemRef: item._id,
+        }).join(', ');
         const billableCargo = options?.billableCargoOverride
             || (options?.useSpecificBillableCargo
                 ? itemSpecificBillableCargo
@@ -289,7 +294,10 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             customerName: matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
-            tujuan: matchedReference?.receiverAddress || baseRow.tujuan,
+            tujuan:
+                (hasActualDropPoints && destinationSummary) ||
+                matchedReference?.receiverAddress ||
+                baseRow.tujuan,
             barang: item.orderItemDescription?.trim() || '',
             collie: billableCargo.qtyKoli,
             beratKg: billableCargo.weightKg,
@@ -314,8 +322,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
                     noSJ: reference.referenceNumber,
                     dari: reference.pickupAddress || baseRow.dari,
                     tujuan:
+                        (hasActualDropPoints && destinationSummary) ||
                         reference.receiverAddress ||
-                        destinationSummary ||
                         baseRow.tujuan,
                     barang: '',
                     collie: hasActualDropPoints ? billableCargo.qtyKoli : 0,

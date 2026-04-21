@@ -2152,10 +2152,12 @@ export async function handleFreightNotaCreate(
             normalizeOptionalText(deliveryOrder.customerDoNumber) ||
             '';
         const hasActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
+        const destinationItemRef = rowItemRefs.length === 1 ? rowItemRefs[0] : undefined;
         const billableCargoSummary = getDeliveryOrderBillableCargoSummary(deliveryOrder, resolvedNoSj);
         const billableDestinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
             shipperReferenceNumber: resolvedNoSj,
             billableOnly: true,
+            deliveryOrderItemRef: destinationItemRef,
         }).join(', ');
         const matchedBuiltRow = findBuiltNotaRowMatch({
             row,
@@ -2195,8 +2197,8 @@ export async function handleFreightNotaCreate(
             row.dari ||
             '';
         row.tujuan =
-            normalizeOptionalText(matchedShipperReference?.receiverAddress) ||
             billableDestinationSummary ||
+            normalizeOptionalText(matchedShipperReference?.receiverAddress) ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||
