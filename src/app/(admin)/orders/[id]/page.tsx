@@ -47,6 +47,7 @@ import {
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
+import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import type { Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
@@ -301,8 +302,11 @@ export default function OrderDetailPage() {
         doPlannedCargoById,
         doActualCargoById,
         progress,
-        deliveredDoCount,
     } = buildOrderDetailMetrics(items, dos, doItems);
+    const billableDeliveredDoCount = dos.filter(
+        deliveryOrder => deliveryOrder.status === 'DELIVERED' && hasDeliveryOrderBillableCargo(deliveryOrder)
+    ).length;
+    const canStartFreightNota = canCreateInvoice && billableDeliveredDoCount > 0;
 
     const createDefaultShipmentSelection = useCallback(
         (item: OrderItem): SelectedShipmentMap[string] => buildDefaultShipmentSelection(item, itemProgressById[item._id]),
@@ -891,7 +895,12 @@ export default function OrderDetailPage() {
                         </button>
                     )}
                     {canCreateInvoice && (
-                        <button className="btn btn-secondary" onClick={() => router.push(withReturnTo('/invoices/new'))}>
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => router.push(withReturnTo('/invoices/new'))}
+                            disabled={!canStartFreightNota}
+                            title={!canStartFreightNota ? 'Belum ada DO selesai dengan realisasi drop yang bisa ditagihkan' : 'Buat nota'}
+                        >
                             <FileText size={16} /> Buat Nota
                         </button>
                     )}
@@ -1409,7 +1418,7 @@ export default function OrderDetailPage() {
                             {notas.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>
-                                        {deliveredDoCount === 0 ? 'Belum ada DO selesai yang bisa ditagihkan' : 'Belum ada nota untuk order ini'}
+                                        {billableDeliveredDoCount === 0 ? 'Belum ada DO selesai dengan realisasi drop billable' : 'Belum ada nota untuk order ini'}
                                     </td>
                                 </tr>
                             ) : notas.map(nota => (

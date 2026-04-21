@@ -1,4 +1,9 @@
 import { addDaysToDateValue, getBusinessDateValue } from './business-date';
+import {
+    getDeliveryOrderActualDropDestinations,
+    getDeliveryOrderBillableCargoSummary,
+    hasDeliveryOrderBillableCargo,
+} from './delivery-order-completion';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 
@@ -148,6 +153,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const { deliveryOrder, orders, deliveryOrderItems } = params;
     const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
     const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
+    const hasActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
     const shipperReferences = (deliveryOrder.shipperReferences || [])
         .filter(reference => Boolean(reference.referenceNumber?.trim()))
         .map(reference => ({
@@ -157,21 +163,6 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const shipperReferenceMap = new Map(
         shipperReferences.map(reference => [reference.referenceNumber, reference])
     );
-    const actualDropPointsByShipperReference = new Map<string, string>();
-    for (const point of deliveryOrder.actualDropPoints || []) {
-        if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
-            continue;
-        }
-        const shipperReferenceNumber = point.shipperReferenceNumber?.trim();
-        if (!shipperReferenceNumber) continue;
-        const destination = point.locationAddress?.trim() || point.locationName?.trim() || '';
-        if (!destination) continue;
-        const current = actualDropPointsByShipperReference.get(shipperReferenceNumber);
-        actualDropPointsByShipperReference.set(
-            shipperReferenceNumber,
-            current ? `${current}, ${destination}` : destination
-        );
-    }
     const fallbackShipperReferenceNumber = shipperReferences[0]?.referenceNumber || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '';
     const baseRow = {
         doRef: deliveryOrder._id,
@@ -193,6 +184,14 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         items: DeliveryOrderItem[] = []
     ): NotaItemRow => {
         const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+        const itemDescriptions = items.length > 0
+            ? [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
+            : '';
+        const billableCargo = getDeliveryOrderBillableCargoSummary(deliveryOrder, shipperReferenceNumber);
+        const destinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
+            shipperReferenceNumber,
+            billableOnly: true,
+        }).join(', ');
 
         return {
             id: Math.random().toString(36).slice(2),
@@ -205,33 +204,47 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             dari: matchedReference?.pickupAddress || baseRow.dari,
             tujuan:
                 matchedReference?.receiverAddress ||
-                actualDropPointsByShipperReference.get(shipperReferenceNumber) ||
+                destinationSummary ||
                 baseRow.tujuan,
-            barang: items.length > 0
-                ? [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
-                : '',
-            collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
-            beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
+            barang: itemDescriptions,
+            collie: hasActualDropPoints
+                ? billableCargo.qtyKoli
+                : items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
+            beratKg: hasActualDropPoints
+                ? billableCargo.weightKg
+                : items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
         };
     };
 
     if (relatedItems.length === 0) {
         if (shipperReferences.length > 0) {
-            return shipperReferences.map(reference => ({
-                id: Math.random().toString(36).slice(2),
-                ...baseRow,
-                customerRef: reference.billingCustomerRef || baseRow.customerRef,
-                customerName: reference.billingCustomerName || baseRow.customerName,
-                noSJ: reference.referenceNumber,
-                dari: reference.pickupAddress || baseRow.dari,
-                tujuan:
-                    reference.receiverAddress ||
-                    actualDropPointsByShipperReference.get(reference.referenceNumber) ||
-                    baseRow.tujuan,
-                barang: '',
-                collie: 0,
-                beratKg: 0,
-            }));
+            const rows = shipperReferences.map(reference => {
+                const billableCargo = getDeliveryOrderBillableCargoSummary(deliveryOrder, reference.referenceNumber);
+                const destinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
+                    shipperReferenceNumber: reference.referenceNumber,
+                    billableOnly: true,
+                }).join(', ');
+
+                return {
+                    id: Math.random().toString(36).slice(2),
+                    ...baseRow,
+                    customerRef: reference.billingCustomerRef || baseRow.customerRef,
+                    customerName: reference.billingCustomerName || baseRow.customerName,
+                    noSJ: reference.referenceNumber,
+                    dari: reference.pickupAddress || baseRow.dari,
+                    tujuan:
+                        reference.receiverAddress ||
+                        destinationSummary ||
+                        baseRow.tujuan,
+                    barang: '',
+                    collie: hasActualDropPoints ? billableCargo.qtyKoli : 0,
+                    beratKg: hasActualDropPoints ? billableCargo.weightKg : 0,
+                };
+            });
+
+            return hasActualDropPoints
+                ? rows.filter(row => (row.collie || 0) > 0 || (row.beratKg || 0) > 0)
+                : rows;
         }
 
         return [{
@@ -266,5 +279,13 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         rows.push(buildShipperReferenceRow(shipperReferenceNumber, items));
     }
 
-    return rows;
+    if (!hasActualDropPoints) {
+        return rows;
+    }
+
+    return rows.filter(row =>
+        (row.collie || 0) > 0 ||
+        (row.beratKg || 0) > 0 ||
+        hasDeliveryOrderBillableCargo(deliveryOrder, row.noSJ)
+    );
 }

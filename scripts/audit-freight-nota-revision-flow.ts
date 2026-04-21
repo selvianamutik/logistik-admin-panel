@@ -157,7 +157,14 @@ async function main() {
         .filter(candidate => candidate.valid && candidate.customerRef && candidate.customerName);
 
     const firstCandidate = prepared[0];
-    assert(firstCandidate, 'Tidak ada DO delivered yang siap dibill untuk audit create nota.');
+    if (!firstCandidate) {
+        console.log('Freight nota revision audit');
+        console.log('');
+        console.log(`- Base URL: ${getBaseUrl()}`);
+        console.log('- Status: SKIP');
+        console.log('- Reason: Tidak ada DO delivered billable yang belum punya nota pada data saat ini.');
+        return;
+    }
 
     const manualAuditRows: NotaItemRow[] = [{
         id: `manual-audit-${Date.now().toString(36)}`,

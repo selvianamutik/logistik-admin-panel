@@ -1,5 +1,10 @@
 import { deriveOrderItemStatusFromProgress, getOrderItemProgress } from '@/lib/order-item-progress';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
+import {
+    getDeliveryOrderActualDropDestinations,
+    getDeliveryOrderBillableCargoSummary,
+    hasDeliveryOrderBillableCargo,
+} from '@/lib/delivery-order-completion';
 import { listDocumentsByFilter } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order, TrackingLog } from '@/lib/types';
 
@@ -176,27 +181,6 @@ function resolveDeliveredTrackingLog(trackingLogs: DeliveryOrderTrackingLogSourc
     return [...trackingLogs]
         .filter(item => item.status === 'DELIVERED' && normalizeOptionalText(item.timestamp))
         .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')))[0];
-}
-
-function getActualDropDestinationForShipperReference(
-    deliveryOrder: FreightNotaDeliveryOrderSource,
-    shipperReferenceNumber?: string
-) {
-    const normalizedReferenceNumber = normalizeOptionalText(shipperReferenceNumber);
-    if (!normalizedReferenceNumber) {
-        return undefined;
-    }
-
-    const destinations = (deliveryOrder.actualDropPoints || [])
-        .filter(point => {
-            const normalizedStopType = normalizeOptionalText(point.stopType)?.toUpperCase();
-            return normalizedStopType === 'DROP' || normalizedStopType === 'EXTRA_DROP';
-        })
-        .filter(point => normalizeOptionalText(point.shipperReferenceNumber) === normalizedReferenceNumber)
-        .map(point => normalizeOptionalText(point.locationAddress) || normalizeOptionalText(point.locationName))
-        .filter((value): value is string => Boolean(value));
-
-    return destinations.length > 0 ? [...new Set(destinations)].join(', ') : undefined;
 }
 
 function resolveFreightNotaNoSj(
@@ -467,6 +451,14 @@ export async function deriveFreightNotaItemsForResponse(items: FreightNotaItem[]
             ? summarizeDeliveryOrderItems(linkedItems)
             : summarizeDeliveryOrderItems(deliveryOrderItemsByRef.get(deliveryOrder._id) || []);
         const resolvedNoSj = resolveFreightNotaNoSj(item, deliveryOrder, linkedItems);
+        const hasActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
+        const billableCargoSummary = getDeliveryOrderBillableCargoSummary(deliveryOrder, resolvedNoSj);
+        const billableDestinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
+            shipperReferenceNumber: resolvedNoSj,
+            billableOnly: true,
+        }).join(', ');
+        const shouldUseBillableCargoSummary =
+            hasActualDropPoints && hasDeliveryOrderBillableCargo(deliveryOrder, resolvedNoSj);
         const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
             normalizeOptionalText(reference.referenceNumber) === resolvedNoSj
         );
@@ -488,7 +480,7 @@ export async function deriveFreightNotaItemsForResponse(items: FreightNotaItem[]
                 (normalizeOptionalText(item.noSJ) === normalizeOptionalText(deliveryOrder.doNumber) || !normalizeOptionalText(item.tujuan))
                     ? (
                         normalizeOptionalText(matchedShipperReference?.receiverAddress)
-                        || getActualDropDestinationForShipperReference(deliveryOrder, resolvedNoSj)
+                        || billableDestinationSummary
                         || normalizeOptionalText(item.tujuan)
                         || normalizeOptionalText(deliveryOrder.receiverAddress)
                         || normalizeOptionalText(linkedOrder?.receiverAddress)
@@ -499,15 +491,19 @@ export async function deriveFreightNotaItemsForResponse(items: FreightNotaItem[]
             collie:
                 normalizeNumber(item.collie ?? 0) > 0
                     ? normalizeNumber(item.collie ?? 0)
-                    : itemSummary.collie > 0
-                        ? itemSummary.collie
-                        : item.collie,
+                    : shouldUseBillableCargoSummary && billableCargoSummary.qtyKoli > 0
+                        ? billableCargoSummary.qtyKoli
+                        : itemSummary.collie > 0
+                            ? itemSummary.collie
+                            : item.collie,
             beratKg:
                 normalizeNumber(item.beratKg ?? 0) > 0
                     ? normalizeNumber(item.beratKg ?? 0)
-                    : itemSummary.beratKg > 0
-                        ? itemSummary.beratKg
-                        : item.beratKg,
+                    : shouldUseBillableCargoSummary && billableCargoSummary.weightKg > 0
+                        ? billableCargoSummary.weightKg
+                        : itemSummary.beratKg > 0
+                            ? itemSummary.beratKg
+                            : item.beratKg,
         };
     });
 }

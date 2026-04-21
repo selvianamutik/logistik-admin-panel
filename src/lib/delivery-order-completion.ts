@@ -1,0 +1,220 @@
+import { parseFormattedNumberish } from './formatted-number';
+
+export type DeliveryCargoSummary = {
+    qtyKoli: number;
+    weightKg: number;
+    volumeM3: number;
+};
+
+type DeliveryActualDropPointLike = {
+    stopType?: string | null;
+    shipperReferenceNumber?: string | null;
+    locationName?: string | null;
+    locationAddress?: string | null;
+    qtyKoli?: unknown;
+    weightKg?: unknown;
+    volumeM3?: unknown;
+};
+
+type DeliveryOrderCompletionLike = {
+    actualDropPoints?: DeliveryActualDropPointLike[] | null;
+};
+
+export type DeliveryOrderCompletionOutcome = {
+    key: 'FULLY_DELIVERED' | 'PARTIALLY_DELIVERED' | 'HOLD_ONLY' | 'RETURN_ONLY' | 'NON_DELIVERY_MIXED' | 'UNKNOWN';
+    label: string;
+    color: string;
+    billableCargo: DeliveryCargoSummary;
+    nonBillableCargo: DeliveryCargoSummary;
+    hasBillableCargo: boolean;
+    hasNonBillableCargo: boolean;
+};
+
+const BILLABLE_ACTUAL_DROP_TYPES = new Set(['DROP', 'EXTRA_DROP']);
+const HOLD_ACTUAL_DROP_TYPES = new Set(['HOLD', 'TRANSIT']);
+const RETURN_ACTUAL_DROP_TYPES = new Set(['RETURN']);
+
+function roundQuantity(value: number, fractionDigits = 3) {
+    const factor = 10 ** fractionDigits;
+    return Math.round(value * factor) / factor;
+}
+
+function createSummary(): DeliveryCargoSummary {
+    return {
+        qtyKoli: 0,
+        weightKg: 0,
+        volumeM3: 0,
+    };
+}
+
+function addSummary(base: DeliveryCargoSummary, point: DeliveryActualDropPointLike) {
+    return {
+        qtyKoli: roundQuantity(base.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0), 2),
+        weightKg: roundQuantity(base.weightKg + parseFormattedNumberish(point.weightKg || 0), 2),
+        volumeM3: roundQuantity(base.volumeM3 + parseFormattedNumberish(point.volumeM3 || 0, { maxFractionDigits: 3 }), 3),
+    };
+}
+
+function normalizeStopType(value: unknown) {
+    return typeof value === 'string' ? value.trim().toUpperCase() : '';
+}
+
+function normalizeText(value: unknown) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasCargo(summary: DeliveryCargoSummary) {
+    return summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
+}
+
+function summarizeByTypes(
+    points: DeliveryActualDropPointLike[] | null | undefined,
+    allowedTypes: Set<string>,
+    shipperReferenceNumber?: string
+) {
+    const normalizedReference = normalizeText(shipperReferenceNumber);
+    return (Array.isArray(points) ? points : [])
+        .filter(point => allowedTypes.has(normalizeStopType(point.stopType)))
+        .filter(point =>
+            !normalizedReference ||
+            normalizeText(point.shipperReferenceNumber) === normalizedReference
+        )
+        .reduce<DeliveryCargoSummary>((sum, point) => addSummary(sum, point), createSummary());
+}
+
+export function getDeliveryOrderBillableCargoSummary(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string
+) {
+    return summarizeByTypes(deliveryOrder?.actualDropPoints, BILLABLE_ACTUAL_DROP_TYPES, shipperReferenceNumber);
+}
+
+export function getDeliveryOrderNonBillableCargoSummary(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string
+) {
+    const holdSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, HOLD_ACTUAL_DROP_TYPES, shipperReferenceNumber);
+    const returnSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, RETURN_ACTUAL_DROP_TYPES, shipperReferenceNumber);
+
+    return {
+        qtyKoli: roundQuantity(holdSummary.qtyKoli + returnSummary.qtyKoli, 2),
+        weightKg: roundQuantity(holdSummary.weightKg + returnSummary.weightKg, 2),
+        volumeM3: roundQuantity(holdSummary.volumeM3 + returnSummary.volumeM3, 3),
+    };
+}
+
+export function hasDeliveryOrderBillableCargo(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string
+) {
+    return hasCargo(getDeliveryOrderBillableCargoSummary(deliveryOrder, shipperReferenceNumber));
+}
+
+export function getDeliveryOrderActualDropDestinations(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    options?: {
+        shipperReferenceNumber?: string;
+        billableOnly?: boolean;
+    }
+) {
+    const normalizedReference = normalizeText(options?.shipperReferenceNumber);
+    const points = Array.isArray(deliveryOrder?.actualDropPoints) ? deliveryOrder.actualDropPoints : [];
+
+    return [
+        ...new Set(
+            points
+                .filter(point => !options?.billableOnly || BILLABLE_ACTUAL_DROP_TYPES.has(normalizeStopType(point.stopType)))
+                .filter(point =>
+                    !normalizedReference ||
+                    normalizeText(point.shipperReferenceNumber) === normalizedReference
+                )
+                .map(point => normalizeText(point.locationAddress) || normalizeText(point.locationName))
+                .filter((value): value is string => Boolean(value))
+        ),
+    ];
+}
+
+export function deriveDeliveryOrderCompletionOutcome(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined
+): DeliveryOrderCompletionOutcome | null {
+    const billableCargo = getDeliveryOrderBillableCargoSummary(deliveryOrder);
+    const nonBillableCargo = getDeliveryOrderNonBillableCargoSummary(deliveryOrder);
+    const hasBillableCargo = hasCargo(billableCargo);
+    const hasNonBillableCargo = hasCargo(nonBillableCargo);
+    const hasHoldCargo = hasCargo(summarizeByTypes(deliveryOrder?.actualDropPoints, HOLD_ACTUAL_DROP_TYPES));
+    const hasReturnCargo = hasCargo(summarizeByTypes(deliveryOrder?.actualDropPoints, RETURN_ACTUAL_DROP_TYPES));
+
+    if (!hasBillableCargo && !hasNonBillableCargo) {
+        return null;
+    }
+
+    if (hasBillableCargo && !hasNonBillableCargo) {
+        return {
+            key: 'FULLY_DELIVERED',
+            label: 'Terkirim Penuh',
+            color: 'success',
+            billableCargo,
+            nonBillableCargo,
+            hasBillableCargo,
+            hasNonBillableCargo,
+        };
+    }
+
+    if (hasBillableCargo && hasNonBillableCargo) {
+        return {
+            key: 'PARTIALLY_DELIVERED',
+            label: 'Terkirim Sebagian',
+            color: 'warning',
+            billableCargo,
+            nonBillableCargo,
+            hasBillableCargo,
+            hasNonBillableCargo,
+        };
+    }
+
+    if (!hasBillableCargo && hasHoldCargo && !hasReturnCargo) {
+        return {
+            key: 'HOLD_ONLY',
+            label: 'Hold / Inap',
+            color: 'warning',
+            billableCargo,
+            nonBillableCargo,
+            hasBillableCargo,
+            hasNonBillableCargo,
+        };
+    }
+
+    if (!hasBillableCargo && hasReturnCargo && !hasHoldCargo) {
+        return {
+            key: 'RETURN_ONLY',
+            label: 'Retur',
+            color: 'danger',
+            billableCargo,
+            nonBillableCargo,
+            hasBillableCargo,
+            hasNonBillableCargo,
+        };
+    }
+
+    if (!hasBillableCargo && hasNonBillableCargo) {
+        return {
+            key: 'NON_DELIVERY_MIXED',
+            label: 'Hold / Retur',
+            color: 'warning',
+            billableCargo,
+            nonBillableCargo,
+            hasBillableCargo,
+            hasNonBillableCargo,
+        };
+    }
+
+    return {
+        key: 'UNKNOWN',
+        label: 'Realisasi Campuran',
+        color: 'primary',
+        billableCargo,
+        nonBillableCargo,
+        hasBillableCargo,
+        hasNonBillableCargo,
+    };
+}

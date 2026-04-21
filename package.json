@@ -11,6 +11,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
+    "audit:delivery-order-billing-eligibility": "npx tsx scripts/audit-delivery-order-billing-eligibility.ts",
     "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
     "audit:freight-nota-revision-flow": "npx tsx scripts/audit-freight-nota-revision-flow.ts",

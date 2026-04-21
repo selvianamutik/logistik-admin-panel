@@ -8,6 +8,11 @@ import {
     resolveFreightNotaBillingModeInput,
 } from '@/lib/freight-nota-billing';
 import {
+    getDeliveryOrderActualDropDestinations,
+    getDeliveryOrderBillableCargoSummary,
+    hasDeliveryOrderBillableCargo,
+} from '@/lib/delivery-order-completion';
+import {
     createDocument,
     deleteDocument,
     getAllDocuments,
@@ -1998,27 +2003,6 @@ export async function handleFreightNotaCreate(
         doItemMap.set(deliveryOrderRef, current);
     }
 
-    const getActualDropDestinationForShipperReference = (
-        deliveryOrder: {
-            actualDropPoints?: Array<{
-                stopType?: string;
-                shipperReferenceNumber?: string;
-                locationName?: string;
-                locationAddress?: string;
-            }>;
-        },
-        shipperReferenceNumber?: string
-    ) => {
-        const normalizedShipperReferenceNumber = normalizeOptionalText(shipperReferenceNumber);
-        if (!normalizedShipperReferenceNumber) return undefined;
-        const destinations = (deliveryOrder.actualDropPoints || [])
-            .filter(point => ['DROP', 'EXTRA_DROP'].includes(normalizeOptionalText(point.stopType) || ''))
-            .filter(point => normalizeOptionalText(point.shipperReferenceNumber) === normalizedShipperReferenceNumber)
-            .map(point => normalizeOptionalText(point.locationAddress) || normalizeOptionalText(point.locationName))
-            .filter((value): value is string => Boolean(value));
-        return destinations.length > 0 ? [...new Set(destinations)].join(', ') : undefined;
-    };
-
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
@@ -2053,12 +2037,28 @@ export async function handleFreightNotaCreate(
         const itemSummary = itemSource
             ? summarizeDeliveryOrderItems([itemSource])
             : summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
+        const resolvedNoSj =
+            normalizeOptionalText(row.noSJ) ||
+            normalizeOptionalText(deliveryOrder.customerDoNumber) ||
+            '';
+        const hasActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
+        const billableCargoSummary = getDeliveryOrderBillableCargoSummary(deliveryOrder, resolvedNoSj);
+        const billableDestinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
+            shipperReferenceNumber: resolvedNoSj,
+            billableOnly: true,
+        }).join(', ');
+
+        if (hasActualDropPoints && !hasDeliveryOrderBillableCargo(deliveryOrder, resolvedNoSj)) {
+            return NextResponse.json(
+                {
+                    error: `SJ ${resolvedNoSj || deliveryOrder.doNumber || row.doRef} belum punya realisasi drop yang bisa ditagihkan`,
+                },
+                { status: 409 }
+            );
+        }
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
-        row.noSJ =
-            normalizeOptionalText(deliveryOrder.customerDoNumber) ||
-            row.noSJ ||
-            '';
+        row.noSJ = resolvedNoSj;
         const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
             normalizeOptionalText(reference.referenceNumber) === row.noSJ
         );
@@ -2071,21 +2071,21 @@ export async function handleFreightNotaCreate(
             '';
         row.tujuan =
             normalizeOptionalText(matchedShipperReference?.receiverAddress) ||
-            getActualDropDestinationForShipperReference(deliveryOrder, row.noSJ) ||
+            billableDestinationSummary ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||
             '';
         row.barang = itemSummary.barang || row.barang || undefined;
-        if (itemSummary.collie > 0) {
-            row.collie = itemSummary.collie;
+        if (hasActualDropPoints ? billableCargoSummary.qtyKoli > 0 : itemSummary.collie > 0) {
+            row.collie = hasActualDropPoints ? billableCargoSummary.qtyKoli : itemSummary.collie;
         } else if (!row.collie || row.collie <= 0) {
             row.collie = undefined;
         }
-        if (itemSummary.beratKg > 0) {
-            row.beratKg = itemSummary.beratKg;
+        if (hasActualDropPoints ? billableCargoSummary.weightKg > 0 : itemSummary.beratKg > 0) {
+            row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
         } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
-            row.beratKg = itemSummary.beratKg;
+            row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
         }
         row.uangRp = normalizeFreightNotaAmount(
             calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })

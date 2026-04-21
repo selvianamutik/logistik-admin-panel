@@ -38,6 +38,7 @@ import {
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
+import { deriveDeliveryOrderCompletionOutcome } from '@/lib/delivery-order-completion';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import {
     DO_ACTUAL_DROP_TYPE_MAP,
@@ -1612,6 +1613,9 @@ export default function DODetailPage() {
         actualDropPoints,
         showAdvancedDropEditor,
     });
+    const completionOutcome = doData.status === 'DELIVERED'
+        ? deriveDeliveryOrderCompletionOutcome(doData)
+        : null;
 
     return (
         <div>
@@ -1624,6 +1628,11 @@ export default function DODetailPage() {
                             <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
                                 <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
                             </span>
+                            {completionOutcome && completionOutcome.key !== 'FULLY_DELIVERED' && (
+                                <span className={`badge badge-${completionOutcome.color}`}>
+                                    <span className="badge-dot" /> {completionOutcome.label}
+                                </span>
+                            )}
                         </h1>
                     </div>
                 </div>

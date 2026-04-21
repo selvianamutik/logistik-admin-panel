@@ -1315,6 +1315,7 @@ export async function handleDeliveryOrderStatusUpdate(
             actualVolumeInputValue?: number;
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
+        pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -1482,6 +1483,7 @@ export async function handleDeliveryOrderStatusUpdate(
         pendingDriverStatusRequestedByName: undefined,
         pendingDriverStatusNote: undefined,
         pendingDriverActualCargoItems: undefined,
+        pendingDriverActualDropPoints: undefined,
         ...(status === 'DELIVERED'
             ? {
                 podReceiverName,
@@ -1769,6 +1771,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     pendingDriverStatusRequestedByName: undefined,
                     pendingDriverStatusNote: undefined,
                     pendingDriverActualCargoItems: undefined,
+                    pendingDriverActualDropPoints: undefined,
                     cargoFinalizedAt: timestamp,
                     cargoFinalizedBy: session._id,
                     cargoFinalizedByName: session.name,
@@ -1783,6 +1786,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     pendingDriverStatusRequestedByName: undefined,
                     pendingDriverStatusNote: undefined,
                     pendingDriverActualCargoItems: undefined,
+                    pendingDriverActualDropPoints: undefined,
                 }
                 : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
@@ -1817,6 +1821,16 @@ export async function handleDeliveryOrderDriverStatusRequest(
         pendingDriverStatusRequestedBy?: string;
         pendingDriverStatusRequestedByName?: string;
         pendingDriverStatusNote?: string;
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
         pendingDriverActualCargoItems?: Array<{
             deliveryOrderItemRef?: string;
             actualQtyKoli?: number;
@@ -1825,6 +1839,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputValue?: number;
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
+        pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -1900,6 +1915,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
         actualVolumeInputValue?: number;
         actualVolumeInputUnit?: VolumeInputUnit;
     }> = [];
+    let pendingDriverActualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
     try {
         const actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
         pendingDriverActualCargoItems = Array.from(actualCargoByDoItemId.values()).map(item => ({
@@ -1910,6 +1926,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputValue: item.actualVolumeInputValue,
             actualVolumeInputUnit: item.actualVolumeInputUnit,
         }));
+        pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Muatan aktual draft driver tidak valid' },
@@ -1926,6 +1943,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             pendingDriverStatusRequestedByName: session.name,
             pendingDriverStatusNote: note,
             pendingDriverActualCargoItems,
+            pendingDriverActualDropPoints,
         });
         await createDocument({
             _id: crypto.randomUUID(),
@@ -1965,6 +1983,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             pendingDriverStatusRequestedByName: session.name,
             pendingDriverStatusNote: note,
             pendingDriverActualCargoItems,
+            pendingDriverActualDropPoints,
         },
     });
 }
@@ -2000,6 +2019,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             actualVolumeInputValue?: number;
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
+        pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -2020,6 +2040,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             pendingDriverStatusRequestedByName: undefined,
             pendingDriverStatusNote: undefined,
             pendingDriverActualCargoItems: undefined,
+            pendingDriverActualDropPoints: undefined,
         });
         await createDocument({
             _id: crypto.randomUUID(),
@@ -2059,6 +2080,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             pendingDriverStatusRequestedByName: undefined,
             pendingDriverStatusNote: undefined,
             pendingDriverActualCargoItems: undefined,
+            pendingDriverActualDropPoints: undefined,
         },
     });
 }
