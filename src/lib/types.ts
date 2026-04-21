@@ -708,6 +708,10 @@ export interface DeliveryOrder {
   tripRouteRateRef?: string;
   tripOriginArea?: string;
   tripDestinationArea?: string;
+  orderTripPlanKey?: string;
+  plannedTripIssueBankRef?: string;
+  plannedTripIssueBankName?: string;
+  plannedTripCashGiven?: number;
   baseTaripBorongan?: number;
   taripBorongan?: number;       // Tarif upah supir per DO/perjalanan
   keteranganBorongan?: string;  // Keterangan upah borongan

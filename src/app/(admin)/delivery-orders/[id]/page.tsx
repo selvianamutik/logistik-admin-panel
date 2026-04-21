@@ -1890,7 +1890,17 @@ export default function DODetailPage() {
                                     </div>
                                     <div className="detail-item">
                                         <div className="detail-label">Net Settlement Akhir</div>
-                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.balance)}</div>
+                                        <div
+                                            className="detail-value"
+                                            style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}
+                                        >
+                                            {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            {linkedVoucherSummary.balance >= 0
+                                                ? 'Kembali ke perusahaan setelah biaya dan upah diperhitungkan'
+                                                : 'Tambahan bayar ke supir setelah biaya dan upah diperhitungkan'}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="text-muted text-sm">

@@ -16,6 +16,12 @@ export default function NewDriverVoucherPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { addToast } = useToast();
+    const returnToParam = searchParams.get('returnTo') || '';
+    const safeReturnTo =
+        returnToParam && returnToParam.startsWith('/') && !returnToParam.startsWith('//')
+            ? returnToParam
+            : '';
+    const fallbackHref = safeReturnTo || '/driver-vouchers';
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -50,22 +56,36 @@ export default function NewDriverVoucherPage() {
                     return (payload.data?.doRefs || []) as string[];
                 }),
         ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganDoRefs]) => {
+            const activeAccounts = (accountRows || []).filter((account) => account.active !== false);
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
-            setBankAccounts((accountRows || []).filter((account) => account.active !== false));
+            setBankAccounts(activeAccounts);
             setUsedVoucherDoRefs(
                 (voucherRows || [])
                     .map(voucher => voucher.deliveryOrderRef)
                     .filter((value): value is string => Boolean(value))
             );
             setUsedBoronganDoRefs(boronganDoRefs || []);
+            if (prefilledDeliveryOrderRef) {
+                const matchedDo = (deliveryOrders || []).find(deliveryOrder => deliveryOrder._id === prefilledDeliveryOrderRef);
+                const plannedCashGiven = parseFormattedNumberish(matchedDo?.plannedTripCashGiven ?? 0, { allowDecimal: false, maxFractionDigits: 0 });
+                const plannedIssueBankRef = matchedDo?.plannedTripIssueBankRef || '';
+                const hasPlannedIssueBank = plannedIssueBankRef
+                    ? activeAccounts.some(account => account._id === plannedIssueBankRef)
+                    : false;
+                setForm(previous => ({
+                    ...previous,
+                    cashGiven: plannedCashGiven > 0 ? plannedCashGiven : previous.cashGiven,
+                    issueBankRef: hasPlannedIssueBank ? plannedIssueBankRef : previous.issueBankRef,
+                }));
+            }
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form uang jalan trip');
         }).finally(() => {
             setLoading(false);
         });
-    }, [addToast]);
+    }, [addToast, prefilledDeliveryOrderRef]);
 
     const eligibleDos = dos
         .filter(deliveryOrder =>
@@ -134,6 +154,7 @@ export default function NewDriverVoucherPage() {
         selectedDo ? formatShipperReceiverSummary(selectedDo, { fallback: selectedDo.receiverAddress || selectedOrder?.receiverAddress || '' }) : '',
     ].filter(Boolean).join(' -> ') || '';
     const effectiveTripFee = parseFormattedNumberish(selectedDo?.taripBorongan || 0);
+    const plannedTripCashGiven = parseFormattedNumberish(selectedDo?.plannedTripCashGiven ?? 0, { allowDecimal: false, maxFractionDigits: 0 });
 
     const handleSave = async () => {
         if (!form.deliveryOrderRef) {
@@ -181,7 +202,8 @@ export default function NewDriverVoucherPage() {
             }
 
             addToast('success', `Bon ${result.data?.bonNumber || ''} berhasil dibuat`);
-            router.push(`/driver-vouchers/${result.data._id}`);
+            const detailHref = `/driver-vouchers/${result.data._id}${safeReturnTo ? `?returnTo=${encodeURIComponent(safeReturnTo)}` : ''}`;
+            router.push(detailHref);
         } catch {
             addToast('error', 'Gagal membuat uang jalan trip');
             setSaving(false);
@@ -213,9 +235,17 @@ export default function NewDriverVoucherPage() {
                                 value={selectedDeliveryOrderRef}
                                 onChange={e => {
                                     const deliveryOrderRef = e.target.value;
+                                    const nextDo = eligibleDos.find(deliveryOrder => deliveryOrder._id === deliveryOrderRef) || null;
+                                    const nextPlannedCashGiven = parseFormattedNumberish(nextDo?.plannedTripCashGiven ?? 0, { allowDecimal: false, maxFractionDigits: 0 });
+                                    const nextPlannedIssueBankRef = nextDo?.plannedTripIssueBankRef || '';
+                                    const hasNextPlannedIssueBank = nextPlannedIssueBankRef
+                                        ? bankAccounts.some(account => account._id === nextPlannedIssueBankRef)
+                                        : false;
                                     setForm(previous => ({
                                         ...previous,
                                         deliveryOrderRef,
+                                        cashGiven: nextPlannedCashGiven > 0 ? nextPlannedCashGiven : 0,
+                                        issueBankRef: hasNextPlannedIssueBank ? nextPlannedIssueBankRef : '',
                                     }));
                                 }}
                             >
@@ -266,6 +296,10 @@ export default function NewDriverVoucherPage() {
                                         <div className="detail-label">Upah Trip</div>
                                         <div className="detail-value">{effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi di DO'}</div>
                                     </div>
+                                    <div>
+                                        <div className="detail-label">Uang Jalan Awal Rencana</div>
+                                        <div className="detail-value">{plannedTripCashGiven > 0 ? formatCurrency(plannedTripCashGiven) : 'Belum diisi di DO'}</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -300,7 +334,7 @@ export default function NewDriverVoucherPage() {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
-                        <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => router.push(fallbackHref)}>Batal</button>
                         <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Buat Uang Jalan Trip'}</button>
                     </div>
                 </div>
