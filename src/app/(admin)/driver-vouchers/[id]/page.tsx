@@ -340,7 +340,7 @@ export default function DriverVoucherDetailPage() {
     const handleSettle = async () => {
         if (!canSettleVoucher || !voucher) return;
         if (items.length === 0 && driverFeeAmount <= 0) {
-            addToast('error', 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip');
+            addToast('error', 'Isi biaya lain-lain atau upah borongan sebelum penyelesaian trip');
             return;
         }
         if (balance !== 0 && !settlementBankRef) {
@@ -467,28 +467,28 @@ export default function DriverVoucherDetailPage() {
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Biaya Perjalanan</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Biaya Lain-lain</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(operationalSpent)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Sisa Bon Operasional</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: operationalBalance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(operationalBalance))}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        {operationalBalance >= 0 ? 'Sisa dana operasional yang masih dipegang driver' : 'Biaya perjalanan melebihi uang jalan operasional'}
+                        {operationalBalance >= 0 ? 'Sisa dana operasional yang masih dipegang driver' : 'Biaya lain-lain melebihi uang jalan operasional'}
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Trip Snapshot DO</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Borongan</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Nilai ini mengikuti snapshot DO dan master biaya rute trip
+                        Nilai ini mengikuti upah borongan pada DO dan master biaya rute trip
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Net Settlement Akhir</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        {balance >= 0 ? 'Kembali ke perusahaan setelah biaya dan upah diperhitungkan' : 'Tambahan bayar ke supir setelah biaya dan upah diperhitungkan'}
+                        {balance >= 0 ? 'Kembali ke perusahaan setelah biaya lain-lain dan upah borongan diperhitungkan' : 'Tambahan bayar ke supir setelah biaya lain-lain dan upah borongan diperhitungkan'}
                     </div>
                 </div></div>
             </div>
@@ -503,7 +503,7 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BON PERTAMA</div><div>{formatCurrency(initialCashGiven)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA BON OPERASIONAL</div><div>{formatCurrency(operationalBalance)}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH TRIP SNAPSHOT DO</div><div>{formatCurrency(driverFeeAmount)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN</div><div>{formatCurrency(driverFeeAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NET SETTLEMENT AKHIR</div><div>{formatCurrency(balance)}</div></div>
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
@@ -591,8 +591,8 @@ export default function DriverVoucherDetailPage() {
 
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 className="card-title">Catat Biaya Perjalanan ({items.length})</h3>
-                    {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya</button>}
+                    <h3 className="card-title">Catat Biaya Lain-lain ({items.length})</h3>
+                    {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya Lain-lain</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper">
@@ -600,7 +600,7 @@ export default function DriverVoucherDetailPage() {
                             <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && canManageVoucherItems && <th>Aksi</th>}</tr></thead>
                             <tbody>
                                 {items.length === 0 ? (
-                                    <tr><td colSpan={isSettled || !canManageVoucherItems ? 5 : 6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada biaya perjalanan aktual</td></tr>
+                                    <tr><td colSpan={isSettled || !canManageVoucherItems ? 5 : 6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada biaya lain-lain aktual</td></tr>
                                 ) : (
                                     items.map((item, index) => (
                                         <tr key={item._id}>
@@ -613,7 +613,7 @@ export default function DriverVoucherDetailPage() {
                                         </tr>
                                     ))
                                 )}
-                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA PERJALANAN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && canManageVoucherItems && <td />}</tr>}
+                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA LAIN-LAIN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && canManageVoucherItems && <td />}</tr>}
                             </tbody>
                         </table>
                     </div>
@@ -623,7 +623,7 @@ export default function DriverVoucherDetailPage() {
             {showAddItem && canManageVoucherItems && (
                 <div className="modal-overlay" onClick={() => { if (!savingItem) setShowAddItem(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Biaya Perjalanan</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Biaya Lain-lain</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Tanggal Biaya</label>
@@ -736,9 +736,9 @@ export default function DriverVoucherDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Pertama</span><strong>{formatCurrency(initialCashGiven)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Tambahan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Perjalanan</span><strong>{formatCurrency(operationalSpent)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>{formatCurrency(operationalSpent)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Trip</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Hak Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Net Settlement Akhir</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
                             </div>

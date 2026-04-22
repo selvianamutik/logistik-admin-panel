@@ -172,7 +172,7 @@ export default function NewDriverVoucherPage() {
             return;
         }
         if (effectiveTripFee <= 0) {
-            addToast('error', 'Isi upah trip terlebih dahulu');
+            addToast('error', 'Isi upah borongan terlebih dahulu');
             return;
         }
 
@@ -288,7 +288,7 @@ export default function NewDriverVoucherPage() {
                                         <div className="detail-value">{selectedRoute || '-'}</div>
                                     </div>
                                     <div>
-                                        <div className="detail-label">Upah Trip</div>
+                                        <div className="detail-label">Upah Borongan</div>
                                         <div className="detail-value">{effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi di DO'}</div>
                                     </div>
                                     <div>
@@ -313,14 +313,14 @@ export default function NewDriverVoucherPage() {
                         </div>
                     </div>
                     <div className="form-group">
-                        <label className="form-label">Upah Trip Snapshot DO <span className="required">*</span></label>
+                        <label className="form-label">Upah Borongan <span className="required">*</span></label>
                         <input
                             className="form-input"
                             value={effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi di DO'}
                             readOnly
                         />
                         <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>
-                            Upah trip mengikuti DO dan master biaya rute trip. Untuk mengubah nominal ini, edit DO sebelum uang jalan trip diterbitkan.
+                            Upah borongan mengikuti DO dan master biaya rute trip. Untuk mengubah nominal ini, edit DO sebelum uang jalan trip diterbitkan.
                         </div>
                     </div>
                     <div className="form-group">

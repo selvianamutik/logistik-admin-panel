@@ -828,7 +828,7 @@ export async function handleDriverVoucherCreate(
 
     const requestedDriverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? 0);
     if (!Number.isFinite(requestedDriverFeeAmount) || requestedDriverFeeAmount < 0) {
-        return NextResponse.json({ error: 'Upah trip pada bon tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Upah borongan pada bon tidak valid' }, { status: 400 });
     }
 
     const deliveryOrder = await getDocumentById<{
@@ -948,14 +948,14 @@ export async function handleDriverVoucherCreate(
     const deliveryOrderTripFee = normalizeNumber(deliveryOrder.taripBorongan || 0);
     if (requestedDriverFeeAmount > 0 && Math.abs(requestedDriverFeeAmount - deliveryOrderTripFee) > 0.01) {
         return NextResponse.json(
-            { error: 'Upah trip mengikuti snapshot DO. Ubah DO terlebih dahulu sebelum menerbitkan uang jalan trip.' },
+            { error: 'Upah borongan mengikuti snapshot DO. Ubah DO terlebih dahulu sebelum menerbitkan uang jalan trip.' },
             { status: 409 }
         );
     }
     const effectiveDriverFeeAmount = deliveryOrderTripFee;
     if (!Number.isFinite(effectiveDriverFeeAmount) || effectiveDriverFeeAmount <= 0) {
         return NextResponse.json(
-            { error: `Isi upah trip di DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan uang jalan trip.` },
+            { error: `Isi upah borongan di DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan uang jalan trip.` },
             { status: 409 }
         );
     }
@@ -1226,8 +1226,8 @@ export async function handleDriverVoucherItemCreate(
             : getBusinessDateValue();
     const expenseDateError = validateIsoDateOrResponse(
         expenseDate,
-        'Tanggal biaya perjalanan',
-        'Tanggal biaya perjalanan tidak valid'
+        'Tanggal biaya lain-lain',
+        'Tanggal biaya lain-lain tidak valid'
     );
     if (expenseDateError) {
         return expenseDateError;
@@ -1472,7 +1472,7 @@ export async function handleDriverVoucherSettlement(
     }
     const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 });
     if (state.items.length === 0 && driverFeeAmount <= 0) {
-        return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip' }, { status: 400 });
+        return NextResponse.json({ error: 'Isi biaya lain-lain atau upah borongan sebelum penyelesaian trip' }, { status: 400 });
     }
 
     if (state.voucher.deliveryOrderRef) {

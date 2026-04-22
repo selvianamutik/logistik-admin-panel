@@ -166,8 +166,8 @@ export default function DriverVouchersPage() {
                                                     <th class="r">Bon Pertama</th>
                                                     <th class="r">Bon Tambahan</th>
                                                     <th class="r">Total Diberikan</th>
-                                                    <th class="r">Biaya</th>
-                                                    <th class="r">Upah Trip</th>
+                                                    <th class="r">Biaya Lain-lain</th>
+                                                    <th class="r">Upah Borongan</th>
                                                     <th class="r">Total Hak Trip</th>
                                                     <th class="r">Sisa Bon Operasional</th>
                                                     <th class="r">Net Settlement Akhir</th>
@@ -280,8 +280,8 @@ export default function DriverVouchersPage() {
                                 <th>Bon Pertama</th>
                                 <th>Bon Tambahan</th>
                                 <th>Total Diberikan</th>
-                                <th>Biaya</th>
-                                <th>Upah Trip</th>
+                                <th>Biaya Lain-lain</th>
+                                <th>Upah Borongan</th>
                                 <th>Total Hak Trip</th>
                                 <th>Sisa Bon Operasional</th>
                                 <th>Net Settlement Akhir</th>
@@ -305,7 +305,7 @@ export default function DriverVouchersPage() {
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
-                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir</div>
+                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan settlement akhir</div>
                                         </div>
                                     </td>
                                 </tr>
@@ -390,7 +390,7 @@ export default function DriverVouchersPage() {
                         {totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada uang jalan trip</div>
-                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
+                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan settlement akhir.</div>
                             </div>
                         ) : items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
@@ -440,11 +440,11 @@ export default function DriverVouchersPage() {
                                             <span className="mobile-record-value">{formatCurrency(totalIssuedAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Biaya</span>
+                                            <span className="mobile-record-label">Biaya Lain-lain</span>
                                             <span className="mobile-record-value">{formatCurrency(totalSpent)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Upah Trip</span>
+                                            <span className="mobile-record-label">Upah Borongan</span>
                                             <span className="mobile-record-value">{formatCurrency(driverFeeAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
