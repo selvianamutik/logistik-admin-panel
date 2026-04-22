@@ -495,6 +495,11 @@ export default function NotaDetailPage() {
         billingMode,
         includeCanonical: false,
     });
+    const uniqueShipperReferenceCount = new Set(
+        items
+            .map(item => item.noSJ?.trim())
+            .filter((value): value is string => Boolean(value))
+    ).size;
 
     return (
         <div>
@@ -698,6 +703,22 @@ export default function NotaDetailPage() {
 
                 <div className="detail-full">
                     <CollapsibleCard title="Rincian Perjalanan">
+                        <div
+                            style={{
+                                margin: '0 0 1rem',
+                                padding: '0.85rem 1rem',
+                                borderRadius: '0.75rem',
+                                border: '1px solid var(--color-gray-200)',
+                                background: 'var(--color-gray-50)',
+                            }}
+                        >
+                            <div className="font-medium" style={{ marginBottom: '0.2rem' }}>
+                                {items.length} baris invoice dari {uniqueShipperReferenceCount || 0} SJ pengirim
+                            </div>
+                            <div className="text-muted text-sm">
+                                Nota hanya memuat baris drop yang billable. Barang dengan hasil hold, transit, atau retur tidak ikut ditagihkan di sini.
+                            </div>
+                        </div>
                         <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                             <table style={{ minWidth: 800 }}>
                                 <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>{getFreightNotaWeightColumnLabel(billingMode)}</th><th>{getFreightNotaRateColumnLabel(billingMode)}</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>

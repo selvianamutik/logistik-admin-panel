@@ -37,7 +37,16 @@ import {
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
-import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
+import {
+    deriveDeliveryOrderCompletionOutcome,
+    getDeliveryOrderBillableCargoSummary,
+    getDeliveryOrderDisplayStatusMeta,
+    getDeliveryOrderHoldCargoSummary,
+    getDeliveryOrderReturnCargoSummary,
+    isDeliveryOrderBillableDropType,
+    isDeliveryOrderHoldDropType,
+    isDeliveryOrderReturnDropType,
+} from '@/lib/delivery-order-completion';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import {
     DO_ACTUAL_DROP_TYPE_MAP,
@@ -312,6 +321,7 @@ export default function DODetailPage() {
     const [targetReceiverCompany, setTargetReceiverCompany] = useState('');
     const [selectedTargetRecipientId, setSelectedTargetRecipientId] = useState('');
     const editingTaripRef = useRef(false);
+    const loadedReferenceCustomerRef = useRef<string>('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
@@ -462,6 +472,98 @@ export default function DODetailPage() {
         showStatusModal,
     ]);
 
+    const mergeResolvedDeliveryOrder = useCallback((patch: Partial<DeliveryOrder> | DeliveryOrder | null | undefined) => {
+        if (!patch) {
+            return;
+        }
+
+        setDoData(previous => {
+            const nextValue = {
+                ...((previous || {}) as DeliveryOrder),
+                ...patch,
+            } as DeliveryOrder;
+            return buildResolvedDeliveryOrder(nextValue, null);
+        });
+    }, []);
+
+    const hydrateDeliveryOrderItemsState = useCallback(async (deliveryOrderItems: DeliveryOrderItem[]) => {
+        const linkedOrderItemRefs = Array.from(
+            new Set(
+                deliveryOrderItems
+                    .map(item => item.orderItemRef)
+                    .filter((value): value is string => Boolean(value))
+            )
+        );
+        const linkedOrderItems = linkedOrderItemRefs.length > 0
+            ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef'>>(
+                `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
+                'Gagal memuat detail surat jalan'
+            )
+            : [];
+        const linkedOrderItemMap = new Map(
+            (linkedOrderItems || []).map(item => [item._id, item])
+        );
+        const nextEditableCargoItemMap = deliveryOrderItems.reduce<Record<string, boolean>>((acc, item) => {
+            const linkedOrderItem = linkedOrderItemMap.get(item.orderItemRef);
+            acc[item._id] = Boolean(
+                linkedOrderItem?.entrySource === 'DELIVERY_ORDER' &&
+                linkedOrderItem.sourceDeliveryOrderRef === doId
+            );
+            return acc;
+        }, {});
+
+        setDoItems(deliveryOrderItems);
+        setEditableCargoItemMap(nextEditableCargoItemMap);
+    }, [doId]);
+
+    const refreshDeliveryOrderItems = useCallback(async (fallbackMessage: string = 'Gagal memuat barang surat jalan') => {
+        try {
+            const itemRows = await fetchAllAdminCollectionData<DeliveryOrderItem>(
+                `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`,
+                fallbackMessage
+            );
+            await hydrateDeliveryOrderItemsState(itemRows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : fallbackMessage);
+        }
+    }, [addToast, doId, hydrateDeliveryOrderItemsState]);
+
+    const loadDOReferences = useCallback(async (deliveryOrder: DeliveryOrder | null) => {
+        const [customerData, tripRateRows, customerRows, productRows, recipientRows] = await Promise.all([
+            deliveryOrder?.customerRef && canViewCustomerDetails
+                ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${deliveryOrder.customerRef}`, 'Gagal memuat detail surat jalan')
+                : Promise.resolve(null),
+            canManageTripFee
+                ? fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail surat jalan')
+                : Promise.resolve([] as TripRouteRate[]),
+            canEditShipperReference
+                ? fetchAdminCollectionData<Array<Pick<Customer, '_id' | 'name' | 'active'>>>(
+                    '/api/data?entity=customers&sortField=name&sortDir=asc',
+                    'Gagal memuat daftar customer'
+                )
+                : Promise.resolve([] as Array<Pick<Customer, '_id' | 'name' | 'active'>>),
+            deliveryOrder?.customerRef && canEditDeliveryCargo
+                ? fetchAdminCollectionData<CustomerProduct[]>(
+                    `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: deliveryOrder.customerRef, active: true }))}&sortField=name&sortDir=asc`,
+                    'Gagal memuat master barang customer'
+                )
+                : Promise.resolve([] as CustomerProduct[]),
+            (canEditDeliveryTarget || canEditShipperReference)
+                ? fetchAdminCollectionData<CustomerRecipient[]>(
+                    `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ active: true }))}&sortField=label&sortDir=asc`,
+                    'Gagal memuat master tujuan customer'
+                )
+                : Promise.resolve([] as CustomerRecipient[]),
+        ]);
+
+        setBillingCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === deliveryOrder?.customerRef));
+        setCustomerProducts((productRows || []).filter(product => product.active !== false));
+        setCustomerRecipients((recipientRows || []).filter(recipient => recipient.active !== false));
+        setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
+        setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
+        loadedReferenceCustomerRef.current = deliveryOrder?.customerRef || '';
+    }, [canEditDeliveryCargo, canEditDeliveryTarget, canEditShipperReference, canManageTripFee, canViewCustomerDetails]);
+
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
             setLoading(true);
@@ -469,18 +571,12 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows, productRows, recipientRows] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, linkedVoucherRows, tripCashLink] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
                     ? fetchAdminData<Order | null>(`/api/data?entity=orders&id=${deliveryOrder.orderRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),
-                deliveryOrder?.customerRef && canViewCustomerDetails
-                    ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${deliveryOrder.customerRef}`, 'Gagal memuat detail surat jalan')
-                    : Promise.resolve(null),
-                canManageTripFee
-                    ? fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail surat jalan')
-                    : Promise.resolve([] as TripRouteRate[]),
                 (canViewTripCash || canCreateTripCash || canManageTripFee)
                     ? fetchAdminCollectionData<DriverVoucher[]>(`/api/data?entity=driver-vouchers&pageSize=1&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve([] as DriverVoucher[]),
@@ -488,57 +584,12 @@ export default function DODetailPage() {
                     `/api/data?entity=delivery-order-trip-cash-link&deliveryOrderRef=${encodeURIComponent(doId)}`,
                     'Gagal memuat detail surat jalan'
                 ),
-                fetchAdminCollectionData<Array<Pick<Customer, '_id' | 'name' | 'active'>>>(
-                    '/api/data?entity=customers&sortField=name&sortDir=asc',
-                    'Gagal memuat daftar customer'
-                ),
-                deliveryOrder?.customerRef
-                    ? fetchAdminCollectionData<CustomerProduct[]>(
-                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: deliveryOrder.customerRef, active: true }))}&sortField=name&sortDir=asc`,
-                        'Gagal memuat master barang customer'
-                    )
-                    : Promise.resolve([] as CustomerProduct[]),
-                (canEditDeliveryTarget || canEditShipperReference)
-                    ? fetchAdminCollectionData<CustomerRecipient[]>(
-                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ active: true }))}&sortField=label&sortDir=asc`,
-                        'Gagal memuat master tujuan customer'
-                    )
-                    : Promise.resolve([] as CustomerRecipient[]),
             ]);
             const deliveryOrderItems = itemRows || [];
-            const linkedOrderItemRefs = Array.from(
-                new Set(
-                    deliveryOrderItems
-                        .map(item => item.orderItemRef)
-                        .filter((value): value is string => Boolean(value))
-                )
-            );
-            const linkedOrderItems = linkedOrderItemRefs.length > 0
-                ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef'>>(
-                    `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
-                    'Gagal memuat detail surat jalan'
-                )
-                : [];
-            const linkedOrderItemMap = new Map(
-                (linkedOrderItems || []).map(item => [item._id, item])
-            );
-            const nextEditableCargoItemMap = deliveryOrderItems.reduce<Record<string, boolean>>((acc, item) => {
-                const linkedOrderItem = linkedOrderItemMap.get(item.orderItemRef);
-                acc[item._id] = Boolean(
-                    linkedOrderItem?.entrySource === 'DELIVERY_ORDER' &&
-                    linkedOrderItem.sourceDeliveryOrderRef === doId
-                );
-                return acc;
-            }, {});
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
             setDoData(resolvedDeliveryOrder);
-            setBillingCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === resolvedDeliveryOrder?.customerRef));
-            setCustomerProducts((productRows || []).filter(product => product.active !== false));
-            setCustomerRecipients((recipientRows || []).filter(recipient => recipient.active !== false));
-            setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
-            setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
             setLinkedVoucher(linkedVoucherRows?.[0] || null);
             setLinkedTripCashLink(tripCashLink || null);
             setLinkedVoucherBonNumber(linkedVoucherRows?.[0]?.bonNumber || tripCashLink?.bonNumber || '');
@@ -549,9 +600,15 @@ export default function DODetailPage() {
                 setTripOriginArea(resolvedDeliveryOrder?.tripOriginArea || '');
                 setTripDestinationArea(resolvedDeliveryOrder?.tripDestinationArea || '');
             }
-            setDoItems(deliveryOrderItems);
-            setEditableCargoItemMap(nextEditableCargoItemMap);
+            await hydrateDeliveryOrderItemsState(deliveryOrderItems);
             setTrackingLogs(sortTrackingLogs(logRows || []));
+
+            const shouldReloadReferences =
+                mode === 'initial' ||
+                loadedReferenceCustomerRef.current !== (deliveryOrder?.customerRef || '');
+            if (shouldReloadReferences) {
+                await loadDOReferences(deliveryOrder);
+            }
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
         } finally {
@@ -559,28 +616,51 @@ export default function DODetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, canCreateTripCash, canEditDeliveryTarget, canEditShipperReference, canManageTripFee, canViewCustomerDetails, canViewTripCash, doId]);
+    }, [addToast, canCreateTripCash, canManageTripFee, canViewTripCash, doId, hydrateDeliveryOrderItemsState, loadDOReferences]);
 
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
         try {
-            const [driverRows, vehicleRows, deliveryOrders] = await Promise.all([
-                fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat opsi armada trip'),
-                fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat opsi armada trip'),
-                fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat opsi armada trip'),
+            const [driverRows, vehicleRows, deliveryOrders, currentDriver, currentVehicle] = await Promise.all([
+                fetchAdminCollectionData<Driver[]>(
+                    `/api/data?entity=drivers&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`,
+                    'Gagal memuat opsi armada trip'
+                ),
+                fetchAdminCollectionData<Vehicle[]>(
+                    `/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`,
+                    'Gagal memuat opsi armada trip'
+                ),
+                fetchAdminCollectionData<DeliveryOrder[]>(
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
+                    'Gagal memuat opsi armada trip'
+                ),
+                doData?.driverRef
+                    ? fetchAdminData<Driver | null>(`/api/data?entity=drivers&id=${doData.driverRef}`, 'Gagal memuat opsi armada trip')
+                    : Promise.resolve(null),
+                doData?.vehicleRef
+                    ? fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${doData.vehicleRef}`, 'Gagal memuat opsi armada trip')
+                    : Promise.resolve(null),
             ]);
 
-            setDrivers(driverRows || []);
-            setVehicles(vehicleRows || []);
-            setActiveDeliveryOrders(
-                (deliveryOrders || []).filter(item => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(item.status))
-            );
+            const nextDrivers = [...(driverRows || [])];
+            if (currentDriver && !nextDrivers.some(driver => driver._id === currentDriver._id)) {
+                nextDrivers.push(currentDriver);
+            }
+
+            const nextVehicles = [...(vehicleRows || [])];
+            if (currentVehicle && !nextVehicles.some(vehicle => vehicle._id === currentVehicle._id)) {
+                nextVehicles.push(currentVehicle);
+            }
+
+            setDrivers(nextDrivers);
+            setVehicles(nextVehicles);
+            setActiveDeliveryOrders(deliveryOrders || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat opsi armada trip');
         } finally {
             setLoadingTripResources(false);
         }
-    }, [addToast]);
+    }, [addToast, doData?.driverRef, doData?.vehicleRef]);
 
     const openTripResourcesModal = async () => {
         if (!canAssignTripResources) return;
@@ -945,6 +1025,7 @@ export default function DODetailPage() {
 
     const rejectDriverStatusRequest = async () => {
         if (!canReviewDriverRequest) return;
+        const rejectedStatus = doData?.pendingDriverStatus || '';
         setRejectingRequest(true);
         try {
             const res = await fetch('/api/data', {
@@ -964,7 +1045,21 @@ export default function DODetailPage() {
                 addToast('error', result.error || 'Gagal menolak permintaan driver');
                 return;
             }
-            await loadDO();
+            mergeResolvedDeliveryOrder(result.data);
+            setTrackingLogs(previous => sortTrackingLogs([
+                ...previous,
+                {
+                    _id: `tracking-reject-${Date.now()}`,
+                    _type: 'trackingLog',
+                    refType: 'DO',
+                    refRef: doData?._id || '',
+                    status: 'DRIVER_REQUEST_REJECTED',
+                    note: `${rejectedStatus}${rejectRequestNote ? `: ${rejectRequestNote}` : ''}`,
+                    timestamp: new Date().toISOString(),
+                    userRef: user?._id,
+                    userName: user?.name,
+                },
+            ]));
             setShowRejectRequestModal(false);
             setRejectRequestNote('');
             addToast('success', 'Permintaan driver ditolak');
@@ -1001,7 +1096,12 @@ export default function DODetailPage() {
                 addToast('error', result.error || 'Gagal menyimpan tujuan surat jalan');
                 return;
             }
-            await loadDO();
+            mergeResolvedDeliveryOrder(result.data || {
+                receiverName: targetReceiverName,
+                receiverPhone: targetReceiverPhone,
+                receiverAddress: targetReceiverAddress,
+                receiverCompany: targetReceiverCompany,
+            });
             setShowTargetModal(false);
             addToast('success', 'Tujuan surat jalan berhasil diperbarui');
         } catch {
@@ -1091,7 +1191,9 @@ export default function DODetailPage() {
                 addToast('error', result.error || (editingCargoItemId ? 'Gagal memperbarui barang Surat Jalan' : 'Gagal menambah barang ke Surat Jalan'));
                 return;
             }
-            await loadDO();
+            await refreshDeliveryOrderItems(
+                editingCargoItemId ? 'Gagal memuat ulang barang Surat Jalan yang diperbarui' : 'Gagal memuat ulang barang Surat Jalan'
+            );
             setShowCargoModal(false);
             setEditingCargoItemId(null);
             setCargoDraftGroups([createDefaultDeliveryOrderCargoDraftGroup(doData.pickupStops?.[0]?._key || '')]);
@@ -1132,7 +1234,7 @@ export default function DODetailPage() {
                 addToast('error', result.error || 'Gagal menghapus barang dari Surat Jalan');
                 return;
             }
-            await loadDO();
+            await refreshDeliveryOrderItems('Gagal memuat ulang barang Surat Jalan setelah dihapus');
             addToast('success', 'Barang Surat Jalan berhasil dihapus');
         } catch {
             addToast('error', 'Gagal menghapus barang dari Surat Jalan');
@@ -1286,14 +1388,14 @@ export default function DODetailPage() {
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
-            if (editingTaripRef.current) {
+            if (editingTaripRef.current || hasOpenModal || document.hidden) {
                 return;
             }
             void loadDO();
         }, 15000);
 
         return () => window.clearInterval(intervalId);
-    }, [loadDO]);
+    }, [hasOpenModal, loadDO]);
 
     const updateDOStatus = async () => {
         if (!newStatus) return;
@@ -1326,21 +1428,25 @@ export default function DODetailPage() {
             }
 
             if (d.data) {
-                setDoData(prev => buildResolvedDeliveryOrder({
-                    ...(prev || {}),
-                    ...d.data,
-                } as DeliveryOrder, null));
+                mergeResolvedDeliveryOrder(d.data);
             }
-            setTrackingLogs(prev => [...prev, {
-                _id: 'new-' + Date.now(),
-                _type: 'trackingLog',
-                refType: 'DO',
-                refRef: doData?._id || '',
-                status: newStatus,
-                note: statusNote || undefined,
-                timestamp: new Date().toISOString(),
-            }]);
-            await loadDO();
+            setTrackingLogs(previous => sortTrackingLogs([
+                ...previous,
+                {
+                    _id: 'new-' + Date.now(),
+                    _type: 'trackingLog',
+                    refType: 'DO',
+                    refRef: doData?._id || '',
+                    status: newStatus,
+                    note: statusNote || undefined,
+                    timestamp: new Date().toISOString(),
+                    userRef: user?._id,
+                    userName: user?.name,
+                },
+            ]));
+            if (completingDelivery) {
+                await refreshDeliveryOrderItems('Gagal memuat ulang realisasi barang setelah DO diselesaikan');
+            }
             setShowStatusModal(false);
             setNewStatus('');
             setStatusNote('');
@@ -1458,17 +1564,15 @@ export default function DODetailPage() {
                 addToast('error', result.error || 'Gagal menyimpan upah trip');
                 return;
             }
-            setDoData(prev => prev ? {
-                ...prev,
+            mergeResolvedDeliveryOrder(result.data || {
                 tripRouteRateRef: tripRouteRateRef || undefined,
                 tripOriginArea: tripOriginArea || undefined,
                 tripDestinationArea: tripDestinationArea || undefined,
                 baseTaripBorongan: matchedTripRouteRate?.rate ?? taripBorongan,
-                taripBorongan: (matchedTripRouteRate?.rate ?? taripBorongan) + (prev.overtonaseDriverAmount || 0),
+                taripBorongan: (matchedTripRouteRate?.rate ?? taripBorongan) + (doData?.overtonaseDriverAmount || 0),
                 keteranganBorongan,
-            } : prev);
+            });
             setEditingTarip(false);
-            await loadDO();
             addToast('success', 'Upah trip disimpan');
         } catch {
             addToast('error', 'Gagal menyimpan upah trip');
@@ -1507,10 +1611,9 @@ export default function DODetailPage() {
                 return;
             }
 
-            setDoData(prev => (prev ? buildResolvedDeliveryOrder(result.data, null) : prev));
+            mergeResolvedDeliveryOrder(result.data);
             setShowTripResourcesModal(false);
             addToast('success', 'Armada trip berhasil diperbarui');
-            await loadDO();
         } catch {
             addToast('error', 'Gagal melengkapi armada trip');
         } finally {
@@ -1588,10 +1691,10 @@ export default function DODetailPage() {
                 return;
             }
 
-            setDoData(prev => (prev ? buildResolvedDeliveryOrder(result.data, null) : prev));
+            mergeResolvedDeliveryOrder(result.data);
+            await refreshDeliveryOrderItems('Gagal memuat ulang barang setelah SJ pengirim diubah');
             setShowShipperReferenceModal(false);
             addToast('success', 'SJ pengirim berhasil diperbarui');
-            await loadDO();
         } catch {
             addToast('error', 'Gagal menyimpan SJ pengirim');
         } finally {
@@ -1818,6 +1921,13 @@ export default function DODetailPage() {
         showAdvancedDropEditor,
     });
     const displayStatusMeta = getDeliveryOrderDisplayStatusMeta(doData);
+    const completionOutcome = deriveDeliveryOrderCompletionOutcome(doData);
+    const billableCargoSummary = getDeliveryOrderBillableCargoSummary(doData);
+    const holdCargoSummary = getDeliveryOrderHoldCargoSummary(doData);
+    const returnCargoSummary = getDeliveryOrderReturnCargoSummary(doData);
+    const billableDropCount = actualDropSummary.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
+    const holdDropCount = actualDropSummary.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
+    const returnDropCount = actualDropSummary.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
 
     return (
         <div>
@@ -2208,6 +2318,32 @@ export default function DODetailPage() {
 
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
             <CollapsibleCard title="Muatan & Realisasi Trip">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                            <div className="detail-label">Hasil Realisasi</div>
+                            <div className="detail-value" style={{ marginTop: '0.25rem' }}>{completionOutcome?.label || displayStatusMeta.label}</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                {actualDropSummary.length > 0
+                                    ? `${billableDropCount} titik invoice${holdDropCount > 0 ? ` • ${holdDropCount} hold/transit` : ''}${returnDropCount > 0 ? ` • ${returnDropCount} retur` : ''}`
+                                    : 'Belum ada realisasi drop'}
+                            </div>
+                        </div>
+                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                            <div className="detail-label">Masuk Tagihan</div>
+                            <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(billableCargoSummary)}</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Hanya DROP dan EXTRA_DROP yang ikut nota.</div>
+                        </div>
+                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                            <div className="detail-label">Hold / Transit</div>
+                            <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(holdCargoSummary)}</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang ini tidak ikut tagihan sampai dikirim lagi.</div>
+                        </div>
+                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                            <div className="detail-label">Retur</div>
+                            <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(returnCargoSummary)}</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang retur tidak ikut tagihan DO ini.</div>
+                        </div>
+                    </div>
                     <div className="detail-row">
                         <div className="detail-item">
                             <div className="detail-label">Asal Tagihan</div>
@@ -2235,15 +2371,23 @@ export default function DODetailPage() {
                                                 <div style={{ fontWeight: 600 }}>
                                                     {point.sequence}. {point.locationName}
                                                 </div>
-                                                <span className={`badge badge-${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.color || 'gray'}`}>
-                                                    {DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}
-                                                </span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <span className={`badge badge-${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.color || 'gray'}`}>
+                                                        {DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}
+                                                    </span>
+                                                    <span className={`badge badge-${isDeliveryOrderBillableDropType(point.stopType) ? 'success' : isDeliveryOrderReturnDropType(point.stopType) ? 'danger' : 'warning'}`}>
+                                                        {isDeliveryOrderBillableDropType(point.stopType) ? 'Masuk Tagihan' : isDeliveryOrderReturnDropType(point.stopType) ? 'Retur / Tidak Ditagih' : 'Hold / Tidak Ditagih'}
+                                                    </span>
+                                                </div>
                                             </div>
                                             {point.locationAddress && (
                                                 <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                                     {point.locationAddress}
                                                 </div>
                                             )}
+                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                SJ Pengirim: {point.shipperReferenceNumber || 'Mengikuti DO'}
+                                            </div>
                                             <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                                 Barang: {summarizeDeliveryOrderItemDescriptionsForDrop(point, doItems)}
                                             </div>

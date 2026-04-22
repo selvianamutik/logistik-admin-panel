@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
@@ -9,7 +9,12 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
+import {
+    getDeliveryOrderBillableCargoSummary,
+    getDeliveryOrderDisplayStatusMeta,
+    getDeliveryOrderHoldCargoSummary,
+    getDeliveryOrderReturnCargoSummary,
+} from '@/lib/delivery-order-completion';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
@@ -197,6 +202,7 @@ export default function OrderDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
+    const loadedReferenceCustomerRef = useRef<string>('');
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
@@ -220,8 +226,51 @@ export default function OrderDetailPage() {
         };
     }, [hasOpenModal]);
 
-    const loadOrderDetail = useCallback(async () => {
-        setLoading(true);
+    const loadOrderReferenceData = useCallback(async (orderData: Order | null) => {
+        const [customerData, customerProductData, customerRecipientData] = await Promise.all([
+            orderData?.customerRef
+                ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
+                : Promise.resolve(null),
+            orderData?.customerRef
+                ? fetchAdminCollectionData<CustomerProduct[]>(
+                    `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}`,
+                    'Gagal memuat detail order'
+                )
+                : Promise.resolve([] as CustomerProduct[]),
+            orderData?.customerRef
+                ? fetchAdminCollectionData<CustomerRecipient[]>(
+                    `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
+                    'Gagal memuat master tujuan customer'
+                )
+                : Promise.resolve([] as CustomerRecipient[]),
+        ]);
+
+        setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
+        setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
+        setCustomerRecipients((customerRecipientData || []).filter(recipient => recipient.active !== false));
+        loadedReferenceCustomerRef.current = orderData?.customerRef || '';
+    }, []);
+
+    const refreshOrderCoreState = useCallback(async (fallbackMessage: string = 'Gagal memuat ulang detail order') => {
+        try {
+            const [orderData, itemData] = await Promise.all([
+                fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, fallbackMessage),
+                fetchAdminCollectionData<OrderItem[]>(
+                    `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`,
+                    fallbackMessage
+                ),
+            ]);
+            setOrder(orderData);
+            setItems(itemData || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : fallbackMessage);
+        }
+    }, [addToast, orderId]);
+
+    const loadOrderDetail = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
+        if (mode === 'initial') {
+            setLoading(true);
+        }
         try {
             const [orderData, itemData, deliveryOrders, vehicleData, activeDeliveryOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
@@ -231,28 +280,13 @@ export default function OrderDetailPage() {
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-            const [deliveryOrderItems, notaItems, customerData, customerProductData, customerRecipientData] = await Promise.all([
+            const [deliveryOrderItems, notaItems] = await Promise.all([
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as FreightNotaItem[]),
-                orderData?.customerRef
-                    ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
-                    : Promise.resolve(null),
-                orderData?.customerRef
-                    ? fetchAdminCollectionData<CustomerProduct[]>(
-                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}`,
-                        'Gagal memuat detail order'
-                    )
-                    : Promise.resolve([] as CustomerProduct[]),
-                orderData?.customerRef
-                    ? fetchAdminCollectionData<CustomerRecipient[]>(
-                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
-                        'Gagal memuat master tujuan customer'
-                    )
-                    : Promise.resolve([] as CustomerRecipient[]),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
             const orderNotas = notaIds.length > 0
@@ -264,21 +298,27 @@ export default function OrderDetailPage() {
             setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems);
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
-            setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
-            setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
-            setCustomerRecipients((customerRecipientData || []).filter(recipient => recipient.active !== false));
             const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
+
+            const shouldReloadReferences =
+                mode === 'initial' ||
+                loadedReferenceCustomerRef.current !== (orderData?.customerRef || '');
+            if (shouldReloadReferences) {
+                await loadOrderReferenceData(orderData);
+            }
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
         } finally {
-            setLoading(false);
+            if (mode === 'initial') {
+                setLoading(false);
+            }
         }
-    }, [addToast, orderId]);
+    }, [addToast, loadOrderReferenceData, orderId]);
 
     useEffect(() => {
-        void loadOrderDetail();
+        void loadOrderDetail('initial');
     }, [loadOrderDetail]);
 
     const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
@@ -879,7 +919,7 @@ export default function OrderDetailPage() {
             setHoldVolumeInputUnit('M3');
             setHoldReason('');
             setHoldLocation('');
-            await loadOrderDetail();
+            await refreshOrderCoreState('Gagal memuat ulang hold item');
         } catch {
             addToast('error', 'Gagal menyimpan hold qty');
         } finally {
@@ -900,7 +940,7 @@ export default function OrderDetailPage() {
                 return;
             }
             addToast('success', 'Hold item berhasil dilepas');
-            await loadOrderDetail();
+            await refreshOrderCoreState('Gagal memuat ulang item setelah hold dilepas');
         } catch {
             addToast('error', 'Gagal melepas hold item');
         }
@@ -1440,6 +1480,21 @@ export default function OrderDetailPage() {
                                 const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d, relatedDeliveryOrderItems);
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, relatedDeliveryOrderItems, 3);
                                 const doStatusMeta = getDeliveryOrderDisplayStatusMeta(d);
+                                const billableCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderBillableCargoSummary(d) : null;
+                                const holdCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderHoldCargoSummary(d) : null;
+                                const returnCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderReturnCargoSummary(d) : null;
+                                const hasBillableCargo = Boolean(
+                                    billableCargoSummary &&
+                                    (billableCargoSummary.qtyKoli > 0 || billableCargoSummary.weightKg > 0 || billableCargoSummary.volumeM3 > 0)
+                                );
+                                const hasHoldCargo = Boolean(
+                                    holdCargoSummary &&
+                                    (holdCargoSummary.qtyKoli > 0 || holdCargoSummary.weightKg > 0 || holdCargoSummary.volumeM3 > 0)
+                                );
+                                const hasReturnCargo = Boolean(
+                                    returnCargoSummary &&
+                                    (returnCargoSummary.qtyKoli > 0 || returnCargoSummary.weightKg > 0 || returnCargoSummary.volumeM3 > 0)
+                                );
                                 return (
                                 <tr key={d._id}>
                                     <td>
@@ -1483,6 +1538,25 @@ export default function OrderDetailPage() {
                                         <div className="text-muted text-sm">
                                             {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana Trip (estimasi)'}
                                         </div>
+                                        {d.status === 'DELIVERED' && (hasBillableCargo || hasHoldCargo || hasReturnCargo) && (
+                                            <div style={{ display: 'grid', gap: '0.15rem', marginTop: '0.35rem' }}>
+                                                {hasBillableCargo && (
+                                                    <div className="text-muted text-sm">
+                                                        Masuk tagihan: {formatCargoSummary(billableCargoSummary || {})}
+                                                    </div>
+                                                )}
+                                                {hasHoldCargo && (
+                                                    <div className="text-muted text-sm">
+                                                        Hold / transit: {formatCargoSummary(holdCargoSummary || {})}
+                                                    </div>
+                                                )}
+                                                {hasReturnCargo && (
+                                                    <div className="text-muted text-sm">
+                                                        Retur: {formatCargoSummary(returnCargoSummary || {})}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                     <td><span className={`badge badge-${doStatusMeta.color}`}><span className="badge-dot" /> {doStatusMeta.label}</span></td>
                                     <td><Link href={withReturnTo(`/delivery-orders/${d._id}`)} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>

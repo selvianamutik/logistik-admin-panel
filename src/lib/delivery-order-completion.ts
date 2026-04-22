@@ -157,6 +157,40 @@ export function getDeliveryOrderNonBillableCargoSummary(
     };
 }
 
+export function getDeliveryOrderHoldCargoSummary(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
+) {
+    return summarizeByTypes(deliveryOrder?.actualDropPoints, HOLD_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+    });
+}
+
+export function getDeliveryOrderReturnCargoSummary(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
+) {
+    return summarizeByTypes(deliveryOrder?.actualDropPoints, RETURN_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+    });
+}
+
+export function isDeliveryOrderBillableDropType(stopType: unknown) {
+    return BILLABLE_ACTUAL_DROP_TYPES.has(normalizeStopType(stopType));
+}
+
+export function isDeliveryOrderHoldDropType(stopType: unknown) {
+    return HOLD_ACTUAL_DROP_TYPES.has(normalizeStopType(stopType));
+}
+
+export function isDeliveryOrderReturnDropType(stopType: unknown) {
+    return RETURN_ACTUAL_DROP_TYPES.has(normalizeStopType(stopType));
+}
+
 export function hasDeliveryOrderBillableCargo(
     deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
     shipperReferenceNumber?: string

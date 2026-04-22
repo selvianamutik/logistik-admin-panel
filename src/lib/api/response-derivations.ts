@@ -377,23 +377,24 @@ export async function deriveFreightNotaItemsForResponse(items: FreightNotaItem[]
         ),
     ];
 
-    const [deliveryOrders, deliveryOrderItems] = await Promise.all([
+    const [deliveryOrders, deliveryOrderItemsById, deliveryOrderItemsByDoRef] = await Promise.all([
         doRefs.length > 0
             ? listDocumentsByFilter<FreightNotaDeliveryOrderSource>('deliveryOrder', { _id: doRefs })
             : Promise.resolve([]),
-        doRefs.length > 0 || deliveryOrderItemRefs.length > 0
-            ? listDocumentsByFilter<FreightNotaDeliveryOrderItemResponseSource>('deliveryOrderItem', {})
+        deliveryOrderItemRefs.length > 0
+            ? listDocumentsByFilter<FreightNotaDeliveryOrderItemResponseSource>('deliveryOrderItem', { _id: deliveryOrderItemRefs })
+            : Promise.resolve([]),
+        doRefs.length > 0
+            ? listDocumentsByFilter<FreightNotaDeliveryOrderItemResponseSource>('deliveryOrderItem', { deliveryOrderRef: doRefs })
             : Promise.resolve([]),
     ]);
 
-    const relevantDeliveryOrderItems = deliveryOrderItems.filter(item => {
-        const itemId = normalizeOptionalText(item._id);
-        const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
-        return (
-            (itemId ? deliveryOrderItemRefs.includes(itemId) : false) ||
-            (deliveryOrderRef ? doRefs.includes(deliveryOrderRef) : false)
-        );
-    });
+    const relevantDeliveryOrderItems = [
+        ...new Map(
+            [...deliveryOrderItemsById, ...deliveryOrderItemsByDoRef]
+                .map(item => [normalizeOptionalText(item._id) || `${normalizeOptionalText(item.deliveryOrderRef)}::${normalizeOptionalText(item.shipperReferenceNumber)}`, item])
+        ).values(),
+    ];
 
     const orderRefs = [
         ...new Set(
