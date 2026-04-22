@@ -356,6 +356,43 @@ async function advanceDeliveryOrderToDelivered(params: {
     });
 }
 
+async function advanceDeliveryOrderToArrived(cookieHeader: string, deliveryOrderId: string) {
+    for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-status',
+            data: {
+                id: deliveryOrderId,
+                status,
+                note: `Audit ${status}`,
+            },
+        });
+    }
+}
+
+async function finishArrivedDeliveryOrder(params: {
+    cookieHeader: string;
+    deliveryOrderId: string;
+    actualItems: Array<Record<string, unknown>>;
+    actualDropPoints: Array<Record<string, unknown>>;
+    expectStatus?: number;
+}) {
+    return await postData(params.cookieHeader, {
+        entity: 'delivery-orders',
+        action: 'set-status',
+        data: {
+            id: params.deliveryOrderId,
+            status: 'DELIVERED',
+            note: 'Audit selesai',
+            podReceiverName: 'Penerima Audit',
+            podReceivedDate: AUDIT_DATE,
+            podNote: 'Audit POD',
+            actualItems: params.actualItems,
+            actualDropPoints: params.actualDropPoints,
+        },
+    }, params.expectStatus ? { expectStatus: params.expectStatus } : undefined);
+}
+
 async function main() {
     const cookieHeader = await loginAndGetCookieHeader();
     const createdState: CreatedState = { deliveryOrderIds: [] };
@@ -364,9 +401,11 @@ async function main() {
     const pickupTwoKey = `audit-pickup-2-${suffix}`;
     const tripOneKey = `audit-trip-1-${suffix}`;
     const tripTwoKey = `audit-trip-2-${suffix}`;
+    const tripCancelKey = `audit-trip-cancel-${suffix}`;
     const sjA = `AUD-${suffix}-A`;
     const sjB = `AUD-${suffix}-B`;
     const sjHold = `AUD-${suffix}-HOLD`;
+    const sjCancel = `AUD-${suffix}-CANCEL`;
 
     try {
         auditStep('cleanup data audit lama');
@@ -394,7 +433,40 @@ async function main() {
         assert(resources.drivers.length >= 2, 'Audit butuh minimal 1 supir tersedia untuk dipakai berurutan pada 2 trip.');
         assert(resources.bankAccount, 'Audit butuh minimal 1 rekening/kas aktif.');
 
-        auditStep('create order header booking dengan 2 pickup dan 2 rencana trip');
+        auditStep('create lalu hapus order header booking tanpa DO');
+        const deletableOrderCreate = await postData<Order>(cookieHeader, {
+            entity: 'orders',
+            action: 'create-with-items',
+            data: {
+                customerRef: resources.customer._id,
+                serviceRef: resources.service._id,
+                pickupAddress: 'Audit Delete Pickup',
+                receiverName: 'Audit Delete Receiver',
+                receiverAddress: 'Audit Delete Destination',
+                pickupStops: [
+                    {
+                        _key: `audit-delete-pickup-${suffix}`,
+                        sequence: 1,
+                        pickupLabel: 'Audit Delete Pickup',
+                        pickupAddress: 'Audit Delete Pickup Address',
+                    },
+                ],
+                notes: `Audit E2E delete ${suffix}`,
+                items: [],
+                tripDrafts: [],
+            },
+        });
+        const deletableOrderId = normalizeText(deletableOrderCreate.data?._id) || normalizeText(deletableOrderCreate.id);
+        assert(deletableOrderId, 'Create order delete-test tidak mengembalikan ID.');
+        await postData(cookieHeader, {
+            entity: 'orders',
+            action: 'delete',
+            data: {
+                id: deletableOrderId,
+            },
+        });
+
+        auditStep('create order header booking dengan 2 pickup, 2 trip jalan, dan 1 trip batal');
         const orderCreate = await postData<Order>(cookieHeader, {
             entity: 'orders',
             action: 'create-with-items',
@@ -439,6 +511,16 @@ async function main() {
                         cashGiven: 120000,
                         date: AUDIT_DATE,
                     },
+                    {
+                        _key: tripCancelKey,
+                        pickupStopKeys: [pickupTwoKey],
+                        vehicleRef: resources.vehicles[0]._id,
+                        driverRef: resources.drivers[0]._id,
+                        taripBorongan: 125000,
+                        issueBankRef: resources.bankAccount._id,
+                        cashGiven: 50000,
+                        date: AUDIT_DATE,
+                    },
                 ],
             },
         });
@@ -450,9 +532,9 @@ async function main() {
             cookieHeader
         );
         assert(createdOrder.data.cargoEntryMode === 'DELIVERY_ORDER', 'Order header booking harus memakai mode barang di Surat Jalan.');
-        assert((createdOrder.data.tripPlans || []).length === 2, 'Order harus menyimpan 2 rencana trip.');
+        assert((createdOrder.data.tripPlans || []).length === 3, 'Order harus menyimpan 3 rencana trip termasuk 1 trip batal.');
 
-        auditStep('create DO trip 1 dengan 2 nomor SJ dan 2 barang');
+        auditStep('create DO trip 1 dengan 2 nomor SJ; SJ A berisi 2 barang dan SJ B hold');
         const doOneCreate = await postData<DeliveryOrder>(cookieHeader, {
             entity: 'delivery-orders',
             action: 'create-with-items',
@@ -466,11 +548,21 @@ async function main() {
                 ],
                 cargoItems: [
                     {
-                        description: 'Audit barang A',
+                        description: 'Audit barang A1',
                         qtyKoli: 2,
                         weightInputValue: 200,
                         weightInputUnit: 'KG',
                         volumeInputValue: 1,
+                        volumeInputUnit: 'M3',
+                        pickupStopKey: pickupOneKey,
+                        shipperReferenceNumber: sjA,
+                    },
+                    {
+                        description: 'Audit barang A2',
+                        qtyKoli: 1,
+                        weightInputValue: 125,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 0.5,
                         volumeInputUnit: 'M3',
                         pickupStopKey: pickupOneKey,
                         shipperReferenceNumber: sjA,
@@ -493,11 +585,15 @@ async function main() {
         createdState.deliveryOrderIds.push(doOneId);
 
         let doOneItems = await getDeliveryOrderItems(cookieHeader, doOneId);
-        assert(doOneItems.length === 2, 'DO trip 1 harus punya 2 barang.');
+        assert(doOneItems.length === 3, 'DO trip 1 harus punya 3 barang karena SJ A berisi 2 barang dan SJ B berisi 1 barang.');
         assert(
             doOneItems.some(item => item.shipperReferenceNumber === sjA) &&
             doOneItems.some(item => item.shipperReferenceNumber === sjB),
             'Barang DO trip 1 harus tersambung ke masing-masing nomor SJ pengirim.'
+        );
+        assert(
+            doOneItems.filter(item => item.shipperReferenceNumber === sjA).length === 2,
+            'SJ A harus bisa memuat lebih dari 1 barang.'
         );
         assert(
             doOneItems.every(item => normalizeText(item.pickupStopKey)),
@@ -505,24 +601,30 @@ async function main() {
         );
 
         doOneItems = await getDeliveryOrderItems(cookieHeader, doOneId);
-        auditStep('finalisasi DO trip 1 sebagai campuran drop billable dan hold non-billable');
-        await advanceDeliveryOrderToDelivered({
+        const actualItemsForDoOne = doOneItems.map(item => ({
+            deliveryOrderItemRef: item._id,
+            actualQtyKoli: normalizeNumber(item.orderItemQtyKoli),
+            actualWeightInputValue: normalizeNumber(item.orderItemWeight),
+            actualWeightInputUnit: 'KG',
+            actualVolumeInputValue: normalizeNumber(item.orderItemVolumeInputValue ?? item.orderItemVolumeM3),
+            actualVolumeInputUnit: item.orderItemVolumeInputUnit || 'M3',
+        }));
+        const sjAItems = doOneItems.filter(item => item.shipperReferenceNumber === sjA);
+        const sjBItems = doOneItems.filter(item => item.shipperReferenceNumber === sjB);
+        assert(sjAItems.length === 2 && sjBItems.length === 1, 'Setup audit SJ A/SJ B tidak valid.');
+
+        auditStep('uji finalisasi ambigu: 1 SJ punya drop dan hold tanpa mapping barang harus ditolak');
+        await advanceDeliveryOrderToArrived(cookieHeader, doOneId);
+        await finishArrivedDeliveryOrder({
             cookieHeader,
             deliveryOrderId: doOneId,
-            actualItems: doOneItems.map(item => ({
-                deliveryOrderItemRef: item._id,
-                actualQtyKoli: normalizeNumber(item.orderItemQtyKoli),
-                actualWeightInputValue: normalizeNumber(item.orderItemWeight),
-                actualWeightInputUnit: 'KG',
-                actualVolumeInputValue: normalizeNumber(item.orderItemVolumeInputValue ?? item.orderItemVolumeM3),
-                actualVolumeInputUnit: item.orderItemVolumeInputUnit || 'M3',
-            })),
+            actualItems: actualItemsForDoOne,
             actualDropPoints: [
                 {
                     stopType: 'DROP',
                     shipperReferenceNumber: sjA,
-                    locationName: 'Audit Drop A',
-                    locationAddress: 'Audit Drop A Address',
+                    locationName: 'Audit Drop A Ambigu',
+                    locationAddress: 'Audit Drop A Ambigu Address',
                     qtyKoli: 2,
                     weightInputValue: 200,
                     weightInputUnit: 'KG',
@@ -531,17 +633,170 @@ async function main() {
                 },
                 {
                     stopType: 'HOLD',
-                    shipperReferenceNumber: sjB,
-                    locationName: 'Audit Gudang Hold B',
-                    locationAddress: 'Audit Gudang Hold B Address',
-                    qtyKoli: 3,
-                    weightInputValue: 300,
+                    shipperReferenceNumber: sjA,
+                    locationName: 'Audit Hold A Ambigu',
+                    locationAddress: 'Audit Hold A Ambigu Address',
+                    qtyKoli: 1,
+                    weightInputValue: 125,
                     weightInputUnit: 'KG',
-                    volumeInputValue: 1.5,
+                    volumeInputValue: 0.5,
                     volumeInputUnit: 'M3',
                 },
             ],
+            expectStatus: 400,
         });
+
+        auditStep('finalisasi DO trip 1 dengan mapping barang spesifik: 2 barang SJ A billable, SJ B hold');
+        await finishArrivedDeliveryOrder({
+            cookieHeader,
+            deliveryOrderId: doOneId,
+            actualItems: actualItemsForDoOne,
+            actualDropPoints: [
+                {
+                    stopType: 'DROP',
+                    deliveryOrderItemRef: sjAItems[0]._id,
+                    deliveryOrderItemRefs: [sjAItems[0]._id],
+                    shipperReferenceNumber: sjA,
+                    locationName: 'Audit Drop A',
+                    locationAddress: 'Audit Drop A Address',
+                    qtyKoli: normalizeNumber(sjAItems[0].orderItemQtyKoli),
+                    weightInputValue: normalizeNumber(sjAItems[0].orderItemWeight),
+                    weightInputUnit: 'KG',
+                    volumeInputValue: normalizeNumber(sjAItems[0].orderItemVolumeInputValue ?? sjAItems[0].orderItemVolumeM3),
+                    volumeInputUnit: sjAItems[0].orderItemVolumeInputUnit || 'M3',
+                },
+                {
+                    stopType: 'DROP',
+                    deliveryOrderItemRef: sjAItems[1]._id,
+                    deliveryOrderItemRefs: [sjAItems[1]._id],
+                    shipperReferenceNumber: sjA,
+                    locationName: 'Audit Drop A',
+                    locationAddress: 'Audit Drop A Address',
+                    qtyKoli: normalizeNumber(sjAItems[1].orderItemQtyKoli),
+                    weightInputValue: normalizeNumber(sjAItems[1].orderItemWeight),
+                    weightInputUnit: 'KG',
+                    volumeInputValue: normalizeNumber(sjAItems[1].orderItemVolumeInputValue ?? sjAItems[1].orderItemVolumeM3),
+                    volumeInputUnit: sjAItems[1].orderItemVolumeInputUnit || 'M3',
+                },
+                {
+                    stopType: 'HOLD',
+                    deliveryOrderItemRef: sjBItems[0]._id,
+                    deliveryOrderItemRefs: [sjBItems[0]._id],
+                    shipperReferenceNumber: sjB,
+                    locationName: 'Audit Gudang Hold B',
+                    locationAddress: 'Audit Gudang Hold B Address',
+                    qtyKoli: normalizeNumber(sjBItems[0].orderItemQtyKoli),
+                    weightInputValue: normalizeNumber(sjBItems[0].orderItemWeight),
+                    weightInputUnit: 'KG',
+                    volumeInputValue: normalizeNumber(sjBItems[0].orderItemVolumeInputValue ?? sjBItems[0].orderItemVolumeM3),
+                    volumeInputUnit: sjBItems[0].orderItemVolumeInputUnit || 'M3',
+                },
+            ],
+        });
+
+        auditStep('pastikan order yang sudah punya DO tidak boleh dihapus');
+        await postData(cookieHeader, {
+            entity: 'orders',
+            action: 'delete',
+            data: {
+                id: createdState.orderId,
+            },
+        }, { expectStatus: 409 });
+
+        auditStep('create DO trip batal lalu batalkan saat aktif');
+        const doCancelCreate = await postData<DeliveryOrder>(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'create-with-items',
+            data: {
+                orderRef: createdState.orderId,
+                orderTripPlanKey: tripCancelKey,
+                date: AUDIT_DATE,
+                shipperReferences: [
+                    { referenceNumber: sjCancel, pickupStopKey: pickupTwoKey },
+                ],
+                cargoItems: [
+                    {
+                        description: 'Audit barang batal',
+                        qtyKoli: 1,
+                        weightInputValue: 75,
+                        weightInputUnit: 'KG',
+                        pickupStopKey: pickupTwoKey,
+                        shipperReferenceNumber: sjCancel,
+                    },
+                ],
+            },
+        });
+        const doCancelId = normalizeText(doCancelCreate.data?._id) || normalizeText(doCancelCreate.id);
+        assert(doCancelId, 'Create DO batal tidak mengembalikan ID.');
+        createdState.deliveryOrderIds.push(doCancelId);
+        const doCancelItems = await getDeliveryOrderItems(cookieHeader, doCancelId);
+        assert(doCancelItems.length === 1, 'DO batal harus punya 1 barang sebelum dibatalkan.');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-status',
+            data: {
+                id: doCancelId,
+                status: 'HEADING_TO_PICKUP',
+                note: 'Audit menuju pickup sebelum batal',
+            },
+        });
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-status',
+            data: {
+                id: doCancelId,
+                status: 'CANCELLED',
+                note: 'Audit batal trip',
+            },
+        });
+        const cancelledDoState = await requestJson<{ data: DeliveryOrder }>(
+            `/api/data?entity=delivery-orders&id=${encodeURIComponent(doCancelId)}`,
+            cookieHeader
+        );
+        assert(cancelledDoState.data.status === 'CANCELLED', 'DO batal harus berstatus CANCELLED.');
+        assert(cancelledDoState.data.trackingState === 'STOPPED', 'DO batal harus menghentikan tracking.');
+        const cancelledOrderItemResponse = await requestJson<{ data: Array<{ _id: string; status?: string; assignedQtyKoli?: number; assignedWeight?: number }> }>(
+            `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ sourceDeliveryOrderRef: doCancelId }))}`,
+            cookieHeader
+        );
+        const cancelledOrderItem = cancelledOrderItemResponse.data?.[0];
+        assert(cancelledOrderItem, 'Order item DO batal harus tetap ada sebagai pending untuk dibuat SJ ulang bila perlu.');
+        assert(normalizeNumber(cancelledOrderItem.assignedQtyKoli) === 0, 'DO batal harus melepas assigned qty.');
+        assert(normalizeNumber(cancelledOrderItem.assignedWeight) === 0, 'DO batal harus melepas assigned weight.');
+        assert(cancelledOrderItem.status !== 'ON_DELIVERY', 'Item DO batal tidak boleh tetap berstatus ON_DELIVERY.');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'append-cargo-items',
+            data: {
+                id: doCancelId,
+                cargoItems: [
+                    {
+                        description: 'Barang setelah batal',
+                        qtyKoli: 1,
+                        weightInputValue: 10,
+                        weightInputUnit: 'KG',
+                        shipperReferenceNumber: sjCancel,
+                    },
+                ],
+            },
+        }, { expectStatus: 409 });
+        await postData(cookieHeader, {
+            entity: 'freight-notas',
+            action: 'create-with-items',
+            data: {
+                issueDate: AUDIT_DATE,
+                dueDate: AUDIT_DATE,
+                billingMode: 'PER_KG',
+                items: [
+                    {
+                        doRef: doCancelId,
+                        deliveryOrderItemRef: doCancelItems[0]._id,
+                        noSJ: sjCancel,
+                        tarip: 1000,
+                    },
+                ],
+            },
+        }, { expectStatus: 409 });
 
         auditStep('create DO trip 2 setelah trip 1 selesai untuk skenario hold');
         const doTwoCreate = await postData<DeliveryOrder>(cookieHeader, {
@@ -656,7 +911,7 @@ async function main() {
         );
         assert(deliveredOrder.data.status === 'PARTIAL', `Order harus PARTIAL setelah campuran drop/hold dan 1 trip hold-only, sekarang ${deliveredOrder.data.status}.`);
 
-        auditStep('create nota dari SJ billable pada DO campuran dan verifikasi row per SJ');
+        auditStep('create nota dari SJ billable pada DO campuran dan verifikasi row per barang SJ');
         const doOneState = await requestJson<{ data: DeliveryOrder }>(
             `/api/data?entity=delivery-orders&id=${encodeURIComponent(doOneId)}`,
             cookieHeader
@@ -666,12 +921,13 @@ async function main() {
             orders: [deliveredOrder.data],
             deliveryOrderItems: doOneItems,
         });
-        const suggestedBillableRow = suggestedNotaRows.find(row => row.noSJ === sjA);
-        assert(suggestedBillableRow, 'Builder nota harus menghasilkan row untuk SJ billable.');
+        const suggestedBillableRows = suggestedNotaRows.filter(row => row.noSJ === sjA);
+        assert(suggestedBillableRows.length === 2, `Builder nota harus menghasilkan 2 row barang untuk SJ billable, sekarang ${suggestedBillableRows.length}.`);
         assert(
-            normalizeText(suggestedBillableRow.barang).includes('Audit barang A') &&
-            !normalizeText(suggestedBillableRow.barang).includes('Audit barang B'),
-            'Builder nota tidak boleh mencampur nama barang hold ke row SJ billable.'
+            suggestedBillableRows.some(row => normalizeText(row.barang) === 'Audit barang A1') &&
+            suggestedBillableRows.some(row => normalizeText(row.barang) === 'Audit barang A2') &&
+            suggestedBillableRows.every(row => !normalizeText(row.barang).includes('Audit barang B')),
+            'Builder nota harus memisahkan barang per item SJ dan tidak mencampur barang hold.'
         );
         assert(
             suggestedNotaRows.every(row => row.noSJ !== sjB),
@@ -704,15 +960,30 @@ async function main() {
             cookieHeader
         );
         const notaItems = Array.isArray(notaItemsResponse.data) ? notaItemsResponse.data : [];
-        assert(notaItems.length === 1, `Nota harus hanya punya 1 row SJ billable, sekarang ${notaItems.length}.`);
+        assert(notaItems.length === 2, `Nota harus punya 2 row barang untuk SJ billable, sekarang ${notaItems.length}.`);
         assert(
-            notaItems.some(item => item.noSJ === sjA && normalizeNumber(item.beratKg) === 200),
-            'Row nota harus mengikuti berat billable per SJ A.'
+            notaItems.some(item => item.noSJ === sjA && normalizeText(item.barang) === 'Audit barang A1' && normalizeNumber(item.beratKg) === 200) &&
+            notaItems.some(item => item.noSJ === sjA && normalizeText(item.barang) === 'Audit barang A2' && normalizeNumber(item.beratKg) === 125),
+            'Row nota harus mengikuti berat billable per barang pada SJ A.'
         );
         assert(
             notaItems.every(item => normalizeText(item.tujuan).startsWith('Audit Drop')),
             'Tujuan nota harus berasal dari titik drop aktual per SJ.'
         );
+
+        auditStep('pastikan nomor SJ tidak boleh diubah setelah masuk nota');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-shipper-reference',
+            data: {
+                id: doOneId,
+                customerDoNumber: `${sjA}-REV`,
+                shipperReferences: [
+                    { referenceNumber: `${sjA}-REV`, pickupStopKey: pickupOneKey },
+                    { referenceNumber: sjB, pickupStopKey: pickupOneKey },
+                ],
+            },
+        }, { expectStatus: 409 });
 
         auditStep('pastikan SJ hold pada DO campuran tidak bisa ditagihkan');
         const heldMixedItem = doOneItems.find(item => item.shipperReferenceNumber === sjB);
@@ -769,7 +1040,7 @@ async function main() {
         assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menghapus row freightNotaItem.');
         createdState.notaId = undefined;
 
-        console.log('Order to nota E2E audit OK: create order, multi-trip DO, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/delete verified.');
+        console.log('Order to nota E2E audit OK: create/delete order, cancel DO, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/delete verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);

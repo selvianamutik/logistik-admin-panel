@@ -1897,7 +1897,7 @@
   {
     "ket": "Borongan selesai dan sudah dibayar.",
     "date": "2026-03-03",
-    "noSJ": "DO-202603-0001",
+    "noSJ": "SJ-202603-001",
     "doRef": "do-001",
     "tarip": 1350000,
     "barang": "Beras premium 25 kg, Minyak goreng kemasan",
@@ -2196,7 +2196,7 @@
     "ket": "Tagihan distribusi retail - beras.",
     "dari": "Gudang PT Gading Mas Surya - Tulangan",
     "date": "2026-03-03",
-    "noSJ": "DO-202603-0001",
+    "noSJ": "SJ-202603-001",
     "doRef": "do-001",
     "tarip": 15000,
     "barang": "Beras premium 25 kg",
@@ -2961,6 +2961,10 @@
     "actualQtyKoli": 4,
     "actualWeightKg": 80,
     "orderItemWeight": 80,
+    "pickupStopKey": "pickup-do-001-1",
+    "pickupAddress": "Gudang PT Gading Mas Surya - Tulangan",
+    "shipperReferenceKey": "sj-do-001-1",
+    "shipperReferenceNumber": "SJ-202603-001",
     "deliveryOrderRef": "do-001",
     "orderItemQtyKoli": 4,
     "orderItemDescription": "Beras premium 25 kg",
@@ -3571,6 +3575,61 @@
     "trackingLastSeenAt": "2026-03-03T10:28:00Z",
     "trackingLastSource": "DRIVER_APP",
     "tripDestinationArea": "Surabaya",
+    "pickupStops": [
+      {
+        "_key": "pickup-do-001-1",
+        "sequence": 1,
+        "pickupAddress": "Gudang PT Gading Mas Surya - Tulangan"
+      }
+    ],
+    "shipperReferences": [
+      {
+        "_key": "sj-do-001-1",
+        "sequence": 1,
+        "referenceNumber": "SJ-202603-001",
+        "pickupStopKey": "pickup-do-001-1",
+        "pickupAddress": "Gudang PT Gading Mas Surya - Tulangan",
+        "receiverName": "Samsul Hadi",
+        "receiverPhone": "081777100001",
+        "receiverCompany": "PT Retail Sentosa Surabaya",
+        "receiverAddress": "Jl. Pelabuhan No. 5, Surabaya",
+        "notes": "Satu SJ berisi dua barang retail."
+      }
+    ],
+    "actualDropPoints": [
+      {
+        "_key": "drop-do-001-beras",
+        "sequence": 1,
+        "stopType": "DROP",
+        "deliveryOrderItemRef": "doi-001",
+        "deliveryOrderItemRefs": [
+          "doi-001"
+        ],
+        "shipperReferenceNumber": "SJ-202603-001",
+        "locationName": "PT Retail Sentosa Surabaya",
+        "locationAddress": "Jl. Pelabuhan No. 5, Surabaya",
+        "qtyKoli": 4,
+        "weightKg": 80,
+        "weightInputValue": 80,
+        "weightInputUnit": "KG"
+      },
+      {
+        "_key": "drop-do-001-minyak",
+        "sequence": 2,
+        "stopType": "DROP",
+        "deliveryOrderItemRef": "doi-002",
+        "deliveryOrderItemRefs": [
+          "doi-002"
+        ],
+        "shipperReferenceNumber": "SJ-202603-001",
+        "locationName": "PT Retail Sentosa Surabaya",
+        "locationAddress": "Jl. Pelabuhan No. 5, Surabaya",
+        "qtyKoli": 6,
+        "weightKg": 120,
+        "weightInputValue": 120,
+        "weightInputUnit": "KG"
+      }
+    ],
     "issuerCompanyAddress": "JL. KEMANTREN 08 - KEC. TULANGAN, KAB. SIDOARJO - JATIM - INDONESIA",
     "issuerCompanyLogoUrl": "/logo.png",
     "trackingLastSpeedKph": 0,
@@ -4117,6 +4176,10 @@
     "actualQtyKoli": 6,
     "actualWeightKg": 120,
     "orderItemWeight": 120,
+    "pickupStopKey": "pickup-do-001-1",
+    "pickupAddress": "Gudang PT Gading Mas Surya - Tulangan",
+    "shipperReferenceKey": "sj-do-001-1",
+    "shipperReferenceNumber": "SJ-202603-001",
     "deliveryOrderRef": "do-001",
     "orderItemQtyKoli": 6,
     "orderItemDescription": "Minyak goreng kemasan",

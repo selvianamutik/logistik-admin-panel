@@ -2967,14 +2967,16 @@ export async function handleFreightNotaUpdate(
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
-        const rowKey = `${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`;
+        const rowKeys = rowItemRefs.length > 0
+            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
+            : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
         const coverage = payloadCoverageByDoRef.get(row.doRef) || {
             deliveryOrderItemRefs: new Set<string>(),
             rowKeys: new Set<string>(),
         };
-        if (coverage.rowKeys.has(rowKey)) {
+        if (rowKeys.some(rowKey => coverage.rowKeys.has(rowKey))) {
             return NextResponse.json(
-                { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} duplikat dalam payload nota` },
+                { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} duplikat untuk barang yang sama dalam payload nota` },
                 { status: 409 }
             );
         }
@@ -2983,7 +2985,7 @@ export async function handleFreightNotaUpdate(
                 return NextResponse.json({ error: `Item DO ${itemRef} duplikat dalam payload nota` }, { status: 400 });
             }
         }
-        coverage.rowKeys.add(rowKey);
+        rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
         rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }

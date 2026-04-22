@@ -86,11 +86,20 @@ function getRowDeliveryOrderItemRefs(row: {
     return singleRef ? [singleRef] : [];
 }
 
-function hasMultiItemShipperRow(rows: Array<{
+function hasMultipleItemRowsForSameShipper(rows: Array<{
+    doRef?: string;
+    noSJ?: string;
     deliveryOrderItemRef?: string;
     deliveryOrderItemRefs?: string[];
 }>) {
-    return rows.some(row => getRowDeliveryOrderItemRefs(row).length > 1);
+    const rowCountByShipper = new Map<string, number>();
+    for (const row of rows) {
+        const itemRefs = getRowDeliveryOrderItemRefs(row);
+        if (itemRefs.length === 0) continue;
+        const key = `${normalizeText(row.doRef)}::${normalizeText(row.noSJ)}`;
+        rowCountByShipper.set(key, (rowCountByShipper.get(key) || 0) + 1);
+    }
+    return [...rowCountByShipper.values()].some(count => count > 1);
 }
 
 function assertFreightNotaRowsKeepItemRefs(params: {
@@ -103,10 +112,17 @@ function assertFreightNotaRowsKeepItemRefs(params: {
         if (expectedItemRefs.length === 0) {
             continue;
         }
-        const matchedRow = params.actualRows.find(row =>
-            normalizeText(row.doRef) === normalizeText(expectedRow.doRef) &&
-            normalizeText(row.noSJ) === normalizeText(expectedRow.noSJ)
-        );
+        const matchedRow = params.actualRows.find(row => {
+            if (
+                normalizeText(row.doRef) !== normalizeText(expectedRow.doRef) ||
+                normalizeText(row.noSJ) !== normalizeText(expectedRow.noSJ)
+            ) {
+                return false;
+            }
+            const actualItemRefs = getRowDeliveryOrderItemRefs(row);
+            return actualItemRefs.length === expectedItemRefs.length &&
+                expectedItemRefs.every(itemRef => actualItemRefs.includes(itemRef));
+        });
         assert(
             matchedRow,
             `${params.label}: row ${expectedRow.noSJ || expectedRow.doRef || '-'} tidak ditemukan`
@@ -628,7 +644,7 @@ async function main() {
             }))
             .filter(candidate => candidate.valid && candidate.customerRef && candidate.customerName);
 
-        let firstCandidate = prepared.find(candidate => hasMultiItemShipperRow(candidate.rows));
+        let firstCandidate = prepared.find(candidate => hasMultipleItemRowsForSameShipper(candidate.rows));
         if (!firstCandidate) {
             const fixtureData = await createFixtureIfNeeded(cookieHeader, createdState);
             deliveryOrders = [fixtureData.deliveryOrder];
@@ -640,13 +656,13 @@ async function main() {
                     ...buildCandidateRows({ deliveryOrder, orders, deliveryOrderItems }),
                 }))
                 .filter(candidate => candidate.valid && candidate.customerRef && candidate.customerName);
-            firstCandidate = prepared.find(candidate => hasMultiItemShipperRow(candidate.rows));
+            firstCandidate = prepared.find(candidate => hasMultipleItemRowsForSameShipper(candidate.rows));
         }
 
         assert(firstCandidate, 'Audit revision tidak berhasil menyiapkan kandidat DO billable.');
         assert(
-            hasMultiItemShipperRow(firstCandidate.rows),
-            'Audit revision harus memakai minimal 1 row SJ dengan banyak item.'
+            hasMultipleItemRowsForSameShipper(firstCandidate.rows),
+            'Audit revision harus memakai minimal 1 SJ yang menghasilkan beberapa row barang.'
         );
 
         const manualAuditRows: NotaItemRow[] = [{
