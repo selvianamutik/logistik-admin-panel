@@ -540,6 +540,23 @@ export default function OrderDetailPage() {
         }
     }, [busyVehicleIds, doVehicle, selectedOrderTripPlan]);
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
+    const hasHeldAvailableItems = availableItems.some(item => {
+        const progressInfo = itemProgressById[item._id];
+        return progressInfo.heldQtyKoli > 0 || progressInfo.heldWeight > 0 || progressInfo.heldVolume > 0;
+    });
+    const canCreateContinuationDeliveryOrder =
+        canCreateDeliveryOrder &&
+        availableItems.length > 0 &&
+        dos.length > 0;
+    const usesExistingItemsForDeliveryOrder = !isHeaderOnlyOrder || canCreateContinuationDeliveryOrder;
+    const continuationButtonLabel = hasHeldAvailableItems
+        ? 'Buat SJ Lanjutan Hold'
+        : 'Buat SJ Lanjutan';
+    const primaryDeliveryOrderButtonLabel = canCreateContinuationDeliveryOrder
+        ? continuationButtonLabel
+        : isHeaderOnlyOrder && dos.length > 0
+            ? 'Tambah Surat Jalan'
+            : 'Buat Surat Jalan';
     const flattenedDirectCargoItems = flattenDirectCargoGroups(directCargoGroups);
     const draftDirectCargoItems = getDraftOrderItems(flattenedDirectCargoItems);
     const draftDirectCargoGroups = directCargoGroups
@@ -641,13 +658,13 @@ export default function OrderDetailPage() {
         : 'Belum ada muatan tercatat';
 
     const handleCreateDO = async () => {
-        const selectedItems = isHeaderOnlyOrder
-            ? []
-            : buildCreateDeliveryOrderItems(
+        const selectedItems = usesExistingItemsForDeliveryOrder
+            ? buildCreateDeliveryOrderItems(
                 availableItems,
                 selectedShipments,
                 itemProgressById
-            );
+            )
+            : [];
 
         if (!effectiveDoVehicleRef) {
             addToast('error', 'Pilih kendaraan sebelum membuat surat jalan');
@@ -657,7 +674,7 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
             return;
         }
-        if (isHeaderOnlyOrder && draftDirectCargoItems.length > 0) {
+        if (isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder && draftDirectCargoItems.length > 0) {
             const invalidReferenceGroup = draftDirectCargoGroups.findIndex(group => group.draftItems.length > 0 && !group.shipperReferenceNumber.trim());
             if (invalidReferenceGroup >= 0) {
                 addToast('error', `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}`);
@@ -684,7 +701,7 @@ export default function OrderDetailPage() {
                 return;
             }
         }
-        if (!isHeaderOnlyOrder && selectedItems.length === 0) {
+        if (usesExistingItemsForDeliveryOrder && selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
         }
@@ -698,7 +715,7 @@ export default function OrderDetailPage() {
             resolvedPickupStopKey: group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : ''),
             resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
         }));
-        const deliveryOrderPayload = (isHeaderOnlyOrder
+        const deliveryOrderPayload = (isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder
             ? {
                 orderRef: order?._id,
                 orderTripPlanKey: selectedOrderTripPlan?._key,
@@ -914,7 +931,17 @@ export default function OrderDetailPage() {
                 <div className="page-actions">
                     {!hasPlannedTrips && (
                         <button className="btn btn-primary" onClick={() => openCreateDOModal()} disabled={!canCreateDeliveryOrder}>
-                            <Truck size={16} /> {isHeaderOnlyOrder && dos.length > 0 ? 'Tambah Surat Jalan' : 'Buat Surat Jalan'}
+                            <Truck size={16} /> {primaryDeliveryOrderButtonLabel}
+                        </button>
+                    )}
+                    {hasPlannedTrips && canCreateContinuationDeliveryOrder && (
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => openCreateDOModal()}
+                            disabled={!canCreateDeliveryOrder}
+                            title="Buat surat jalan tambahan untuk sisa atau hold/inap dari order ini"
+                        >
+                            <Truck size={16} /> {continuationButtonLabel}
                         </button>
                     )}
                     {canCreateInvoice && (
@@ -1084,12 +1111,45 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
+            {!hasPlannedTrips && canCreateContinuationDeliveryOrder && (
+                <div className="card mt-6">
+                    <div className="card-body" style={{ padding: '0.9rem 1rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <div>
+                            <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
+                            <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
+                                {hasHeldAvailableItems
+                                    ? 'Ada item hold/inap yang bisa dikirim tanpa melepas status hold manual.'
+                                    : 'Ada sisa item yang belum masuk surat jalan berikutnya.'}
+                            </div>
+                        </div>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
+                            <Truck size={14} /> {continuationButtonLabel}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {hasPlannedTrips && (
                 <div className="card mt-6">
                     <div className="card-header">
                         <span className="card-header-title">Rencana Trip ({orderTripPlans.length})</span>
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
+                        {canCreateContinuationDeliveryOrder && (
+                            <div style={{ padding: '0.9rem 1rem', borderRadius: '0.75rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
+                                    <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
+                                        {hasHeldAvailableItems
+                                            ? 'Ada item hold/inap yang bisa dikirim tanpa melepas status hold manual.'
+                                            : 'Ada sisa item yang belum masuk trip terencana.'}
+                                    </div>
+                                </div>
+                                <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
+                                    <Truck size={14} /> {continuationButtonLabel}
+                                </button>
+                            </div>
+                        )}
                         {orderTripPlans.map(tripPlan => {
                             const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef) : undefined;
                             const tripPlanPickupStops = resolvedOrderPickupStops.filter(stop => tripPlan.pickupStopKeys.includes(stop._key));
@@ -1469,7 +1529,7 @@ export default function OrderDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!creatingDO) { setShowDOModal(false); setSelectedOrderTripPlanKey(''); } }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : 'Buat Surat Jalan'}</h3>
+                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : canCreateContinuationDeliveryOrder ? continuationButtonLabel : 'Buat Surat Jalan'}</h3>
                             <button className="modal-close" onClick={() => { setShowDOModal(false); setSelectedOrderTripPlanKey(''); }} disabled={creatingDO}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -1685,8 +1745,8 @@ export default function OrderDetailPage() {
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
                             </div>
-                            <div className="form-section-title">{isHeaderOnlyOrder ? 'Input Barang Surat Jalan' : 'Pilih Item untuk DO'}</div>
-                            {isHeaderOnlyOrder ? (
+                            <div className="form-section-title">{isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder ? 'Input Barang Surat Jalan' : 'Pilih Item untuk DO'}</div>
+                            {isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder ? (
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
@@ -1921,6 +1981,10 @@ export default function OrderDetailPage() {
                                                     {availableItems.map(item => {
                                                 const selection = selectedShipments[item._id];
                                                 const progressInfo = itemProgressById[item._id];
+                                                const hasHeldCargo =
+                                                    progressInfo.heldQtyKoli > 0 ||
+                                                    progressInfo.heldWeight > 0 ||
+                                                    progressInfo.heldVolume > 0;
                                                 const usesQtyBasis = progressInfo.totalQtyKoli > 0;
                                                 const selectedQty = parseFormattedNumberish(selection?.qtyKoli || 0, { maxFractionDigits: 2 });
                                                 const shippedWeightPreview = selectedQty > 0
@@ -1966,6 +2030,12 @@ export default function OrderDetailPage() {
                                                         </td>
                                                         <td>
                                                             <div className="font-medium">{item.description}</div>
+                                                            {hasHeldCargo && (
+                                                                <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                                    <span className="badge badge-warning"><span className="badge-dot" /> Hold / Inap siap lanjut</span>
+                                                                    {item.holdLocation && <span className="text-muted text-sm">{item.holdLocation}</span>}
+                                                                </div>
+                                                            )}
                                                             {(item.customerProductCode || item.customerProductName) && (
                                                                 <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
                                                                     {item.customerProductCode ? `${item.customerProductCode} - ` : ''}{item.customerProductName || 'Master barang customer'}
@@ -2009,6 +2079,16 @@ export default function OrderDetailPage() {
                                                                         volumeM3: progressInfo.assignableVolume,
                                                                     })}
                                                                 </div>
+                                                                {hasHeldCargo && (
+                                                                    <div>
+                                                                        Sumber lanjutan:{' '}
+                                                                        {formatCargoSummary({
+                                                                            qtyKoli: progressInfo.heldQtyKoli,
+                                                                            weightKg: progressInfo.heldWeight,
+                                                                            volumeM3: progressInfo.heldVolume,
+                                                                        })} hold{item.holdReason ? ` - ${item.holdReason}` : ''}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td style={{ minWidth: 180 }}>
@@ -2286,15 +2366,17 @@ export default function OrderDetailPage() {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleCreateDO}
-                                disabled={creatingDO || (!isHeaderOnlyOrder && Object.keys(selectedShipments).length === 0)}
+                                disabled={creatingDO || (usesExistingItemsForDeliveryOrder && Object.keys(selectedShipments).length === 0)}
                             >
                                 <Truck size={16} /> {creatingDO
                                     ? 'Membuat Surat Jalan...'
                                     : selectedOrderTripPlan
                                         ? (draftDirectCargoItems.length > 0 ? `Input Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Input Surat Jalan (barang menyusul)')
-                                        : isHeaderOnlyOrder
+                                          : isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder
                                             ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
-                                            : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
+                                            : canCreateContinuationDeliveryOrder
+                                                ? `${continuationButtonLabel} (${Object.keys(selectedShipments).length} item)`
+                                                : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
                         </div>
                     </div>

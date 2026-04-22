@@ -2827,11 +2827,6 @@ export async function handleDeliveryOrderCreate(
                 }, item.description)
             );
         }
-    } else if (resolvedCargoEntryMode === 'DELIVERY_ORDER') {
-        return NextResponse.json(
-            { error: 'Order ini memakai flow barang di Surat Jalan. Barang baru harus diinput langsung saat membuat Surat Jalan.' },
-            { status: 409 }
-        );
     } else {
         selectedItems = (await Promise.all(
             requestedItemIds.map(itemId => getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(itemId, 'orderItem'))

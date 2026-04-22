@@ -1186,12 +1186,12 @@ export default function DODetailPage() {
     };
 
     const applyActualDropShipperReference = (draftKey: string, optionValue: string) => {
-        const selectedTarget = actualDropTargetOptions.find(target => target.optionValue === optionValue);
+        const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === optionValue);
         setActualDropPoints(previous => previous.map(item => {
             if (item.draftKey !== draftKey) {
                 return item;
             }
-            if (!selectedTarget) {
+            if (!selectedReference) {
                 return {
                     ...item,
                     deliveryOrderItemRef: '',
@@ -1201,16 +1201,71 @@ export default function DODetailPage() {
             }
             return {
                 ...item,
-                deliveryOrderItemRef: selectedTarget.deliveryOrderItemRef || '',
-                shipperReferenceKey: selectedTarget.referenceKey || '',
-                shipperReferenceNumber: selectedTarget.referenceNumber || '',
+                deliveryOrderItemRef: '',
+                shipperReferenceKey: selectedReference.referenceKey || '',
+                shipperReferenceNumber: selectedReference.referenceNumber || '',
                 locationName:
-                    selectedTarget.receiverCompany?.trim()
-                    || selectedTarget.receiverName?.trim()
-                    || selectedTarget.receiverAddress?.trim()
+                    selectedReference.receiverCompany?.trim()
+                    || selectedReference.receiverName?.trim()
+                    || selectedReference.receiverAddress?.trim()
                     || item.locationName,
-                locationAddress: selectedTarget.receiverAddress || item.locationAddress,
+                locationAddress: selectedReference.receiverAddress || item.locationAddress,
             };
+        }));
+    };
+
+    const applyActualDropItem = (draftKey: string, deliveryOrderItemRef: string) => {
+        const selectedCargoItem = actualCargoItems.find(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
+        setActualDropPoints(previous => previous.map(item => {
+            if (item.draftKey !== draftKey) {
+                return item;
+            }
+            if (!selectedCargoItem) {
+                return {
+                    ...item,
+                    deliveryOrderItemRef: '',
+                };
+            }
+            return {
+                ...item,
+                deliveryOrderItemRef: selectedCargoItem.deliveryOrderItemRef,
+                shipperReferenceKey: selectedCargoItem.shipperReferenceKey || item.shipperReferenceKey,
+                shipperReferenceNumber: selectedCargoItem.shipperReferenceNumber || item.shipperReferenceNumber,
+                qtyKoli: selectedCargoItem.actualQtyKoli || item.qtyKoli,
+                weightInputValue: selectedCargoItem.actualWeightInputValue || item.weightInputValue,
+                weightInputUnit: selectedCargoItem.actualWeightInputUnit || item.weightInputUnit,
+                volumeInputValue: selectedCargoItem.actualVolumeInputValue || item.volumeInputValue,
+                volumeInputUnit: selectedCargoItem.actualVolumeInputUnit || item.volumeInputUnit,
+            };
+        }));
+    };
+
+    const applyActualDropAllItemsForReference = (draftKey: string) => {
+        const sourceDrop = actualDropPoints.find(item => item.draftKey === draftKey);
+        if (!sourceDrop) {
+            return;
+        }
+        const itemOptions = getActualDropItemOptions(sourceDrop);
+        if (itemOptions.length === 0) {
+            return;
+        }
+
+        setActualDropPoints(previous => previous.flatMap(item => {
+            if (item.draftKey !== draftKey) {
+                return [item];
+            }
+            return itemOptions.map((cargoItem, index) => ({
+                ...item,
+                draftKey: index === 0 ? item.draftKey : crypto.randomUUID(),
+                deliveryOrderItemRef: cargoItem.deliveryOrderItemRef,
+                shipperReferenceKey: cargoItem.shipperReferenceKey || item.shipperReferenceKey,
+                shipperReferenceNumber: cargoItem.shipperReferenceNumber || item.shipperReferenceNumber,
+                qtyKoli: cargoItem.actualQtyKoli || '',
+                weightInputValue: cargoItem.actualWeightInputValue || '',
+                weightInputUnit: cargoItem.actualWeightInputUnit || item.weightInputUnit,
+                volumeInputValue: cargoItem.actualVolumeInputValue || '',
+                volumeInputUnit: cargoItem.actualVolumeInputUnit || item.volumeInputUnit,
+            }));
         }));
     };
 
@@ -1590,56 +1645,56 @@ export default function DODetailPage() {
             ? pickupStopMap.get(reference.pickupStopKey)?.pickupAddress || reference.pickupAddress
             : reference.pickupAddress,
     }));
-    const actualDropTargetOptions = [
-        ...shipperReferenceDisplayList.map(reference => {
+    const actualDropShipperReferenceOptions = shipperReferenceDisplayList.map(reference => {
             const optionValue = `sj:${reference.referenceKey || reference.draftKey || reference.referenceNumber}`;
             return {
                 ...reference,
                 optionValue,
-                optionLabel: `${reference.referenceNumber}${reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''} (semua barang)`,
-                deliveryOrderItemRef: '',
+                optionLabel: `${reference.referenceNumber}${reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''}`,
             };
-        }),
-        ...doItems.map(item => {
-            const matchedReference = shipperReferenceDisplayList.find(reference =>
-                (item.shipperReferenceKey && reference.referenceKey === item.shipperReferenceKey) ||
-                (item.shipperReferenceNumber && reference.referenceNumber === item.shipperReferenceNumber)
-            );
-            const fallbackReferenceNumber = item.shipperReferenceNumber || doData.customerDoNumber || doData.doNumber || 'Tanpa SJ';
-            return {
-                ...(matchedReference || {
-                    draftKey: `item-target-${item._id}`,
-                    referenceKey: item.shipperReferenceKey || '',
-                    referenceNumber: fallbackReferenceNumber,
-                    pickupStopKey: item.pickupStopKey || '',
-                    pickupLabel: '',
-                    pickupAddress: item.pickupAddress || '',
-                    billingCustomerRef: '',
-                    billingCustomerName: '',
-                    receiverName: doData.receiverName || '',
-                    receiverPhone: doData.receiverPhone || '',
-                    receiverAddress: doData.receiverAddress || '',
-                    receiverCompany: doData.receiverCompany || '',
-                }),
-                optionValue: `item:${item._id}`,
-                optionLabel: `${fallbackReferenceNumber} - ${item.orderItemDescription || 'Barang'}${matchedReference ? '' : ' (barang)'}`,
-                deliveryOrderItemRef: item._id,
-            };
-        }),
-    ];
+        });
     const resolveActualDropShipperReferenceValue = (
         drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
     ) => {
-        if (drop.deliveryOrderItemRef) {
-            return `item:${drop.deliveryOrderItemRef}`;
-        }
+        const itemCargo = drop.deliveryOrderItemRef
+            ? actualCargoItems.find(item => item.deliveryOrderItemRef === drop.deliveryOrderItemRef)
+            : null;
         const matchedReference = shipperReferenceDisplayList.find(reference =>
+            (itemCargo?.shipperReferenceKey && reference.referenceKey === itemCargo.shipperReferenceKey) ||
+            (itemCargo?.shipperReferenceNumber && reference.referenceNumber === itemCargo.shipperReferenceNumber) ||
             (drop.shipperReferenceKey && reference.referenceKey === drop.shipperReferenceKey) ||
             (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
         );
         const referenceValue = matchedReference?.referenceKey || matchedReference?.draftKey || matchedReference?.referenceNumber;
         return referenceValue ? `sj:${referenceValue}` : '';
     };
+    const getActualDropItemOptions = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+    ) => {
+        const selectedReferenceValue = resolveActualDropShipperReferenceValue(drop);
+        const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
+        if (!selectedReference) {
+            return actualCargoItems;
+        }
+        return actualCargoItems.filter(item => {
+            const sourceDoItem = doItems.find(row => row._id === item.deliveryOrderItemRef);
+            const itemReferenceKey = (item.shipperReferenceKey || sourceDoItem?.shipperReferenceKey || '').trim();
+            const itemReferenceNumber = (
+                item.shipperReferenceNumber ||
+                sourceDoItem?.shipperReferenceNumber ||
+                doData.customerDoNumber ||
+                doData.doNumber ||
+                ''
+            ).trim().toUpperCase();
+            return (
+                (selectedReference.referenceKey && itemReferenceKey === selectedReference.referenceKey) ||
+                (selectedReference.referenceNumber && itemReferenceNumber === selectedReference.referenceNumber.trim().toUpperCase())
+            );
+        });
+    };
+    const resolveActualDropItemValue = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef'>
+    ) => drop.deliveryOrderItemRef ? drop.deliveryOrderItemRef : '';
     const getActualDropCargoSummary = (
         drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
     ) =>
@@ -2912,6 +2967,11 @@ export default function DODetailPage() {
                                                 </div>
                                                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                     {actualDropPoints.map((item, index) => (
+                                                        (() => {
+                                                            const selectedReferenceValue = resolveActualDropShipperReferenceValue(item);
+                                                            const itemOptions = selectedReferenceValue ? getActualDropItemOptions(item) : [];
+                                                            const selectedItemRef = resolveActualDropItemValue(item);
+                                                            return (
                                                         <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                                                                 <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
@@ -2922,25 +2982,22 @@ export default function DODetailPage() {
                                                                 )}
                                                             </div>
                                                             <div className="form-row">
-                                                                {actualDropTargetOptions.length > 0 && (
+                                                                {actualDropShipperReferenceOptions.length > 0 && (
                                                                     <div className="form-group">
-                                                                        <label className="form-label">No. SJ / Barang</label>
+                                                                        <label className="form-label">No. SJ</label>
                                                                         <select
                                                                             className="form-select"
                                                                             value={resolveActualDropShipperReferenceValue(item)}
                                                                             onChange={e => applyActualDropShipperReference(item.draftKey, e.target.value)}
                                                                             disabled={updatingStatus}
                                                                         >
-                                                                            <option value="">Tidak spesifik / semua barang</option>
-                                                                            {actualDropTargetOptions.map(target => (
+                                                                            <option value="">Pilih surat jalan</option>
+                                                                            {actualDropShipperReferenceOptions.map(target => (
                                                                                 <option key={target.optionValue} value={target.optionValue}>
                                                                                     {target.optionLabel}
                                                                                 </option>
                                                                             ))}
                                                                         </select>
-                                                                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                                                            Barang: {getActualDropCargoSummary(item)}
-                                                                        </div>
                                                                     </div>
                                                                 )}
                                                                 <div className="form-group">
@@ -2967,6 +3024,54 @@ export default function DODetailPage() {
                                                                     />
                                                                 </div>
                                                             </div>
+                                                            {selectedReferenceValue && (
+                                                                <div className="form-group">
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                                                                        <label className="form-label" style={{ marginBottom: 0 }}>Barang di SJ</label>
+                                                                        {itemOptions.length > 1 && (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="btn btn-secondary btn-sm"
+                                                                                onClick={() => applyActualDropAllItemsForReference(item.draftKey)}
+                                                                                disabled={updatingStatus}
+                                                                            >
+                                                                                Buat Baris per Barang
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                                                        {itemOptions.map(cargoItem => {
+                                                                            const selected = selectedItemRef === cargoItem.deliveryOrderItemRef;
+                                                                            return (
+                                                                                <button
+                                                                                    key={cargoItem.deliveryOrderItemRef}
+                                                                                    type="button"
+                                                                                    className={`btn ${selected ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                                                                                    onClick={() => applyActualDropItem(item.draftKey, cargoItem.deliveryOrderItemRef)}
+                                                                                    disabled={updatingStatus}
+                                                                                    style={{ justifyContent: 'space-between', textAlign: 'left', width: '100%' }}
+                                                                                >
+                                                                                    <span>{cargoItem.description}</span>
+                                                                                    <span>{formatCargoSummary({
+                                                                                        qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+                                                                                        weightInputValue: parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
+                                                                                            maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                                        }),
+                                                                                        weightInputUnit: cargoItem.actualWeightInputUnit,
+                                                                                        volumeInputValue: parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
+                                                                                            maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                                                        }),
+                                                                                        volumeInputUnit: cargoItem.actualVolumeInputUnit,
+                                                                                    })}</span>
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                                        {selectedItemRef ? `Barang dipakai di baris ini: ${getActualDropCargoSummary(item)}` : 'Pilih barang yang turun/hold di titik ini, lalu isi qty/berat/volume di bawah.'}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                             <div className="form-group">
                                                                 <label className="form-label">Alamat Lokasi</label>
                                                                 <input
@@ -3051,6 +3156,8 @@ export default function DODetailPage() {
                                                                 />
                                                             </div>
                                                         </div>
+                                                            );
+                                                        })()
                                                     ))}
                                                 </div>
                                             </>
