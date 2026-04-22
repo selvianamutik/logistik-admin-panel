@@ -11,14 +11,17 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
+    buildDriverVoucherCashBreakdown,
     buildDriverVoucherDetailSummary,
     buildDriverVoucherPrintHtml,
     createDefaultDriverVoucherItemForm,
     createDefaultDriverVoucherTopUpForm,
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
+    getDriverVoucherDisbursementLabel,
     sortDriverVoucherItems,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
+import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
 import { useApp, useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
@@ -110,6 +113,8 @@ export default function DriverVoucherDetailPage() {
         settlementLabel,
         settlementPrimaryLabel,
     } = buildDriverVoucherDetailSummary(voucher, items);
+    const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, { initialCashGiven, topUpAmount });
+    const routeLabel = formatDriverVoucherRouteForDisplay(voucher?.route) || voucher?.route || '-';
 
     const handleAddItem = async () => {
         if (!canManageVoucherItems) return;
@@ -458,7 +463,7 @@ export default function DriverVoucherDetailPage() {
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Uang Diberikan</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(totalIssuedAmount)}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Bon awal {formatCurrency(initialCashGiven)} {topUpAmount > 0 ? `| tambahan ${formatCurrency(topUpAmount)}` : ''}
+                        {cashBreakdown}
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
@@ -494,8 +499,8 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{canOpenDriverPage && voucher.driverRef ? <Link href={`/fleet/drivers/${voucher.driverRef}`}>{voucher.driverName || '-'}</Link> : (voucher.driverName || '-')}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NO. DO INTERNAL</div><div>{canOpenDeliveryOrderPage && voucher.deliveryOrderRef ? <Link href={`/delivery-orders/${voucher.deliveryOrderRef}`}>{voucher.doNumber || '-'}</Link> : (voucher.doNumber || '-')}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>KENDARAAN</div><div>{canOpenVehiclePage && voucher.vehicleRef ? <Link href={`/fleet/vehicles/${voucher.vehicleRef}`}>{voucher.vehiclePlate || '-'}</Link> : (voucher.vehiclePlate || '-')}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{voucher.route || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UANG JALAN AWAL</div><div>{formatCurrency(initialCashGiven)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{routeLabel}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BON PERTAMA</div><div>{formatCurrency(initialCashGiven)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA BON OPERASIONAL</div><div>{formatCurrency(operationalBalance)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH TRIP SNAPSHOT DO</div><div>{formatCurrency(driverFeeAmount)}</div></div>
@@ -521,11 +526,13 @@ export default function DriverVoucherDetailPage() {
                             <tbody>
                                 {disbursements.length === 0 ? (
                                     <tr><td colSpan={isSettled || !canTopUpVoucher ? 6 : 7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada riwayat pencairan uang jalan</td></tr>
-                                ) : disbursements.map((item, index) => (
+                                ) : disbursements.map((item, index) => {
+                                    const bonLabel = getDriverVoucherDisbursementLabel(item, disbursements);
+                                    return (
                                     <tr key={item._id}>
                                         <td>{index + 1}</td>
                                         <td>{formatDate(item.date)}</td>
-                                        <td><span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</span></td>
+                                        <td><span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{bonLabel}</span></td>
                                         <td>{item.bankAccountName || '-'}</td>
                                         <td>{item.note || '-'}</td>
                                         <td className="font-medium">{formatCurrency(item.amount)}</td>
@@ -541,7 +548,8 @@ export default function DriverVoucherDetailPage() {
                                             </td>
                                         )}
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -550,11 +558,13 @@ export default function DriverVoucherDetailPage() {
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada riwayat pencairan uang jalan</div>
                             </div>
-                        ) : disbursements.map(item => (
+                        ) : disbursements.map(item => {
+                            const bonLabel = getDriverVoucherDisbursementLabel(item, disbursements);
+                            return (
                             <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</div>
+                                        <div className="mobile-record-title">{bonLabel}</div>
                                         <div className="mobile-record-subtitle">{formatDate(item.date)} | {item.bankAccountName || '-'}</div>
                                     </div>
                                     <span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{formatCurrency(item.amount)}</span>
@@ -573,7 +583,8 @@ export default function DriverVoucherDetailPage() {
                                     </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </CollapsibleCard>
@@ -722,8 +733,8 @@ export default function DriverVoucherDetailPage() {
                                 <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>{settlementLabel}</div>
                             </div>
                             <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Uang Jalan Awal</span><strong>{formatCurrency(initialCashGiven)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Top Up Uang Jalan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Pertama</span><strong>{formatCurrency(initialCashGiven)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Tambahan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Perjalanan</span><strong>{formatCurrency(operationalSpent)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>

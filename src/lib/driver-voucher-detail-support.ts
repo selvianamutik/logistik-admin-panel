@@ -3,6 +3,7 @@ import type { DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from
 import { getBusinessDateValue } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
+import { formatDriverVoucherRouteForDisplay } from './driver-voucher-route';
 
 export const DRIVER_VOUCHER_STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -44,12 +45,58 @@ export function createDefaultDriverVoucherTopUpForm(issueBankRef = ''): DriverVo
     };
 }
 
+function getDisbursementKindSortValue(kind: DriverVoucherDisbursement['kind']) {
+    return kind === 'INITIAL' ? 0 : 1;
+}
+
+export function sortDriverVoucherDisbursementsChronologically(disbursements: DriverVoucherDisbursement[]) {
+    return [...disbursements].sort((a, b) => {
+        const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
+        if (dateCompare !== 0) return dateCompare;
+
+        const kindCompare = getDisbursementKindSortValue(a.kind) - getDisbursementKindSortValue(b.kind);
+        if (kindCompare !== 0) return kindCompare;
+
+        return String(a._id || '').localeCompare(String(b._id || ''));
+    });
+}
+
 export function sortDriverVoucherDisbursements(disbursements: DriverVoucherDisbursement[]) {
-    return [...disbursements].sort((a, b) => `${b.date}-${b.kind}`.localeCompare(`${a.date}-${a.kind}`));
+    return sortDriverVoucherDisbursementsChronologically(disbursements);
 }
 
 export function sortDriverVoucherItems(items: DriverVoucherItem[]) {
     return [...items].sort((a, b) => `${b.expenseDate || ''}-${b._id}`.localeCompare(`${a.expenseDate || ''}-${a._id}`));
+}
+
+export function formatDriverVoucherBonLabel(sequence: number) {
+    if (sequence === 1) return 'Bon Pertama';
+    if (sequence === 2) return 'Bon Kedua';
+    if (sequence === 3) return 'Bon Ketiga';
+    return `Bon Ke-${sequence}`;
+}
+
+export function getDriverVoucherDisbursementLabel(
+    disbursement: DriverVoucherDisbursement,
+    disbursements: DriverVoucherDisbursement[]
+) {
+    const ordered = sortDriverVoucherDisbursementsChronologically(disbursements);
+    const index = ordered.findIndex(item => item._id === disbursement._id);
+    return formatDriverVoucherBonLabel(index >= 0 ? index + 1 : 1);
+}
+
+export function buildDriverVoucherCashBreakdown(
+    disbursements: DriverVoucherDisbursement[],
+    summary: Pick<ReturnType<typeof buildDriverVoucherDetailSummary>, 'initialCashGiven' | 'topUpAmount'>
+) {
+    const ordered = sortDriverVoucherDisbursementsChronologically(disbursements);
+    if (ordered.length > 0) {
+        return ordered
+            .map((item, index) => `${formatDriverVoucherBonLabel(index + 1)} ${formatCurrency(item.amount)}`)
+            .join(' | ');
+    }
+
+    return `Bon Pertama ${formatCurrency(summary.initialCashGiven)}${summary.topUpAmount > 0 ? ` | Bon Tambahan ${formatCurrency(summary.topUpAmount)}` : ''}`;
 }
 
 export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, items: DriverVoucherItem[]) {
@@ -113,8 +160,10 @@ export function buildDriverVoucherPrintHtml(params: {
         topUpAmount,
         balance,
     } = summary;
+    const routeLabel = formatDriverVoucherRouteForDisplay(voucher.route) || voucher.route || '-';
+    const printedDisbursements = sortDriverVoucherDisbursementsChronologically(disbursements);
 
-    const disbursementSection = disbursements.length > 0 ? `
+    const disbursementSection = printedDisbursements.length > 0 ? `
         <div style="margin-bottom:16px">
             <div style="font-weight:700;margin-bottom:8px">Riwayat Pencairan Uang Jalan</div>
             <table>
@@ -122,11 +171,11 @@ export function buildDriverVoucherPrintHtml(params: {
                     <tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr>
                 </thead>
                 <tbody>
-                    ${disbursements.map((item, index) => `
+                    ${printedDisbursements.map((item, index) => `
                         <tr>
                             <td>${index + 1}</td>
                             <td>${escapePrintHtml(formatDate(item.date))}</td>
-                            <td>${escapePrintHtml(item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan')}</td>
+                            <td>${escapePrintHtml(formatDriverVoucherBonLabel(index + 1))}</td>
                             <td>${escapePrintHtml(item.bankAccountName || '-')}</td>
                             <td>${escapePrintHtml(item.note || '-')}</td>
                             <td class="r">${escapePrintHtml(formatCurrency(item.amount))}</td>
@@ -143,8 +192,8 @@ export function buildDriverVoucherPrintHtml(params: {
                 <tbody>
                     <tr><td style="border:none;padding:2px 8px;width:130px;font-weight:600">No. Bon</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.bonNumber)}</td><td style="border:none;padding:2px 8px;width:130px;font-weight:600">Tanggal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatDate(voucher.issuedDate || ''))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Supir</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.driverName || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.vehiclePlate || '-')}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">No. DO Internal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.doNumber || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.route || '-')}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Jalan Awal</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${escapePrintHtml(formatCurrency(initialCashGiven))}</td><td style="border:none;padding:2px 8px;font-weight:600">Top Up Uang Jalan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">No. DO Internal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.doNumber || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${escapePrintHtml(routeLabel)}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Bon Pertama</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${escapePrintHtml(formatCurrency(initialCashGiven))}</td><td style="border:none;padding:2px 8px;font-weight:600">Bon Tambahan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Total Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.issueBankName || '-')}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Biaya Perjalanan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalSpent))}</td><td style="border:none;padding:2px 8px;font-weight:600">Sisa Bon Operasional</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Trip Snapshot DO</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Net Settlement Akhir</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(balance))}</td></tr>
@@ -169,8 +218,8 @@ export function buildDriverVoucherPrintHtml(params: {
                 <tr><td colspan="4" class="r b">Sisa Bon Operasional</td><td class="r">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
                 <tr><td colspan="4" class="r b">Upah Trip</td><td class="r">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td></tr>
                 <tr><td colspan="4" class="r b">Total Hak Trip</td><td class="r">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td></tr>
-                <tr><td colspan="4" class="r b">Uang Jalan Awal</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
-                <tr><td colspan="4" class="r b">Top Up Uang Jalan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
+                <tr><td colspan="4" class="r b">Bon Pertama</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
+                <tr><td colspan="4" class="r b">Bon Tambahan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
                 <tr><td colspan="4" class="r b">Total Uang Diberikan</td><td class="r">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td></tr>
                 <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${escapePrintHtml(balance >= 0 ? 'Net Settlement Akhir (Kembali ke Perusahaan)' : 'Net Settlement Akhir (Tambah Bayar ke Supir)')}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td></tr>
             </tbody>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
+import { buildDriverVoucherRouteLabel } from '@/lib/driver-voucher-route';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     createDocument,
@@ -32,7 +33,6 @@ import {
     type BankAccountSummary,
 } from './data-helpers';
 import {
-    buildRouteLabel,
     computeDriverVoucherTotals,
     getDriverVoucherInitialCash,
     getDriverVoucherIssuedAmount,
@@ -842,6 +842,13 @@ export async function handleDriverVoucherCreate(
         vehiclePlate?: string;
         receiverAddress?: string;
         pickupAddress?: string;
+        shipperReferences?: Array<{
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
+        tripOriginArea?: string;
+        tripDestinationArea?: string;
         taripBorongan?: number;
         orderRef?: unknown;
     }>(deliveryOrderRef, 'deliveryOrder');
@@ -914,10 +921,7 @@ export async function handleDriverVoucherCreate(
     const order = orderRef
         ? await getDocumentById<{ _id: string; pickupAddress?: string; receiverAddress?: string }>(orderRef, 'order')
         : null;
-    canonicalRoute = buildRouteLabel(
-        deliveryOrder.pickupAddress || order?.pickupAddress,
-        deliveryOrder.receiverAddress || order?.receiverAddress,
-    ) || canonicalRoute;
+    canonicalRoute = buildDriverVoucherRouteLabel(deliveryOrder, order) || canonicalRoute;
 
     const existingVoucher = (await listDocumentsByFilter<Array<{ bonNumber?: string; status?: string }>[number]>(
         'driverVoucher',

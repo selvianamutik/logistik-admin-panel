@@ -8,9 +8,10 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { buildDriverVoucherRouteLabel } from '@/lib/driver-voucher-route';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
-import { formatCurrency, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
+import { formatCurrency, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
@@ -149,10 +150,7 @@ export default function NewDriverVoucherPage() {
         : null;
     const selectedDriverName = selectedDo?.driverName || selectedDriver?.name || '';
     const selectedVehicleLabel = selectedDo?.vehiclePlate || '';
-    const selectedRoute = [
-        selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
-        selectedDo ? formatShipperReceiverSummary(selectedDo, { fallback: selectedDo.receiverAddress || selectedOrder?.receiverAddress || '' }) : '',
-    ].filter(Boolean).join(' -> ') || '';
+    const selectedRoute = buildDriverVoucherRouteLabel(selectedDo, selectedOrder) || '';
     const effectiveTripFee = parseFormattedNumberish(selectedDo?.taripBorongan || 0);
     const plannedTripCashGiven = parseFormattedNumberish(selectedDo?.plannedTripCashGiven ?? 0, { allowDecimal: false, maxFractionDigits: 0 });
 
@@ -254,10 +252,7 @@ export default function NewDriverVoucherPage() {
                                     const order = deliveryOrder.orderRef
                                         ? orders.find(item => item._id === deliveryOrder.orderRef)
                                         : null;
-                                    const route = [
-                                        deliveryOrder.pickupAddress || order?.pickupAddress,
-                                        formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || order?.receiverAddress || '' }),
-                                    ].filter(Boolean).join(' -> ');
+                                    const route = buildDriverVoucherRouteLabel(deliveryOrder, order);
                                     return (
                                         <option key={deliveryOrder._id} value={deliveryOrder._id}>
                                             {deliveryOrder.doNumber}

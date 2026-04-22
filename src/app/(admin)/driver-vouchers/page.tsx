@@ -7,6 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 
 import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/lib/utils';
+import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
@@ -161,8 +162,9 @@ export default function DriverVouchersPage() {
                                                     <th>Supir</th>
                                                     <th>Tanggal</th>
                                                     <th>No. DO Internal</th>
-                                                    <th class="r">Bon Awal</th>
-                                                    <th class="r">Tambahan</th>
+                                                    <th>Rute</th>
+                                                    <th class="r">Bon Pertama</th>
+                                                    <th class="r">Bon Tambahan</th>
                                                     <th class="r">Total Diberikan</th>
                                                     <th class="r">Biaya</th>
                                                     <th class="r">Upah Trip</th>
@@ -184,11 +186,13 @@ export default function DriverVouchersPage() {
                                                         operationalBalance,
                                                         balance,
                                                     } = getDriverVoucherFinancialSummary(v);
+                                                    const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
                                                     return `<tr>
                                                         <td class="b">${v.bonNumber}</td>
                                                         <td>${v.driverName || '-'}</td>
                                                         <td>${formatDate(v.issuedDate)}</td>
                                                         <td>${v.doNumber || '-'}</td>
+                                                        <td>${routeLabel}</td>
                                                         <td class="r">${formatCurrency(initialCashGiven)}</td>
                                                         <td class="r">${formatCurrency(topUpAmount)}</td>
                                                         <td class="r">${formatCurrency(totalIssuedAmount)}</td>
@@ -273,8 +277,8 @@ export default function DriverVouchersPage() {
                                 <th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
                                 <th>No. DO Internal</th>
                                 <th>Rute</th>
-                                <th>Bon Awal</th>
-                                <th>Tambahan</th>
+                                <th>Bon Pertama</th>
+                                <th>Bon Tambahan</th>
                                 <th>Total Diberikan</th>
                                 <th>Biaya</th>
                                 <th>Upah Trip</th>
@@ -318,6 +322,7 @@ export default function DriverVouchersPage() {
                                         operationalBalance,
                                         balance,
                                     } = getDriverVoucherFinancialSummary(v);
+                                    const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
 
                                     return (
                                         <tr key={v._id}>
@@ -337,7 +342,7 @@ export default function DriverVouchersPage() {
                                             <td className="font-medium">{v.driverName || '-'}</td>
                                             <td className="text-muted">{formatDate(v.issuedDate)}</td>
                                             <td>{v.doNumber || '-'}</td>
-                                            <td className="text-muted">{v.route || '-'}</td>
+                                            <td className="text-muted">{routeLabel}</td>
                                             <td>{formatCurrency(initialCashGiven)}</td>
                                             <td>{formatCurrency(topUpAmount)}</td>
                                             <td className="font-medium">{formatCurrency(totalIssuedAmount)}</td>
@@ -399,6 +404,7 @@ export default function DriverVouchersPage() {
                                 operationalBalance,
                                 balance,
                             } = getDriverVoucherFinancialSummary(v);
+                            const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
 
                             return (
                                 <div key={v._id} className="mobile-record-card">
@@ -419,14 +425,14 @@ export default function DriverVouchersPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Rute</span>
-                                            <span className="mobile-record-value">{v.route || '-'}</span>
+                                            <span className="mobile-record-value">{routeLabel}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Bon Awal</span>
+                                            <span className="mobile-record-label">Bon Pertama</span>
                                             <span className="mobile-record-value">{formatCurrency(initialCashGiven)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Tambahan</span>
+                                            <span className="mobile-record-label">Bon Tambahan</span>
                                             <span className="mobile-record-value">{formatCurrency(topUpAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
