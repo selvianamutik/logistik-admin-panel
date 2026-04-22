@@ -34,6 +34,16 @@ function getStatusBadge(status: Purchase['status']) {
   return 'badge-info';
 }
 
+function getDateOnly(value: string | undefined | null) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
+    ? value.slice(0, 10)
+    : '';
+}
+
+function getMaxDate(...values: Array<string | undefined | null>) {
+  return values.map(getDateOnly).filter(Boolean).sort().at(-1) || getBusinessDateValue();
+}
+
 function buildReceiveState(items: PurchaseItem[]): ReceiveLineState[] {
   return items
     .map((item) => {
@@ -136,7 +146,13 @@ export default function PurchaseDetailPage() {
 
   const openPaymentModal = () => {
     if (!canPay || !summary) return;
-    setPaymentForm({ date: getBusinessDateValue(), bankAccountRef: bankAccounts[0]?._id || '', amount: Number(summary.outstandingAmount || 0), note: '' });
+    const minimumPaymentDate = getMaxDate(purchase?.orderDate, purchase?.lastPaidAt);
+    setPaymentForm({
+      date: getMaxDate(minimumPaymentDate, getBusinessDateValue()),
+      bankAccountRef: bankAccounts[0]?._id || '',
+      amount: Number(summary.outstandingAmount || 0),
+      note: '',
+    });
     setShowPaymentModal(true);
   };
 
@@ -401,8 +417,8 @@ export default function PurchaseDetailPage() {
       </div>
 
       {showReceiveModal && (
-        <div className="modal-backdrop" onClick={() => !savingReceive && setShowReceiveModal(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => !savingReceive && setShowReceiveModal(false)}>
+          <div className="modal modal-lg" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Terima Barang</h3>
               <button className="modal-close" onClick={() => setShowReceiveModal(false)} disabled={savingReceive}><X size={20} /></button>
@@ -411,8 +427,7 @@ export default function PurchaseDetailPage() {
               <div className="form-group"><label className="form-label">Tanggal Penerimaan</label><input type="date" className="form-input" value={receiveDate} onChange={(event) => setReceiveDate(event.target.value)} /></div>
               <div style={{ display: 'grid', gap: '0.85rem' }}>
                 {receiveLines.map((line) => (
-                  <div key={line.purchaseItemRef} className="card" style={{ border: '1px solid var(--color-border)' }}>
-                    <div className="card-body">
+                  <div key={line.purchaseItemRef} className="form-section">
                       <div className="font-semibold" style={{ marginBottom: '0.75rem' }}>{line.itemName}</div>
                       <div className="text-muted text-xs" style={{ marginBottom: '0.75rem' }}>Sisa pesanan {formatInventoryQuantity(line.remainingQty)} {line.unit}</div>
                       {isTireTrackedWarehouseItem(items.find((item) => item._id === line.purchaseItemRef)) && (
@@ -425,7 +440,6 @@ export default function PurchaseDetailPage() {
                         <div className="form-group"><label className="form-label">Qty Terima</label><FormattedNumberInput min={0} maxFractionDigits={3} value={line.receivedQty} onValueChange={(value) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, receivedQty: value } : row))} /></div>
                         <div className="form-group"><label className="form-label">Catatan</label><input className="form-input" value={line.note} onChange={(event) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, note: event.target.value } : row))} /></div>
                       </div>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -436,7 +450,7 @@ export default function PurchaseDetailPage() {
       )}
 
       {showPaymentModal && (
-        <div className="modal-backdrop" onClick={() => !savingPayment && setShowPaymentModal(false)}>
+        <div className="modal-overlay" onClick={() => !savingPayment && setShowPaymentModal(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Bayar Supplier</h3>
@@ -444,7 +458,7 @@ export default function PurchaseDetailPage() {
             </div>
             <div className="modal-body">
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Tanggal Bayar</label><input type="date" className="form-input" value={paymentForm.date} onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value }))} /></div>
+                <div className="form-group"><label className="form-label">Tanggal Bayar</label><input type="date" className="form-input" min={getMaxDate(purchase.orderDate, purchase.lastPaidAt)} value={paymentForm.date} onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value }))} /></div>
                 <div className="form-group"><label className="form-label">Rekening / Kas</label><select className="form-select" value={paymentForm.bankAccountRef} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountRef: event.target.value }))}><option value="">Pilih rekening</option>{bankAccounts.map((account) => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}</option>)}</select></div>
               </div>
               <div className="form-row">

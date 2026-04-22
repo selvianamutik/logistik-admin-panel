@@ -1528,9 +1528,9 @@ function buildServerListParams(
     }
 
     if (searchClause) {
-        params.set('or', searchClause);
+        params.set('or', `(${searchClause})`);
     } else if (orClause) {
-        params.set('or', orClause);
+        params.set('or', `(${orClause})`);
     }
 
     const targetSortField = options.sortField?.trim() || '_updatedAt';

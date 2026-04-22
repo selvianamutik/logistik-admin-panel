@@ -141,9 +141,17 @@ export default function PurchasesPage() {
 
       <div className="table-container">
         <div className="table-toolbar">
-          <div className="table-toolbar-left">
-            <div className="table-search"><Search size={16} className="table-search-icon" /><input className="table-search-input" placeholder="Cari nomor pembelian, supplier, catatan..." value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-            <select className="form-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={{ minWidth: 220 }}>
+          <div className="table-toolbar-left purchase-filter-toolbar">
+            <div className="table-search purchase-search">
+              <Search size={16} className="table-search-icon" />
+              <input
+                className="table-search-input"
+                placeholder="Cari nomor pembelian, supplier, catatan..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            <select className="form-select purchase-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
               <option value="">Semua Status</option>
               {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>

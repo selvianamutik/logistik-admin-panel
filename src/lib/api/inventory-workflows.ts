@@ -121,6 +121,12 @@ function buildPurchasePaymentAuditSummary(input: {
     return input.note ? `${base} - ${input.note}` : base;
 }
 
+function normalizeDateOnly(value: string | undefined | null) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
+        ? value.slice(0, 10)
+        : '';
+}
+
 function buildStockMovementAuditSummary(input: {
     itemName: string;
     itemCode: string;
@@ -346,7 +352,8 @@ export async function handlePurchaseReceive(
                 { status: 400 }
             );
         }
-        if (bundle.purchase.lastReceivedAt && receiveDate < bundle.purchase.lastReceivedAt) {
+        const lastReceivedDate = normalizeDateOnly(bundle.purchase.lastReceivedAt);
+        if (lastReceivedDate && receiveDate < lastReceivedDate) {
             return NextResponse.json(
                 { error: 'Tanggal terima barang tidak boleh lebih awal dari penerimaan terakhir pembelian ini' },
                 { status: 400 }
@@ -661,7 +668,8 @@ export async function handlePurchasePaymentCreate(
                 { status: 400 }
             );
         }
-        if (bundle.purchase.lastPaidAt && date < bundle.purchase.lastPaidAt) {
+        const lastPaymentDate = normalizeDateOnly(bundle.purchase.lastPaidAt);
+        if (lastPaymentDate && date < lastPaymentDate) {
             return NextResponse.json(
                 { error: 'Tanggal pembayaran supplier tidak boleh lebih awal dari pembayaran terakhir pembelian ini' },
                 { status: 400 }

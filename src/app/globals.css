@@ -1084,6 +1084,7 @@ a:hover {
   color: var(--color-gray-400);
   width: 16px;
   height: 16px;
+  pointer-events: none;
 }
 
 .table-search input {
@@ -1105,6 +1106,19 @@ a:hover {
 
 .table-search input::placeholder {
   color: var(--color-gray-400);
+}
+
+.purchase-filter-toolbar {
+  flex-wrap: wrap;
+}
+
+.purchase-search {
+  flex: 1 1 360px;
+  max-width: 520px;
+}
+
+.purchase-status-filter {
+  flex: 0 1 220px;
 }
 
 .attendance-toolbar-filters {
