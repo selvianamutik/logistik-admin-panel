@@ -144,7 +144,7 @@ export default function FormattedNumberInput({
         .join(" ")}
       value={inputDisplay}
       onFocus={(event) => {
-        setDisplay(valueAsDisplay);
+        setDisplay(event.currentTarget.value || valueAsDisplay);
         setIsFocused(true);
         props.onFocus?.(event);
       }}

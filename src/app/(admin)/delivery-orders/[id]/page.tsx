@@ -84,6 +84,7 @@ type ShipperReferenceDraft = {
     referenceKey: string;
     referenceNumber: string;
     pickupStopKey: string;
+    selectedRecipientId: string;
     billingCustomerRef: string;
     billingCustomerName: string;
     receiverName: string;
@@ -295,6 +296,7 @@ export default function DODetailPage() {
         referenceKey: '',
         referenceNumber: '',
         pickupStopKey: '',
+        selectedRecipientId: '',
         billingCustomerRef: '',
         billingCustomerName: '',
         receiverName: '',
@@ -308,6 +310,7 @@ export default function DODetailPage() {
     const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
     const [targetReceiverAddress, setTargetReceiverAddress] = useState('');
     const [targetReceiverCompany, setTargetReceiverCompany] = useState('');
+    const [selectedTargetRecipientId, setSelectedTargetRecipientId] = useState('');
     const editingTaripRef = useRef(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
@@ -598,6 +601,12 @@ export default function DODetailPage() {
                 referenceKey: reference.referenceKey,
                 referenceNumber: reference.referenceNumber,
                 pickupStopKey: reference.pickupStopKey,
+                selectedRecipientId: resolveMatchingRecipientId(reference.billingCustomerRef || doData?.customerRef, {
+                    receiverName: reference.receiverName,
+                    receiverPhone: reference.receiverPhone,
+                    receiverCompany: reference.receiverCompany,
+                    receiverAddress: reference.receiverAddress,
+                }),
                 billingCustomerRef: reference.billingCustomerRef,
                 billingCustomerName: reference.billingCustomerName,
                 receiverName: reference.receiverName,
@@ -614,6 +623,12 @@ export default function DODetailPage() {
                     referenceKey: '',
                     referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                     pickupStopKey: '',
+                    selectedRecipientId: resolveMatchingRecipientId(doData?.customerRef, {
+                        receiverName: doData?.receiverName,
+                        receiverPhone: doData?.receiverPhone,
+                        receiverCompany: doData?.receiverCompany,
+                        receiverAddress: doData?.receiverAddress,
+                    }),
                     billingCustomerRef: doData?.customerRef || '',
                     billingCustomerName: doData?.customerName || '',
                     receiverName: doData?.receiverName || '',
@@ -650,9 +665,43 @@ export default function DODetailPage() {
         return `${recipient.label}${targetName && targetName !== recipient.label ? ` - ${targetName}` : ''}`;
     };
 
+    const normalizeRecipientComparable = (value?: string) => value?.trim().toLowerCase() || '';
+
+    const resolveMatchingRecipientId = (
+        customerRef: string | undefined,
+        target: {
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }
+    ) => {
+        const options = getCustomerRecipientOptions(customerRef);
+        if (options.length === 0) {
+            return '';
+        }
+
+        const targetName = normalizeRecipientComparable(target.receiverName);
+        const targetPhone = normalizeRecipientComparable(target.receiverPhone);
+        const targetCompany = normalizeRecipientComparable(target.receiverCompany);
+        const targetAddress = normalizeRecipientComparable(target.receiverAddress);
+
+        const matchedRecipient = options.find(recipient => {
+            const score =
+                (targetAddress && normalizeRecipientComparable(recipient.receiverAddress) === targetAddress ? 2 : 0) +
+                (targetCompany && normalizeRecipientComparable(recipient.receiverCompany) === targetCompany ? 1 : 0) +
+                (targetName && normalizeRecipientComparable(recipient.receiverName) === targetName ? 1 : 0) +
+                (targetPhone && normalizeRecipientComparable(recipient.receiverPhone) === targetPhone ? 1 : 0);
+            return score >= 2;
+        });
+
+        return matchedRecipient?._id || '';
+    };
+
     const applyTargetRecipient = (recipientId: string) => {
         const recipient = customerRecipients.find(item => item._id === recipientId);
         if (!recipient) return;
+        setSelectedTargetRecipientId(recipientId);
         setTargetReceiverName(recipient.receiverName || '');
         setTargetReceiverPhone(recipient.receiverPhone || '');
         setTargetReceiverCompany(recipient.receiverCompany || '');
@@ -663,6 +712,7 @@ export default function DODetailPage() {
         const recipient = customerRecipients.find(item => item._id === recipientId);
         if (!recipient) return;
         updateShipperReferenceDraft(draftKey, {
+            selectedRecipientId: recipientId,
             receiverName: recipient.receiverName || '',
             receiverPhone: recipient.receiverPhone || '',
             receiverCompany: recipient.receiverCompany || '',
@@ -672,6 +722,12 @@ export default function DODetailPage() {
 
     const openTargetModal = () => {
         if (!canEditDeliveryTarget) return;
+        setSelectedTargetRecipientId(resolveMatchingRecipientId(doData?.customerRef, {
+            receiverName: doData?.receiverName,
+            receiverPhone: doData?.receiverPhone,
+            receiverCompany: doData?.receiverCompany,
+            receiverAddress: doData?.receiverAddress,
+        }));
         setTargetReceiverName(doData?.receiverName || '');
         setTargetReceiverPhone(doData?.receiverPhone || '');
         setTargetReceiverAddress(doData?.receiverAddress || '');
@@ -3060,7 +3116,7 @@ export default function DODetailPage() {
                                     <label className="form-label">Ambil dari Master Tujuan</label>
                                     <select
                                         className="form-select"
-                                        value=""
+                                        value={selectedTargetRecipientId}
                                         onChange={event => applyTargetRecipient(event.target.value)}
                                         disabled={savingTarget}
                                     >
@@ -3076,20 +3132,20 @@ export default function DODetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima / PIC</label>
-                                    <input className="form-input" value={targetReceiverName} onChange={e => setTargetReceiverName(e.target.value)} disabled={savingTarget} />
+                                    <input className="form-input" value={targetReceiverName} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverName(e.target.value); }} disabled={savingTarget} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Telepon</label>
-                                    <input className="form-input" value={targetReceiverPhone} onChange={e => setTargetReceiverPhone(e.target.value)} disabled={savingTarget} />
+                                    <input className="form-input" value={targetReceiverPhone} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverPhone(e.target.value); }} disabled={savingTarget} />
                                 </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Perusahaan</label>
-                                <input className="form-input" value={targetReceiverCompany} onChange={e => setTargetReceiverCompany(e.target.value)} disabled={savingTarget} />
+                                <input className="form-input" value={targetReceiverCompany} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverCompany(e.target.value); }} disabled={savingTarget} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Tujuan</label>
-                                <textarea className="form-textarea" rows={3} value={targetReceiverAddress} onChange={e => setTargetReceiverAddress(e.target.value)} disabled={savingTarget} placeholder="Boleh dikosongkan jika tujuan final belum turun" />
+                                <textarea className="form-textarea" rows={3} value={targetReceiverAddress} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverAddress(e.target.value); }} disabled={savingTarget} placeholder="Boleh dikosongkan jika tujuan final belum turun" />
                             </div>
                         </div>
                         <div className="modal-footer">
@@ -3175,6 +3231,7 @@ export default function DODetailPage() {
                                                         const nextCustomerRef = event.target.value;
                                                         const nextCustomerName = billingCustomers.find(customer => customer._id === nextCustomerRef)?.name || '';
                                                         updateShipperReferenceDraft(entry.draftKey, {
+                                                            selectedRecipientId: '',
                                                             billingCustomerRef: nextCustomerRef,
                                                             billingCustomerName: nextCustomerName,
                                                         });
@@ -3196,7 +3253,7 @@ export default function DODetailPage() {
                                                         <label className="form-label">Tujuan dari Master Customer</label>
                                                         <select
                                                             className="form-select"
-                                                            value=""
+                                                            value={entry.selectedRecipientId}
                                                             onChange={event => applyShipperReferenceRecipient(entry.draftKey, event.target.value)}
                                                             disabled={savingShipperReference}
                                                         >
@@ -3216,7 +3273,7 @@ export default function DODetailPage() {
                                                     <input
                                                         className="form-input"
                                                         value={entry.receiverName}
-                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverName: event.target.value })}
+                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { selectedRecipientId: '', receiverName: event.target.value })}
                                                         disabled={savingShipperReference}
                                                         placeholder="Opsional"
                                                     />
@@ -3226,7 +3283,7 @@ export default function DODetailPage() {
                                                     <input
                                                         className="form-input"
                                                         value={entry.receiverPhone}
-                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverPhone: event.target.value })}
+                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { selectedRecipientId: '', receiverPhone: event.target.value })}
                                                         disabled={savingShipperReference}
                                                         placeholder="Opsional"
                                                     />
@@ -3237,7 +3294,7 @@ export default function DODetailPage() {
                                                 <input
                                                     className="form-input"
                                                     value={entry.receiverCompany}
-                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverCompany: event.target.value })}
+                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { selectedRecipientId: '', receiverCompany: event.target.value })}
                                                     disabled={savingShipperReference}
                                                     placeholder="Opsional"
                                                 />
@@ -3248,7 +3305,7 @@ export default function DODetailPage() {
                                                     className="form-textarea"
                                                     rows={2}
                                                     value={entry.receiverAddress}
-                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverAddress: event.target.value })}
+                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { selectedRecipientId: '', receiverAddress: event.target.value })}
                                                     disabled={savingShipperReference}
                                                     placeholder="Alamat tujuan untuk invoice / dokumen SJ ini"
                                                 />
@@ -3268,6 +3325,7 @@ export default function DODetailPage() {
                                             referenceKey: '',
                                             referenceNumber: '',
                                             pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                                            selectedRecipientId: '',
                                             billingCustomerRef: doData?.customerRef || '',
                                             billingCustomerName: doData?.customerName || '',
                                             receiverName: '',
@@ -3331,12 +3389,20 @@ export default function DODetailPage() {
                                     const existingItemsInGroup = normalizedGroupReference
                                         ? doItems.filter(item => (item.shipperReferenceNumber || doData?.customerDoNumber || '').trim().toUpperCase() === normalizedGroupReference)
                                         : [];
+                                    const finalizedItemsInGroup = existingItemsInGroup.filter(existingItem =>
+                                        existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined
+                                    );
                                     return (
                                         <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                 <div>
                                                     <div className="font-semibold">SJ {groupIndex + 1}</div>
                                                     <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                    {existingItemsInGroup.length > 0 && (
+                                                        <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                            {existingItemsInGroup.length} barang tersimpan • {finalizedItemsInGroup.length} final • {existingItemsInGroup.length - finalizedItemsInGroup.length} belum final
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 {!isEditingCargoItem && cargoDraftGroups.length > 1 && (
                                                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoDraftGroup(group.id)} disabled={savingCargo}>

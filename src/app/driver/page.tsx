@@ -1861,6 +1861,15 @@ export default function DriverPortalPage() {
                             <div style={{ display: 'grid', gap: '0.85rem' }}>
                                 {cargoInputGroups.map((group, groupIndex) => {
                                     const draftItemsInGroup = getDeliveryOrderCargoDraftItems(group);
+                                    const normalizedGroupReference = group.shipperReferenceNumber.trim().toUpperCase();
+                                    const existingItemsInGroup = normalizedGroupReference
+                                        ? (cargoInputOrder?.driverCargoItems || []).filter(item =>
+                                            (item.shipperReferenceNumber || cargoInputOrder?.customerDoNumber || '').trim().toUpperCase() === normalizedGroupReference
+                                        )
+                                        : [];
+                                    const finalizedItemsInGroup = existingItemsInGroup.filter(existingItem =>
+                                        existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined
+                                    );
                                     return (
                                         <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1869,6 +1878,11 @@ export default function DriverPortalPage() {
                                                     <div className="text-muted text-sm">
                                                         {cargoInputAllowsDirectCargoInput ? `${draftItemsInGroup.length} barang` : 'Muatan ikut order'}
                                                     </div>
+                                                    {existingItemsInGroup.length > 0 && (
+                                                        <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                            {existingItemsInGroup.length} barang tersimpan • {finalizedItemsInGroup.length} final • {existingItemsInGroup.length - finalizedItemsInGroup.length} belum final
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 {cargoInputGroups.length > 1 && (
                                                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoInputGroup(group.id)} disabled={isActionInFlight}>
@@ -1876,6 +1890,31 @@ export default function DriverPortalPage() {
                                                     </button>
                                                 )}
                                             </div>
+
+                                            {existingItemsInGroup.length > 0 && (
+                                                <div style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem' }}>
+                                                    <div className="text-muted text-sm">Barang tersimpan di SJ ini</div>
+                                                    {existingItemsInGroup.map(existingItem => (
+                                                        <div key={existingItem._id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                                                            <span className="font-medium">{existingItem.orderItemDescription || 'Barang'}</span>
+                                                            <span className="text-muted">
+                                                                {formatCargoSummary({
+                                                                    qtyKoli: existingItem.orderItemQtyKoli,
+                                                                    weightKg: existingItem.orderItemWeight,
+                                                                    weightInputValue: existingItem.orderItemWeightInputValue,
+                                                                    weightInputUnit: existingItem.orderItemWeightInputUnit,
+                                                                    volumeM3: existingItem.orderItemVolumeM3,
+                                                                    volumeInputValue: existingItem.orderItemVolumeInputValue,
+                                                                    volumeInputUnit: existingItem.orderItemVolumeInputUnit,
+                                                                })}
+                                                            </span>
+                                                            <span style={{ color: existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                                                {existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined ? 'Sudah final' : 'Belum final'}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                             {(cargoInputOrder.pickupStops?.length || 0) > 0 && (
                                                 <div style={{ flex: '1 1 240px' }}>
