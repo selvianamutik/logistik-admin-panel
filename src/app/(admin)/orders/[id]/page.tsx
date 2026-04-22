@@ -203,6 +203,7 @@ export default function OrderDetailPage() {
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
     const loadedReferenceCustomerRef = useRef<string>('');
+    const loadedVehicleOptionsRef = useRef(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
@@ -267,16 +268,88 @@ export default function OrderDetailPage() {
         }
     }, [addToast, orderId]);
 
+    const refreshOrderDeliveryState = useCallback(async (
+        fallbackMessage: string = 'Gagal memuat ulang data pengiriman order',
+        options: { includeNotas?: boolean } = {}
+    ) => {
+        try {
+            const includeNotas = options.includeNotas === true;
+            const [orderData, itemData, deliveryOrders, activeDeliveryOrders] = await Promise.all([
+                fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, fallbackMessage),
+                fetchAdminCollectionData<OrderItem[]>(
+                    `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`,
+                    fallbackMessage
+                ),
+                fetchAdminCollectionData<DeliveryOrder[]>(
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`,
+                    fallbackMessage
+                ),
+                fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
+                    fallbackMessage
+                ),
+            ]);
+            const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
+            const [deliveryOrderItems, notaItems] = await Promise.all([
+                deliveryOrderIds.length > 0
+                    ? fetchAdminCollectionData<DeliveryOrderItem[]>(
+                        `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`,
+                        fallbackMessage
+                    )
+                    : Promise.resolve([] as DeliveryOrderItem[]),
+                includeNotas && deliveryOrderIds.length > 0
+                    ? fetchAdminCollectionData<FreightNotaItem[]>(
+                        `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`,
+                        fallbackMessage
+                    )
+                    : Promise.resolve([] as FreightNotaItem[]),
+            ]);
+
+            setOrder(orderData);
+            setItems(itemData || []);
+            setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
+            setDoItems(deliveryOrderItems || []);
+            const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            setBusyVehicleIds(nextBusyVehicleIds);
+
+            if (includeNotas) {
+                const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
+                const orderNotas = notaIds.length > 0
+                    ? await fetchAdminCollectionData<FreightNota[]>(
+                        `/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`,
+                        fallbackMessage
+                    )
+                    : [];
+                setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
+            }
+
+            const shouldReloadReferences = loadedReferenceCustomerRef.current !== (orderData?.customerRef || '');
+            if (shouldReloadReferences) {
+                await loadOrderReferenceData(orderData);
+            }
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : fallbackMessage);
+        }
+    }, [addToast, loadOrderReferenceData, orderId]);
+
+    const loadVehicleOptions = useCallback(async () => {
+        const vehicleData = await fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(
+            `/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`,
+            'Gagal memuat detail order'
+        );
+        setVehicles(vehicleData || []);
+        loadedVehicleOptionsRef.current = true;
+    }, []);
+
     const loadOrderDetail = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
             setLoading(true);
         }
         try {
-            const [orderData, itemData, deliveryOrders, vehicleData, activeDeliveryOrders] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, activeDeliveryOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
@@ -299,9 +372,11 @@ export default function OrderDetailPage() {
             setDoItems(deliveryOrderItems);
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
-            setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
 
+            if (mode === 'initial' || !loadedVehicleOptionsRef.current) {
+                await loadVehicleOptions();
+            }
             const shouldReloadReferences =
                 mode === 'initial' ||
                 loadedReferenceCustomerRef.current !== (orderData?.customerRef || '');
@@ -315,7 +390,7 @@ export default function OrderDetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, loadOrderReferenceData, orderId]);
+    }, [addToast, loadOrderReferenceData, loadVehicleOptions, orderId]);
 
     useEffect(() => {
         void loadOrderDetail('initial');
@@ -850,7 +925,7 @@ export default function OrderDetailPage() {
             setDoReceiverCompany('');
             setDoDate(getBusinessDateValue());
             setSelectedOrderTripPlanKey('');
-            await loadOrderDetail();
+            await refreshOrderDeliveryState('Gagal memuat ulang trip order setelah surat jalan dibuat');
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
         } finally {

@@ -3035,14 +3035,22 @@ export async function handleDeliveryOrderCreate(
     const mutationTimestamp = new Date().toISOString();
     try {
         await createDocument(doDoc);
+        const postCreateMutations: Array<Promise<unknown>> = [];
+
         if (tripRouteSelection?.matchedTripRouteRate?._id) {
-            await updateDocument(tripRouteSelection.matchedTripRouteRate._id, { updatedAt: mutationTimestamp }, 'tripRouteRate');
+            postCreateMutations.push(
+                updateDocument(tripRouteSelection.matchedTripRouteRate._id, { updatedAt: mutationTimestamp }, 'tripRouteRate')
+            );
         }
         if (selectedVehicle?._id) {
-            await updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp }, 'vehicle');
+            postCreateMutations.push(
+                updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp }, 'vehicle')
+            );
         }
         if (selectedDriver?._id) {
-            await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp }, 'driver');
+            postCreateMutations.push(
+                updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp }, 'driver')
+            );
         }
         const orderUpdates: Record<string, unknown> = {};
         if (selectedTripPlan?._key) {
@@ -3065,7 +3073,9 @@ export async function handleDeliveryOrderCreate(
                 if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                     continue;
                 }
-                await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct');
+                postCreateMutations.push(
+                    updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct')
+                );
                 seenProductRefs.add(item.customerProductRef);
             }
             for (const item of directCargoItems) {
@@ -3075,41 +3085,43 @@ export async function handleDeliveryOrderCreate(
                     pickupStops: deliveryOrderPickupStops,
                     shipperReferences: deliveryOrderShipperReferences,
                 });
-                await createDocument({
-                    ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
-                        entrySource: 'DELIVERY_ORDER',
-                        sourceDeliveryOrderRef: doId,
-                        sourceDeliveryOrderNumber: doNumber,
-                    }),
-                    assignedQtyKoli: usesQtyBasis ? item.qtyKoli : 0,
-                    assignedWeight: item.weight,
-                    assignedVolume: item.volume || 0,
-                    status: 'ASSIGNED',
-                });
-                await createDocument({
-                    _id: crypto.randomUUID(),
-                    _type: 'deliveryOrderItem',
-                    deliveryOrderRef: doId,
-                    orderItemRef: orderItemId,
-                    pickupStopKey: cargoItemContext.pickupStopKey,
-                    pickupAddress: cargoItemContext.pickupAddress,
-                    shipperReferenceKey: cargoItemContext.shipperReferenceKey,
-                    shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
-                    orderItemDescription: item.description,
-                    orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
-                    orderItemWeight: item.weight,
-                    orderItemVolumeM3: item.volume,
-                    orderItemWeightInputValue: item.weightInputValue,
-                    orderItemWeightInputUnit: item.weightInputUnit,
-                    orderItemVolumeInputValue: item.volumeInputValue,
-                    orderItemVolumeInputUnit: item.volumeInputUnit,
-                    shippedQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
-                    shippedWeight: item.weight,
-                });
+                postCreateMutations.push((async () => {
+                    await createDocument({
+                        ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
+                            entrySource: 'DELIVERY_ORDER',
+                            sourceDeliveryOrderRef: doId,
+                            sourceDeliveryOrderNumber: doNumber,
+                        }),
+                        assignedQtyKoli: usesQtyBasis ? item.qtyKoli : 0,
+                        assignedWeight: item.weight,
+                        assignedVolume: item.volume || 0,
+                        status: 'ASSIGNED',
+                    });
+                    await createDocument({
+                        _id: crypto.randomUUID(),
+                        _type: 'deliveryOrderItem',
+                        deliveryOrderRef: doId,
+                        orderItemRef: orderItemId,
+                        pickupStopKey: cargoItemContext.pickupStopKey,
+                        pickupAddress: cargoItemContext.pickupAddress,
+                        shipperReferenceKey: cargoItemContext.shipperReferenceKey,
+                        shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
+                        orderItemDescription: item.description,
+                        orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+                        orderItemWeight: item.weight,
+                        orderItemVolumeM3: item.volume,
+                        orderItemWeightInputValue: item.weightInputValue,
+                        orderItemWeightInputUnit: item.weightInputUnit,
+                        orderItemVolumeInputValue: item.volumeInputValue,
+                        orderItemVolumeInputUnit: item.volumeInputUnit,
+                        shippedQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+                        shippedWeight: item.weight,
+                    });
+                })());
             }
         }
         if (Object.keys(orderUpdates).length > 0) {
-            await updateDocument(orderRef, orderUpdates, 'order');
+            postCreateMutations.push(updateDocument(orderRef, orderUpdates, 'order'));
         }
         for (const item of selectedItems) {
             const selection = selectionByItemId.get(item._id);
@@ -3181,33 +3193,39 @@ export async function handleDeliveryOrderCreate(
                     pendingVolume: roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed - holdVolumeToApply, 0), 3),
                 };
 
-                await createDocument({
-                    _id: crypto.randomUUID(),
-                    _type: 'deliveryOrderItem',
-                    deliveryOrderRef: doId,
-                    orderItemRef: item._id,
-                    orderItemDescription: item.description,
-                    orderItemQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
-                    orderItemWeight: shippedWeight,
-                    orderItemVolumeM3: shippedVolumeM3 > 0 ? shippedVolumeM3 : undefined,
-                    orderItemWeightInputValue: shippedWeightInputValue,
-                    orderItemWeightInputUnit: shippedWeightInputUnit,
-                    orderItemVolumeInputValue: shippedVolumeInputValue,
-                    orderItemVolumeInputUnit: shippedVolumeInputUnit,
-                    shippedQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
-                    shippedWeight,
-                });
-                await updateDocument(item._id, {
-                    assignedQtyKoli: nextProgress.assignedQtyKoli,
-                    assignedWeight: nextProgress.assignedWeight,
-                    assignedVolume: nextProgress.assignedVolume,
-                    heldQtyKoli: nextProgress.heldQtyKoli,
-                    heldWeight: nextProgress.heldWeight,
-                    heldVolume: nextProgress.heldVolume,
-                    holdReason: selection.holdRemaining ? selection.holdReason : item.holdReason,
-                    holdLocation: selection.holdRemaining ? selection.holdLocation : item.holdLocation,
-                    status: deriveOrderItemStatusFromProgress(nextProgress),
-                });
+                postCreateMutations.push((async () => {
+                    await createDocument({
+                        _id: crypto.randomUUID(),
+                        _type: 'deliveryOrderItem',
+                        deliveryOrderRef: doId,
+                        orderItemRef: item._id,
+                        orderItemDescription: item.description,
+                        orderItemQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
+                        orderItemWeight: shippedWeight,
+                        orderItemVolumeM3: shippedVolumeM3 > 0 ? shippedVolumeM3 : undefined,
+                        orderItemWeightInputValue: shippedWeightInputValue,
+                        orderItemWeightInputUnit: shippedWeightInputUnit,
+                        orderItemVolumeInputValue: shippedVolumeInputValue,
+                        orderItemVolumeInputUnit: shippedVolumeInputUnit,
+                        shippedQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
+                        shippedWeight,
+                    });
+                    await updateDocument(item._id, {
+                        assignedQtyKoli: nextProgress.assignedQtyKoli,
+                        assignedWeight: nextProgress.assignedWeight,
+                        assignedVolume: nextProgress.assignedVolume,
+                        heldQtyKoli: nextProgress.heldQtyKoli,
+                        heldWeight: nextProgress.heldWeight,
+                        heldVolume: nextProgress.heldVolume,
+                        holdReason: selection.holdRemaining ? selection.holdReason : item.holdReason,
+                        holdLocation: selection.holdRemaining ? selection.holdLocation : item.holdLocation,
+                        status: deriveOrderItemStatusFromProgress(nextProgress),
+                    });
+                })());
+        }
+
+        if (postCreateMutations.length > 0) {
+            await Promise.all(postCreateMutations);
         }
     } catch (error) {
         if (isMutationConflictError(error)) {
