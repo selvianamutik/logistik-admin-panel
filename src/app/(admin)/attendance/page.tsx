@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileDown, Pencil, Plus, Save, ScrollText, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
@@ -57,6 +58,22 @@ type DailyAttendanceRow = {
     employee: Employee;
     record: EmployeeAttendanceRecord | null;
 };
+type DailyAttendanceSortField = 'employeeName' | 'division' | 'status' | 'updatedAt';
+type AttendanceRecapSortField =
+    | 'employeeName'
+    | 'recordedDays'
+    | 'presentCount'
+    | 'earlyLeaveCount'
+    | 'permissionCount'
+    | 'sickCount'
+    | 'leaveCount'
+    | 'absentCount'
+    | 'offCount'
+    | 'lastAttendanceDate';
+type SortState<T extends string> = {
+    field: T;
+    direction: SortDirection;
+};
 
 const PERIOD_OPTIONS: Array<{ value: EmployeeAttendancePeriod; label: string }> = [
     { value: 'today', label: EMPLOYEE_ATTENDANCE_PERIOD_LABELS.today },
@@ -104,6 +121,26 @@ function formatAttendanceDateLabel(dateValue?: string) {
     });
 }
 
+function compareText(left: string | undefined, right: string | undefined) {
+    return (left || '').localeCompare(right || '', 'id-ID', { numeric: true, sensitivity: 'base' });
+}
+
+function applySortDirection(value: number, direction: SortDirection) {
+    return direction === 'asc' ? value : -value;
+}
+
+function toggleSortState<T extends string>(
+    current: SortState<T>,
+    field: T,
+    defaultDirection: SortDirection = 'asc'
+): SortState<T> {
+    if (current.field !== field) {
+        return { field, direction: defaultDirection };
+    }
+
+    return { field, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+}
+
 export default function AttendancePage() {
     const { user } = useApp();
     const { addToast } = useToast();
@@ -124,6 +161,8 @@ export default function AttendancePage() {
     const [inputDivisionFilter, setInputDivisionFilter] = useState('');
     const [inputCoverageFilter, setInputCoverageFilter] = useState<AttendanceInputCoverage>('PENDING');
     const [inputStatusFilter, setInputStatusFilter] = useState('');
+    const [inputSort, setInputSort] = useState<SortState<DailyAttendanceSortField>>({ field: 'employeeName', direction: 'asc' });
+    const [recapSort, setRecapSort] = useState<SortState<AttendanceRecapSortField>>({ field: 'employeeName', direction: 'asc' });
     const [showModal, setShowModal] = useState(false);
     const [editRecord, setEditRecord] = useState<EmployeeAttendanceRecord | null>(null);
     const [saving, setSaving] = useState(false);
@@ -133,6 +172,12 @@ export default function AttendancePage() {
 
     const canManageAttendance = user ? hasPermission(user.role, 'attendance', 'create') || hasPermission(user.role, 'attendance', 'update') : false;
     const canExportAttendance = user ? hasPermission(user.role, 'attendance', 'export') : false;
+    const toggleInputSort = useCallback((field: DailyAttendanceSortField, defaultDirection: SortDirection = 'asc') => {
+        setInputSort(current => toggleSortState(current, field, defaultDirection));
+    }, []);
+    const toggleRecapSort = useCallback((field: AttendanceRecapSortField, defaultDirection: SortDirection = 'asc') => {
+        setRecapSort(current => toggleSortState(current, field, defaultDirection));
+    }, []);
     const activeEmployees = useMemo(() => employees.filter(employee => employee.active !== false), [employees]);
     const employeeOptions = useMemo(() => {
         const optionMap = new Map<string, Employee>();
@@ -222,14 +267,38 @@ export default function AttendancePage() {
             });
 
         return rows.sort((left, right) => {
-            if (inputCoverageFilter === 'ALL') {
+            if (inputCoverageFilter === 'ALL' && inputSort.field === 'employeeName') {
                 const leftRecorded = Boolean(left.record);
                 const rightRecorded = Boolean(right.record);
                 if (leftRecorded !== rightRecorded) {
                     return leftRecorded ? 1 : -1;
                 }
             }
-            return left.employee.name.localeCompare(right.employee.name, 'id-ID');
+
+            let compareResult = 0;
+            if (inputSort.field === 'employeeName') {
+                compareResult =
+                    compareText(left.employee.name, right.employee.name)
+                    || compareText(left.employee.employeeCode, right.employee.employeeCode);
+            } else if (inputSort.field === 'division') {
+                compareResult =
+                    compareText(left.employee.division, right.employee.division)
+                    || compareText(left.employee.position, right.employee.position)
+                    || compareText(left.employee.name, right.employee.name);
+            } else if (inputSort.field === 'status') {
+                compareResult =
+                    compareText(
+                        left.record ? EMPLOYEE_ATTENDANCE_STATUS_LABELS[left.record.status] : 'Belum Tercatat',
+                        right.record ? EMPLOYEE_ATTENDANCE_STATUS_LABELS[right.record.status] : 'Belum Tercatat',
+                    )
+                    || compareText(left.employee.name, right.employee.name);
+            } else {
+                compareResult =
+                    compareText(left.record?.updatedAt, right.record?.updatedAt)
+                    || compareText(left.employee.name, right.employee.name);
+            }
+
+            return applySortDirection(compareResult, inputSort.direction);
         });
     }, [
         activeEmployees,
@@ -237,6 +306,7 @@ export default function AttendancePage() {
         inputCoverageFilter,
         inputDivisionFilter,
         inputSearch,
+        inputSort,
         inputStatusFilter,
     ]);
     const paginatedDailyAttendanceRows = useMemo(() => {
@@ -260,10 +330,31 @@ export default function AttendancePage() {
             off: counts.offCount,
         };
     }, [activeEmployeeRefSet, activeEmployees.length, dailyRecords]);
-    const recapRows = useMemo(
+    const baseRecapRows = useMemo(
         () => buildEmployeeAttendanceRecapRows(records, employees),
         [employees, records],
     );
+    const recapRows = useMemo(() => {
+        return [...baseRecapRows].sort((left, right) => {
+            let compareResult = 0;
+
+            if (recapSort.field === 'employeeName') {
+                compareResult =
+                    compareText(left.employeeName, right.employeeName)
+                    || compareText(left.employeeCode, right.employeeCode);
+            } else if (recapSort.field === 'lastAttendanceDate') {
+                compareResult =
+                    compareText(left.lastAttendanceDate, right.lastAttendanceDate)
+                    || compareText(left.employeeName, right.employeeName);
+            } else {
+                compareResult =
+                    (left[recapSort.field] || 0) - (right[recapSort.field] || 0)
+                    || compareText(left.employeeName, right.employeeName);
+            }
+
+            return applySortDirection(compareResult, recapSort.direction);
+        });
+    }, [baseRecapRows, recapSort]);
     const paginatedRecapRows = useMemo(() => {
         const offset = Math.max(page - 1, 0) * DEFAULT_PAGE_SIZE;
         return recapRows.slice(offset, offset + DEFAULT_PAGE_SIZE);
@@ -677,12 +768,36 @@ export default function AttendancePage() {
                     <table>
                         <thead>
                             <tr>
-                                <th>Karyawan</th>
-                                <th>Divisi / Jabatan</th>
-                                <th>Status Hari Ini</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Karyawan"
+                                        direction={inputSort.field === 'employeeName' ? inputSort.direction : null}
+                                        onToggle={() => toggleInputSort('employeeName')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Divisi / Jabatan"
+                                        direction={inputSort.field === 'division' ? inputSort.direction : null}
+                                        onToggle={() => toggleInputSort('division')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Status Hari Ini"
+                                        direction={inputSort.field === 'status' ? inputSort.direction : null}
+                                        onToggle={() => toggleInputSort('status')}
+                                    />
+                                </th>
                                 <th>Jam</th>
                                 <th>Catatan</th>
-                                <th>Input Terakhir</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Input Terakhir"
+                                        direction={inputSort.field === 'updatedAt' ? inputSort.direction : null}
+                                        onToggle={() => toggleInputSort('updatedAt', 'desc')}
+                                    />
+                                </th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
@@ -914,17 +1029,77 @@ export default function AttendancePage() {
                     <table>
                         <thead>
                             <tr>
-                                <th>Karyawan</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Karyawan"
+                                        direction={recapSort.field === 'employeeName' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('employeeName')}
+                                    />
+                                </th>
                                 <th>Divisi / Jabatan</th>
-                                <th>Hari Tercatat</th>
-                                <th>Masuk</th>
-                                <th>Pulang Cepat</th>
-                                <th>Izin</th>
-                                <th>Sakit</th>
-                                <th>Cuti</th>
-                                <th>Alpha</th>
-                                <th>Libur</th>
-                                <th>Tanggal Terakhir</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Hari Tercatat"
+                                        direction={recapSort.field === 'recordedDays' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('recordedDays', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Masuk"
+                                        direction={recapSort.field === 'presentCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('presentCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Pulang Cepat"
+                                        direction={recapSort.field === 'earlyLeaveCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('earlyLeaveCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Izin"
+                                        direction={recapSort.field === 'permissionCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('permissionCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Sakit"
+                                        direction={recapSort.field === 'sickCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('sickCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Cuti"
+                                        direction={recapSort.field === 'leaveCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('leaveCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Alpha"
+                                        direction={recapSort.field === 'absentCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('absentCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Libur"
+                                        direction={recapSort.field === 'offCount' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('offCount', 'desc')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Tanggal Terakhir"
+                                        direction={recapSort.field === 'lastAttendanceDate' ? recapSort.direction : null}
+                                        onToggle={() => toggleRecapSort('lastAttendanceDate', 'desc')}
+                                    />
+                                </th>
                             </tr>
                         </thead>
                         <tbody>

@@ -1,5 +1,7 @@
 'use client';
 
+import { ArrowDown, ArrowDownUp, ArrowUp } from 'lucide-react';
+
 export type SortDirection = 'asc' | 'desc';
 
 type SortableTableHeaderProps = {
@@ -15,6 +17,8 @@ export default function SortableTableHeader({
     onToggle,
     align = 'left',
 }: SortableTableHeaderProps) {
+    const Icon = direction === 'asc' ? ArrowUp : direction === 'desc' ? ArrowDown : ArrowDownUp;
+
     return (
         <button
             type="button"
@@ -35,8 +39,14 @@ export default function SortableTableHeader({
             aria-label={`Urutkan ${label}`}
         >
             <span>{label}</span>
-            <span style={{ fontSize: '0.78em', color: direction ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                {direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'}
+            <span
+                aria-hidden="true"
+                style={{
+                    color: direction ? 'var(--color-primary)' : 'var(--color-gray-400)',
+                    display: 'inline-flex',
+                }}
+            >
+                <Icon size={13} strokeWidth={2.2} />
             </span>
         </button>
     );

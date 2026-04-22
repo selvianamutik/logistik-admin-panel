@@ -4,13 +4,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Edit, MapPin, Plus, Save, Trash2, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { useApp, useToast } from '../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPermission } from '@/lib/rbac';
 import { formatCurrency } from '@/lib/utils';
 import type { Service, TripRouteRate } from '@/lib/types';
-import { formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
+
+type TripRouteRateSortField = 'originArea' | 'serviceName' | 'rate' | 'active';
+
+function getNextSortDirection(currentField: TripRouteRateSortField, nextField: TripRouteRateSortField, currentDirection: SortDirection) {
+    if (currentField !== nextField) {
+        return nextField === 'rate' ? 'desc' : 'asc';
+    }
+
+    return currentDirection === 'asc' ? 'desc' : 'asc';
+}
 
 export default function TripRouteRatesPage() {
     const { user } = useApp();
@@ -19,6 +29,9 @@ export default function TripRouteRatesPage() {
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
+    const [sortField, setSortField] = useState<TripRouteRateSortField>('serviceName');
+    const [sortDir, setSortDir] = useState<SortDirection>('asc');
+    const [serviceFilter, setServiceFilter] = useState('');
     const [totalItems, setTotalItems] = useState(0);
     const [inactiveCount, setInactiveCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
@@ -42,9 +55,23 @@ export default function TripRouteRatesPage() {
     const loadTripRouteRates = useCallback(async () => {
         setLoading(true);
         try {
+            const listParams = new URLSearchParams({
+                entity: 'trip-route-rates',
+                page: String(page),
+                pageSize: String(DEFAULT_PAGE_SIZE),
+                sortField,
+                sortDir,
+            });
+            if (serviceFilter) {
+                listParams.set('filter', JSON.stringify({ serviceRef: serviceFilter }));
+            }
+            const inactiveFilter: Record<string, unknown> = { active: false };
+            if (serviceFilter) {
+                inactiveFilter.serviceRef = serviceFilter;
+            }
             const [listRes, inactiveRes, serviceRows] = await Promise.all([
-                fetch(`/api/data?entity=trip-route-rates&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&sortField=originArea&sortDir=asc`),
-                fetch(`/api/data?entity=trip-route-rates&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
+                fetch(`/api/data?${listParams.toString()}`),
+                fetch(`/api/data?entity=trip-route-rates&countOnly=1&filter=${encodeURIComponent(JSON.stringify(inactiveFilter))}`),
                 fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat biaya rute trip'),
             ]);
 
@@ -65,7 +92,7 @@ export default function TripRouteRatesPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, page]);
+    }, [addToast, page, serviceFilter, sortDir, sortField]);
 
     useEffect(() => {
         void loadTripRouteRates();
@@ -76,6 +103,15 @@ export default function TripRouteRatesPage() {
         () => services.find(service => service._id === form.serviceRef) || null,
         [form.serviceRef, services]
     );
+    const handleSort = (field: TripRouteRateSortField) => {
+        setSortDir(currentDirection => getNextSortDirection(sortField, field, currentDirection));
+        setSortField(field);
+        setPage(1);
+    };
+
+    useEffect(() => {
+        setPage(1);
+    }, [serviceFilter]);
 
     const openNew = () => {
         setEditItem(null);
@@ -218,15 +254,55 @@ export default function TripRouteRatesPage() {
             </div>
 
             <div className="table-container">
+                <div className="table-toolbar">
+                    <div className="table-toolbar-left">
+                        <select
+                            className="filter-select"
+                            value={serviceFilter}
+                            onChange={event => setServiceFilter(event.target.value)}
+                        >
+                            <option value="">Semua kategori armada</option>
+                            {services.map(service => (
+                                <option key={service._id} value={service._id}>
+                                    {service.code} - {service.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
                 <div className="table-wrapper">
                     <table>
                         <thead>
                             <tr>
-                                <th>Rute Trip</th>
-                                <th>Kategori Armada</th>
-                                <th>Tarif</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Rute Trip"
+                                        direction={sortField === 'originArea' ? sortDir : null}
+                                        onToggle={() => handleSort('originArea')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Kategori Armada"
+                                        direction={sortField === 'serviceName' ? sortDir : null}
+                                        onToggle={() => handleSort('serviceName')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Tarif"
+                                        direction={sortField === 'rate' ? sortDir : null}
+                                        onToggle={() => handleSort('rate')}
+                                    />
+                                </th>
                                 <th>Catatan</th>
-                                <th>Status</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Status"
+                                        direction={sortField === 'active' ? sortDir : null}
+                                        onToggle={() => handleSort('active')}
+                                    />
+                                </th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
@@ -251,7 +327,7 @@ export default function TripRouteRatesPage() {
                             ) : (
                                 items.map(item => (
                                     <tr key={item._id}>
-                                        <td className="font-semibold">{formatTripRouteRateLabel(item)}</td>
+                                        <td className="font-semibold">{item.originArea} -&gt; {item.destinationArea}</td>
                                         <td>{item.serviceName || <span className="text-muted">Semua kategori</span>}</td>
                                         <td className="font-semibold">{formatCurrency(item.rate || 0)}</td>
                                         <td className="text-muted">{item.notes || '-'}</td>
