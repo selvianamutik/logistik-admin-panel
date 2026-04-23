@@ -162,10 +162,17 @@ export function buildDriverVoucherPrintHtml(params: {
     } = summary;
     const routeLabel = formatDriverVoucherRouteForDisplay(voucher.route) || voucher.route || '-';
     const printedDisbursements = sortDriverVoucherDisbursementsChronologically(disbursements);
+    const settlementDirectionLabel = balance > 0
+        ? 'Driver Mengembalikan ke Perusahaan'
+        : balance < 0
+            ? 'Perusahaan Tambah Bayar ke Supir'
+            : 'Nihil';
+    const settlementColor = balance < 0 ? '#dc2626' : balance > 0 ? '#16a34a' : '#1e293b';
+    const statusLabel = DRIVER_VOUCHER_STATUS_MAP[voucher.status || '']?.label || voucher.status || '-';
 
     const disbursementSection = printedDisbursements.length > 0 ? `
-        <div style="margin-bottom:16px">
-            <div style="font-weight:700;margin-bottom:8px">Riwayat Pencairan Uang Jalan</div>
+        <div style="margin-top:16px">
+            <div class="section-title">Riwayat Bon / Uang Jalan</div>
             <table>
                 <thead>
                     <tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr>
@@ -181,49 +188,138 @@ export function buildDriverVoucherPrintHtml(params: {
                             <td class="r">${escapePrintHtml(formatCurrency(item.amount))}</td>
                         </tr>
                     `).join('')}
+                    <tr style="border-top:2px solid #1e293b">
+                        <td colspan="5" class="r b">Total Uang Jalan Diberikan</td>
+                        <td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
-    ` : '';
+    ` : totalIssuedAmount > 0 ? `
+        <div style="margin-top:16px">
+            <div class="section-title">Riwayat Bon / Uang Jalan</div>
+            <table>
+                <thead>
+                    <tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>${escapePrintHtml(formatDate(voucher.issuedDate || ''))}</td>
+                        <td>Bon Pertama</td>
+                        <td>${escapePrintHtml(voucher.issueBankName || '-')}</td>
+                        <td>Riwayat detail belum tersedia</td>
+                        <td class="r">${escapePrintHtml(formatCurrency(initialCashGiven || totalIssuedAmount))}</td>
+                    </tr>
+                    ${topUpAmount > 0 ? `
+                        <tr>
+                            <td>2</td>
+                            <td>${escapePrintHtml(formatDate(voucher.issuedDate || ''))}</td>
+                            <td>Bon Tambahan</td>
+                            <td>${escapePrintHtml(voucher.issueBankName || '-')}</td>
+                            <td>Riwayat detail belum tersedia</td>
+                            <td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td>
+                        </tr>
+                    ` : ''}
+                    <tr style="border-top:2px solid #1e293b">
+                        <td colspan="5" class="r b">Total Uang Jalan Diberikan</td>
+                        <td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    ` : `
+        <div style="margin-top:16px">
+            <div class="section-title">Riwayat Bon / Uang Jalan</div>
+            <div style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:10px 12px;color:#64748b">
+                Belum ada riwayat pencairan uang jalan.
+            </div>
+        </div>
+    `;
+
+    const expenseSection = items.length > 0 ? `
+        <div style="margin-top:16px">
+            <div class="section-title">Biaya Lain-lain Aktual</div>
+            <table>
+                <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
+                <tbody>
+                    ${items.map((item, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${escapePrintHtml(item.expenseDate ? formatDate(item.expenseDate) : '-')}</td>
+                            <td class="b">${escapePrintHtml(item.category)}</td>
+                            <td>${escapePrintHtml(item.description || '-')}</td>
+                            <td class="r">${escapePrintHtml(formatCurrency(item.amount))}</td>
+                        </tr>
+                    `).join('')}
+                    <tr style="border-top:2px solid #1e293b">
+                        <td colspan="4" class="r b">Total Biaya Lain-lain</td>
+                        <td class="r b">${escapePrintHtml(formatCurrency(operationalSpent))}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    ` : `
+        <div style="margin-top:16px">
+            <div class="section-title">Biaya Lain-lain Aktual</div>
+            <div style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:10px 12px;color:#64748b">
+                Belum ada biaya lain-lain aktual yang dicatat.
+            </div>
+        </div>
+    `;
 
     return `
-        <div style="margin-bottom:16px">
-            <table style="width:100%;border:none">
+        <div class="stats-row" style="margin-bottom:16px">
+            <div class="stat-box">
+                <div class="stat-label">Total Bon Diberikan</div>
+                <div class="stat-value">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Biaya Lain-lain</div>
+                <div class="stat-value d">${escapePrintHtml(formatCurrency(operationalSpent))}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Upah Borongan</div>
+                <div class="stat-value">${escapePrintHtml(formatCurrency(driverFeeAmount))}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Net Settlement</div>
+                <div class="stat-value" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</div>
+            </div>
+        </div>
+
+        <div class="section-title">Informasi Trip</div>
+        <div style="margin-bottom:12px">
+            <table style="width:100%;border:none;margin-top:0">
                 <tbody>
                     <tr><td style="border:none;padding:2px 8px;width:130px;font-weight:600">No. Bon</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.bonNumber)}</td><td style="border:none;padding:2px 8px;width:130px;font-weight:600">Tanggal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatDate(voucher.issuedDate || ''))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Supir</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.driverName || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.vehiclePlate || '-')}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">No. DO Internal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.doNumber || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${escapePrintHtml(routeLabel)}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Bon Pertama</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${escapePrintHtml(formatCurrency(initialCashGiven))}</td><td style="border:none;padding:2px 8px;font-weight:600">Bon Tambahan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Total Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.issueBankName || '-')}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Biaya Lain-lain</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalSpent))}</td><td style="border:none;padding:2px 8px;font-weight:600">Sisa Bon Operasional</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Borongan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Net Settlement Akhir</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(balance))}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Status</td><td style="border:none;padding:2px 8px">${escapePrintHtml(DRIVER_VOUCHER_STATUS_MAP[voucher.status || '']?.label || voucher.status)}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.settlementBankName || '-')}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Status</td><td style="border:none;padding:2px 8px">${escapePrintHtml(statusLabel)}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.issueBankName || '-')}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.settlementBankName || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Catatan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.notes || '-')}</td></tr>
                 </tbody>
             </table>
         </div>
         ${disbursementSection}
-        <table>
-            <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
+        ${expenseSection}
+        <div style="margin-top:16px">
+            <div class="section-title">Ringkasan Settlement</div>
+            <table>
             <tbody>
-                ${items.map((item, index) => `
-                    <tr>
-                        <td>${index + 1}</td>
-                        <td>${escapePrintHtml(item.expenseDate ? formatDate(item.expenseDate) : '-')}</td>
-                        <td class="b">${escapePrintHtml(item.category)}</td>
-                        <td>${escapePrintHtml(item.description || '-')}</td>
-                        <td class="r">${escapePrintHtml(formatCurrency(item.amount))}</td>
-                    </tr>
-                `).join('')}
-                <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">Total Biaya Lain-lain</td><td class="r b">${escapePrintHtml(formatCurrency(operationalSpent))}</td></tr>
-                <tr><td colspan="4" class="r b">Sisa Bon Operasional</td><td class="r">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
-                <tr><td colspan="4" class="r b">Upah Borongan</td><td class="r">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td></tr>
-                <tr><td colspan="4" class="r b">Total Hak Trip</td><td class="r">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td></tr>
-                <tr><td colspan="4" class="r b">Bon Pertama</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
-                <tr><td colspan="4" class="r b">Bon Tambahan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
-                <tr><td colspan="4" class="r b">Total Uang Diberikan</td><td class="r">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td></tr>
-                <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${escapePrintHtml(balance >= 0 ? 'Net Settlement Akhir (Kembali ke Perusahaan)' : 'Net Settlement Akhir (Tambah Bayar ke Supir)')}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td></tr>
+                <tr><td class="b">Bon Pertama</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
+                <tr><td class="b">Bon Tambahan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
+                <tr style="border-top:2px solid #1e293b"><td class="b">Total Uang Jalan Diberikan</td><td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td></tr>
+                <tr><td>Dikurangi Biaya Lain-lain Aktual</td><td class="r">(${escapePrintHtml(formatCurrency(operationalSpent))})</td></tr>
+                <tr><td>Sisa Bon Operasional</td><td class="r">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
+                <tr><td>Dikurangi Upah Borongan</td><td class="r">(${escapePrintHtml(formatCurrency(driverFeeAmount))})</td></tr>
+                <tr><td>Total Dipertanggungjawabkan + Upah</td><td class="r">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td></tr>
+                <tr style="border-top:2px solid #1e293b">
+                    <td class="b">${escapePrintHtml(settlementDirectionLabel)}</td>
+                    <td class="r b" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td>
+                </tr>
             </tbody>
-        </table>
+            </table>
+        </div>
         <div style="margin-top:40px;display:flex;justify-content:space-between">
             <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Supir,</div><div style="border-top:1px solid #333;padding-top:4px">(${escapePrintHtml(voucher.driverName || '________________')})</div></div>
             <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Mengetahui,</div><div style="border-top:1px solid #333;padding-top:4px">(________________)</div></div>
