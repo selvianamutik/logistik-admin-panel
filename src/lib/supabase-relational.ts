@@ -65,6 +65,7 @@ type RelationalListOptions = {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
     sortPreset?: string | null;
+    countStrategy?: 'exact' | 'planned' | 'estimated';
 };
 
 type RelationalListResult<T> = {
@@ -1497,6 +1498,7 @@ async function fetchAllRows(
 function buildServerListParams(
     config: RelationalConfig,
     options: RelationalListOptions,
+    paramsOptions: { includeOrder?: boolean } = {},
 ) {
     if ((options.definedFields?.length || 0) > 0) {
         return null;
@@ -1533,13 +1535,15 @@ function buildServerListParams(
         params.set('or', `(${orClause})`);
     }
 
-    const targetSortField = options.sortField?.trim() || '_updatedAt';
-    const sortColumn = getColumnName(config, targetSortField);
-    if (!sortColumn) {
-        return null;
-    }
+    if (paramsOptions.includeOrder !== false) {
+        const targetSortField = options.sortField?.trim() || '_updatedAt';
+        const sortColumn = getColumnName(config, targetSortField);
+        if (!sortColumn) {
+            return null;
+        }
 
-    params.set('order', `${sortColumn}.${options.sortDir === 'asc' ? 'asc' : 'desc'}`);
+        params.set('order', `${sortColumn}.${options.sortDir === 'asc' ? 'asc' : 'desc'}`);
+    }
     return params;
 }
 
@@ -1621,8 +1625,8 @@ export async function relationalList<T = Record<string, unknown>>(
 
     const config = RELATIONAL_CONFIG[docType];
     const presetComparator = getSortPresetComparator(docType, options.sortPreset);
-    const serverParams = presetComparator ? null : buildServerListParams(config, options);
-    if (serverParams) {
+    const serverParams = buildServerListParams(config, options, { includeOrder: !presetComparator });
+    if (serverParams && !presetComparator) {
         const pagedParams = new URLSearchParams(serverParams);
         pagedParams.set('limit', String(pageSize));
         pagedParams.set('offset', String((page - 1) * pageSize));
@@ -1630,7 +1634,7 @@ export async function relationalList<T = Record<string, unknown>>(
         try {
             const result = await fetchRows(
                 buildQueryPath(config.table, pagedParams),
-                { headers: { Prefer: 'count=exact' } },
+                { headers: { Prefer: `count=${options.countStrategy || 'exact'}` } },
             );
             if (result.total !== null) {
                 return {
@@ -1646,7 +1650,20 @@ export async function relationalList<T = Record<string, unknown>>(
         }
     }
 
-    const docs = await relationalGetAll<Record<string, unknown>>(docType);
+    let docs: Array<Record<string, unknown>>;
+    if (serverParams) {
+        try {
+            const result = await fetchAllRows(config.table, serverParams);
+            docs = result.rows.map(row => mapRowToDocument(docType, row));
+        } catch (error) {
+            if (isMissingRelationalTableError(error)) {
+                return { items: [], total: 0 };
+            }
+            throw error;
+        }
+    } else {
+        docs = await relationalGetAll<Record<string, unknown>>(docType);
+    }
     const filtered = docs
         .filter(doc => matchesFilter(doc, options.filterObj ?? {}))
         .filter(doc => matchesDefinedFields(doc, options.definedFields ?? []))

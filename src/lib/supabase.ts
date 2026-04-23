@@ -16,6 +16,7 @@ type SupabaseErrorPayload = {
 const TRANSIENT_STATUS_CODES = new Set([429, 502, 503, 504]);
 const MAX_FETCH_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
+const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 
 export class SupabaseServiceError extends Error {
     code?: string;
@@ -97,13 +98,43 @@ function delay(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getFetchTimeoutMs() {
+    const rawValue = Number.parseInt(process.env.SUPABASE_FETCH_TIMEOUT_MS || '', 10);
+    return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : DEFAULT_FETCH_TIMEOUT_MS;
+}
+
+function createTimeoutSignal(signal: AbortSignal | null | undefined) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), getFetchTimeoutMs());
+    let abortHandler: (() => void) | null = null;
+
+    if (signal) {
+        if (signal.aborted) {
+            controller.abort();
+        } else {
+            abortHandler = () => controller.abort();
+            signal.addEventListener('abort', abortHandler, { once: true });
+        }
+    }
+
+    return {
+        signal: controller.signal,
+        cleanup: () => {
+            clearTimeout(timeout);
+            if (signal && abortHandler) {
+                signal.removeEventListener('abort', abortHandler);
+            }
+        },
+    };
+}
+
 function isTransientSupabaseResponse(status: number, rawText: string) {
     return TRANSIENT_STATUS_CODES.has(status) || /bad gateway|temporarily unavailable|gateway timeout/i.test(rawText);
 }
 
 function isTransientFetchError(error: unknown) {
     const message = error instanceof Error ? error.message : '';
-    return /fetch failed|network|econnreset|etimedout|socket|terminated/i.test(message);
+    return /fetch failed|network|econnreset|etimedout|socket|terminated|aborted|abort/i.test(message);
 }
 
 function buildSupabaseServiceError(status: number, rawText: string) {
@@ -135,11 +166,18 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
 
     for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
         try {
-            const response = await fetch(`${config.url}/rest/v1/${path}`, {
-                ...init,
-                headers,
-                cache: 'no-store',
-            });
+            const timeout = createTimeoutSignal(init.signal);
+            let response: Response;
+            try {
+                response = await fetch(`${config.url}/rest/v1/${path}`, {
+                    ...init,
+                    headers,
+                    cache: 'no-store',
+                    signal: timeout.signal,
+                });
+            } finally {
+                timeout.cleanup();
+            }
 
             if (response.ok) {
                 return response;

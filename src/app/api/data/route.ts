@@ -1062,6 +1062,7 @@ export async function GET(request: Request) {
                     sortField,
                     sortDir,
                     sortPreset,
+                    countStrategy: countOnly ? 'exact' : 'estimated',
                 });
                 items = result.items as Record<string, unknown>[];
                 totalItems = result.total;
