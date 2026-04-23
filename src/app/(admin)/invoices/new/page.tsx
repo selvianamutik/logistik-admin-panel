@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 
@@ -34,6 +34,24 @@ import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, form
 
 import { useToast } from '../../layout';
 
+type PendingDeliveryOrderSelection = {
+    deliveryOrder: DeliveryOrder;
+    rows: NotaItemRow[];
+    selectedGroupKeys: string[];
+};
+
+function getInvoiceRowItemRefs(row: Pick<NotaItemRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
+    return Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+        ? row.deliveryOrderItemRefs
+        : row.deliveryOrderItemRef
+            ? [row.deliveryOrderItemRef]
+            : [];
+}
+
+function getInvoiceRowSjGroupKey(row: NotaItemRow) {
+    return `${row.doRef || 'manual'}::sj::${row.noSJ?.trim() || row.doNumber || row.id}::customer::${row.customerRef || ''}`;
+}
+
 export default function NewNotaPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -65,6 +83,7 @@ export default function NewNotaPage() {
     const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
     const [pph23BaseMode, setPph23BaseMode] = useState<'BEFORE_CLAIM' | 'AFTER_CLAIM'>('BEFORE_CLAIM');
     const [editingRow, setEditingRow] = useState<NotaItemRow | null>(null);
+    const [pendingDoSelection, setPendingDoSelection] = useState<PendingDeliveryOrderSelection | null>(null);
 
     useEffect(() => {
         async function loadData() {
@@ -316,25 +335,14 @@ export default function NewNotaPage() {
         const usedDoRowKeySet = new Set(usedNotaDoRowKeys);
         const usedDoItemRefSet = new Set(usedNotaDoItemRefs);
         const selectedDoItemRefSet = new Set(
-            rows.flatMap(row => (
-                Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
-                    ? row.deliveryOrderItemRefs
-                    : row.deliveryOrderItemRef
-                        ? [row.deliveryOrderItemRef]
-                        : []
-            ))
+            rows.flatMap(row => getInvoiceRowItemRefs(row))
         );
         const selectedRowKeys = new Set(
             rows.flatMap(row => {
                 if (isEmptyNotaRow(row)) {
                     return [];
                 }
-                const rowItemRefs =
-                    Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
-                        ? row.deliveryOrderItemRefs
-                        : row.deliveryOrderItemRef
-                            ? [row.deliveryOrderItemRef]
-                            : [];
+                const rowItemRefs = getInvoiceRowItemRefs(row);
                 return rowItemRefs.length > 0
                     ? rowItemRefs.map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
                     : [`${row.doRef || 'manual'}::${row.noSJ || row.id}`];
@@ -346,12 +354,7 @@ export default function NewNotaPage() {
             orders,
             deliveryOrderItems,
         }).filter(row => {
-            const rowItemRefs =
-                Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
-                    ? row.deliveryOrderItemRefs
-                    : row.deliveryOrderItemRef
-                        ? [row.deliveryOrderItemRef]
-                        : [];
+            const rowItemRefs = getInvoiceRowItemRefs(row);
             if (rowItemRefs.length > 0 && rowItemRefs.some(itemRef => usedDoItemRefSet.has(itemRef) || selectedDoItemRefSet.has(itemRef))) {
                 return false;
             }
@@ -369,18 +372,25 @@ export default function NewNotaPage() {
         });
     }, [deliveryOrderItems, orders, rows, usedNotaDoItemRefs, usedNotaDoRowKeys]);
 
-    const addDORow = (doId: string) => {
-        const deliveryOrder = deliveryOrders.find(item => item._id === doId);
-        if (!deliveryOrder) {
-            addToast('error', 'DO tidak ditemukan');
-            return;
-        }
-        const nextRows = getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined);
-        if (nextRows.length === 0) {
-            addToast('error', customerRef ? 'Tidak ada SJ yang tersisa untuk customer invoice ini pada DO tersebut' : 'Semua item SJ pada DO ini sudah masuk invoice atau sudah ada di invoice saat ini');
-            return;
-        }
+    const appendInvoiceRows = useCallback((nextRows: NotaItemRow[]) => {
+        setRows(previous => {
+            const calculatedRows = nextRows.map(row => buildCalculatedRow(row));
+            const emptyIndex = previous.findIndex(isEmptyNotaRow);
+            if (emptyIndex === -1) {
+                return [...previous, ...calculatedRows];
+            }
 
+            const next = [...previous];
+            const [firstRow, ...remainingRows] = calculatedRows;
+            next[emptyIndex] = { ...firstRow, id: previous[emptyIndex].id };
+            if (remainingRows.length > 0) {
+                next.push(...remainingRows);
+            }
+            return next;
+        });
+    }, [buildCalculatedRow]);
+
+    const applyCustomerFromInvoiceRows = (nextRows: NotaItemRow[]) => {
         if (!customerRef) {
             const rowCustomers: Array<[string, string]> = Array.from(
                 new Map(
@@ -390,8 +400,8 @@ export default function NewNotaPage() {
                 ).entries()
             );
             if (rowCustomers.length > 1) {
-            addToast('error', 'DO ini punya SJ dengan customer invoice berbeda. Pilih customer invoice dulu.');
-                return;
+                addToast('error', 'DO ini punya SJ dengan customer invoice berbeda. Pilih customer invoice dulu.');
+                return false;
             }
             if (rowCustomers.length === 1) {
                 const [nextCustomerRef, nextCustomerName] = rowCustomers[0];
@@ -404,21 +414,56 @@ export default function NewNotaPage() {
                 setCustomerName(selectedCustomerName);
             }
         }
+        return true;
+    };
 
-        setRows(previous => {
-            const emptyIndex = previous.findIndex(isEmptyNotaRow);
-            if (emptyIndex === -1) {
-                return [...previous, ...nextRows];
-            }
+    const openDORowSelector = (doId: string) => {
+        const deliveryOrder = deliveryOrders.find(item => item._id === doId);
+        if (!deliveryOrder) {
+            addToast('error', 'DO tidak ditemukan');
+            return;
+        }
+        const nextRows = getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined);
+        if (nextRows.length === 0) {
+            addToast('error', customerRef ? 'Tidak ada SJ yang tersisa untuk customer invoice ini pada DO tersebut' : 'Semua item SJ pada DO ini sudah masuk invoice atau sudah ada di invoice saat ini');
+            return;
+        }
 
-            const next = [...previous];
-            const [firstRow, ...remainingRows] = nextRows;
-            next[emptyIndex] = buildCalculatedRow({ ...firstRow, id: previous[emptyIndex].id });
-            if (remainingRows.length > 0) {
-                next.push(...remainingRows.map(row => buildCalculatedRow(row)));
-            }
-            return next;
+        if (!applyCustomerFromInvoiceRows(nextRows)) {
+            return;
+        }
+
+        const groupKeys = [...new Set(nextRows.map(getInvoiceRowSjGroupKey))];
+        setPendingDoSelection({
+            deliveryOrder,
+            rows: nextRows.map(row => buildCalculatedRow(row)),
+            selectedGroupKeys: groupKeys.length === 1 ? groupKeys : [],
         });
+    };
+
+    const togglePendingSjGroup = (groupKey: string) => {
+        setPendingDoSelection(previous => {
+            if (!previous) return previous;
+            const selectedSet = new Set(previous.selectedGroupKeys);
+            if (selectedSet.has(groupKey)) {
+                selectedSet.delete(groupKey);
+            } else {
+                selectedSet.add(groupKey);
+            }
+            return { ...previous, selectedGroupKeys: Array.from(selectedSet) };
+        });
+    };
+
+    const confirmPendingDoSelection = () => {
+        if (!pendingDoSelection) return;
+        const selectedSet = new Set(pendingDoSelection.selectedGroupKeys);
+        const selectedRows = pendingDoSelection.rows.filter(row => selectedSet.has(getInvoiceRowSjGroupKey(row)));
+        if (selectedRows.length === 0) {
+            addToast('error', 'Pilih minimal 1 SJ yang akan masuk invoice');
+            return;
+        }
+        appendInvoiceRows(selectedRows);
+        setPendingDoSelection(null);
     };
 
     const removeRow = (id: string) => {
@@ -427,6 +472,52 @@ export default function NewNotaPage() {
             return next.length > 0 ? next : [createEmptyNotaRow()];
         });
     };
+
+    const pendingSjGroups = useMemo(() => {
+        if (!pendingDoSelection) {
+            return [];
+        }
+
+        const groupMap = new Map<string, {
+            key: string;
+            noSJ: string;
+            customerName: string;
+            tujuanSummary: string;
+            rows: NotaItemRow[];
+            collie: number;
+            beratKg: number;
+            volumeM3: number;
+            amount: number;
+        }>();
+
+        for (const row of pendingDoSelection.rows) {
+            const key = getInvoiceRowSjGroupKey(row);
+            const current = groupMap.get(key) || {
+                key,
+                noSJ: row.noSJ || '-',
+                customerName: row.customerName || customerName || '-',
+                tujuanSummary: '',
+                rows: [],
+                collie: 0,
+                beratKg: 0,
+                volumeM3: 0,
+                amount: 0,
+            };
+            current.rows.push(row);
+            current.collie += row.collie || 0;
+            current.beratKg += row.beratKg || 0;
+            current.volumeM3 += row.volumeM3 || 0;
+            current.amount += row.uangRp || 0;
+            current.tujuanSummary = [...new Set(
+                current.rows
+                    .map(item => item.tujuan?.trim())
+                    .filter((value): value is string => Boolean(value))
+            )].join(', ');
+            groupMap.set(key, current);
+        }
+
+        return Array.from(groupMap.values());
+    }, [customerName, pendingDoSelection]);
 
     if (loadingInitialData) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 220 }} /></div>;
@@ -537,6 +628,8 @@ export default function NewNotaPage() {
             deliveryOrder,
             noSJSummary: noSJList.join(', '),
             tujuanSummary: tujuanList.join(', '),
+            sjCount: noSJList.length || nextRows.length,
+            rowCount: nextRows.length,
         }];
     });
 
@@ -700,7 +793,7 @@ export default function NewNotaPage() {
                                 className="form-select"
                                 onChange={event => {
                                     if (event.target.value) {
-                                        addDORow(event.target.value);
+                                        openDORowSelector(event.target.value);
                                         event.target.value = '';
                                     }
                                 }}
@@ -714,9 +807,9 @@ export default function NewNotaPage() {
                                                 : `Semua DO Selesai (${availableDeliveryOrderOptions.length})`
                                         }
                                     >
-                                        {availableDeliveryOrderOptions.map(({ deliveryOrder, noSJSummary, tujuanSummary }) => (
+                                        {availableDeliveryOrderOptions.map(({ deliveryOrder, noSJSummary, tujuanSummary, sjCount, rowCount }) => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{noSJSummary ? ` | SJ ${noSJSummary}` : getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {tujuanSummary || formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || '-' })}
+                                                {formatInternalDeliveryOrderNumber(deliveryOrder)} | {sjCount} SJ tersisa / {rowCount} barang{noSJSummary ? ` | ${noSJSummary}` : getShipperReferenceCount(deliveryOrder) > 0 ? ` | ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {tujuanSummary || formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || '-' })}
                                             </option>
                                         ))}
                                     </optgroup>
@@ -970,6 +1063,96 @@ export default function NewNotaPage() {
                     </table>
                 </div>
             </div>
+
+            {pendingDoSelection && (
+                <div className="modal-overlay" onClick={() => setPendingDoSelection(null)}>
+                    <div className="modal" onClick={event => event.stopPropagation()} style={{ maxWidth: 880, width: '100%' }}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Pilih SJ untuk Invoice</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                    {formatInternalDeliveryOrderNumber(pendingDoSelection.deliveryOrder)} - {pendingDoSelection.deliveryOrder.vehiclePlate || '-'}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={() => setPendingDoSelection(null)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                                <div className="text-muted text-sm">
+                                    SJ yang sudah masuk invoice lain tidak ditampilkan. Pilih SJ yang akan ditagihkan sekarang.
+                                </div>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => setPendingDoSelection(previous => previous ? ({
+                                        ...previous,
+                                        selectedGroupKeys: pendingSjGroups.map(group => group.key),
+                                    }) : previous)}
+                                >
+                                    Pilih Semua Sisa
+                                </button>
+                            </div>
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {pendingSjGroups.map(group => {
+                                    const selected = pendingDoSelection.selectedGroupKeys.includes(group.key);
+                                    return (
+                                        <label
+                                            key={group.key}
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'auto minmax(0, 1fr)',
+                                                gap: '0.75rem',
+                                                alignItems: 'start',
+                                                border: `1px solid ${selected ? 'var(--color-primary)' : 'var(--color-gray-200)'}`,
+                                                borderRadius: '0.85rem',
+                                                padding: '0.9rem',
+                                                background: selected ? 'var(--color-primary-light)' : 'var(--color-white)',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selected}
+                                                onChange={() => togglePendingSjGroup(group.key)}
+                                                style={{ marginTop: '0.25rem' }}
+                                            />
+                                            <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                    <div>
+                                                        <div className="font-semibold">SJ {group.noSJ}</div>
+                                                        <div className="text-muted text-sm">{group.customerName}</div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div className="font-semibold">{formatCurrency(group.amount)}</div>
+                                                        <div className="text-muted text-sm">{group.rows.length} barang</div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-muted text-sm">
+                                                    Tujuan: {group.tujuanSummary || '-'}
+                                                </div>
+                                                <div className="text-muted text-sm">
+                                                    Muatan: {formatQuantity(group.collie)} koli / {formatFreightNotaDisplayWeight({ beratKg: group.beratKg, volumeM3: group.volumeM3, billingMode, includeCanonical: billingMode === 'PER_TON' })}
+                                                </div>
+                                                <div className="text-muted text-sm">
+                                                    Barang: {group.rows.map(row => row.barang).filter(Boolean).join(', ') || '-'}
+                                                </div>
+                                            </div>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setPendingDoSelection(null)}>Batal</button>
+                            <button className="btn btn-primary" onClick={confirmPendingDoSelection}>
+                                <Plus size={16} /> Tambahkan {pendingDoSelection.selectedGroupKeys.length} SJ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {editingRow && (
                 <div className="modal-overlay" onClick={closeEditRowModal}>

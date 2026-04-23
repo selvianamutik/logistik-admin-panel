@@ -165,28 +165,17 @@ async function syncFreightNotaDeliveryOrderLinks(params: {
     notaNumber: string;
     nextDeliveryOrderRefs: string[];
 }) {
-    const nextDeliveryOrderRefs = [...new Set(
-        params.nextDeliveryOrderRefs
-            .map(value => normalizeOptionalText(value))
-            .filter((value): value is string => Boolean(value))
-    )];
     const currentlyLinkedDeliveryOrders = await listDocumentsByFilter<Array<{
         _id: string;
         freightNotaRef?: string | null;
     }>[number]>('deliveryOrder', { freightNotaRef: params.notaId });
-    const currentlyLinkedRefs = currentlyLinkedDeliveryOrders
+    const refsToClear = currentlyLinkedDeliveryOrders
         .map(item => normalizeOptionalText(item._id))
         .filter((value): value is string => Boolean(value));
-    const refsToClear = currentlyLinkedRefs.filter(ref => !nextDeliveryOrderRefs.includes(ref));
 
     await Promise.all(refsToClear.map(deliveryOrderRef => updateDocument(deliveryOrderRef, {
             freightNotaRef: null,
             freightNotaNumber: null,
-        }, 'deliveryOrder')));
-
-    await Promise.all(nextDeliveryOrderRefs.map(deliveryOrderRef => updateDocument(deliveryOrderRef, {
-            freightNotaRef: params.notaId,
-            freightNotaNumber: params.notaNumber,
         }, 'deliveryOrder')));
 }
 
@@ -2275,46 +2264,34 @@ export async function handleFreightNotaCreate(
         }
     }
 
-    const payloadCoverageByDoRef = new Map<
-        string,
-        {
-            fullDoIncluded: boolean;
-            deliveryOrderItemRefs: Set<string>;
-        }
-    >();
+    const payloadCoverageByDoRef = new Map<string, { deliveryOrderItemRefs: Set<string>; rowKeys: Set<string> }>();
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
-        const coverage =
-            payloadCoverageByDoRef.get(row.doRef) ||
-            {
-                fullDoIncluded: false,
-                deliveryOrderItemRefs: new Set<string>(),
-            };
         const rowItemRefs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
             ? row.deliveryOrderItemRefs
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
-        if (rowItemRefs.length === 0) {
-            if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size > 0) {
-                return NextResponse.json(
-                    {
-                        error: `DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload invoice`,
-                    },
-                    { status: 409 }
-                );
-            }
-            coverage.fullDoIncluded = true;
-            payloadCoverageByDoRef.set(row.doRef, coverage);
-            continue;
-        }
-
-        if (coverage.fullDoIncluded) {
+        const rowCoverageKeys = rowItemRefs.length > 0
+            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
+            : deliveryOrder
+                ? buildFreightNotaCoverageRowKeys({
+                    deliveryOrder: deliveryOrder as DeliveryOrder,
+                    noSJ: row.noSJ,
+                    deliveryOrderItemRefs: rowItemRefs,
+                })
+                : [];
+        const rowKeys = rowCoverageKeys.length > 0
+            ? rowCoverageKeys
+            : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
+        const coverage = payloadCoverageByDoRef.get(row.doRef) || {
+            deliveryOrderItemRefs: new Set<string>(),
+            rowKeys: new Set<string>(),
+        };
+        if (rowKeys.some(rowKey => coverage.rowKeys.has(rowKey))) {
             return NextResponse.json(
-                {
-                        error: `DO ${deliveryOrder?.doNumber || row.doRef} sudah dimasukkan penuh dalam payload invoice`,
-                },
+                { error: `SJ ${row.noSJ || '-'} pada DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload invoice` },
                 { status: 409 }
             );
         }
@@ -2328,45 +2305,9 @@ export async function handleFreightNotaCreate(
                 );
             }
         }
+        rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
         rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
         payloadCoverageByDoRef.set(row.doRef, coverage);
-    }
-    for (const [doRef, coverage] of payloadCoverageByDoRef.entries()) {
-        if (coverage.deliveryOrderItemRefs.size === 0 && !coverage.fullDoIncluded) {
-            continue;
-        }
-        const deliveryOrder = deliveryOrderMap.get(doRef);
-        const doItems = doItemMap.get(doRef) || [];
-        const doItemIds = doItems
-            .map(item => normalizeOptionalText(item._id))
-            .filter((itemId): itemId is string => Boolean(itemId));
-        const hasActualDropPoints = Array.isArray(deliveryOrder?.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
-        const billableDoItemIds = hasActualDropPoints
-            ? doItems
-                .filter(item => hasDeliveryOrderBillableCargo(deliveryOrder, normalizeOptionalText(item.shipperReferenceNumber)))
-                .map(item => normalizeOptionalText(item._id))
-                .filter((itemId): itemId is string => Boolean(itemId))
-            : doItemIds;
-        if (coverage.fullDoIncluded) {
-            if (hasActualDropPoints && billableDoItemIds.length !== doItemIds.length) {
-                return NextResponse.json(
-                    {
-                    error: `DO ${deliveryOrder?.doNumber || doRef} punya item hold/non-billable. Pilih item SJ billable satu per satu untuk invoice.`,
-                    },
-                    { status: 409 }
-                );
-            }
-            continue;
-        }
-        const missingItemIds = billableDoItemIds.filter(itemId => !coverage.deliveryOrderItemRefs.has(itemId));
-        if (missingItemIds.length > 0) {
-            return NextResponse.json(
-                {
-                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan billable dalam payload invoice`,
-                },
-                { status: 409 }
-            );
-        }
     }
 
     for (const row of rows) {
@@ -2400,13 +2341,6 @@ export async function handleFreightNotaCreate(
     }
 
     if (uniqueDoRefs.length > 0) {
-        const lockedDeliveryOrder = deliveryOrders.find(item => normalizeOptionalText(item.freightNotaRef));
-        if (lockedDeliveryOrder) {
-            return NextResponse.json(
-                { error: `DO ${lockedDeliveryOrder.doNumber || lockedDeliveryOrder._id} sudah tercantum di invoice lain` },
-                { status: 409 }
-            );
-        }
         const existingNotaItems = await listDocumentsByFilter<Array<{
             doRef?: string;
             doNumber?: string;

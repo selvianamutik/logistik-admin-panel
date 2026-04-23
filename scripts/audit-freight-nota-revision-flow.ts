@@ -11,11 +11,6 @@ import type {
 
 loadScriptEnv();
 
-type DeliveryOrderAuditState = DeliveryOrder & {
-    freightNotaRef?: string | null;
-    freightNotaNumber?: string | null;
-};
-
 type FreightNotaMutationResponse = {
     data?: {
         _id?: string;
@@ -701,15 +696,6 @@ async function main() {
         createdState.notaId = notaId;
         assert(notaId, 'Create nota berhasil tetapi ID nota tidak dikembalikan.');
 
-        const createdDoState = await requestJson<{ data: DeliveryOrderAuditState }>(
-            `/api/data?entity=delivery-orders&id=${encodeURIComponent(firstCandidate.deliveryOrder._id)}`,
-            cookieHeader,
-        );
-        assert(
-            normalizeText(createdDoState.data.freightNotaRef) === notaId,
-            `DO ${firstCandidate.deliveryOrder.doNumber || firstCandidate.deliveryOrder._id} belum ter-link ke nota baru`
-        );
-
         const createdRowsResponse = await requestJson<{ data: FreightNotaItem[] }>(
             `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`,
             cookieHeader,
@@ -725,7 +711,7 @@ async function main() {
             actualRows: createdRows,
         });
 
-        auditStep('revisi nota ke row manual dan pastikan DO ter-unlink');
+        auditStep('revisi nota ke row manual dan pastikan row DO lama terhapus');
         await postData<FreightNotaMutationResponse>(cookieHeader, {
             entity: 'freight-notas',
             action: 'update-with-items',
@@ -740,22 +726,19 @@ async function main() {
             },
         });
 
-        const [unlinkedDoState, manualRowsResponse] = await Promise.all([
-            requestJson<{ data: DeliveryOrderAuditState }>(
-                `/api/data?entity=delivery-orders&id=${encodeURIComponent(firstCandidate.deliveryOrder._id)}`,
-                cookieHeader,
-            ),
+        const [manualRowsResponse, oldDoRowsAfterManualResponse] = await Promise.all([
             requestJson<{ data: FreightNotaItem[] }>(
                 `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`,
                 cookieHeader,
             ),
+            requestJson<{ data: FreightNotaItem[] }>(
+                `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: firstCandidate.deliveryOrder._id }))}`,
+                cookieHeader,
+            ),
         ]);
 
-        assert(
-            !normalizeText(unlinkedDoState.data.freightNotaRef),
-            `DO ${firstCandidate.deliveryOrder.doNumber || firstCandidate.deliveryOrder._id} masih ter-link setelah nota direvisi ke row manual`
-        );
         const revisedRows = Array.isArray(manualRowsResponse.data) ? manualRowsResponse.data : [];
+        const oldDoRowsAfterManual = Array.isArray(oldDoRowsAfterManualResponse.data) ? oldDoRowsAfterManualResponse.data : [];
         assert(
             revisedRows.length === manualAuditRows.length,
             `Jumlah row nota manual harus ${manualAuditRows.length}, sekarang ${revisedRows.length}`
@@ -764,8 +747,12 @@ async function main() {
             revisedRows.every(row => !normalizeText(row.doRef) && normalizeText(row.noSJ) === normalizeText(manualAuditRows[0]?.noSJ)),
             'Row nota manual belum menggantikan row DO lama secara penuh.'
         );
+        assert(
+            oldDoRowsAfterManual.every(row => normalizeText(row.notaRef) !== notaId),
+            'Row DO lama masih melekat ke invoice setelah nota direvisi ke row manual.'
+        );
 
-        auditStep('revisi lagi ke row DO dan pastikan DO relink');
+        auditStep('revisi lagi ke row DO dan pastikan row DO dibuat ulang');
         await postData<FreightNotaMutationResponse>(cookieHeader, {
             entity: 'freight-notas',
             action: 'update-with-items',
@@ -780,20 +767,12 @@ async function main() {
             },
         });
 
-        const [relinkedDoState, relinkedRowsResponse] = await Promise.all([
-            requestJson<{ data: DeliveryOrderAuditState }>(
-                `/api/data?entity=delivery-orders&id=${encodeURIComponent(firstCandidate.deliveryOrder._id)}`,
-                cookieHeader,
-            ),
+        const [relinkedRowsResponse] = await Promise.all([
             requestJson<{ data: FreightNotaItem[] }>(
                 `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`,
                 cookieHeader,
             ),
         ]);
-        assert(
-            normalizeText(relinkedDoState.data.freightNotaRef) === notaId,
-            `DO ${firstCandidate.deliveryOrder.doNumber || firstCandidate.deliveryOrder._id} belum ter-link kembali setelah revisi kedua`
-        );
         const relinkedRows = Array.isArray(relinkedRowsResponse.data) ? relinkedRowsResponse.data : [];
         assert(
             relinkedRows.length === firstCandidate.rows.length,
@@ -809,7 +788,8 @@ async function main() {
             actualRows: relinkedRows,
         });
 
-        auditStep('hapus nota temporary dan pastikan DO terlepas lagi');
+        auditStep('hapus nota temporary dan pastikan row invoice terhapus');
+        const deletedNotaId = notaId;
         await postData<FreightNotaMutationResponse>(cookieHeader, {
             entity: 'freight-notas',
             action: 'delete',
@@ -818,17 +798,18 @@ async function main() {
         notaId = '';
         createdState.notaId = undefined;
 
-        const releasedDoState = await requestJson<{ data: DeliveryOrderAuditState }>(
-            `/api/data?entity=delivery-orders&id=${encodeURIComponent(firstCandidate.deliveryOrder._id)}`,
+        const releasedRowsResponse = await requestJson<{ data: FreightNotaItem[] }>(
+            `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: deletedNotaId }))}`,
             cookieHeader,
         );
+        const releasedRows = Array.isArray(releasedRowsResponse.data) ? releasedRowsResponse.data : [];
         assert(
-            !normalizeText(releasedDoState.data.freightNotaRef),
-            `DO ${firstCandidate.deliveryOrder.doNumber || firstCandidate.deliveryOrder._id} masih ter-link setelah nota temporary dihapus`
+            releasedRows.length === 0,
+            'Row invoice temporary masih tersisa setelah nota dihapus.'
         );
 
         console.log(
-            `Freight nota revision audit OK: create, revise ke manual, relink DO, replace rows, dan cleanup berhasil pada ${firstCandidate.deliveryOrder.doNumber}.`
+            `Freight nota revision audit OK: create, revise ke manual, relink row DO, replace rows, dan cleanup berhasil pada ${firstCandidate.deliveryOrder.doNumber}.`
         );
     } finally {
         await cleanupCreatedState(createdState);
