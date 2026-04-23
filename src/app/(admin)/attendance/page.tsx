@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileDown, Pencil, Plus, Save, ScrollText, Search, X } from 'lucide-react';
+import { FileDown, LogIn, LogOut, Pencil, Plus, Save, ScrollText, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
@@ -54,6 +54,7 @@ type AttendanceFormState = {
 
 type AttendanceViewMode = 'input' | 'recap';
 type AttendanceInputCoverage = 'PENDING' | 'RECORDED' | 'ALL';
+type AttendanceModalMode = 'manual' | 'check-in' | 'check-out' | 'early-leave' | 'status' | 'edit';
 type DailyAttendanceRow = {
     employee: Employee;
     record: EmployeeAttendanceRecord | null;
@@ -88,6 +89,7 @@ const INPUT_COVERAGE_OPTIONS: Array<{ value: AttendanceInputCoverage; label: str
     { value: 'RECORDED', label: 'Sudah Tercatat' },
     { value: 'ALL', label: 'Semua Karyawan' },
 ];
+const NON_ATTENDANCE_STATUS_OPTIONS: EmployeeAttendanceStatus[] = ['IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR'];
 
 const createDefaultAttendanceForm = (date: string, record?: Partial<EmployeeAttendanceRecord>): AttendanceFormState => ({
     employeeRef: record?.employeeRef || '',
@@ -110,6 +112,47 @@ const STATUS_BADGE_CLASS: Record<EmployeeAttendanceStatus, string> = {
 
 function requiresAttendanceTime(status: EmployeeAttendanceStatus) {
     return status === 'HADIR' || status === 'PULANG_LEBIH_AWAL';
+}
+
+function getCurrentTimeValue() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function isCheckedInWithoutCheckout(record: EmployeeAttendanceRecord | null | undefined) {
+    return Boolean(record && record.status === 'HADIR' && record.checkInTime && !record.checkOutTime);
+}
+
+function getDailyStatusLabel(record: EmployeeAttendanceRecord | null) {
+    if (!record) return 'Belum Tercatat';
+    if (isCheckedInWithoutCheckout(record)) return 'Hadir - Belum Pulang';
+    return EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status] || record.status;
+}
+
+function getDailyStatusBadgeClass(record: EmployeeAttendanceRecord | null) {
+    if (!record) return 'badge-gray';
+    if (isCheckedInWithoutCheckout(record)) return 'badge-info';
+    return STATUS_BADGE_CLASS[record.status] || 'badge-gray';
+}
+
+function getNormalPresentCount(summary: Pick<AttendanceSummary, 'presentCount' | 'earlyLeaveCount'> | null | undefined) {
+    return Math.max((summary?.presentCount || 0) - (summary?.earlyLeaveCount || 0), 0);
+}
+
+function getModalTitle(mode: AttendanceModalMode, isEdit: boolean) {
+    if (mode === 'check-in') return 'Catat Jam Masuk';
+    if (mode === 'check-out') return 'Catat Jam Pulang';
+    if (mode === 'early-leave') return 'Pulang Lebih Awal';
+    if (mode === 'status') return 'Catat Status Tidak Masuk';
+    return isEdit ? 'Edit Absensi' : 'Input Manual Absensi';
+}
+
+function getModalSaveLabel(mode: AttendanceModalMode, isSaving: boolean) {
+    if (isSaving) return 'Menyimpan...';
+    if (mode === 'check-in') return 'Simpan Masuk';
+    if (mode === 'check-out') return 'Simpan Pulang';
+    if (mode === 'early-leave') return 'Simpan Pulang Cepat';
+    return 'Simpan';
 }
 
 function formatAttendanceDateLabel(dateValue?: string) {
@@ -165,6 +208,7 @@ export default function AttendancePage() {
     const [recapSort, setRecapSort] = useState<SortState<AttendanceRecapSortField>>({ field: 'employeeName', direction: 'asc' });
     const [showModal, setShowModal] = useState(false);
     const [editRecord, setEditRecord] = useState<EmployeeAttendanceRecord | null>(null);
+    const [modalMode, setModalMode] = useState<AttendanceModalMode>('manual');
     const [saving, setSaving] = useState(false);
     const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
     const [form, setForm] = useState<AttendanceFormState>(createDefaultAttendanceForm(getBusinessDateValue()));
@@ -288,8 +332,8 @@ export default function AttendancePage() {
             } else if (inputSort.field === 'status') {
                 compareResult =
                     compareText(
-                        left.record ? EMPLOYEE_ATTENDANCE_STATUS_LABELS[left.record.status] : 'Belum Tercatat',
-                        right.record ? EMPLOYEE_ATTENDANCE_STATUS_LABELS[right.record.status] : 'Belum Tercatat',
+                        getDailyStatusLabel(left.record),
+                        getDailyStatusLabel(right.record),
                     )
                     || compareText(left.employee.name, right.employee.name);
             } else {
@@ -322,12 +366,16 @@ export default function AttendancePage() {
             recordedEmployeeCount: activeDailyRecords.length,
             unrecordedEmployeeCount: Math.max(activeEmployees.length - activeDailyRecords.length, 0),
             present: counts.presentCount,
+            normalPresent: Math.max(counts.presentCount - counts.earlyLeaveCount, 0),
             earlyLeave: counts.earlyLeaveCount,
+            checkedInWithoutCheckout: activeDailyRecords.filter(record => isCheckedInWithoutCheckout(record)).length,
+            checkedOut: activeDailyRecords.filter(record => requiresAttendanceTime(record.status) && Boolean(record.checkOutTime)).length,
             permission: counts.permissionCount,
             sick: counts.sickCount,
             leave: counts.leaveCount,
             absent: counts.absentCount,
             off: counts.offCount,
+            nonAttendance: counts.permissionCount + counts.sickCount + counts.leaveCount + counts.absentCount + counts.offCount,
         };
     }, [activeEmployeeRefSet, activeEmployees.length, dailyRecords]);
     const baseRecapRows = useMemo(
@@ -345,6 +393,10 @@ export default function AttendancePage() {
             } else if (recapSort.field === 'lastAttendanceDate') {
                 compareResult =
                     compareText(left.lastAttendanceDate, right.lastAttendanceDate)
+                    || compareText(left.employeeName, right.employeeName);
+            } else if (recapSort.field === 'presentCount') {
+                compareResult =
+                    Math.max(left.presentCount - left.earlyLeaveCount, 0) - Math.max(right.presentCount - right.earlyLeaveCount, 0)
                     || compareText(left.employeeName, right.employeeName);
             } else {
                 compareResult =
@@ -377,52 +429,6 @@ export default function AttendancePage() {
         || inputStatusFilter,
     );
     const attendancePeriodLabel = summary?.periodLabel || PERIOD_OPTIONS.find(option => option.value === period)?.label || EMPLOYEE_ATTENDANCE_PERIOD_LABELS.today;
-    const attendanceRangeLabel = useMemo(() => {
-        if (summary?.startDate && summary?.endDate) {
-            if (summary.startDate === summary.endDate) {
-                return formatAttendanceDateLabel(summary.startDate);
-            }
-            return `${formatAttendanceDateLabel(summary.startDate)} s/d ${formatAttendanceDateLabel(summary.endDate)}`;
-        }
-
-        return formatAttendanceDateLabel(selectedDate);
-    }, [selectedDate, summary?.endDate, summary?.startDate]);
-    const activeFilterSummary = useMemo(() => {
-        const filters: string[] = [];
-        if (statusFilter) {
-            filters.push(`Status: ${EMPLOYEE_ATTENDANCE_STATUS_LABELS[statusFilter as EmployeeAttendanceStatus]}`);
-        }
-        if (selectedEmployeeOption) {
-            filters.push(`Karyawan: ${selectedEmployeeOption.employeeCode} - ${selectedEmployeeOption.name}`);
-        }
-        if (search.trim()) {
-            filters.push(`Cari: "${search.trim()}"`);
-        }
-        if (period !== 'today' || selectedDate !== businessToday) {
-            filters.push(`Acuan: ${formatAttendanceDateLabel(selectedDate)}`);
-        }
-        return filters.length > 0 ? filters.join(' | ') : 'Semua status dan semua karyawan';
-    }, [businessToday, period, search, selectedDate, selectedEmployeeOption, statusFilter]);
-    const inputFilterSummary = useMemo(() => {
-        const filters: string[] = [];
-        if (inputCoverageFilter !== 'PENDING') {
-            const coverageLabel = INPUT_COVERAGE_OPTIONS.find(option => option.value === inputCoverageFilter)?.label;
-            if (coverageLabel) {
-                filters.push(`Mode: ${coverageLabel}`);
-            }
-        }
-        if (inputDivisionFilter) {
-            filters.push(`Divisi: ${inputDivisionFilter}`);
-        }
-        if (inputStatusFilter) {
-            filters.push(`Status: ${EMPLOYEE_ATTENDANCE_STATUS_LABELS[inputStatusFilter as EmployeeAttendanceStatus]}`);
-        }
-        if (inputSearch.trim()) {
-            filters.push(`Cari: "${inputSearch.trim()}"`);
-        }
-        return filters.length > 0 ? filters.join(' | ') : 'Belum tercatat, semua divisi';
-    }, [inputCoverageFilter, inputDivisionFilter, inputSearch, inputStatusFilter]);
-
     const buildAttendanceQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
             entity: 'employee-attendance-records',
@@ -525,19 +531,57 @@ export default function AttendancePage() {
         if (saving) return;
         setShowModal(false);
         setEditRecord(null);
+        setModalMode('manual');
         setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate));
     };
 
     const openCreateModal = (employee?: Pick<Employee, '_id'>) => {
         setEditRecord(null);
+        setModalMode('manual');
         setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate, employee ? { employeeRef: employee._id } : undefined));
         setShowModal(true);
     };
 
+    const openCheckInModal = (employee: Pick<Employee, '_id'>) => {
+        setEditRecord(null);
+        setModalMode('check-in');
+        setEmployeeSearchTerm('');
+        setForm(createDefaultAttendanceForm(selectedDate, {
+            employeeRef: employee._id,
+            status: 'HADIR',
+            checkInTime: getCurrentTimeValue(),
+        }));
+        setShowModal(true);
+    };
+
+    const openStatusModal = (employee: Pick<Employee, '_id'>) => {
+        setEditRecord(null);
+        setModalMode('status');
+        setEmployeeSearchTerm('');
+        setForm(createDefaultAttendanceForm(selectedDate, {
+            employeeRef: employee._id,
+            status: 'IZIN',
+        }));
+        setShowModal(true);
+    };
+
+    const openCheckoutModal = (record: EmployeeAttendanceRecord, mode: 'check-out' | 'early-leave') => {
+        setEditRecord(record);
+        setModalMode(mode);
+        setEmployeeSearchTerm('');
+        setForm(createDefaultAttendanceForm(selectedDate, {
+            ...record,
+            status: mode === 'early-leave' ? 'PULANG_LEBIH_AWAL' : 'HADIR',
+            checkOutTime: record.checkOutTime || getCurrentTimeValue(),
+        }));
+        setShowModal(true);
+    };
+
     const openEditModal = (record: EmployeeAttendanceRecord) => {
         setEditRecord(record);
+        setModalMode('edit');
         setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate, record));
         setShowModal(true);
@@ -558,6 +602,10 @@ export default function AttendancePage() {
         }
         if (form.status === 'PULANG_LEBIH_AWAL' && !form.checkOutTime) {
             addToast('error', 'Jam pulang wajib diisi untuk status pulang lebih awal');
+            return;
+        }
+        if ((modalMode === 'check-out' || modalMode === 'early-leave') && !form.checkOutTime) {
+            addToast('error', 'Jam pulang wajib diisi');
             return;
         }
 
@@ -675,18 +723,58 @@ export default function AttendancePage() {
         summary,
     ]);
 
+    const renderDailyAttendanceActions = (employee: Employee, record: EmployeeAttendanceRecord | null) => {
+        if (!canManageAttendance) {
+            return <span className="text-muted">Lihat saja</span>;
+        }
+
+        if (!record) {
+            return (
+                <div className="attendance-row-actions">
+                    <button className="btn btn-primary btn-sm" onClick={() => openCheckInModal(employee)}>
+                        <LogIn size={14} /> Masuk
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openStatusModal(employee)}>
+                        Status Lain
+                    </button>
+                </div>
+            );
+        }
+
+        if (isCheckedInWithoutCheckout(record)) {
+            return (
+                <div className="attendance-row-actions">
+                    <button className="btn btn-primary btn-sm" onClick={() => openCheckoutModal(record, 'check-out')}>
+                        <LogOut size={14} /> Pulang
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openCheckoutModal(record, 'early-leave')}>
+                        Pulang Cepat
+                    </button>
+                    <button className="table-action-btn" onClick={() => openEditModal(record)}>
+                        <Pencil size={14} /> Edit
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <div className="attendance-row-actions">
+                <button className="table-action-btn" onClick={() => openEditModal(record)}>
+                    <Pencil size={14} /> Edit
+                </button>
+            </div>
+        );
+    };
+
     const renderInputView = () => (
         <>
             <div className="kpi-grid attendance-kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{dailyAttendanceSummary.activeEmployeeCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sudah Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.recordedEmployeeCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.unrecordedEmployeeCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Masuk</div><div className="kpi-value">{dailyAttendanceSummary.present}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sudah Masuk</div><div className="kpi-value">{dailyAttendanceSummary.present}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Pulang</div><div className="kpi-value">{dailyAttendanceSummary.checkedInWithoutCheckout}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pulang Cepat</div><div className="kpi-value">{dailyAttendanceSummary.earlyLeave}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{dailyAttendanceSummary.permission}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{dailyAttendanceSummary.sick}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Cuti</div><div className="kpi-value">{dailyAttendanceSummary.leave}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Alpha</div><div className="kpi-value">{dailyAttendanceSummary.absent}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Status Lain</div><div className="kpi-value">{dailyAttendanceSummary.nonAttendance}</div></div></div>
             </div>
 
             <div className="table-container" style={{ marginBottom: '1rem' }}>
@@ -737,30 +825,6 @@ export default function AttendancePage() {
                         </div>
                     )}
                 </div>
-                <div className="attendance-overview-card">
-                    <div className="attendance-overview-grid">
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Tanggal Input</div>
-                            <div className="attendance-overview-value">{formatAttendanceDateLabel(selectedDate)}</div>
-                            <div className="attendance-overview-note">Admin input per hari, lalu cari dan filter karyawan dari daftar ini.</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Filter Aktif</div>
-                            <div className="attendance-overview-value">{hasInputCustomFilters ? 'Disaring' : 'Belum Tercatat'}</div>
-                            <div className="attendance-overview-note">{inputFilterSummary}</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Karyawan Ditampilkan</div>
-                            <div className="attendance-overview-value">{dailyAttendanceRows.length}</div>
-                            <div className="attendance-overview-note">Daftar dipaginate supaya tetap nyaman saat jumlah karyawan bertambah.</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Fokus Hari Ini</div>
-                            <div className="attendance-overview-value">{dailyAttendanceSummary.unrecordedEmployeeCount} Belum Tercatat</div>
-                            <div className="attendance-overview-note">Gunakan tombol catat per baris, bukan scroll tombol nama satu per satu.</div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div className="table-container">
@@ -789,7 +853,8 @@ export default function AttendancePage() {
                                         onToggle={() => toggleInputSort('status')}
                                     />
                                 </th>
-                                <th>Jam</th>
+                                <th>Jam Masuk</th>
+                                <th>Jam Pulang</th>
                                 <th>Catatan</th>
                                 <th>
                                     <SortableTableHeader
@@ -804,13 +869,13 @@ export default function AttendancePage() {
                         <tbody>
                             {loading ? [1, 2, 3].map(index => (
                                 <tr key={index}>
-                                    {[1, 2, 3, 4, 5, 6, 7].map(cell => (
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => (
                                         <td key={cell}><div className="skeleton skeleton-text" /></td>
                                     ))}
                                 </tr>
                             )) : dailyAttendanceRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <ScrollText size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Tidak ada karyawan yang cocok dengan filter input</div>
@@ -829,14 +894,15 @@ export default function AttendancePage() {
                                     </td>
                                     <td>
                                         {record ? (
-                                            <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
-                                                {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
+                                            <span className={`badge ${getDailyStatusBadgeClass(record)}`}>
+                                                {getDailyStatusLabel(record)}
                                             </span>
                                         ) : (
                                             <span className="text-muted">Belum tercatat</span>
                                         )}
                                     </td>
-                                    <td>{record ? `${record.checkInTime || '-'} - ${record.checkOutTime || '-'}` : '-'}</td>
+                                    <td>{record?.checkInTime || '-'}</td>
+                                    <td>{record?.checkOutTime || '-'}</td>
                                     <td className="text-muted" style={{ minWidth: 220 }}>{record?.note || '-'}</td>
                                     <td className="text-muted">
                                         {record ? (
@@ -849,19 +915,7 @@ export default function AttendancePage() {
                                         )}
                                     </td>
                                     <td>
-                                        {canManageAttendance ? (
-                                            record ? (
-                                                <button className="table-action-btn" onClick={() => openEditModal(record)}>
-                                                    <Pencil size={14} /> Edit
-                                                </button>
-                                            ) : (
-                                                <button className="table-action-btn" onClick={() => openCreateModal(employee)}>
-                                                    <Plus size={14} /> Catat
-                                                </button>
-                                            )
-                                        ) : (
-                                            <span className="text-muted">Lihat saja</span>
-                                        )}
+                                        {renderDailyAttendanceActions(employee, record)}
                                     </td>
                                 </tr>
                             ))}
@@ -882,8 +936,8 @@ export default function AttendancePage() {
                                         <div className="mobile-record-subtitle">{employee.employeeCode} | {employee.division || '-'} / {employee.position || '-'}</div>
                                     </div>
                                     {record ? (
-                                        <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
-                                            {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
+                                        <span className={`badge ${getDailyStatusBadgeClass(record)}`}>
+                                            {getDailyStatusLabel(record)}
                                         </span>
                                     ) : (
                                         <span className="badge badge-gray">Belum Tercatat</span>
@@ -891,8 +945,12 @@ export default function AttendancePage() {
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Jam</span>
-                                        <span className="mobile-record-value">{record ? `${record.checkInTime || '-'} - ${record.checkOutTime || '-'}` : '-'}</span>
+                                        <span className="mobile-record-label">Jam Masuk</span>
+                                        <span className="mobile-record-value">{record?.checkInTime || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Jam Pulang</span>
+                                        <span className="mobile-record-value">{record?.checkOutTime || '-'}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Catatan</span>
@@ -903,19 +961,9 @@ export default function AttendancePage() {
                                         <span className="mobile-record-value">{record?.updatedAt ? formatDateTime(record.updatedAt) : 'Belum ada input'}</span>
                                     </div>
                                 </div>
-                                {canManageAttendance && (
-                                    <div className="mobile-record-actions">
-                                        {record ? (
-                                            <button className="btn btn-secondary" onClick={() => openEditModal(record)}>
-                                                <Pencil size={14} /> Edit
-                                            </button>
-                                        ) : (
-                                            <button className="btn btn-secondary" onClick={() => openCreateModal(employee)}>
-                                                <Plus size={14} /> Catat
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
+                                <div className="mobile-record-actions">
+                                    {renderDailyAttendanceActions(employee, record)}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -941,7 +989,7 @@ export default function AttendancePage() {
             <div className="kpi-grid attendance-kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{summary?.activeEmployeeCount || activeEmployees.length}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Tercatat</div><div className="kpi-value">{summary?.recordedEmployeeCount || 0}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Masuk</div><div className="kpi-value">{summary?.presentCount || 0}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hadir Normal</div><div className="kpi-value">{getNormalPresentCount(summary)}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pulang Cepat</div><div className="kpi-value">{summary?.earlyLeaveCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{summary?.permissionCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{summary?.sickCount || 0}</div></div></div>
@@ -994,34 +1042,6 @@ export default function AttendancePage() {
                         </div>
                     )}
                 </div>
-                <div className="attendance-overview-card">
-                    <div className="attendance-overview-grid">
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Periode Aktif</div>
-                            <div className="attendance-overview-value">{attendancePeriodLabel}</div>
-                            <div className="attendance-overview-note">Tanggal acuan: {formatAttendanceDateLabel(selectedDate)}</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Rentang Tanggal</div>
-                            <div className="attendance-overview-value">{attendanceRangeLabel}</div>
-                            <div className="attendance-overview-note">Rekap mengikuti tanggal bisnis Jakarta.</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Filter Aktif</div>
-                            <div className="attendance-overview-value">{hasCustomFilters ? 'Disaring' : 'Semua Data'}</div>
-                            <div className="attendance-overview-note">{activeFilterSummary}</div>
-                        </div>
-                        <div className="attendance-overview-item">
-                            <div className="attendance-overview-label">Data Ditampilkan</div>
-                            <div className="attendance-overview-value">{recapRows.length}</div>
-                            <div className="attendance-overview-note">
-                                {summary
-                                    ? `${summary.recordedEmployeeCount} karyawan tercatat dari ${summary.activeEmployeeCount} aktif, total ${summary.totalRecords} record pada periode ini.`
-                                    : 'Menunggu ringkasan absensi.'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div className="table-container">
@@ -1046,7 +1066,7 @@ export default function AttendancePage() {
                                 </th>
                                 <th>
                                     <SortableTableHeader
-                                        label="Masuk"
+                                        label="Hadir Normal"
                                         direction={recapSort.field === 'presentCount' ? recapSort.direction : null}
                                         onToggle={() => toggleRecapSort('presentCount', 'desc')}
                                     />
@@ -1129,7 +1149,7 @@ export default function AttendancePage() {
                                         <div className="text-muted text-xs">{row.position || '-'}</div>
                                     </td>
                                     <td>{row.recordedDays}</td>
-                                    <td>{row.presentCount}</td>
+                                    <td>{Math.max(row.presentCount - row.earlyLeaveCount, 0)}</td>
                                     <td>{row.earlyLeaveCount}</td>
                                     <td>{row.permissionCount}</td>
                                     <td>{row.sickCount}</td>
@@ -1159,8 +1179,8 @@ export default function AttendancePage() {
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Masuk / Pulang Cepat</span>
-                                        <span className="mobile-record-value">{row.presentCount} / {row.earlyLeaveCount}</span>
+                                        <span className="mobile-record-label">Hadir Normal / Pulang Cepat</span>
+                                        <span className="mobile-record-value">{Math.max(row.presentCount - row.earlyLeaveCount, 0)} / {row.earlyLeaveCount}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Izin / Sakit / Cuti</span>
@@ -1195,6 +1215,14 @@ export default function AttendancePage() {
         </>
     );
 
+    const selectedFormEmployee = employeeOptions.find(employee => employee._id === form.employeeRef);
+    const isQuickModal = modalMode !== 'manual' && modalMode !== 'edit';
+    const statusOptions = modalMode === 'status' ? NON_ATTENDANCE_STATUS_OPTIONS : EMPLOYEE_ATTENDANCE_STATUS_OPTIONS;
+    const isStatusLocked = modalMode === 'check-in' || modalMode === 'check-out' || modalMode === 'early-leave';
+    const showTimeFields = requiresAttendanceTime(form.status);
+    const showCheckInTime = showTimeFields;
+    const showCheckOutTime = showTimeFields && modalMode !== 'check-in';
+
     return (
         <div>
             <div className="page-header">
@@ -1209,7 +1237,7 @@ export default function AttendancePage() {
                     )}
                     {canManageAttendance && (
                         <button className="btn btn-primary" onClick={() => openCreateModal()}>
-                            <Plus size={18} /> Catat Absensi
+                            <Plus size={18} /> Input Manual
                         </button>
                     )}
                 </div>
@@ -1229,7 +1257,7 @@ export default function AttendancePage() {
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editRecord ? 'Edit Absensi' : 'Catat Absensi'}</h3>
+                            <h3 className="modal-title">{getModalTitle(modalMode, Boolean(editRecord))}</h3>
                             <button className="modal-close" onClick={closeModal} disabled={saving}>
                                 <X size={20} />
                             </button>
@@ -1238,25 +1266,36 @@ export default function AttendancePage() {
                             <div className="form-grid">
                                 <div className="form-group">
                                     <label className="form-label">Karyawan <span className="required">*</span></label>
-                                    <input
-                                        className="form-input"
-                                        value={employeeSearchTerm}
-                                        onChange={event => setEmployeeSearchTerm(event.target.value)}
-                                        placeholder="Cari karyawan di modal..."
-                                        style={{ marginBottom: '0.5rem' }}
-                                    />
-                                    <select
-                                        className="form-select"
-                                        value={form.employeeRef}
-                                        onChange={event => setForm(current => ({ ...current, employeeRef: event.target.value }))}
-                                    >
-                                        <option value="">Pilih karyawan</option>
-                                        {filteredEmployeeOptions.map(employee => (
-                                            <option key={employee._id} value={employee._id}>
-                                                {employee.employeeCode} - {employee.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    {isQuickModal ? (
+                                        <input
+                                            className="form-input"
+                                            value={selectedFormEmployee ? `${selectedFormEmployee.employeeCode} - ${selectedFormEmployee.name}` : '-'}
+                                            disabled
+                                            readOnly
+                                        />
+                                    ) : (
+                                        <>
+                                            <input
+                                                className="form-input"
+                                                value={employeeSearchTerm}
+                                                onChange={event => setEmployeeSearchTerm(event.target.value)}
+                                                placeholder="Cari karyawan..."
+                                                style={{ marginBottom: '0.5rem' }}
+                                            />
+                                            <select
+                                                className="form-select"
+                                                value={form.employeeRef}
+                                                onChange={event => setForm(current => ({ ...current, employeeRef: event.target.value }))}
+                                            >
+                                                <option value="">Pilih karyawan</option>
+                                                {filteredEmployeeOptions.map(employee => (
+                                                    <option key={employee._id} value={employee._id}>
+                                                        {employee.employeeCode} - {employee.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </>
+                                    )}
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Tanggal <span className="required">*</span></label>
@@ -1264,6 +1303,7 @@ export default function AttendancePage() {
                                         type="date"
                                         className="form-input"
                                         value={form.date}
+                                        disabled={isQuickModal}
                                         onChange={event => setForm(current => ({ ...current, date: event.target.value }))}
                                     />
                                 </div>
@@ -1274,9 +1314,10 @@ export default function AttendancePage() {
                                     <select
                                         className="form-select"
                                         value={form.status}
+                                        disabled={isStatusLocked}
                                         onChange={event => setForm(current => ({ ...current, status: event.target.value as EmployeeAttendanceStatus }))}
                                     >
-                                        {EMPLOYEE_ATTENDANCE_STATUS_OPTIONS.map(status => (
+                                        {statusOptions.map(status => (
                                             <option key={status} value={status}>
                                                 {EMPLOYEE_ATTENDANCE_STATUS_LABELS[status]}
                                             </option>
@@ -1284,26 +1325,31 @@ export default function AttendancePage() {
                                     </select>
                                 </div>
                             </div>
-                            {requiresAttendanceTime(form.status) && (
+                            {showTimeFields && (
                                 <div className="form-grid">
-                                    <div className="form-group">
-                                        <label className="form-label">Jam Masuk <span className="required">*</span></label>
-                                        <input
-                                            type="time"
-                                            className="form-input"
-                                            value={form.checkInTime}
-                                            onChange={event => setForm(current => ({ ...current, checkInTime: event.target.value }))}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Jam Pulang{form.status === 'PULANG_LEBIH_AWAL' ? ' *' : ''}</label>
-                                        <input
-                                            type="time"
-                                            className="form-input"
-                                            value={form.checkOutTime}
-                                            onChange={event => setForm(current => ({ ...current, checkOutTime: event.target.value }))}
-                                        />
-                                    </div>
+                                    {showCheckInTime && (
+                                        <div className="form-group">
+                                            <label className="form-label">Jam Masuk <span className="required">*</span></label>
+                                            <input
+                                                type="time"
+                                                className="form-input"
+                                                value={form.checkInTime}
+                                                disabled={modalMode === 'check-out' || modalMode === 'early-leave'}
+                                                onChange={event => setForm(current => ({ ...current, checkInTime: event.target.value }))}
+                                            />
+                                        </div>
+                                    )}
+                                    {showCheckOutTime && (
+                                        <div className="form-group">
+                                            <label className="form-label">Jam Pulang{form.status === 'PULANG_LEBIH_AWAL' || modalMode === 'check-out' ? ' *' : ''}</label>
+                                            <input
+                                                type="time"
+                                                className="form-input"
+                                                value={form.checkOutTime}
+                                                onChange={event => setForm(current => ({ ...current, checkOutTime: event.target.value }))}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             <div className="form-group">
@@ -1320,7 +1366,7 @@ export default function AttendancePage() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={closeModal} disabled={saving}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                                <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+                                <Save size={16} /> {getModalSaveLabel(modalMode, saving)}
                             </button>
                         </div>
                     </div>
