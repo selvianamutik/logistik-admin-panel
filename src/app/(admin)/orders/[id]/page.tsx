@@ -1066,7 +1066,7 @@ export default function OrderDetailPage() {
                             disabled={!canStartFreightNota}
                             title={!canStartFreightNota ? 'Belum ada DO selesai dengan realisasi drop yang bisa ditagihkan' : 'Buat nota'}
                         >
-                            <FileText size={16} /> Buat Nota
+                                                <FileText size={16} /> Buat Invoice
                         </button>
                     )}
                     <button
@@ -1617,7 +1617,7 @@ export default function OrderDetailPage() {
                                             <div style={{ display: 'grid', gap: '0.15rem', marginTop: '0.35rem' }}>
                                                 {hasBillableCargo && (
                                                     <div className="text-muted text-sm">
-                                                        Masuk tagihan: {formatCargoSummary(billableCargoSummary || {})}
+                                                Masuk invoice: {formatCargoSummary(billableCargoSummary || {})}
                                                     </div>
                                                 )}
                                                 {hasHoldCargo && (
@@ -1647,16 +1647,16 @@ export default function OrderDetailPage() {
             {/* Notas */}
             <div className="card mt-6">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-                    <span className="card-header-title">Nota Ongkos ({notas.length})</span>
+                        <span className="card-header-title">Invoice Ongkos ({notas.length})</span>
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+                                <thead><tr><th>No. Invoice</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {notas.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>
-                                        {billableDeliveredDoCount === 0 ? 'Belum ada DO selesai dengan realisasi drop billable' : 'Belum ada nota untuk order ini'}
+                                        {billableDeliveredDoCount === 0 ? 'Belum ada DO selesai dengan realisasi drop billable' : 'Belum ada invoice untuk order ini'}
                                     </td>
                                 </tr>
                             ) : notas.map(nota => (

@@ -98,7 +98,7 @@ export default function CustomerNewPage() {
                             </div>
                         </div>
                         <div className="form-group" style={{ maxWidth: 280 }}>
-                            <label className="form-label">Default Basis Billing Nota</label>
+                            <label className="form-label">Default Basis Billing Invoice</label>
                             <select
                                 className="form-select"
                                 value={form.defaultFreightNotaBillingMode}
@@ -109,7 +109,7 @@ export default function CustomerNewPage() {
                                 ))}
                             </select>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Menentukan default tampilan berat dan basis tarif saat admin membuat nota customer ini.
+                                Menentukan default tampilan berat dan basis tarif saat admin membuat invoice customer ini.
                             </div>
                         </div>
                         <div className="card" style={{ marginTop: '1rem', border: '1px solid var(--color-border)' }}>
@@ -151,7 +151,7 @@ export default function CustomerNewPage() {
                                         ))}
                                     </select>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Ini hanya default customer. Admin tetap bisa override lagi di nota sebelum ada pembayaran.
+                                        Ini hanya default customer. Admin tetap bisa override lagi di invoice sebelum ada pembayaran.
                                     </div>
                                 </div>
                             </div>

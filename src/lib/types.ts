@@ -795,7 +795,7 @@ export interface TrackingLog {
   source?: 'ADMIN_PANEL' | 'DRIVER_APP';
 }
 
-// ── Freight Nota (Nota Ongkos Angkut) ──
+// ── Freight Invoice (Invoice Ongkos Angkut) ──
 export type NotaStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
 export interface FreightNotaInstructionAccount {

@@ -569,14 +569,14 @@ export default function BankAccountsPage() {
                           )}
                           {!systemCash && isDefaultInvoiceAccount && (
                             <span className="badge badge-primary">
-                              Default Nota
+                              Default Invoice
                             </span>
                           )}
                           {!systemCash &&
                             showsOnInvoice &&
                             !isDefaultInvoiceAccount && (
                               <span className="badge badge-info">
-                                Tampil di Nota
+                                Tampil di Invoice
                               </span>
                             )}
                         </div>
@@ -597,7 +597,7 @@ export default function BankAccountsPage() {
                               marginTop: "0.2rem",
                             }}
                           >
-                            Dipakai di instruksi pembayaran nota
+                            Dipakai di instruksi pembayaran invoice
                           </div>
                         )}
                       </div>

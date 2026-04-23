@@ -31,10 +31,10 @@ const getNextInvoiceAction = (status: 'UNPAID' | 'PARTIAL' | 'PAID', nota: Freig
         return 'Tagih atau catat penerimaan';
     }
     if (status === 'PARTIAL') {
-        return remainingAmount > 0 ? 'Follow up sisa pembayaran nota' : 'Cek alokasi penerimaan';
+        return remainingAmount > 0 ? 'Follow up sisa pembayaran invoice' : 'Cek alokasi penerimaan';
     }
     return parseFormattedNumberish(nota.totalAdjustmentAmount || 0, { maxFractionDigits: 0 }) > 0
-        ? 'Arsip + cek potongan tagihan'
+        ? 'Arsip + cek potongan invoice'
         : 'Arsip / cetak';
 };
 
@@ -129,7 +129,7 @@ export default function NotaListPage() {
             const res = await fetch(`/api/data?${buildInvoicesQuery(currentPage, pageSize)}`);
             const payload = await res.json();
             if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat nota ongkos');
+                throw new Error(payload.error || 'Gagal memuat invoice');
             }
 
             const nextItems = (payload.data || []) as FreightNota[];
@@ -160,7 +160,7 @@ export default function NotaListPage() {
 
         const notaPayload = await notaRes.json();
 
-        if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
+        if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat invoice');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
         const matchingNotaIdList = matchingNotas.map(nota => nota._id).filter(Boolean);
@@ -169,7 +169,7 @@ export default function NotaListPage() {
         if (matchingNotaIdList.length > 0) {
             matchingPaymentRows = await fetchAdminCollectionData<Payment[]>(
                 `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: matchingNotaIdList }))}`,
-                'Gagal memuat pembayaran nota'
+                'Gagal memuat pembayaran invoice'
             );
         }
         const currentNotaIds = new Set(notaRows.map(nota => nota._id).filter(Boolean));
@@ -255,7 +255,7 @@ export default function NotaListPage() {
     useEffect(() => {
         reloadData()
             .catch(error => {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat nota ongkos');
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat invoice');
             })
             .finally(() => {
                 setLoading(false);
@@ -360,7 +360,7 @@ export default function NotaListPage() {
                 const fetchNotaBatch = async (filterObj: Record<string, unknown>) => {
                     return fetchAdminCollectionData<FreightNota[]>(
                         `/api/data?entity=freight-notas&sortPreset=work-queue&filter=${encodeURIComponent(JSON.stringify(filterObj))}`,
-                        'Gagal memuat nota terbuka customer'
+                        'Gagal memuat invoice terbuka customer'
                     );
                 };
 
@@ -391,7 +391,7 @@ export default function NotaListPage() {
                 setReceiptOpenPayments(paymentRows);
             } catch (error) {
                 if (cancelled) return;
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat nota terbuka customer');
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat invoice terbuka customer');
             } finally {
                 if (!cancelled) {
                     setReceiptNotesLoading(false);
@@ -613,7 +613,7 @@ export default function NotaListPage() {
     const fetchNotaItems = async (notaId: string) => {
         return fetchAllAdminCollectionData<FreightNotaItem>(
             `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`,
-            'Gagal memuat item nota',
+            'Gagal memuat item invoice',
         );
     };
 
@@ -632,7 +632,7 @@ export default function NotaListPage() {
     };
 
     const handlePrintNota = async (nota: FreightNota) => {
-        const printWindow = openPrintWindow('Menyiapkan cetak nota...');
+        const printWindow = openPrintWindow('Menyiapkan cetak invoice...');
         if (!printWindow) {
             addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
             return;
@@ -668,12 +668,12 @@ export default function NotaListPage() {
             try {
                 printWindow.close();
             } catch {}
-            addToast('error', 'Gagal menyiapkan cetak nota');
+            addToast('error', 'Gagal menyiapkan cetak invoice');
         }
     };
 
     const handlePrintInvoiceList = async () => {
-        const printWindow = openPrintWindow('Menyiapkan print daftar nota...');
+        const printWindow = openPrintWindow('Menyiapkan print daftar invoice...');
         if (!printWindow) {
             addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
             return;
@@ -686,8 +686,8 @@ export default function NotaListPage() {
             setCompany(co);
             const grandTotal = allMatchingNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
             openBrandedPrint({
-                title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
-                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Tagihan</th><th class="r">Tagihan Transfer Final</th><th>Status</th></tr></thead>
+                title: 'Daftar Invoice Ongkos Angkut', company: co, bodyHtml: `
+                    <table><thead><tr><th>No. Invoice</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Invoice</th><th class="r">Invoice Transfer Final</th><th>Status</th></tr></thead>
                     <tbody>${allMatchingNotas.map(n => {
                         const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
                         return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
@@ -699,7 +699,7 @@ export default function NotaListPage() {
             try {
                 printWindow.close();
             } catch {}
-            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print daftar nota');
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print daftar invoice');
         }
     };
 
@@ -711,9 +711,9 @@ export default function NotaListPage() {
             ]);
             setCompany(resolvedCompany);
             await exportFreightNotaDetail(nota, notaItems, resolvedCompany, bankAccounts);
-            addToast('success', 'Excel nota berhasil di-download');
+            addToast('success', 'Excel invoice berhasil di-download');
         } catch {
-            addToast('error', 'Gagal menyiapkan Excel nota');
+            addToast('error', 'Gagal menyiapkan Excel invoice');
         }
     };
 
@@ -721,7 +721,7 @@ export default function NotaListPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <h1 className="page-title">Nota Ongkos Angkut</h1>
+                    <h1 className="page-title">Invoice Ongkos Angkut</h1>
                 </div>
                 <div className="page-actions">
                     {canCreateReceipt && <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>}
@@ -731,16 +731,16 @@ export default function NotaListPage() {
                             try {
                                 const allMatchingNotas = await fetchAllMatchingInvoices();
                                 await exportInvoices(allMatchingNotas as unknown as Record<string, unknown>[]);
-                                addToast('success', 'Excel daftar nota berhasil di-download');
+                                addToast('success', 'Excel daftar invoice berhasil di-download');
                             } catch (error) {
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel daftar nota');
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel daftar invoice');
                             }
                         }}
                     >
                         <FileDown size={15} /> Excel
                     </button>}
                     {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={() => void handlePrintInvoiceList()}><Printer size={15} /> Print</button>}
-                    {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>}
+                        {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Invoice Baru</button>}
                 </div>
             </div>
 
@@ -785,7 +785,7 @@ export default function NotaListPage() {
                         {openOverpayments.length === 0 ? (
                             <div className="empty-state" style={{ padding: '1rem 0' }}>
                                 <div className="empty-state-title">Tidak ada kelebihan bayar terbuka</div>
-                                <div className="empty-state-text">Queue ini otomatis menangkap sisa penerimaan customer dan nota yang menjadi overpaid setelah klaim/potongan.</div>
+                                <div className="empty-state-text">Queue ini otomatis menangkap sisa penerimaan customer dan invoice yang menjadi overpaid setelah klaim/potongan.</div>
                             </div>
                         ) : (
                             <div className="table-wrapper" style={{ overflowX: 'auto' }}>
@@ -852,7 +852,7 @@ export default function NotaListPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nota, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari invoice, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                         <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -861,11 +861,11 @@ export default function NotaListPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Dasar Tagihan</th><th>Tagihan Transfer Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Invoice</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Dasar Invoice</th><th>Invoice Transfer Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalInvoices === 0 ? (
-                                    <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Belum ada nota yang bisa ditampilkan</div></div></td></tr>
+                                    <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada invoice</div><div className="empty-state-text">Belum ada invoice yang bisa ditampilkan</div></div></td></tr>
                                 ) : items.map(n => (
                                     (() => {
                                         const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
@@ -911,8 +911,8 @@ export default function NotaListPage() {
                     <div className="mobile-record-list">
                         {totalInvoices === 0 ? (
                             <div className="mobile-record-card">
-                                <div className="mobile-record-title">Belum ada nota</div>
-                                <div className="mobile-record-subtitle">Belum ada nota yang bisa ditampilkan.</div>
+                                <div className="mobile-record-title">Belum ada invoice</div>
+                                <div className="mobile-record-subtitle">Belum ada invoice yang bisa ditampilkan.</div>
                             </div>
                         ) : items.map(n => (
                             (() => {
@@ -930,7 +930,7 @@ export default function NotaListPage() {
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">No. Nota Internal</span>
+                                        <span className="mobile-record-label">No. Invoice Internal</span>
                                         <span className="mobile-record-value">{n.notaNumber}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -938,11 +938,11 @@ export default function NotaListPage() {
                                                     <span className="mobile-record-value">{formatQuantity(n.totalCollie || 0)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Dasar Tagihan</span>
+                                        <span className="mobile-record-label">Dasar Invoice</span>
                                         <span className="mobile-record-value">{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Tagihan Transfer Final</span>
+                                        <span className="mobile-record-label">Invoice Transfer Final</span>
                                         <span className="mobile-record-value" style={{ fontWeight: 700 }}>{formatCurrency(getReceivableNetAmount(n))}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -969,7 +969,7 @@ export default function NotaListPage() {
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
-                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total tagihan transfer final terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} invoice. Urutan dimulai dari invoice yang paling perlu ditindaklanjuti. Total invoice transfer final terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
                             </>
                         )}
                     />
@@ -1082,22 +1082,22 @@ export default function NotaListPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan nota Arwana batch 1" />
+                                <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan invoice Arwana batch 1" />
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 {receiptMethod === 'CASH'
                                     ? 'Penerimaan tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
-                                    : 'Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kelebihan bayar customer.'}
+                                    : 'Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa invoice customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kelebihan bayar customer.'}
                             </div>
                             {receiptCustomerRef && (
                                 <div style={{ background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', borderRadius: '0.75rem', padding: '0.9rem 1rem', marginBottom: '1rem' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', fontSize: '0.82rem' }}>
                                         <div>
-                                            <div style={{ color: 'var(--text-muted)' }}>Jumlah Nota Terbuka</div>
-                                            <div style={{ fontWeight: 700 }}>{receiptOpenCount} nota</div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Jumlah Invoice Terbuka</div>
+                                                    <div style={{ fontWeight: 700 }}>{receiptOpenCount} invoice</div>
                                         </div>
                                         <div>
-                                            <div style={{ color: 'var(--text-muted)' }}>Nota Terbuka Saat Ini</div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Invoice Terbuka Saat Ini</div>
                                             <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerOpenTotal)}</div>
                                         </div>
                                         <div>
@@ -1124,32 +1124,32 @@ export default function NotaListPage() {
                             {!receiptCustomerRef ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Pilih customer</div>
-                                    <div className="empty-state-text">Daftar nota terbuka dan kelebihan bayar customer akan muncul setelah customer dipilih.</div>
+                                    <div className="empty-state-text">Daftar invoice terbuka dan kelebihan bayar customer akan muncul setelah customer dipilih.</div>
                                 </div>
                             ) : receiptNotesLoading ? (
                                 <div className="empty-state">
-                                    <div className="empty-state-title">Memuat nota terbuka</div>
-                                    <div className="empty-state-text">Sedang mengambil sisa tagihan customer ini.</div>
+                                    <div className="empty-state-title">Memuat invoice terbuka</div>
+                                    <div className="empty-state-text">Sedang mengambil sisa invoice customer ini.</div>
                                 </div>
                             ) : receiptOpenNotaItems.length === 0 ? (
                                 <div className="empty-state">
-                                    <div className="empty-state-title">Tidak ada nota terbuka</div>
-                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan final. Kamu tetap bisa menyimpan penerimaan ini sebagai kelebihan bayar.</div>
+                                    <div className="empty-state-title">Tidak ada invoice terbuka</div>
+                                    <div className="empty-state-text">Customer ini tidak punya sisa invoice final. Kamu tetap bisa menyimpan penerimaan ini sebagai kelebihan bayar.</div>
                                 </div>
                             ) : hasSingleOpenNota && singleOpenNota ? (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
-                                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alokasi Otomatis ke Satu Nota</div>
+                                            <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alokasi Otomatis ke Satu Invoice</div>
                                     <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.25rem' }}>
-                                        <div>Nota: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
-                                        <div>No. Nota Internal: {singleOpenNota.nota.notaNumber}</div>
-                                        <div>Sisa tagihan: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
-                                        <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kelebihan bayar.</div>
+                                        <div>Invoice: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
+                                        <div>No. Invoice Internal: {singleOpenNota.nota.notaNumber}</div>
+                                        <div>Sisa invoice: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
+                                        <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke invoice ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kelebihan bayar.</div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                                     <table style={{ minWidth: 720 }}>
-                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Tagihan Final</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Penerimaan</th></tr></thead>
+                                        <thead><tr><th>No. Invoice</th><th>Tgl</th><th>Invoice Final</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Penerimaan</th></tr></thead>
                                         <tbody>
                                             {receiptOpenNotaItems.map(item => (
                                                 <tr key={item.nota._id}>

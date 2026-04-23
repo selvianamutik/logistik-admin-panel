@@ -41,9 +41,9 @@ export function getRecentOrderAction(status: string) {
 
 export function getRecentNotaAction(nota: DashboardData['recentNotas'][number]) {
     if (nota.status === 'UNPAID') return 'Tagih atau catat penerimaan';
-    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran nota';
+    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran invoice';
     return parseFormattedNumberish(nota.totalAdjustmentAmount || 0, { maxFractionDigits: 0 }) > 0
-        ? 'Arsip + cek potongan tagihan'
+        ? 'Arsip + cek potongan invoice'
         : 'Arsip / cetak';
 }
 

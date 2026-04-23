@@ -77,17 +77,17 @@ export default function NotaDetailPage() {
         setLoading(true);
         try {
             const [notaData, notaItems, paymentRows, adjustmentRows, accounts, companyData] = await Promise.all([
-                fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`, 'Gagal memuat detail nota'),
-                fetchAllAdminCollectionData<FreightNotaItem>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`, 'Gagal memuat detail nota'),
-                fetchAllAdminCollectionData<Payment>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
-                fetchAllAdminCollectionData<InvoiceAdjustment>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
-                fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail nota'),
+                fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`, 'Gagal memuat detail invoice'),
+                fetchAllAdminCollectionData<FreightNotaItem>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`, 'Gagal memuat detail invoice'),
+                fetchAllAdminCollectionData<Payment>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail invoice'),
+                fetchAllAdminCollectionData<InvoiceAdjustment>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail invoice'),
+                fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail invoice'),
                 fetchCompanyProfile().catch(() => null),
             ]);
             let customerData: Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null = null;
             if (notaData?.customerRef && !(notaData.customerAddress || notaData.customerContactPerson || notaData.customerPhone)) {
                 try {
-                    customerData = await fetchAdminData<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`, 'Gagal memuat detail nota');
+                customerData = await fetchAdminData<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`, 'Gagal memuat detail invoice');
                 } catch {
                     customerData = null;
                 }
@@ -108,7 +108,7 @@ export default function NotaDetailPage() {
             setCompany(companyData);
             setCustomer(customerData);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail invoice');
         } finally {
             setLoading(false);
         }
@@ -220,7 +220,7 @@ export default function NotaDetailPage() {
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
-        if (payAmount > remaining) { addToast('error', 'Nominal melebihi sisa tagihan'); return; }
+        if (payAmount > remaining) { addToast('error', 'Nominal melebihi sisa invoice'); return; }
         if (payMethod === 'TRANSFER' && !payBankRef) { addToast('error', 'Pilih rekening bank untuk transfer'); return; }
         setPaying(true);
         try {
@@ -236,7 +236,7 @@ export default function NotaDetailPage() {
                 addToast('error', result.error || 'Gagal');
                 return;
             }
-            addToast('success', 'Pembayaran nota dicatat');
+            addToast('success', 'Pembayaran invoice dicatat');
             setShowPayModal(false);
             setPayAmount(0);
             setPayNote('');
@@ -289,7 +289,7 @@ export default function NotaDetailPage() {
 
     const handleSaveAdjustment = async () => {
         if (adjustAmount <= 0) {
-            addToast('error', 'Nominal potongan tagihan harus lebih dari 0');
+            addToast('error', 'Nominal potongan invoice harus lebih dari 0');
             return;
         }
         const adjustmentBeingEdited = adjustments.find(item => item._id === editingAdjustmentId) || null;
@@ -297,7 +297,7 @@ export default function NotaDetailPage() {
             ? Number(adjustmentBeingEdited.amount) || 0
             : 0;
         if ((totalAdjustmentAmount - adjustmentBaseAmount + adjustAmount) > Math.max(grossAmount, 0)) {
-            addToast('error', 'Potongan melebihi sisa nilai bruto tagihan');
+            addToast('error', 'Potongan melebihi sisa nilai bruto invoice');
             return;
         }
 
@@ -321,15 +321,15 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menyimpan potongan tagihan');
+                addToast('error', result.error || 'Gagal menyimpan potongan invoice');
                 return;
             }
-            addToast('success', editingAdjustmentId ? 'Potongan tagihan berhasil diperbarui' : 'Potongan tagihan berhasil dicatat');
+            addToast('success', editingAdjustmentId ? 'Potongan invoice berhasil diperbarui' : 'Potongan invoice berhasil dicatat');
             setShowAdjustmentModal(false);
             resetAdjustmentForm();
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal menyimpan potongan tagihan');
+            addToast('error', 'Gagal menyimpan potongan invoice');
         } finally {
             setAdjusting(false);
         }
@@ -337,7 +337,7 @@ export default function NotaDetailPage() {
 
     const handleDeleteAdjustment = async (adjustmentId: string) => {
         if (voidingAdjustmentId) return;
-        if (!confirm('Hapus potongan tagihan ini? Riwayatnya akan tetap tersimpan di audit log.')) return;
+        if (!confirm('Hapus potongan invoice ini? Riwayatnya akan tetap tersimpan di audit log.')) return;
         setVoidingAdjustmentId(adjustmentId);
         try {
             const res = await fetch('/api/data', {
@@ -351,13 +351,13 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menghapus potongan tagihan');
+                addToast('error', result.error || 'Gagal menghapus potongan invoice');
                 return;
             }
-            addToast('success', 'Potongan tagihan dihapus');
+            addToast('success', 'Potongan invoice dihapus');
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal menghapus potongan tagihan');
+            addToast('error', 'Gagal menghapus potongan invoice');
         } finally {
             setVoidingAdjustmentId(current => current === adjustmentId ? null : current);
         }
@@ -413,7 +413,7 @@ export default function NotaDetailPage() {
 
     const handlePrint = async () => {
         if (!nota) return;
-        const printWindow = openPrintWindow('Menyiapkan cetak nota...');
+        const printWindow = openPrintWindow('Menyiapkan cetak invoice...');
         if (!printWindow) {
             addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
             return;
@@ -449,7 +449,7 @@ export default function NotaDetailPage() {
 
     const handleDelete = async () => {
         if (deleting) return;
-        if (!confirm('Hapus nota ini?')) return;
+        if (!confirm('Hapus invoice ini?')) return;
         setDeleting(true);
         try {
             const res = await fetch('/api/data', {
@@ -458,13 +458,13 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menghapus nota');
+                addToast('error', result.error || 'Gagal menghapus invoice');
                 return;
             }
-            addToast('success', 'Nota dihapus');
+            addToast('success', 'Invoice dihapus');
             router.push(returnTo || '/invoices');
         } catch {
-            addToast('error', 'Gagal menghapus nota');
+            addToast('error', 'Gagal menghapus invoice');
         } finally {
             setDeleting(false);
         }
@@ -476,14 +476,14 @@ export default function NotaDetailPage() {
             const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
             setCompany(resolvedCompany);
             await exportFreightNotaDetail(nota, items, resolvedCompany, bankAccounts);
-            addToast('success', 'Excel nota berhasil di-download');
+            addToast('success', 'Excel invoice berhasil di-download');
         } catch {
-            addToast('error', 'Gagal menyiapkan Excel nota');
+            addToast('error', 'Gagal menyiapkan Excel invoice');
         }
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
-    if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
+    if (!nota) return <div className="empty-state"><div className="empty-state-title">Invoice tidak ditemukan</div></div>;
 
     const displayStatus = deriveReceivableStatus(nota, totalPaid);
     const statusConf = INVOICE_DETAIL_STATUS_MAP[displayStatus] || { label: displayStatus, color: 'secondary' };
@@ -512,7 +512,7 @@ export default function NotaDetailPage() {
                         <span className={`badge badge-${statusConf.color}`}><span className="badge-dot" /> {statusConf.label}</span>
                     </div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        No. Nota Internal: {nota.notaNumber}
+                        No. Invoice Internal: {nota.notaNumber}
                     </div>
                 </div>
                 </div>
@@ -526,9 +526,9 @@ export default function NotaDetailPage() {
                                     : `/invoices/new?edit=${nota._id}`
                             )}
                             disabled={!canReviseInvoice}
-                            title={canReviseInvoice ? 'Revisi nota ini' : 'Revisi nota hanya tersedia sebelum ada pembayaran, refund, atau klaim/potongan aktif'}
+                            title={canReviseInvoice ? 'Revisi invoice ini' : 'Revisi invoice hanya tersedia sebelum ada pembayaran, refund, atau klaim/potongan aktif'}
                         >
-                            <Pencil size={14} /> Revisi Nota
+                            <Pencil size={14} /> Revisi Invoice
                         </button>
                     )}
                     {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
@@ -536,15 +536,15 @@ export default function NotaDetailPage() {
                     {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
                     {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
-                    {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
+                    {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Invoice</button>}
                     {canDeleteInvoice && (
                         <button
                             className="btn btn-secondary btn-sm"
                             onClick={handleDelete}
                             disabled={deleting || !canDeleteInvoiceSafely}
-                            title={canDeleteInvoiceSafely ? 'Hapus nota ini' : 'Nota tidak bisa dihapus setelah ada pembayaran, refund, atau klaim/potongan aktif'}
+                            title={canDeleteInvoiceSafely ? 'Hapus invoice ini' : 'Invoice tidak bisa dihapus setelah ada pembayaran, refund, atau klaim/potongan aktif'}
                         >
-                            <Trash2 size={14} /> Hapus Nota
+                            <Trash2 size={14} /> Hapus Invoice
                         </button>
                     )}
                 </div>
@@ -552,10 +552,10 @@ export default function NotaDetailPage() {
 
             <div className="detail-grid" style={{ alignItems: 'start' }}>
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Detail Nota</span></div>
+                    <div className="card-header"><span className="card-header-title">Detail Invoice</span></div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. Cetak Nota</div><div className="detail-value font-mono">{displayNotaNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. Cetak Invoice</div><div className="detail-value font-mono">{displayNotaNumber}</div></div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(nota.issueDate)}</div></div>
                         </div>
                         <div className="detail-row">
@@ -563,20 +563,20 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Jatuh Tempo</div><div className="detail-value">{nota.dueDate ? formatDate(nota.dueDate) : '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. Nota Internal</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. Invoice Internal</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{formatQuantity(nota.totalCollie || 0)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Dasar Tagihan Final</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
+                            <div className="detail-item"><div className="detail-label">Dasar Invoice Final</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
                             <div className="detail-item"><div className="detail-label">Berat Final Sistem (Kg)</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Tagihan Bruto</div><div className="detail-value font-semibold">{formatCurrency(grossAmount)}</div></div>
-                            <div className="detail-item"><div className="detail-label">Tagihan Transfer Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Invoice Bruto</div><div className="detail-value font-semibold">{formatCurrency(grossAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Invoice Transfer Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">PPh 23</div><div className="detail-value">{effectivePph23Enabled ? `${buildPph23Label({ enabled: effectivePph23Enabled, ratePercent: effectivePph23RatePercent, baseMode: effectivePph23BaseMode })} • -${formatCurrency(pph23Amount)}` : 'Tidak dipotong'}</div></div>
-                            <div className="detail-item"><div className="detail-label">{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa Tagihan Transfer'}</div><div className="detail-value font-semibold">{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
+                            <div className="detail-item"><div className="detail-label">{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa Invoice Transfer'}</div><div className="detail-value font-semibold">{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
                         </div>
                     </div>
                 </div>
@@ -586,7 +586,7 @@ export default function NotaDetailPage() {
                     <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
                         <div className="card" style={{ overflow: 'hidden' }}>
                             <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
-                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Transfer Final</div>
+                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Invoice Transfer Final</div>
                                 <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(netAmount)}</div>
                                 {(totalAdjustmentAmount > 0 || pph23Amount > 0) && (
                                     <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '0.25rem' }}>
@@ -596,7 +596,7 @@ export default function NotaDetailPage() {
                             </div>
                             <div className="card-body">
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Invoice Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                     <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: totalAdjustmentAmount > 0 ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
                                     <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>PPh 23</div><div style={{ fontSize: '1rem', fontWeight: 700, color: effectivePph23Enabled ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>{effectivePph23Enabled ? `-${formatCurrency(pph23Amount)}` : '-'}</div><div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{effectivePph23Enabled ? `${formatCurrency(pph23BaseAmount)} • ${buildPph23Label({ enabled: effectivePph23Enabled, ratePercent: effectivePph23RatePercent, baseMode: effectivePph23BaseMode })}` : 'Tidak dipotong'}</div></div>
                                     <div>
@@ -614,7 +614,7 @@ export default function NotaDetailPage() {
                             </div>
                         </div>
 
-                        <CollapsibleCard title="Riwayat Pembayaran Nota" defaultOpen={payments.length > 0}>
+                        <CollapsibleCard title="Riwayat Pembayaran Invoice" defaultOpen={payments.length > 0}>
                             <div style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {payments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
@@ -668,7 +668,7 @@ export default function NotaDetailPage() {
                             <div style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {adjustments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
-                                        <div style={{ fontSize: '0.82rem' }}>Belum ada potongan tagihan</div>
+                                        <div style={{ fontSize: '0.82rem' }}>Belum ada potongan invoice</div>
                                     </div>
                                 ) : adjustments.map((adjustment, index) => (
                                     <div key={adjustment._id} style={{ padding: '0.85rem 1rem', borderBottom: index < adjustments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
@@ -716,7 +716,7 @@ export default function NotaDetailPage() {
                                 {items.length} baris invoice dari {uniqueShipperReferenceCount || 0} SJ pengirim
                             </div>
                             <div className="text-muted text-sm">
-                                Nota hanya memuat baris drop yang billable. Barang dengan hasil hold, transit, atau retur tidak ikut ditagihkan di sini.
+                                Invoice hanya memuat baris drop yang billable. Barang dengan hasil hold, transit, atau retur tidak ikut ditagihkan di sini.
                             </div>
                         </div>
                         <div className="table-wrapper" style={{ overflowX: 'auto' }}>
@@ -756,14 +756,14 @@ export default function NotaDetailPage() {
             {canManageInvoice && showPayModal && (
                 <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Catat Pembayaran Nota</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">Catat Pembayaran Invoice</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Tagihan</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(remaining)}</div></div>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Invoice</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(remaining)}</div></div>
                                 <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} disabled={paying} /></div>
-                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><FormattedNumberInput allowDecimal={false} value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran nota" /></div>
+                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><FormattedNumberInput allowDecimal={false} value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran invoice" /></div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Metode</label>
                                     <select
@@ -790,16 +790,16 @@ export default function NotaDetailPage() {
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 {payMethod === 'TRANSFER'
-                                    ? 'Transfer akan mengurangi sisa tagihan, mencatat pendapatan, dan menambah saldo rekening yang dipilih.'
+                                    ? 'Transfer akan mengurangi sisa invoice, mencatat pendapatan, dan menambah saldo rekening yang dipilih.'
                                     : payMethod === 'CASH'
                                         ? 'Tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
-                                        : 'Metode lain tetap mengurangi sisa tagihan dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
+                                        : 'Metode lain tetap mengurangi sisa invoice dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} disabled={paying} /></div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowPayModal(false)} disabled={paying}>Batal</button>
-                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Nota'}</button>
+                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Invoice'}</button>
                         </div>
                     </div>
                 </div>
@@ -810,7 +810,7 @@ export default function NotaDetailPage() {
                         <div className="modal-header"><h3 className="modal-title">{editingAdjustmentId ? 'Edit Klaim / Potongan' : 'Catat Klaim / Potongan'}</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
-                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Awal</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Invoice Awal</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                 <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Nilai Bisa Dipotong</div><div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-warning)' }}>{formatCurrency(Math.max(grossAmount - totalAdjustmentAmount, 0))}</div></div>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={adjustDate} onChange={e => setAdjustDate(e.target.value)} disabled={adjusting} /></div>
@@ -823,7 +823,7 @@ export default function NotaDetailPage() {
                                 <div className="form-group"><label className="form-label">Nominal (Rp)</label><FormattedNumberInput allowDecimal={false} value={adjustAmount} onValueChange={value => setAdjustAmount(value)} disabled={adjusting} placeholder="Ketik nominal potongan" /></div>
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
-                                Klaim / potongan akan mengurangi tagihan final nota. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
+                                Klaim / potongan akan mengurangi invoice final. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={adjustNote} onChange={e => setAdjustNote(e.target.value)} disabled={adjusting} placeholder="Contoh: Klaim 2 dus pecah saat bongkar" /></div>
                         </div>
@@ -837,13 +837,13 @@ export default function NotaDetailPage() {
             {canManageInvoice && showPph23Modal && (
                 <div className="modal-overlay" onClick={() => { if (!savingPph23) setShowPph23Modal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Atur PPh 23 Nota</h3><button className="modal-close" onClick={() => setShowPph23Modal(false)} disabled={savingPph23}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">Atur PPh 23 Invoice</h3><button className="modal-close" onClick={() => setShowPph23Modal(false)} disabled={savingPph23}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
-                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Invoice Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                 <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Klaim / Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-warning)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
                                 <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>PPh 23 Preview</div><div style={{ fontSize: '1rem', fontWeight: 700, color: draftPph23Summary.enabled ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>{draftPph23Summary.enabled ? `-${formatCurrency(draftPph23Summary.amount)}` : '-'}</div></div>
-                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Transfer Final</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(draftPph23Summary.netAmount)}</div></div>
+                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Invoice Transfer Final</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(draftPph23Summary.netAmount)}</div></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
@@ -888,7 +888,7 @@ export default function NotaDetailPage() {
                                 </select>
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)' }}>
-                                {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Setelah nota punya pembayaran, pengaturan ini otomatis terkunci agar piutang tidak berubah di tengah jalan.
+                                {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Setelah invoice punya pembayaran, pengaturan ini otomatis terkunci agar piutang tidak berubah di tengah jalan.
                             </div>
                         </div>
                         <div className="modal-footer">

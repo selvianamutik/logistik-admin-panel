@@ -889,14 +889,14 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             }),
         })),
         [
-            { header: 'No. Cetak Nota', key: 'notaDisplayNumber', width: 22 },
-            { header: 'No. Nota Internal', key: 'notaNumber', width: 22 },
+            { header: 'No. Cetak Invoice', key: 'notaDisplayNumber', width: 22 },
+            { header: 'No. Invoice Internal', key: 'notaNumber', width: 22 },
             { header: 'Customer', key: 'customerName', width: 28 },
             { header: 'Tanggal', key: 'issueDate', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
             { header: 'Total Collie', key: 'totalCollie', width: 14 },
             {
-                header: 'Dasar Tagihan',
+                header: 'Dasar Invoice',
                 key: 'totalWeightKg',
                 width: 18,
                 formatter: (value, row) => formatFreightNotaDisplayWeight({
@@ -908,13 +908,13 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             },
             { header: 'Berat Final Sistem (Kg)', key: 'totalWeightKg', width: 20 },
             { header: 'PPh 23', key: 'pph23Amount', width: 16, formatter: (value) => fmtCurrency(parseFormattedNumberish(value || 0)) },
-            { header: 'Tagihan Transfer Final', key: 'netAmount', width: 20 },
+            { header: 'Invoice Transfer Final', key: 'netAmount', width: 20 },
             { header: 'Status', key: 'status', width: 14 },
         ],
-        `nota-ongkos-${getBusinessDateValue()}`,
-        'Nota Ongkos',
+        `invoice-ongkos-${getBusinessDateValue()}`,
+        'Invoice Ongkos',
         {
-            title: 'Daftar Nota Ongkos Angkut',
+            title: 'Daftar Invoice Ongkos Angkut',
             company,
             totalRow: {
                 label: 'TOTAL',
@@ -1168,7 +1168,7 @@ export async function exportFreightNotaDetail(
     }
 
     const transferRowIndex = rows.length + 1;
-    rows.push(['Tagihan Transfer Final', '', '', '', '', '', '', '', '', '', fmtNumber(netAmount), '']);
+    rows.push(['Invoice Transfer Final', '', '', '', '', '', '', '', '', '', fmtNumber(netAmount), '']);
     merges.push({ startRow: transferRowIndex, startCol: 1, endRow: transferRowIndex, endCol: 10 });
 
     rows.push([]);
@@ -1193,10 +1193,10 @@ export async function exportFreightNotaDetail(
     workbook.company = issuerProfile.name;
     workbook.created = new Date();
     workbook.modified = new Date();
-    workbook.subject = `Nota ${displayNumber}`;
+    workbook.subject = `Invoice ${displayNumber}`;
     workbook.title = `Perincian Ongkos Angkut ${displayNumber}`;
 
-    const worksheet = workbook.addWorksheet(sanitizeSheetName('Nota Detail'));
+    const worksheet = workbook.addWorksheet(sanitizeSheetName('Invoice Detail'));
     addRows(worksheet, rows);
     applyMerges(worksheet, merges);
     const logoPlaced = await addCompanyLogoToWorksheet(workbook, worksheet, issuerBranding, {
@@ -1232,5 +1232,5 @@ export async function exportFreightNotaDetail(
         });
     });
 
-    await downloadWorkbook(workbook, `nota-${displayNumber}`);
+    await downloadWorkbook(workbook, `invoice-${displayNumber}`);
 }

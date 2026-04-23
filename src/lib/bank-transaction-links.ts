@@ -108,8 +108,8 @@ export function resolveBankTransactionSourceLink(params: {
       return {
         href: `/invoices/${payment.invoiceRef}`,
         label: payment.receiptNumber
-          ? `Buka Nota dari ${payment.receiptNumber}`
-          : "Buka Nota",
+          ? `Buka Invoice dari ${payment.receiptNumber}`
+          : "Buka Invoice",
       };
     }
   }
@@ -126,7 +126,7 @@ export function resolveBankTransactionSourceLink(params: {
     ) {
       return {
         href: `/invoices/${refund.sourceInvoiceRef}`,
-        label: "Buka Nota Sumber Refund",
+        label: "Buka Invoice Sumber Refund",
       };
     }
     if (refund?.sourceReceiptRef && permissions?.canOpenInvoices) {

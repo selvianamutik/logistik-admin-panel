@@ -10,22 +10,22 @@ export const FREIGHT_NOTA_BILLING_MODE_OPTIONS: Array<{
     {
         value: 'PER_KG',
         label: 'Kg / Tarif per kg',
-        description: 'Nota tampil dalam kg dan total dihitung per kg.',
+        description: 'Invoice tampil dalam kg dan total dihitung per kg.',
     },
     {
         value: 'PER_TON',
         label: 'Ton / Tarif per ton',
-        description: 'Nota tampil dalam ton dan total dihitung per ton.',
+        description: 'Invoice tampil dalam ton dan total dihitung per ton.',
     },
     {
         value: 'PER_VOLUME',
         label: 'Volume / Tarif per m3',
-        description: 'Nota dihitung dari volume muatan dalam meter kubik.',
+        description: 'Invoice dihitung dari volume muatan dalam meter kubik.',
     },
     {
         value: 'PER_TRIP',
         label: 'Trip / Tarif per surat jalan',
-        description: 'Nota dihitung satu tarif tetap per baris surat jalan.',
+        description: 'Invoice dihitung satu tarif tetap per baris surat jalan.',
     },
 ];
 

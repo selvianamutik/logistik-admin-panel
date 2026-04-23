@@ -143,7 +143,7 @@ export function buildCustomerOverpaymentCases(params: {
                 refundedAmount,
                 remainingAmount,
                 sourceLabel: receipt.receiptNumber || receipt._id,
-                sourceDescription: 'Sisa penerimaan customer belum dialokasikan ke nota.',
+                sourceDescription: 'Sisa penerimaan customer belum dialokasikan ke invoice.',
             });
             return acc;
         }, []);
@@ -169,7 +169,7 @@ export function buildCustomerOverpaymentCases(params: {
                 refundedAmount,
                 remainingAmount,
                 sourceLabel: nota.notaNumber || nota._id,
-                sourceDescription: 'Pembayaran melebihi tagihan transfer final setelah klaim/potongan dan PPh 23.',
+                sourceDescription: 'Pembayaran melebihi invoice transfer final setelah klaim/potongan dan PPh 23.',
             });
             return acc;
         }, []);

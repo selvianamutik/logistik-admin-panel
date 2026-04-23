@@ -84,12 +84,12 @@ export default function NewNotaPage() {
                         deliveryOrderItemRefs?: string[];
                     }>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                     editNotaId
-                        ? fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${editNotaId}`, 'Gagal memuat nota yang akan direvisi')
+                        ? fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${editNotaId}`, 'Gagal memuat invoice yang akan direvisi')
                         : Promise.resolve(null),
                     editNotaId
                         ? fetchAllAdminCollectionData<FreightNotaItem>(
                             `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: editNotaId }))}`,
-                            'Gagal memuat item nota yang akan direvisi'
+                            'Gagal memuat item invoice yang akan direvisi'
                         )
                         : Promise.resolve([] as FreightNotaItem[]),
                 ]);
@@ -140,7 +140,7 @@ export default function NewNotaPage() {
                 );
                 if (editNotaId) {
                     if (!editNota) {
-                        throw new Error('Nota yang akan direvisi tidak ditemukan');
+                    throw new Error('Invoice yang akan direvisi tidak ditemukan');
                     }
                     skipCustomerDefaultsRef.current = true;
                     setCustomerRef(editNota.customerRef || '');
@@ -184,7 +184,7 @@ export default function NewNotaPage() {
                     );
                 }
             } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data nota');
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data invoice');
             } finally {
                 setLoadingInitialData(false);
             }
@@ -377,7 +377,7 @@ export default function NewNotaPage() {
         }
         const nextRows = getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined);
         if (nextRows.length === 0) {
-            addToast('error', customerRef ? 'Tidak ada SJ yang tersisa untuk customer tagihan ini pada DO tersebut' : 'Semua item SJ pada DO ini sudah tertagih atau sudah ada di nota saat ini');
+            addToast('error', customerRef ? 'Tidak ada SJ yang tersisa untuk customer invoice ini pada DO tersebut' : 'Semua item SJ pada DO ini sudah masuk invoice atau sudah ada di invoice saat ini');
             return;
         }
 
@@ -390,7 +390,7 @@ export default function NewNotaPage() {
                 ).entries()
             );
             if (rowCustomers.length > 1) {
-                addToast('error', 'DO ini punya SJ dengan customer tagihan berbeda. Pilih customer nota dulu.');
+            addToast('error', 'DO ini punya SJ dengan customer invoice berbeda. Pilih customer invoice dulu.');
                 return;
             }
             if (rowCustomers.length === 1) {
@@ -464,7 +464,7 @@ export default function NewNotaPage() {
         if (customerRef) {
             const mismatchedRow = filledRows.find(row => row.customerRef && row.customerRef !== customerRef);
             if (mismatchedRow) {
-                addToast('error', `SJ ${mismatchedRow.noSJ || '-'} memakai customer tagihan berbeda. Pisahkan ke nota lain.`);
+            addToast('error', `SJ ${mismatchedRow.noSJ || '-'} memakai customer invoice berbeda. Pisahkan ke invoice lain.`);
                 return;
             }
         }
@@ -494,11 +494,11 @@ export default function NewNotaPage() {
             });
             const notaPayload = await notaResponse.json();
             if (!notaResponse.ok) {
-                addToast('error', notaPayload.error || (isEditMode ? 'Gagal merevisi nota' : 'Gagal membuat nota'));
+                addToast('error', notaPayload.error || (isEditMode ? 'Gagal merevisi invoice' : 'Gagal membuat invoice'));
                 return;
             }
 
-            addToast('success', isEditMode ? 'Nota berhasil direvisi' : 'Nota berhasil dibuat');
+            addToast('success', isEditMode ? 'Invoice berhasil direvisi' : 'Invoice berhasil dibuat');
             const nextNotaId = isEditMode ? editNotaId : notaPayload.data._id;
             router.push(
                 returnTo
@@ -506,7 +506,7 @@ export default function NewNotaPage() {
                     : `/invoices/${nextNotaId}`
             );
         } catch {
-            addToast('error', isEditMode ? 'Gagal merevisi nota' : 'Gagal membuat nota');
+            addToast('error', isEditMode ? 'Gagal merevisi invoice' : 'Gagal membuat invoice');
         } finally {
             setSaving(false);
         }
@@ -545,7 +545,7 @@ export default function NewNotaPage() {
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <PageBackButton href={returnTo || (isEditMode ? `/invoices/${editNotaId}` : '/invoices')} />
-                    <h1 className="page-title" style={{ margin: 0 }}>{isEditMode ? 'Revisi Nota Ongkos Angkut' : 'Buat Nota Ongkos Angkut'}</h1>
+                    <h1 className="page-title" style={{ margin: 0 }}>{isEditMode ? 'Revisi Invoice Ongkos Angkut' : 'Buat Invoice Ongkos Angkut'}</h1>
                 </div>
             </div>
 
@@ -553,7 +553,7 @@ export default function NewNotaPage() {
                 <div>
                     <div className="card">
                         <div className="card-header">
-                            <span className="card-header-title">Info Nota</span>
+                            <span className="card-header-title">Info Invoice</span>
                         </div>
                         <div className="card-body">
                             <div className="form-group">
@@ -594,7 +594,7 @@ export default function NewNotaPage() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Tanggal Nota</label>
+                                    <label className="form-label">Tanggal Invoice</label>
                                     <input
                                         type="date"
                                         className="form-input"
@@ -617,7 +617,7 @@ export default function NewNotaPage() {
                             </div>
 
                             <div className="form-group" style={{ maxWidth: 320 }}>
-                                <label className="form-label">Basis Billing Nota</label>
+                                <label className="form-label">Basis Billing Invoice</label>
                                 <select
                                     className="form-select"
                                     value={billingMode}
@@ -628,7 +628,7 @@ export default function NewNotaPage() {
                                     ))}
                                 </select>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Default customer akan terpakai otomatis. Kamu masih bisa override per nota kalau customer minta tagihan dalam ton.
+                                    Default customer akan terpakai otomatis. Kamu masih bisa override per invoice kalau customer minta invoice dalam ton.
                                 </div>
                             </div>
                             <div className="card" style={{ marginTop: '1rem', border: '1px solid var(--color-border)' }}>
@@ -672,7 +672,7 @@ export default function NewNotaPage() {
                                             ))}
                                         </select>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                            {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Masih bisa diubah lagi di detail nota sebelum ada pembayaran.
+                                        {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Masih bisa diubah lagi di detail invoice sebelum ada pembayaran.
                                         </div>
                                     </div>
                                 </div>
@@ -743,7 +743,7 @@ export default function NewNotaPage() {
                                     marginBottom: '0.25rem',
                                 }}
                             >
-                                Tagihan Bruto
+                                Invoice Bruto
                             </div>
                             <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(totalAmount)}</div>
                         </div>
@@ -800,11 +800,11 @@ export default function NewNotaPage() {
                                     fontSize: '0.85rem',
                                 }}
                             >
-                                <span className="text-muted">Tagihan Transfer Final</span>
+                                <span className="text-muted">Invoice Transfer Final</span>
                                 <strong>{formatCurrency(pph23Summary.netAmount)}</strong>
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
-                                <Save size={16} /> {saving ? 'Menyimpan...' : isEditMode ? 'Simpan Revisi Nota' : 'Simpan Nota'}
+                                <Save size={16} /> {saving ? 'Menyimpan...' : isEditMode ? 'Simpan Revisi Invoice' : 'Simpan Invoice'}
                             </button>
                         </div>
                     </div>

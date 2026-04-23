@@ -289,7 +289,7 @@ function getAmbiguousActualDropMappingMessage(
             const groupLabel = groupKey === 'TANPA-SJ'
                 ? 'SJ ini'
                 : `SJ ${groupItems[0]?.shipperReferenceNumber || groupKey}`;
-            return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan nota per barang tidak salah.`;
+    return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan invoice per barang tidak salah.`;
         }
     }
 
@@ -4215,7 +4215,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     }))[0] || null;
     if (hasNotaReference) {
         return NextResponse.json(
-            { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk nota' },
+                        { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk invoice' },
             { status: 409 }
         );
     }

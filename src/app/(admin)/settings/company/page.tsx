@@ -18,7 +18,7 @@ export default function CompanyPage() {
             try {
                 const [res, accountRows] = await Promise.all([
                     fetch('/api/data?entity=company'),
-                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening nota'),
+            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening invoice'),
                 ]);
                 const payload = await res.json();
                 if (!res.ok) {
@@ -26,7 +26,7 @@ export default function CompanyPage() {
                 }
 
                 const profile = payload.data || {};
-                profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', receiptPrefix: 'RCV-', receiptCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+                profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'INV-', notaCounter: 0, notaSeriesCode: '3', receiptPrefix: 'RCV-', receiptCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
                 profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
                 const eligibleBankAccounts = (accountRows || []).filter(account => account.active !== false && account.accountType !== 'CASH');
                 const eligibleBankRefSet = new Set(eligibleBankAccounts.map(account => account._id));
@@ -271,9 +271,9 @@ export default function CompanyPage() {
                                 <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)' }} />
                             </div>
                         </div>
-                        <div className="form-section-title">Rekening yang Tampil di Nota</div>
+                        <div className="form-section-title">Rekening yang Tampil di Invoice</div>
                         <div className="form-group">
-                            <label className="form-label">Pilih Rekening yang Tampil di Nota</label>
+                            <label className="form-label">Pilih Rekening yang Tampil di Invoice</label>
                             <div style={{ display: 'grid', gap: '0.55rem' }}>
                                 {bankAccounts.length === 0 ? (
                                     <div className="empty-state" style={{ padding: '1rem' }}>
@@ -316,29 +316,29 @@ export default function CompanyPage() {
                                                     disabled={!isSelected}
                                                     onChange={() => uInvoice('defaultInvoiceBankAccountRef', account._id)}
                                                 />
-                                                Default Nota
+                                                Default Invoice
                                             </label>
                                         </div>
                                     );
                                 })}
                             </div>
                             <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                Rekening ini tampil di print dan export nota. Rekening aktual uang masuk tetap dipilih saat finance mencatat pembayaran atau penerimaan customer.
+                                Rekening ini tampil di print dan export invoice. Rekening aktual uang masuk tetap dipilih saat finance mencatat pembayaran atau penerimaan customer.
                             </p>
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Ringkasan Rekening Nota</label>
+                            <label className="form-label">Ringkasan Rekening Invoice</label>
                             {selectedInvoiceBankAccounts.length > 0 ? (
                                 <div style={{ display: 'grid', gap: '0.4rem' }}>
                                     {selectedInvoiceBankAccounts.map(account => (
                                         <div key={account._id} style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                                            <strong>{data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id ? 'Default Nota' : 'Tambahan'}:</strong> {account.bankName} - {account.accountNumber} a/n {account.accountHolder}
+                                            <strong>{data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id ? 'Default Invoice' : 'Tambahan'}:</strong> {account.bankName} - {account.accountNumber} a/n {account.accountHolder}
                                         </div>
                                     ))}
                                 </div>
                             ) : (
                                 <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                    Belum ada rekening master yang dipilih. Dokumen nota akan memakai fallback rekening manual di bawah ini.
+                                    Belum ada rekening master yang dipilih. Dokumen invoice akan memakai fallback rekening manual di bawah ini.
                                 </p>
                             )}
                         </div>
@@ -349,17 +349,17 @@ export default function CompanyPage() {
                         </div>
                         <div className="form-group"><label className="form-label">Atas Nama</label><input className="form-input" value={data.bankHolder || ''} onChange={e => u('bankHolder', e.target.value)} /></div>
                         <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Dipakai hanya jika belum ada rekening master yang dipilih untuk nota, atau untuk menjaga dokumen lama tetap punya rekening cadangan.
+                            Dipakai hanya jika belum ada rekening master yang dipilih untuk invoice, atau untuk menjaga dokumen lama tetap punya rekening cadangan.
                         </p>
                     </div>
                 </div>
 
                 <div>
                     <div className="card mb-6">
-                        <div className="card-header"><span className="card-header-title">Catatan Tagihan Harian</span></div>
+                        <div className="card-header"><span className="card-header-title">Catatan Invoice Harian</span></div>
                         <div className="card-body">
                             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                Tagihan harian yang dipakai saat ini adalah <strong>Nota Ongkos</strong>. Pengaturan tagihan lama tetap disimpan hanya untuk membaca data historis lama dan tidak lagi dipakai di operasional harian.
+                                    Invoice harian yang dipakai saat ini adalah <strong>Invoice Ongkos</strong>. Pengaturan invoice lama tetap disimpan hanya untuk membaca data historis lama dan tidak lagi dipakai di operasional harian.
                             </p>
                         </div>
                     </div>
@@ -380,17 +380,17 @@ export default function CompanyPage() {
                                 <div className="form-group" />
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
+                    <div className="form-group"><label className="form-label">Prefix Invoice</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'INV-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Penerimaan</label><input className="form-input" value={data.numberingSettings.receiptPrefix || 'RCV-'} onChange={e => uNum('receiptPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Kode Seri Cetak Nota</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Kode Seri Cetak Invoice</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Arsip Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Dipakai untuk nomor cetak nota model client, misalnya <strong>26/II/3/001</strong>. No. Nota Internal tetap memakai format aplikasi.
+                                        Dipakai untuk nomor cetak invoice model client, misalnya <strong>26/II/3/001</strong>. No. Invoice Internal tetap memakai format aplikasi.
                                     </p>
                                 </div>
                                 <div className="form-group" />

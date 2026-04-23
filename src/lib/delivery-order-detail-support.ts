@@ -439,7 +439,7 @@ function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
 
     if (shipperTargets.length === 1) {
         return {
-            locationName: shipperTargets[0].locationName || 'Tujuan Tagihan',
+            locationName: shipperTargets[0].locationName || 'Tujuan Invoice',
             locationAddress: shipperTargets[0].locationAddress || '',
             distinctTargetCount: 1,
         };
@@ -454,7 +454,7 @@ function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
     }
 
     return {
-        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
+        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Invoice',
         locationAddress: doData?.receiverAddress || '',
         distinctTargetCount: 0,
     };
@@ -840,7 +840,7 @@ export function buildDeliveryOrderPrintHtml(
             <thead>
                 <tr>
                     <th>No. SJ</th>
-                    <th>Customer Tagihan</th>
+                    <th>Customer Invoice</th>
                     <th>Tujuan</th>
                     <th>Alamat Tujuan</th>
                 </tr>
@@ -857,7 +857,7 @@ export function buildDeliveryOrderPrintHtml(
             </tbody>
         </table>
         ` : ''}
-        <div class="section-title">Route Tagihan & Realisasi Drop</div>
+        <div class="section-title">Route Invoice & Realisasi Drop</div>
         <table>
             <thead>
                 <tr>

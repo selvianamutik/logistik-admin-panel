@@ -540,7 +540,7 @@ export async function handleCustomerDelete(
 
     const relatedFreightNota = await findByRefOrLegacyName('freightNota');
     if (relatedFreightNota) {
-        return NextResponse.json({ error: 'Customer yang sudah dipakai pada nota tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json({ error: 'Customer yang sudah dipakai pada invoice tidak boleh dihapus' }, { status: 409 });
     }
 
     const relatedInvoice = await findByRefOrLegacyName('invoice');

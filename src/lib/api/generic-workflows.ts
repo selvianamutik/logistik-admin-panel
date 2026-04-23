@@ -207,7 +207,7 @@ async function sanitizeCompanyInvoiceSettings(
         : {};
     const hasInvoiceBankAccountRefs = Object.prototype.hasOwnProperty.call(invoiceSettings, 'invoiceBankAccountRefs');
     if (hasInvoiceBankAccountRefs && !Array.isArray(invoiceSettings.invoiceBankAccountRefs)) {
-        throw new Error('Daftar rekening instruksi nota tidak valid');
+        throw new Error('Daftar rekening instruksi invoice tidak valid');
     }
     const rawSelectedRefs = hasInvoiceBankAccountRefs
         ? Array.isArray(invoiceSettings.invoiceBankAccountRefs)
@@ -233,7 +233,7 @@ async function sanitizeCompanyInvoiceSettings(
         && invoiceSettings.defaultInvoiceBankAccountRef !== undefined
         && typeof invoiceSettings.defaultInvoiceBankAccountRef !== 'string'
     ) {
-        throw new Error('Rekening default instruksi nota tidak valid');
+        throw new Error('Rekening default instruksi invoice tidak valid');
     }
     const requestedDefaultRef =
         typeof invoiceSettings.defaultInvoiceBankAccountRef === 'string'
@@ -248,17 +248,17 @@ async function sanitizeCompanyInvoiceSettings(
     const hasInvoiceMode = Object.prototype.hasOwnProperty.call(invoiceSettings, 'invoiceMode');
     const rawInvoiceMode = normalizeOptionalText(invoiceSettings.invoiceMode)?.toUpperCase();
     if (hasInvoiceMode && (!rawInvoiceMode || (rawInvoiceMode !== 'DO' && rawInvoiceMode !== 'ORDER'))) {
-        throw new Error('Mode invoice/nota perusahaan tidak valid');
+        throw new Error('Mode invoice perusahaan tidak valid');
     }
     const hasDefaultTermDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'defaultTermDays');
     const rawDefaultTermDays = parseCompanyWholeNumberInput(invoiceSettings.defaultTermDays);
     if (hasDefaultTermDays && rawDefaultTermDays === null) {
-        throw new Error('Termin default nota tidak valid');
+        throw new Error('Termin default invoice tidak valid');
     }
     const hasDueDateDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'dueDateDays');
     const rawDueDateDays = parseCompanyWholeNumberInput(invoiceSettings.dueDateDays);
     if (hasDueDateDays && rawDueDateDays === null) {
-        throw new Error('Jatuh tempo default nota tidak valid');
+        throw new Error('Jatuh tempo default invoice tidak valid');
     }
     const nextDefaultTermDays = hasDefaultTermDays
         ? rawDefaultTermDays ?? 0
@@ -270,7 +270,7 @@ async function sanitizeCompanyInvoiceSettings(
         ['resiCounter', 'Counter nomor resi tidak valid'],
         ['doCounter', 'Counter nomor surat jalan tidak valid'],
         ['invoiceCounter', 'Counter nomor invoice tidak valid'],
-        ['notaCounter', 'Counter nomor nota tidak valid'],
+        ['notaCounter', 'Counter nomor invoice tidak valid'],
         ['receiptCounter', 'Counter nomor receipt tidak valid'],
         ['boronganCounter', 'Counter nomor borongan tidak valid'],
         ['bonCounter', 'Counter nomor bon tidak valid'],
@@ -321,7 +321,7 @@ async function sanitizeCompanyInvoiceSettings(
             invoicePrefix: normalizeOptionalText(numberingInput.invoicePrefix) || normalizeOptionalText(existingNumbering.invoicePrefix) || 'INV-',
             invoiceCounter: sanitizeCompanyCounter(numberingInput.invoiceCounter, sanitizeCompanyCounter(existingNumbering.invoiceCounter)),
             invoicePeriod: normalizeOptionalText(numberingInput.invoicePeriod) || normalizeOptionalText(existingNumbering.invoicePeriod),
-            notaPrefix: normalizeOptionalText(numberingInput.notaPrefix) || normalizeOptionalText(existingNumbering.notaPrefix) || 'NOTA-',
+            notaPrefix: normalizeOptionalText(numberingInput.notaPrefix) || normalizeOptionalText(existingNumbering.notaPrefix) || 'INV-',
             notaCounter: sanitizeCompanyCounter(numberingInput.notaCounter, sanitizeCompanyCounter(existingNumbering.notaCounter)),
             notaPeriod: normalizeOptionalText(numberingInput.notaPeriod) || normalizeOptionalText(existingNumbering.notaPeriod),
             notaSeriesCode: normalizeOptionalText(numberingInput.notaSeriesCode) || normalizeOptionalText(existingNumbering.notaSeriesCode) || '3',

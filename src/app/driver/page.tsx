@@ -2270,7 +2270,7 @@ export default function DriverPortalPage() {
                                     </button>
                                 </div>
                                 <div className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
-                                    Untuk trip normal, semua muatan aktual turun di {completionDetailState.autoActualDropDraft.locationName || 'tujuan tagihan'}.
+                                            Untuk trip normal, semua muatan aktual turun di {completionDetailState.autoActualDropDraft.locationName || 'tujuan invoice'}.
                                 </div>
                                 {completionDetailState.actualDropMismatchMessage && (
                                     <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
@@ -2288,7 +2288,7 @@ export default function DriverPortalPage() {
                                             <div>
                                                 <div className="driver-completion-item-title">Realisasi Default</div>
                                                 <div className="text-muted text-sm">
-                                                    {completionDetailState.autoActualDropDraft.locationName || 'Tujuan Tagihan'}
+                                            {completionDetailState.autoActualDropDraft.locationName || 'Tujuan Invoice'}
                                                     {completionDetailState.autoActualDropDraft.locationAddress ? ` • ${completionDetailState.autoActualDropDraft.locationAddress}` : ''}
                                                 </div>
                                             </div>

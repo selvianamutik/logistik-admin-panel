@@ -273,7 +273,7 @@ export function buildProfitLossExportRows(
             tanggal: item.date,
             deskripsi:
                 item.sourceType === 'INVOICE_OVERPAID'
-                    ? `Refund kelebihan bayar nota ${item.sourceInvoiceNumber || item.sourceInvoiceRef || '-'}`
+                    ? `Refund kelebihan bayar invoice ${item.sourceInvoiceNumber || item.sourceInvoiceRef || '-'}`
                     : `Refund kelebihan bayar receipt ${item.sourceReceiptNumber || item.sourceReceiptRef || '-'}`,
             jumlah: -parseWholeMoneyLike(item.amount),
         })),

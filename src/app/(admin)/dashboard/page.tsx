@@ -161,7 +161,7 @@ export default function DashboardPage() {
                     <div className="kpi-card">
                         <div className="kpi-icon warning"><FileText size={24} /></div>
                         <div className="kpi-content">
-                            <div className="kpi-label">Nota Belum Lunas</div>
+                            <div className="kpi-label">Invoice Belum Lunas</div>
                             <div className="kpi-value">{data.notaStats.unpaid}</div>
                             {canSeeFinancialTotals && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} piutang aktif</div>}
                         </div>
@@ -279,7 +279,7 @@ export default function DashboardPage() {
                 {/* Recent Notas */}
                 {canViewInvoices && <div className="card">
                     <div className="card-header">
-                        <span className="card-header-title">Nota Terbaru</span>
+                        <span className="card-header-title">Invoice Terbaru</span>
                         <Link href="/invoices" className="btn btn-ghost btn-sm">
                             Lihat Semua <ArrowUpRight size={14} />
                         </Link>
@@ -288,7 +288,7 @@ export default function DashboardPage() {
                         <table>
                             <thead>
                                 <tr>
-                                    <th>No. Nota</th>
+                                    <th>No. Invoice</th>
                                     <th>Customer</th>
                                     <th>Status</th>
                                     <th>Tindak Lanjut</th>
@@ -297,7 +297,7 @@ export default function DashboardPage() {
                             </thead>
                             <tbody>
                                 {data.recentNotas.length === 0 ? (
-                                    <tr><td colSpan={canSeeFinancialTotals ? 5 : 4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
+                                    <tr><td colSpan={canSeeFinancialTotals ? 5 : 4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada invoice</td></tr>
                                 ) : (
                                     data.recentNotas.map(nota => (
                                         <tr key={nota._id}>
@@ -321,7 +321,7 @@ export default function DashboardPage() {
                     <div className="mobile-record-list">
                         {data.recentNotas.length === 0 ? (
                             <div className="mobile-record-card">
-                                <div className="mobile-record-title">Belum ada nota</div>
+                                <div className="mobile-record-title">Belum ada invoice</div>
                             </div>
                         ) : (
                             data.recentNotas.map(nota => (
@@ -338,7 +338,7 @@ export default function DashboardPage() {
                                     {canSeeFinancialTotals && (
                                         <div className="mobile-record-meta">
                                             <div className="mobile-record-kv">
-                                                <span className="mobile-record-label">Tagihan Final</span>
+                                                <span className="mobile-record-label">Invoice Final</span>
                                                 <span className="mobile-record-value">{formatCurrency(getDashboardNotaNetAmount(nota))}</span>
                                             </div>
                                         </div>
@@ -380,7 +380,7 @@ export default function DashboardPage() {
                             <li className="reminder-item">
                                 <div className="reminder-icon danger"><FileText size={16} /></div>
                                 <div>
-                                    <strong>{data.notaStats.unpaid} nota</strong> masih menunggu pelunasan{canSeeFinancialTotals ? ` (${formatCurrency(data.notaStats.totalOutstanding)})` : ''}
+                        <strong>{data.notaStats.unpaid} invoice</strong> masih menunggu pelunasan{canSeeFinancialTotals ? ` (${formatCurrency(data.notaStats.totalOutstanding)})` : ''}
                                 </div>
                             </li>
                         )}

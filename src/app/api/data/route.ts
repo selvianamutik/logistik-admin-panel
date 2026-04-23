@@ -958,7 +958,7 @@ export async function GET(request: Request) {
                 totalItems = result.total;
             } catch (error) {
                 return jsonNoStore(
-                    { error: error instanceof Error ? error.message : 'Query nota tidak valid' },
+                    { error: error instanceof Error ? error.message : 'Query invoice tidak valid' },
                     { status: 400 }
                 );
             }
@@ -1299,7 +1299,7 @@ export async function POST(request: Request) {
 
         if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
             return jsonNoStore(
-                { error: 'Arsip invoice lama sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
+            { error: 'Arsip invoice lama sudah dibekukan. Gunakan Invoice Ongkos untuk workflow invoice aktif.' },
                 { status: 409 }
             );
         }

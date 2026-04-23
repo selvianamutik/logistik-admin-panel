@@ -434,9 +434,9 @@ export default function ReportsPage() {
                     : "var(--color-danger)",
               },
               {
-                label: "Piutang Nota Aktif",
+                label: "Piutang Invoice Aktif",
                 value: formatCurrency(totalNotaOutstanding),
-                note: `Nota terbit ${formatCurrency(totalNotaIssued)}`,
+                note: `Invoice terbit ${formatCurrency(totalNotaIssued)}`,
                 color: "var(--color-warning)",
               },
               {

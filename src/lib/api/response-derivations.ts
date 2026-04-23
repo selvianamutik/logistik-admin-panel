@@ -144,7 +144,7 @@ function buildFallbackActualDropPoint(deliveryOrder: DeliveryOrderResponseSource
         locationName:
             normalizeOptionalText(deliveryOrder.receiverCompany)
             || normalizeOptionalText(deliveryOrder.receiverName)
-            || 'Tujuan Tagihan',
+            || 'Tujuan Invoice',
         locationAddress: normalizeOptionalText(deliveryOrder.receiverAddress),
         qtyKoli: totals.qtyKoli > 0 ? totals.qtyKoli : undefined,
         weightKg: totals.weightKg > 0 ? totals.weightKg : undefined,

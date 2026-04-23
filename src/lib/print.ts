@@ -340,8 +340,6 @@ export function buildFreightNotaPrintDocument(opts: {
     const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
     const uniqueShipmentDates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
     const uniqueShipmentRefs = [...new Set(items.map(item => item.doNumber).filter(Boolean))];
-    const uniqueSjNumbers = [...new Set(items.map(item => item.noSJ).filter(Boolean))];
-    const uniqueDestinations = [...new Set(items.map(item => item.tujuan).filter(Boolean))];
     const shipmentDateLabel =
         uniqueShipmentDates.length === 0
             ? fmtLongPrintDate(nota.issueDate)
@@ -349,8 +347,6 @@ export function buildFreightNotaPrintDocument(opts: {
                 ? fmtLongPrintDate(uniqueShipmentDates[0])
                 : `${fmtPrintDate(uniqueShipmentDates[0])} s/d ${fmtPrintDate(uniqueShipmentDates[uniqueShipmentDates.length - 1])}`;
     const shipmentReferenceLabel = uniqueShipmentRefs.length > 0 ? uniqueShipmentRefs.join(', ') : '-';
-    const shipmentNumberLabel = uniqueSjNumbers.length > 0 ? uniqueSjNumbers.join(', ') : '-';
-    const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
     const shipmentNoteLabel = nota.notes?.trim() || '';
     const customerAddressLabel = nota.customerAddress?.trim() || customer?.address?.trim() || '';
     const customerContactLabel = [nota.customerContactPerson || customer?.contactPerson, nota.customerPhone || customer?.phone].filter(Boolean).join(' | ');
@@ -440,7 +436,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-brand-left">
                     ${logoHtml}
                     <div>
-                        <div class="invoice-brand-title">Nota Ongkos</div>
+                        <div class="invoice-brand-title">Invoice Ongkos</div>
                     </div>
                 </div>
                 <div class="invoice-company-box">
@@ -463,7 +459,7 @@ export function buildFreightNotaPrintDocument(opts: {
                     <table class="invoice-info-table">
                         <tbody>
                             <tr>
-                                <td>Nomor Nota</td>
+                                <td>Nomor Invoice</td>
                                 <td>${escapePrintHtml(displayNumber)}</td>
                             </tr>
                             <tr>
@@ -473,10 +469,6 @@ export function buildFreightNotaPrintDocument(opts: {
                             <tr>
                                 <td>Jatuh Tempo</td>
                                 <td>${escapePrintHtml(dueDateLabel)}</td>
-                            </tr>
-                            <tr>
-                                <td>Dasar Tagihan Final</td>
-                                <td>${escapePrintHtml(billedWeightLabel)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -491,12 +483,6 @@ export function buildFreightNotaPrintDocument(opts: {
                         <td>${escapePrintHtml(shipmentReferenceLabel)}</td>
                         <td>Tanggal Pengiriman</td>
                         <td>${escapePrintHtml(shipmentDateLabel)}</td>
-                    </tr>
-                    <tr>
-                        <td>Nomor Pengiriman</td>
-                        <td>${escapePrintHtml(shipmentNumberLabel)}</td>
-                        <td>Alamat Pengiriman</td>
-                        <td>${escapePrintHtml(shipmentAddressLabel)}</td>
                     </tr>
                     ${shipmentNoteLabel ? `
                         <tr>
@@ -563,7 +549,7 @@ export function buildFreightNotaPrintDocument(opts: {
                             </tr>
                         ` : ''}
                         <tr class="invoice-grand-total-row">
-                            <td>Tagihan Transfer Final</td>
+                            <td>Invoice Transfer Final</td>
                             <td class="r">${escapePrintHtml(fmtCurrency(netAmount))}</td>
                         </tr>
                     </tbody>
@@ -580,7 +566,7 @@ export function buildFreightNotaPrintDocument(opts: {
             <div class="invoice-footer-grid">
                 <div class="invoice-panel">
                     <div class="invoice-section-title compact">Petunjuk Pembayaran</div>
-                    <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor nota <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
+                    <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
                     ${invoiceInstructionAccounts.length > 0 ? `
                         <div class="invoice-payment-subtitle">Pembayaran ditujukan ke:</div>
                         <div class="invoice-payment-bank-list">${invoiceInstructionHtml}</div>
@@ -676,7 +662,7 @@ export function buildFreightNotaPrintDocument(opts: {
     `;
 
     return {
-        title: 'Nota Ongkos Angkut',
+        title: 'Invoice Ongkos Angkut',
         subtitle: displayNumber,
         bodyHtml,
         extraStyles,

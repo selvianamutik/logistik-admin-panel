@@ -374,7 +374,7 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
         next.defaultFreightNotaBillingMode = Object.prototype.hasOwnProperty.call(data, 'defaultFreightNotaBillingMode')
             ? resolveFreightNotaBillingModeInput(
                 data.defaultFreightNotaBillingMode,
-                'Default basis billing nota customer',
+                'Default basis billing invoice customer',
                 { allowEmpty: false }
             )
             : normalizeFreightNotaBillingMode(existing?.defaultFreightNotaBillingMode);

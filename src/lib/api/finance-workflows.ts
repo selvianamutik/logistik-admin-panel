@@ -414,12 +414,12 @@ async function loadFreightNotaDocumentSettings(): Promise<{
 async function loadReceivableSnapshot(invoiceRef: string) {
     const doc = await getDocumentById<ReceivableDoc>(invoiceRef);
     if (!doc) {
-        return { error: NextResponse.json({ error: 'Dokumen tagihan tidak ditemukan' }, { status: 404 }) };
+        return { error: NextResponse.json({ error: 'Dokumen invoice tidak ditemukan' }, { status: 404 }) };
     }
     if (doc._type !== 'freightNota' && doc._type !== 'invoice') {
         return {
             error: NextResponse.json(
-                { error: 'Pembayaran hanya boleh dicatat untuk nota ongkos atau arsip invoice lama' },
+                { error: 'Pembayaran hanya boleh dicatat untuk invoice ongkos atau arsip invoice lama' },
                 { status: 409 }
             ),
         };
@@ -427,7 +427,7 @@ async function loadReceivableSnapshot(invoiceRef: string) {
 
     const grossAmount = Math.max(normalizeNumber(doc.totalAmount || 0), 0);
     if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
-        return { error: NextResponse.json({ error: 'Total tagihan tidak valid' }, { status: 400 }) };
+        return { error: NextResponse.json({ error: 'Total invoice tidak valid' }, { status: 400 }) };
     }
 
     const [allPayments, approvedAdjustments, overpaymentRefunds] = await Promise.all([
@@ -528,7 +528,7 @@ function validateAdjustmentChangeAgainstRefunds(
     if (snapshot.refundedOverpaymentAmount > nextRawOverpaymentAmount) {
         return NextResponse.json(
             {
-                error: 'Potongan tidak bisa dikurangi karena kelebihan bayar dari nota ini sudah dikonfirmasi transfer balik. Batalkan refund terkait dulu jika memang perlu.',
+                error: 'Potongan tidak bisa dikurangi karena kelebihan bayar dari invoice ini sudah dikonfirmasi transfer balik. Batalkan refund terkait dulu jika memang perlu.',
             },
             { status: 409 }
         );
@@ -580,7 +580,7 @@ export async function handlePaymentCreate(
 
     const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
     if (!invoiceRef) {
-        return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Referensi invoice wajib diisi' }, { status: 400 });
     }
 
     const paymentMethod = normalizePaymentMethod(data.method);
@@ -609,7 +609,7 @@ export async function handlePaymentCreate(
 
     if (amount > loaded.remainingAmount) {
         return NextResponse.json(
-            { error: `Pembayaran melebihi sisa tagihan netto (${loaded.remainingAmount})` },
+            { error: `Pembayaran melebihi sisa invoice netto (${loaded.remainingAmount})` },
             { status: 400 }
         );
     }
@@ -653,7 +653,7 @@ export async function handlePaymentCreate(
         paymentRef: paymentId,
         date: paymentDate,
         amount,
-        note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran arsip invoice',
+            note: loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice',
     });
     await updateDocument(invoiceRef, buildReceivablePatch(loaded, nextTotalPaid, loaded.totalAdjustmentAmount), 'invoice');
 
@@ -672,7 +672,7 @@ export async function handlePaymentCreate(
                 bankAcc.accountType === 'CASH'
                     ? 'Pembayaran tunai masuk'
                     : loaded.doc._type === 'freightNota'
-                        ? 'Pembayaran nota masuk'
+            ? 'Pembayaran invoice masuk'
                         : 'Pembayaran arsip invoice masuk',
             balanceAfter: nextBankBalance,
             relatedPaymentRef: paymentId,
@@ -685,7 +685,7 @@ export async function handlePaymentCreate(
         'CREATE',
         'payments',
         paymentId,
-        `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'nota' : 'arsip invoice'} ${invoiceRef}`
+        `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'invoice' : 'arsip invoice'} ${invoiceRef}`
     );
     return NextResponse.json({ data: paymentDoc, id: paymentId });
 }
@@ -726,7 +726,7 @@ export async function handleCustomerReceiptCreate(
             const note = normalizeOptionalText(row.note);
 
             if (!invoiceRef) {
-                throw new Error('Semua alokasi penerimaan wajib memilih nota');
+        throw new Error('Semua alokasi penerimaan wajib memilih invoice');
             }
             if (!Number.isFinite(amount) || amount <= 0) {
                 throw new Error('Nominal alokasi penerimaan tidak valid');
@@ -737,7 +737,7 @@ export async function handleCustomerReceiptCreate(
 
     const uniqueInvoiceRefs = [...new Set(allocations.map(item => item.invoiceRef))];
     if (uniqueInvoiceRefs.length !== allocations.length) {
-        return NextResponse.json({ error: 'Satu nota hanya boleh muncul sekali dalam 1 penerimaan' }, { status: 400 });
+        return NextResponse.json({ error: 'Satu invoice hanya boleh muncul sekali dalam 1 penerimaan' }, { status: 400 });
     }
 
     const totalAllocated = allocations.reduce((sum, item) => sum + item.amount, 0);
@@ -776,7 +776,7 @@ export async function handleCustomerReceiptCreate(
             loadedSnapshots.some(snapshot => snapshot.customerRef && snapshot.customerRef !== explicitCustomerRef)
         ) {
             return NextResponse.json(
-                { error: 'Customer penerimaan tidak cocok dengan nota yang dipilih' },
+                { error: 'Customer penerimaan tidak cocok dengan invoice yang dipilih' },
                 { status: 409 }
             );
         }
@@ -791,7 +791,7 @@ export async function handleCustomerReceiptCreate(
             )
         ) {
             return NextResponse.json(
-                { error: 'Penerimaan customer hanya boleh dialokasikan ke nota customer yang sama' },
+                { error: 'Penerimaan customer hanya boleh dialokasikan ke invoice customer yang sama' },
                 { status: 409 }
             );
         }
@@ -820,7 +820,7 @@ export async function handleCustomerReceiptCreate(
     for (const allocation of allocations) {
         const snapshot = loadedSnapshots.find(item => item.doc._id === allocation.invoiceRef);
         if (!snapshot) {
-            return NextResponse.json({ error: 'Nota alokasi tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Invoice alokasi tidak ditemukan' }, { status: 404 });
         }
         if (allocation.amount > snapshot.remainingAmount) {
             return NextResponse.json(
@@ -921,7 +921,7 @@ export async function handleCustomerReceiptCreate(
         'CREATE',
         'customer-receipts',
         receiptId,
-        `Penerimaan ${receiptNumber} diterima untuk customer ${customerName}${allocations.length > 0 ? `, dialokasikan ke ${allocations.length} nota` : ''}${unappliedAmount > 0 ? `, kredit tersisa ${unappliedAmount}` : ''}`
+        `Penerimaan ${receiptNumber} diterima untuk customer ${customerName}${allocations.length > 0 ? `, dialokasikan ke ${allocations.length} invoice` : ''}${unappliedAmount > 0 ? `, kredit tersisa ${unappliedAmount}` : ''}`
     );
     for (const paymentId of createdPaymentIds) {
         await addAuditLog(
@@ -961,7 +961,7 @@ export async function handleInvoiceAdjustmentCreate(
 ) {
     const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
     if (!invoiceRef) {
-        return NextResponse.json({ error: 'Referensi nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Referensi invoice wajib diisi' }, { status: 400 });
     }
 
     const amount = normalizeCurrencyNumber(data.amount);
@@ -987,7 +987,7 @@ export async function handleInvoiceAdjustmentCreate(
     const nextAdjustmentAmount = snapshot.totalAdjustmentAmount + amount;
     if (nextAdjustmentAmount > snapshot.grossAmount) {
         return NextResponse.json(
-            { error: `Total potongan melebihi nilai bruto tagihan (${snapshot.grossAmount})` },
+                { error: `Total potongan melebihi nilai bruto invoice (${snapshot.grossAmount})` },
             { status: 400 }
         );
     }
@@ -1044,7 +1044,7 @@ export async function handleInvoiceAdjustmentUpdate(
 
     const invoiceRef = normalizeText(adjustment.invoiceRef);
     if (!invoiceRef) {
-        return NextResponse.json({ error: 'Referensi nota pada adjustment tidak valid' }, { status: 409 });
+        return NextResponse.json({ error: 'Referensi invoice pada adjustment tidak valid' }, { status: 409 });
     }
 
     const amount = normalizeCurrencyNumber(data.amount);
@@ -1072,7 +1072,7 @@ export async function handleInvoiceAdjustmentUpdate(
     const nextAdjustmentAmount = Math.max(snapshot.totalAdjustmentAmount - previousAmount + amount, 0);
     if (nextAdjustmentAmount > snapshot.grossAmount) {
         return NextResponse.json(
-            { error: `Total potongan melebihi nilai bruto tagihan (${snapshot.grossAmount})` },
+                { error: `Total potongan melebihi nilai bruto invoice (${snapshot.grossAmount})` },
             { status: 400 }
         );
     }
@@ -1128,7 +1128,7 @@ async function finalizeInvoiceAdjustmentDelete(
 
     const invoiceRef = normalizeText(adjustment.invoiceRef);
     if (!invoiceRef) {
-        return NextResponse.json({ error: 'Referensi nota pada adjustment tidak valid' }, { status: 409 });
+        return NextResponse.json({ error: 'Referensi invoice pada adjustment tidak valid' }, { status: 409 });
     }
 
     const snapshot = await loadReceivableSnapshot(invoiceRef);
@@ -1218,7 +1218,7 @@ export async function handleCustomerOverpaymentRefund(
         return NextResponse.json({ error: 'Referensi penerimaan customer wajib diisi' }, { status: 400 });
     }
     if (sourceType === 'INVOICE_OVERPAID' && !requestedInvoiceRef) {
-        return NextResponse.json({ error: 'Referensi nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Referensi invoice wajib diisi' }, { status: 400 });
     }
 
     const bankAcc = await getLedgerAccount(bankAccountRef);
@@ -1273,7 +1273,7 @@ export async function handleCustomerOverpaymentRefund(
         if ('error' in snapshot) return snapshot.error;
         if (snapshot.doc._type !== 'freightNota') {
             return NextResponse.json(
-                { error: 'Refund kelebihan bayar aktif hanya didukung untuk nota ongkos' },
+                { error: 'Refund kelebihan bayar aktif hanya didukung untuk invoice ongkos' },
                 { status: 409 }
             );
         }
@@ -1343,7 +1343,7 @@ export async function handleCustomerOverpaymentRefund(
         description:
             sourceType === 'RECEIPT_UNAPPLIED'
                 ? `Refund kelebihan bayar customer ${sourceReceiptNumber || sourceReceiptRef || ''}`.trim()
-                : `Refund kelebihan bayar nota ${sourceInvoiceNumber || sourceInvoiceRef || ''}`.trim(),
+        : `Refund kelebihan bayar invoice ${sourceInvoiceNumber || sourceInvoiceRef || ''}`.trim(),
         balanceAfter: nextBalance,
         relatedOverpaymentRefundRef: refundId,
     });
@@ -1368,7 +1368,7 @@ export async function handleCustomerOverpaymentRefund(
     const refundSourceLabel =
         sourceType === 'RECEIPT_UNAPPLIED'
             ? sourceReceiptNumber || sourceReceiptRef || 'penerimaan customer'
-            : sourceInvoiceNumber || sourceInvoiceRef || 'nota';
+        : sourceInvoiceNumber || sourceInvoiceRef || 'invoice';
     await addAuditLog(
         session,
         'CREATE',
@@ -1908,7 +1908,7 @@ export async function handleFreightNotaCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    let billingMode = resolveFreightNotaBillingModeInput(data.billingMode, 'Basis billing nota', {
+    let billingMode = resolveFreightNotaBillingModeInput(data.billingMode, 'Basis billing invoice', {
         defaultMode: 'PER_KG',
         allowEmpty: !Object.prototype.hasOwnProperty.call(data, 'billingMode'),
     });
@@ -1946,28 +1946,28 @@ export async function handleFreightNotaCreate(
                 const tarip = normalizeCurrencyNumber(row.tarip);
                 const collie = parseOptionalStrictNotaRowNumber(
                     row.collie,
-                    'Collie pada baris nota tidak valid',
+                'Collie pada baris invoice tidak valid',
                     { maxFractionDigits: 2 }
                 );
 
                 if (date) {
-                    assertIsoDate(date, 'Tanggal baris nota');
+            assertIsoDate(date, 'Tanggal baris invoice');
                 }
 
                 if ((!date || !noSJ || !tujuan) && !doRef) {
-                    throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
+                throw new Error('Baris invoice wajib punya tanggal, nomor SJ, dan tujuan');
                 }
                 if ((!Number.isFinite(beratKg) || beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP' && !doRef) {
-                    throw new Error('Berat pada baris nota harus lebih besar dari 0');
+                throw new Error('Berat pada baris invoice harus lebih besar dari 0');
                 }
                 if ((!Number.isFinite(volumeM3) || volumeM3 <= 0) && billingMode === 'PER_VOLUME' && !doRef) {
-                    throw new Error('Volume pada baris nota harus lebih besar dari 0');
+                throw new Error('Volume pada baris invoice harus lebih besar dari 0');
                 }
                 if (!Number.isFinite(tarip) || tarip <= 0) {
-                    throw new Error('Tarif nota pada baris harus lebih besar dari 0');
+                throw new Error('Tarif invoice pada baris harus lebih besar dari 0');
                 }
                 if (!Number.isFinite(collie) || collie < 0) {
-                    throw new Error('Collie pada baris nota tidak valid');
+                throw new Error('Collie pada baris invoice tidak valid');
                 }
 
                 return {
@@ -1993,13 +1993,13 @@ export async function handleFreightNotaCreate(
             });
     } catch (error) {
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Baris nota tidak valid' },
+            { error: error instanceof Error ? error.message : 'Baris invoice tidak valid' },
             { status: 400 }
         );
     }
 
     if (rows.length === 0) {
-        return NextResponse.json({ error: 'Minimal 1 baris nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Minimal 1 baris invoice wajib diisi' }, { status: 400 });
     }
 
     const doRefs = rows.flatMap(row => (row.doRef ? [row.doRef] : []));
@@ -2038,7 +2038,7 @@ export async function handleFreightNotaCreate(
         : [];
 
     if (deliveryOrders.length !== uniqueDoRefs.length) {
-        return NextResponse.json({ error: 'Sebagian DO nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Sebagian DO invoice tidak ditemukan' }, { status: 404 });
     }
 
     const orderRefs = [...new Set(
@@ -2106,7 +2106,7 @@ export async function handleFreightNotaCreate(
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
         if (!deliveryOrder) {
-            return NextResponse.json({ error: 'DO nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
         if (deliveryOrder.status !== 'DELIVERED') {
             return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
@@ -2124,7 +2124,7 @@ export async function handleFreightNotaCreate(
             if (!itemSource) {
                 return NextResponse.json(
                     {
-                        error: `Item DO ${itemRef} tidak ditemukan untuk pembuatan nota`,
+                            error: `Item DO ${itemRef} tidak ditemukan untuk pembuatan invoice`,
                     },
                     { status: 404 }
                 );
@@ -2300,7 +2300,7 @@ export async function handleFreightNotaCreate(
             if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size > 0) {
                 return NextResponse.json(
                     {
-                        error: `DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload nota`,
+                        error: `DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload invoice`,
                     },
                     { status: 409 }
                 );
@@ -2313,7 +2313,7 @@ export async function handleFreightNotaCreate(
         if (coverage.fullDoIncluded) {
             return NextResponse.json(
                 {
-                    error: `DO ${deliveryOrder?.doNumber || row.doRef} sudah dimasukkan penuh dalam payload nota`,
+                        error: `DO ${deliveryOrder?.doNumber || row.doRef} sudah dimasukkan penuh dalam payload invoice`,
                 },
                 { status: 409 }
             );
@@ -2322,7 +2322,7 @@ export async function handleFreightNotaCreate(
             if (coverage.deliveryOrderItemRefs.has(itemRef)) {
                 return NextResponse.json(
                     {
-                        error: `Item DO ${itemRef} duplikat dalam payload nota`,
+                        error: `Item DO ${itemRef} duplikat dalam payload invoice`,
                     },
                     { status: 400 }
                 );
@@ -2351,7 +2351,7 @@ export async function handleFreightNotaCreate(
             if (hasActualDropPoints && billableDoItemIds.length !== doItemIds.length) {
                 return NextResponse.json(
                     {
-                        error: `DO ${deliveryOrder?.doNumber || doRef} punya item hold/non-billable. Pilih item SJ billable satu per satu untuk nota.`,
+                    error: `DO ${deliveryOrder?.doNumber || doRef} punya item hold/non-billable. Pilih item SJ billable satu per satu untuk invoice.`,
                     },
                     { status: 409 }
                 );
@@ -2362,7 +2362,7 @@ export async function handleFreightNotaCreate(
         if (missingItemIds.length > 0) {
             return NextResponse.json(
                 {
-                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan billable dalam payload nota`,
+                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan billable dalam payload invoice`,
                 },
                 { status: 409 }
             );
@@ -2372,25 +2372,25 @@ export async function handleFreightNotaCreate(
     for (const row of rows) {
         if (!row.date || !row.noSJ || !row.tujuan) {
             return NextResponse.json(
-                { error: `Baris nota ${row.doNumber || row.noSJ || row.doRef || ''} masih kurang tanggal, nomor SJ, atau tujuan` },
+                { error: `Baris invoice ${row.doNumber || row.noSJ || row.doRef || ''} masih kurang tanggal, nomor SJ, atau tujuan` },
                 { status: 400 }
             );
         }
         if ((!Number.isFinite(row.beratKg) || row.beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP') {
             return NextResponse.json(
-                { error: `Berat pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Berat pada baris invoice ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
         if ((!Number.isFinite(row.volumeM3 || 0) || (row.volumeM3 || 0) <= 0) && billingMode === 'PER_VOLUME') {
             return NextResponse.json(
-                { error: `Volume pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Volume pada baris invoice ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
         if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
             return NextResponse.json(
-                { error: `Tarif nota pada baris ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Tarif invoice pada baris ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
@@ -2403,7 +2403,7 @@ export async function handleFreightNotaCreate(
         const lockedDeliveryOrder = deliveryOrders.find(item => normalizeOptionalText(item.freightNotaRef));
         if (lockedDeliveryOrder) {
             return NextResponse.json(
-                { error: `DO ${lockedDeliveryOrder.doNumber || lockedDeliveryOrder._id} sudah tercantum di nota lain` },
+                { error: `DO ${lockedDeliveryOrder.doNumber || lockedDeliveryOrder._id} sudah tercantum di invoice lain` },
                 { status: 409 }
             );
         }
@@ -2457,7 +2457,7 @@ export async function handleFreightNotaCreate(
                     : [];
             const rowDeliveryOrder = deliveryOrderMap.get(row.doRef);
             if (!rowDeliveryOrder) {
-                return NextResponse.json({ error: 'DO nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
             }
             const rowKeys = buildFreightNotaCoverageRowKeys({
                 deliveryOrder: rowDeliveryOrder,
@@ -2466,7 +2466,7 @@ export async function handleFreightNotaCreate(
             });
             if (rowKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
-                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah tertagih di nota lain` },
+                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah masuk invoice lain` },
                     { status: 409 }
                 );
             }
@@ -2474,7 +2474,7 @@ export async function handleFreightNotaCreate(
                 const existingUsage = existingItemUsage.get(itemRef);
                 if (existingUsage) {
                     return NextResponse.json(
-                        { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah tertagih di nota lain` },
+                    { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },
                         { status: 409 }
                     );
                 }
@@ -2490,7 +2490,7 @@ export async function handleFreightNotaCreate(
 
     if (inferredCustomerRefs.length > 1) {
         return NextResponse.json(
-            { error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per nota.' },
+                    { error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per invoice.' },
             { status: 409 }
         );
     }
@@ -2498,7 +2498,7 @@ export async function handleFreightNotaCreate(
     const inferredCustomerRef = inferredCustomerRefs[0];
     if (resolvedCustomerRef && inferredCustomerRef && resolvedCustomerRef !== inferredCustomerRef) {
         return NextResponse.json(
-            { error: 'Customer nota tidak cocok dengan customer pada DO yang dipilih' },
+                { error: 'Customer invoice tidak cocok dengan customer pada DO yang dipilih' },
             { status: 409 }
         );
     }
@@ -2510,14 +2510,14 @@ export async function handleFreightNotaCreate(
         const mismatchedRow = rows.find(row => row.customerRef && row.customerRef !== resolvedCustomerRef);
         if (mismatchedRow) {
             return NextResponse.json(
-                { error: `SJ ${mismatchedRow.noSJ || '-'} memakai customer tagihan berbeda dari nota ini` },
+                { error: `SJ ${mismatchedRow.noSJ || '-'} memakai customer invoice berbeda dari invoice ini` },
                 { status: 409 }
             );
         }
     }
 
     const issueDate = normalizeText(data.issueDate) || getBusinessDateValue();
-    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal nota', 'Tanggal nota tidak valid');
+    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal invoice', 'Tanggal invoice tidak valid');
     if (issueDateError) {
         return issueDateError;
     }
@@ -2561,11 +2561,11 @@ export async function handleFreightNotaCreate(
             active?: boolean;
         }>(resolvedCustomerRef, 'customer');
         if (!customerDoc) {
-            return NextResponse.json({ error: 'Customer nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
         }
         linkedCustomer = customerDoc;
         if (customerDoc.active === false && !customerDerivedFromDo) {
-            return NextResponse.json({ error: 'Customer nota tidak aktif untuk nota manual' }, { status: 409 });
+        return NextResponse.json({ error: 'Customer invoice tidak aktif untuk invoice manual' }, { status: 409 });
         }
         if (customerDoc?.name) {
             finalCustomerName = customerDoc.name;
@@ -2591,7 +2591,7 @@ export async function handleFreightNotaCreate(
         }
     }
     if (!finalCustomerName) {
-        return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Nama customer invoice wajib diisi' }, { status: 400 });
     }
 
     const totalAmount = normalizeFreightNotaAmount(rows.reduce((sum, row) => sum + row.uangRp, 0));
@@ -2599,7 +2599,7 @@ export async function handleFreightNotaCreate(
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
     const totalVolumeM3 = rows.reduce((sum, row) => sum + (row.volumeM3 || 0), 0);
     if (totalAmount <= 0) {
-        return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
+        return NextResponse.json({ error: 'Total invoice harus lebih besar dari 0' }, { status: 400 });
     }
     let pph23Settings: {
         pph23Enabled: boolean;
@@ -2653,8 +2653,8 @@ export async function handleFreightNotaCreate(
     if (resolvedDueDate) {
         const dueDateError = validateIsoDateOrResponse(
             resolvedDueDate,
-            'Tanggal jatuh tempo nota',
-            'Tanggal jatuh tempo nota tidak valid'
+        'Tanggal jatuh tempo invoice',
+        'Tanggal jatuh tempo invoice tidak valid'
         );
         if (dueDateError) {
             return dueDateError;
@@ -2761,22 +2761,22 @@ export async function handleFreightNotaUpdate(
 ) {
     const notaId = typeof data.id === 'string' ? data.id : '';
     if (!notaId) {
-        return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Invoice tidak valid' }, { status: 400 });
     }
 
     const snapshot = await loadReceivableSnapshot(notaId);
     if ('error' in snapshot) return snapshot.error;
     if (snapshot.doc._type !== 'freightNota') {
-        return NextResponse.json({ error: 'Revisi hanya tersedia untuk nota ongkos angkut' }, { status: 409 });
+        return NextResponse.json({ error: 'Revisi hanya tersedia untuk invoice ongkos angkut' }, { status: 409 });
     }
     if (snapshot.paidBeforeRefund > 0 || snapshot.refundedOverpaymentAmount > 0 || snapshot.totalAdjustmentAmount > 0) {
         return NextResponse.json(
-            { error: 'Nota tidak bisa direvisi setelah ada pembayaran, refund, atau klaim/potongan aktif' },
+            { error: 'Invoice tidak bisa direvisi setelah ada pembayaran, refund, atau klaim/potongan aktif' },
             { status: 409 }
         );
     }
 
-    let billingMode = resolveFreightNotaBillingModeInput(data.billingMode, 'Basis billing nota', {
+    let billingMode = resolveFreightNotaBillingModeInput(data.billingMode, 'Basis billing invoice', {
         defaultMode: normalizeFreightNotaBillingMode(snapshot.doc.billingMode),
         allowEmpty: !Object.prototype.hasOwnProperty.call(data, 'billingMode'),
     });
@@ -2784,7 +2784,7 @@ export async function handleFreightNotaUpdate(
     const customerName = normalizeText(data.customerName) || snapshot.customerName;
     const normalizedNotes = normalizeOptionalText(data.notes);
     const issueDate = normalizeText(data.issueDate) || normalizeOptionalText(snapshot.doc.issueDate) || getBusinessDateValue();
-    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal nota', 'Tanggal nota tidak valid');
+    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal invoice', 'Tanggal invoice tidak valid');
     if (issueDateError) {
         return issueDateError;
     }
@@ -2813,28 +2813,28 @@ export async function handleFreightNotaUpdate(
                         : [];
                 const collie = parseOptionalStrictNotaRowNumber(
                     row.collie,
-                    'Collie pada baris nota tidak valid',
+                'Collie pada baris invoice tidak valid',
                     { maxFractionDigits: 2 }
                 );
                 const beratKg = normalizeNumber(row.beratKg);
                 const volumeM3 = normalizeNumber(row.volumeM3 ?? 0, { maxFractionDigits: 3 });
                 const tarip = normalizeCurrencyNumber(row.tarip);
 
-                assertIsoDate(date, 'Tanggal baris nota');
+            assertIsoDate(date, 'Tanggal baris invoice');
                 if (!normalizeText(row.noSJ) || !normalizeText(row.tujuan)) {
-                    throw new Error('Baris nota wajib punya nomor SJ dan tujuan');
+                throw new Error('Baris invoice wajib punya nomor SJ dan tujuan');
                 }
                 if ((!Number.isFinite(beratKg) || beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP') {
-                    throw new Error('Berat pada baris nota harus lebih besar dari 0');
+                throw new Error('Berat pada baris invoice harus lebih besar dari 0');
                 }
                 if ((!Number.isFinite(volumeM3) || volumeM3 <= 0) && billingMode === 'PER_VOLUME') {
-                    throw new Error('Volume pada baris nota harus lebih besar dari 0');
+                throw new Error('Volume pada baris invoice harus lebih besar dari 0');
                 }
                 if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
-                    throw new Error('Tarif nota pada baris harus lebih besar dari 0');
+                throw new Error('Tarif invoice pada baris harus lebih besar dari 0');
                 }
                 if (!Number.isFinite(collie) || collie < 0) {
-                    throw new Error('Collie pada baris nota tidak valid');
+                throw new Error('Collie pada baris invoice tidak valid');
                 }
 
                 return {
@@ -2860,13 +2860,13 @@ export async function handleFreightNotaUpdate(
             });
     } catch (error) {
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Baris nota tidak valid' },
+            { error: error instanceof Error ? error.message : 'Baris invoice tidak valid' },
             { status: 400 }
         );
     }
 
     if (rows.length === 0) {
-        return NextResponse.json({ error: 'Minimal 1 baris nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Minimal 1 baris invoice wajib diisi' }, { status: 400 });
     }
 
     const doRefs = rows.flatMap(row => (row.doRef ? [row.doRef] : []));
@@ -2887,14 +2887,14 @@ export async function handleFreightNotaUpdate(
         }>[number]>('deliveryOrder', { _id: uniqueDoRefs })
         : [];
     if (deliveryOrders.length !== uniqueDoRefs.length) {
-        return NextResponse.json({ error: 'Sebagian DO nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Sebagian DO invoice tidak ditemukan' }, { status: 404 });
     }
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
         if (!deliveryOrder) {
-            return NextResponse.json({ error: 'DO nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
         if (deliveryOrder.status !== 'DELIVERED') {
             return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
@@ -2948,7 +2948,7 @@ export async function handleFreightNotaUpdate(
         for (const itemRef of rowItemRefs) {
             const itemSource = doItemById.get(itemRef);
             if (!itemSource) {
-                return NextResponse.json({ error: `Item DO ${itemRef} tidak ditemukan untuk revisi nota` }, { status: 404 });
+            return NextResponse.json({ error: `Item DO ${itemRef} tidak ditemukan untuk revisi invoice` }, { status: 404 });
             }
             if (normalizeOptionalText(itemSource.deliveryOrderRef) !== row.doRef) {
                 return NextResponse.json(
@@ -2976,13 +2976,13 @@ export async function handleFreightNotaUpdate(
         };
         if (rowKeys.some(rowKey => coverage.rowKeys.has(rowKey))) {
             return NextResponse.json(
-                { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} duplikat untuk barang yang sama dalam payload nota` },
+                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} duplikat untuk barang yang sama dalam payload invoice` },
                 { status: 409 }
             );
         }
         for (const itemRef of rowItemRefs) {
             if (coverage.deliveryOrderItemRefs.has(itemRef)) {
-                return NextResponse.json({ error: `Item DO ${itemRef} duplikat dalam payload nota` }, { status: 400 });
+            return NextResponse.json({ error: `Item DO ${itemRef} duplikat dalam payload invoice` }, { status: 400 });
             }
         }
         rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
@@ -3049,7 +3049,7 @@ export async function handleFreightNotaUpdate(
                 : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
             if (rowCoverageKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
-                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah tertagih di nota lain` },
+                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah masuk invoice lain` },
                     { status: 409 }
                 );
             }
@@ -3057,7 +3057,7 @@ export async function handleFreightNotaUpdate(
                 const existingUsage = existingItemUsage.get(itemRef);
                 if (existingUsage) {
                     return NextResponse.json(
-                        { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah tertagih di nota lain` },
+                    { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },
                         { status: 409 }
                     );
                 }
@@ -3071,12 +3071,12 @@ export async function handleFreightNotaUpdate(
             .filter((ref): ref is string => Boolean(ref))
     )];
     if (inferredCustomerRefs.length > 1) {
-        return NextResponse.json({ error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per nota.' }, { status: 409 });
+        return NextResponse.json({ error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per invoice.' }, { status: 409 });
     }
     const inferredCustomerRef = inferredCustomerRefs[0];
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && rows.some(row => Boolean(row.doRef)));
     if (resolvedCustomerRef && inferredCustomerRef && resolvedCustomerRef !== inferredCustomerRef) {
-        return NextResponse.json({ error: 'Customer nota tidak cocok dengan customer pada DO yang dipilih' }, { status: 409 });
+        return NextResponse.json({ error: 'Customer invoice tidak cocok dengan customer pada DO yang dipilih' }, { status: 409 });
     }
     if (!resolvedCustomerRef && inferredCustomerRef) {
         resolvedCustomerRef = inferredCustomerRef;
@@ -3085,7 +3085,7 @@ export async function handleFreightNotaUpdate(
         const mismatchedRow = rows.find(row => row.customerRef && row.customerRef !== resolvedCustomerRef);
         if (mismatchedRow) {
             return NextResponse.json(
-                { error: `SJ ${mismatchedRow.noSJ || '-'} memakai customer tagihan berbeda dari nota ini` },
+                { error: `SJ ${mismatchedRow.noSJ || '-'} memakai customer invoice berbeda dari invoice ini` },
                 { status: 409 }
             );
         }
@@ -3130,11 +3130,11 @@ export async function handleFreightNotaUpdate(
             active?: boolean;
         }>(resolvedCustomerRef, 'customer');
         if (!customerDoc) {
-            return NextResponse.json({ error: 'Customer nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
         }
         linkedCustomer = customerDoc;
         if (customerDoc.active === false && !customerDerivedFromDo) {
-            return NextResponse.json({ error: 'Customer nota tidak aktif untuk nota manual' }, { status: 409 });
+        return NextResponse.json({ error: 'Customer invoice tidak aktif untuk invoice manual' }, { status: 409 });
         }
         if (customerDoc?.name) {
             finalCustomerName = customerDoc.name;
@@ -3160,12 +3160,12 @@ export async function handleFreightNotaUpdate(
         }
     }
     if (!finalCustomerName) {
-        return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Nama customer invoice wajib diisi' }, { status: 400 });
     }
 
     let resolvedDueDate = normalizeOptionalText(data.dueDate);
     if (resolvedDueDate) {
-        const dueDateError = validateIsoDateOrResponse(resolvedDueDate, 'Tanggal jatuh tempo nota', 'Tanggal jatuh tempo nota tidak valid');
+    const dueDateError = validateIsoDateOrResponse(resolvedDueDate, 'Tanggal jatuh tempo invoice', 'Tanggal jatuh tempo invoice tidak valid');
         if (dueDateError) {
             return dueDateError;
         }
@@ -3213,7 +3213,7 @@ export async function handleFreightNotaUpdate(
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
     const totalVolumeM3 = rows.reduce((sum, row) => sum + (row.volumeM3 || 0), 0);
     if (totalAmount <= 0) {
-        return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
+        return NextResponse.json({ error: 'Total invoice harus lebih besar dari 0' }, { status: 400 });
     }
     const receivablePatch = buildReceivablePatch(
         {
@@ -3325,17 +3325,17 @@ export async function handleFreightNotaPph23Update(
 ) {
     const notaId = typeof data.id === 'string' ? data.id : '';
     if (!notaId) {
-        return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Invoice tidak valid' }, { status: 400 });
     }
 
     const snapshot = await loadReceivableSnapshot(notaId);
     if ('error' in snapshot) return snapshot.error;
     if (snapshot.doc._type !== 'freightNota') {
-        return NextResponse.json({ error: 'Pengaturan PPh 23 hanya tersedia untuk nota ongkos' }, { status: 409 });
+        return NextResponse.json({ error: 'Pengaturan PPh 23 hanya tersedia untuk invoice ongkos' }, { status: 409 });
     }
     if (snapshot.paidBeforeRefund > 0 || snapshot.refundedOverpaymentAmount > 0) {
         return NextResponse.json(
-            { error: 'Pengaturan PPh 23 tidak bisa diubah setelah nota memiliki pembayaran' },
+                { error: 'Pengaturan PPh 23 tidak bisa diubah setelah invoice memiliki pembayaran' },
             { status: 409 }
         );
     }
@@ -3386,18 +3386,18 @@ export async function handleFreightNotaDelete(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     if (!id) {
-        return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Invoice tidak valid' }, { status: 400 });
     }
 
     const nota = await getDocumentById<{ _id: string; _updatedAt?: string; notaNumber?: string }>(id, 'freightNota');
     if (!nota) {
-        return NextResponse.json({ error: 'Nota tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Invoice tidak ditemukan' }, { status: 404 });
     }
 
     const existingPayments = await listDocumentsByFilter<Array<{ _id: string }>[number]>('payment', { invoiceRef: id });
     if (existingPayments.length > 0) {
         return NextResponse.json(
-            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+                    { error: 'Invoice yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
             { status: 409 }
         );
     }
@@ -3408,7 +3408,7 @@ export async function handleFreightNotaDelete(
     );
     if (existingRefunds.length > 0) {
         return NextResponse.json(
-            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+                    { error: 'Invoice yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
             { status: 409 }
         );
     }
@@ -3419,7 +3419,7 @@ export async function handleFreightNotaDelete(
     );
     if (existingAdjustments.length > 0) {
         return NextResponse.json(
-            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+                    { error: 'Invoice yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
             { status: 409 }
         );
     }
@@ -3450,7 +3450,7 @@ export async function handleFreightNotaDelete(
         const message = error instanceof Error ? error.message : '';
         if (/revision|conflict|document|not found/i.test(message)) {
             return NextResponse.json(
-                { error: 'Nota berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { error: 'Invoice berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                 { status: 409 }
             );
         }

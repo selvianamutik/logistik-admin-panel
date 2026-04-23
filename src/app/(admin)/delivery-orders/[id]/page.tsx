@@ -2238,7 +2238,7 @@ export default function DODetailPage() {
                                                 )}
                                                 {reference.billingCustomerName && (
                                                     <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
-                                                        Tagihan: {reference.billingCustomerName}
+                                                        Invoice: {reference.billingCustomerName}
                                                     </div>
                                                 )}
                                                 {(reference.receiverAddress || reference.receiverName || reference.receiverCompany) && (
@@ -2329,28 +2329,28 @@ export default function DODetailPage() {
                             </div>
                         </div>
                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                            <div className="detail-label">Masuk Tagihan</div>
+                            <div className="detail-label">Masuk Invoice</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(billableCargoSummary)}</div>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Hanya DROP dan EXTRA_DROP yang ikut nota.</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Hanya DROP dan EXTRA_DROP yang ikut invoice.</div>
                         </div>
                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                             <div className="detail-label">Hold / Transit</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(holdCargoSummary)}</div>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang ini tidak ikut tagihan sampai dikirim lagi.</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang ini tidak ikut invoice sampai dikirim lagi.</div>
                         </div>
                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                             <div className="detail-label">Retur</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(returnCargoSummary)}</div>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang retur tidak ikut tagihan DO ini.</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang retur tidak ikut invoice DO ini.</div>
                         </div>
                     </div>
                     <div className="detail-row">
                         <div className="detail-item">
-                            <div className="detail-label">Asal Tagihan</div>
+                            <div className="detail-label">Asal Invoice</div>
                             <div className="detail-value">{doData.pickupAddress || '-'}</div>
                         </div>
                         <div className="detail-item">
-                            <div className="detail-label">Tujuan Tagihan</div>
+                            <div className="detail-label">Tujuan Invoice</div>
                             <div className="detail-value">{doData.receiverAddress || '-'}</div>
                         </div>
                     </div>
@@ -2376,7 +2376,7 @@ export default function DODetailPage() {
                                                         {DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}
                                                     </span>
                                                     <span className={`badge badge-${isDeliveryOrderBillableDropType(point.stopType) ? 'success' : isDeliveryOrderReturnDropType(point.stopType) ? 'danger' : 'warning'}`}>
-                                                        {isDeliveryOrderBillableDropType(point.stopType) ? 'Masuk Tagihan' : isDeliveryOrderReturnDropType(point.stopType) ? 'Retur / Tidak Ditagih' : 'Hold / Tidak Ditagih'}
+                                                        {isDeliveryOrderBillableDropType(point.stopType) ? 'Masuk Invoice' : isDeliveryOrderReturnDropType(point.stopType) ? 'Retur / Tidak Masuk Invoice' : 'Hold / Tidak Masuk Invoice'}
                                                     </span>
                                                 </div>
                                             </div>
@@ -3080,7 +3080,7 @@ export default function DODetailPage() {
                                             </button>
                                         </div>
                                         <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
-                                            Untuk trip normal, semua muatan aktual otomatis turun di <strong>{autoActualDropDraft.locationName || 'Tujuan Tagihan'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
+                                            Untuk trip normal, semua muatan aktual otomatis turun di <strong>{autoActualDropDraft.locationName || 'Tujuan Invoice'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
                                         </div>
                                         {actualDropMismatchMessage && (
                                             <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
@@ -3096,7 +3096,7 @@ export default function DODetailPage() {
                                             <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>
                                                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
-                                                    <div>Lokasi: {autoActualDropDraft.locationName || 'Tujuan Tagihan'}</div>
+                                                    <div>Lokasi: {autoActualDropDraft.locationName || 'Tujuan Invoice'}</div>
                                                     {autoActualDropDraft.locationAddress && <div>Alamat: {autoActualDropDraft.locationAddress}</div>}
                                                     <div>Barang: {getActualDropCargoSummary(autoActualDropDraft)}</div>
                                                     <div>Muatan: {formatCargoSummary({ qtyKoli: actualCargoTotals.qtyKoli, weightKg: actualCargoTotals.weightKg, volumeM3: actualCargoTotals.volumeM3 })}</div>
@@ -3223,7 +3223,7 @@ export default function DODetailPage() {
                                                                     value={item.locationAddress}
                                                                     onChange={e => updateActualDropDraft(item.draftKey, 'locationAddress', e.target.value)}
                                                                     disabled={updatingStatus}
-                                                                    placeholder="Opsional, isi jika berbeda dari tujuan tagihan"
+                                                                    placeholder="Opsional, isi jika berbeda dari tujuan invoice"
                                                                 />
                                                             </div>
                                                             <div className="form-row">
@@ -3474,7 +3474,7 @@ export default function DODetailPage() {
                                                 </div>
                                             )}
                                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Customer Tagihan</label>
+                                                <label className="form-label">Customer Invoice</label>
                                                 <select
                                                     className="form-select"
                                                     value={entry.billingCustomerRef}

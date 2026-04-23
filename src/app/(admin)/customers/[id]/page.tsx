@@ -622,7 +622,7 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
                                 <div className="form-group" style={{ maxWidth: 320 }}>
-                                    <label className="form-label">Default Basis Billing Nota</label>
+                                    <label className="form-label">Default Basis Billing Invoice</label>
                                     <select
                                         className="form-select"
                                         value={form.defaultFreightNotaBillingMode}
@@ -695,7 +695,7 @@ export default function CustomerDetailPage() {
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
                                 </div>
                                 <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Default Basis Billing Nota</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode || 'PER_KG')}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Default Basis Billing Invoice</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode || 'PER_KG')}</div></div>
                                     <div className="detail-item"><div className="detail-label">Default PPh 23</div><div className="detail-value">{buildPph23Label({
                                         enabled: customer.defaultPph23Enabled,
                                         ratePercent: customer.defaultPph23RatePercent,
@@ -718,7 +718,7 @@ export default function CustomerDetailPage() {
                     <div className="card-body">
                         <div className="responsive-stat-grid">
                             {canOpenCustomerOrderHistory && <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{activeOrderCount}</div><div className="kpi-label">Order Aktif</div></div>}
-                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{activeNotaCount}</div><div className="kpi-label">Nota Belum Lunas</div></div>
+                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{activeNotaCount}</div><div className="kpi-label">Invoice Belum Lunas</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-warning-light)' }}><Package size={20} /></div><div className="kpi-value">{customerProducts.length}</div><div className="kpi-label">Master Barang</div></div>
                         </div>
                         {!canOpenCustomerOrderHistory && (
@@ -727,7 +727,7 @@ export default function CustomerDetailPage() {
                             </div>
                         )}
                         <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                            Total nilai nota customer ini saat ini: <strong style={{ color: 'var(--color-gray-800)' }}>{formatCurrency(totalNotaNetAmount)}</strong>
+                            Total nilai invoice customer ini saat ini: <strong style={{ color: 'var(--color-gray-800)' }}>{formatCurrency(totalNotaNetAmount)}</strong>
                         </div>
                     </div>
                 </div>
@@ -1151,12 +1151,12 @@ export default function CustomerDetailPage() {
                 )}
             </CollapsibleCard>
 
-            <CollapsibleCard title={`Nota Ongkos (${notas.length})`}>
+            <CollapsibleCard title={`Invoice Ongkos (${notas.length})`}>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
+                        <thead><tr><th>No. Invoice</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
                         <tbody>
-                            {notas.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr> :
+                            {notas.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada invoice</td></tr> :
                                 notas.map(nota => (
                                     <tr key={nota._id}>
                                         <td><Link href={`/invoices/${nota._id}`} style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
@@ -1171,7 +1171,7 @@ export default function CustomerDetailPage() {
                 <div className="mobile-record-list">
                     {notas.length === 0 ? (
                         <div className="mobile-record-card">
-                            <div className="mobile-record-title">Belum ada nota</div>
+                            <div className="mobile-record-title">Belum ada invoice</div>
                         </div>
                     ) : notas.map(nota => (
                         <div key={nota._id} className="mobile-record-card">
@@ -1184,12 +1184,12 @@ export default function CustomerDetailPage() {
                             </div>
                             <div className="mobile-record-meta">
                                 <div className="mobile-record-kv">
-                                    <span className="mobile-record-label">Tagihan Final</span>
+                                    <span className="mobile-record-label">Invoice Final</span>
                                     <span className="mobile-record-value">{formatCurrency(getReceivableNetAmount(nota))}</span>
                                 </div>
                             </div>
                             <div className="mobile-record-actions">
-                                <Link href={`/invoices/${nota._id}`} className="btn btn-secondary">Lihat Nota</Link>
+                                <Link href={`/invoices/${nota._id}`} className="btn btn-secondary">Lihat Invoice</Link>
                             </div>
                         </div>
                     ))}

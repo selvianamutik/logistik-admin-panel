@@ -294,8 +294,8 @@ export default function BankAccountDetailPage() {
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {account.bankName}
                             {cashAccount && <span className="badge badge-success">Kas Tunai</span>}
-                            {!cashAccount && isDefaultInvoiceAccount && <span className="badge badge-primary">Default Nota</span>}
-                            {!cashAccount && isInvoiceAccount && !isDefaultInvoiceAccount && <span className="badge badge-info">Tampil di Nota</span>}
+                            {!cashAccount && isDefaultInvoiceAccount && <span className="badge badge-primary">Default Invoice</span>}
+                            {!cashAccount && isInvoiceAccount && !isDefaultInvoiceAccount && <span className="badge badge-info">Tampil di Invoice</span>}
                         </h1>
                         <p className="page-subtitle" style={{ fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{account.accountNumber} - a.n. {account.accountHolder}</p>
                     </div>

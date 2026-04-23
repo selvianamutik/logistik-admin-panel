@@ -144,7 +144,7 @@ export function generateDOPdf(
     // Items Table
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('Route Tagihan', margin, y);
+    doc.text('Route Invoice', margin, y);
     y += 5;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
@@ -196,7 +196,7 @@ export function generateDOPdf(
                 }
             });
     } else {
-        doc.text(`Belum ada realisasi drop terpisah. Tagihan mengikuti ${receiverSummary}.`, margin, y, { maxWidth: contentWidth });
+        doc.text(`Belum ada realisasi drop terpisah. Invoice mengikuti ${receiverSummary}.`, margin, y, { maxWidth: contentWidth });
         y += 4.5;
     }
     y += 4;
