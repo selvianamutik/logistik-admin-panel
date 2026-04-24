@@ -2,13 +2,19 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, Package, Receipt, Truck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BarChart3, Package, Receipt, Truck } from 'lucide-react';
 
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import {
+  getMaintenanceMaterialUsageRows,
+  getMonthPrefix,
+  summarizeMaterialUsageRows,
+  summarizePurchasesForMonth,
+} from '@/lib/inventory-material-usage';
 import { formatInventoryQuantity, PURCHASE_STATUS_LABELS } from '@/lib/inventory';
 import { hasPageAccess } from '@/lib/rbac';
-import type { Purchase, Supplier, WarehouseItem } from '@/lib/types';
+import type { Maintenance, Purchase, Supplier, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 import { useApp, useToast } from '../layout';
@@ -39,12 +45,19 @@ const MODULES: InventoryModuleCard[] = [
     description: 'Buat pembelian supplier, terima barang, bayar supplier, dan cek outstanding.',
     icon: Receipt,
   },
+  {
+    href: '/inventory/material-usage',
+    title: 'Laporan Pemakaian Barang',
+    description: 'Lihat barang gudang yang dipakai ke maintenance/unit per periode secara ringkas.',
+    icon: BarChart3,
+  },
 ];
 
 function canOpenModule(role: NonNullable<ReturnType<typeof useApp>['user']>['role'], href: string) {
   if (href === '/suppliers') return hasPageAccess(role, 'suppliers');
   if (href === '/inventory/items') return hasPageAccess(role, 'warehouseItems');
   if (href === '/inventory/purchases') return hasPageAccess(role, 'purchases');
+  if (href === '/inventory/material-usage') return hasPageAccess(role, 'maintenance');
   return false;
 }
 
@@ -55,7 +68,9 @@ export default function InventoryOverviewPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [items, setItems] = useState<WarehouseItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const today = getBusinessDateValue();
+  const currentMonthPrefix = getMonthPrefix(today);
 
   const allowedModules = useMemo(
     () => MODULES.filter((module) => (user ? canOpenModule(user.role, module.href) : false)),
@@ -64,13 +79,14 @@ export default function InventoryOverviewPage() {
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const canOpenItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
+  const canOpenMaintenance = user ? hasPageAccess(user.role, 'maintenance') : false;
 
   useEffect(() => {
     async function loadOverview() {
       if (!user) return;
       setLoading(true);
       try {
-        const [purchaseRows, itemRows, supplierRows] = await Promise.all([
+        const [purchaseRows, itemRows, supplierRows, maintenanceRows] = await Promise.all([
           canOpenPurchases
             ? fetchAllAdminCollectionData<Purchase>('/api/data?entity=purchases&sortField=orderDate&sortDir=desc', 'Gagal memuat pembelian inventory')
             : Promise.resolve([]),
@@ -80,10 +96,14 @@ export default function InventoryOverviewPage() {
           canOpenSuppliers
             ? fetchAllAdminCollectionData<Supplier>('/api/data?entity=suppliers&sortField=supplierCode&sortDir=asc', 'Gagal memuat supplier')
             : Promise.resolve([]),
+          canOpenMaintenance
+            ? fetchAllAdminCollectionData<Maintenance>(`/api/data?entity=maintenances&filter=${encodeURIComponent(JSON.stringify({ status: 'DONE' }))}&sortField=completedDate&sortDir=desc`, 'Gagal memuat pemakaian maintenance')
+            : Promise.resolve([]),
         ]);
         setPurchases(purchaseRows || []);
         setItems(itemRows || []);
         setSuppliers(supplierRows || []);
+        setMaintenances(maintenanceRows || []);
       } catch (error) {
         addToast('error', error instanceof Error ? error.message : 'Gagal memuat ringkasan inventory');
       } finally {
@@ -92,7 +112,7 @@ export default function InventoryOverviewPage() {
     }
 
     void loadOverview();
-  }, [addToast, canOpenItems, canOpenPurchases, canOpenSuppliers, user]);
+  }, [addToast, canOpenItems, canOpenMaintenance, canOpenPurchases, canOpenSuppliers, user]);
 
   const outstandingPurchases = useMemo(
     () => purchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0),
@@ -109,6 +129,18 @@ export default function InventoryOverviewPage() {
   const activeSuppliers = useMemo(
     () => suppliers.filter((supplier) => supplier.active !== false).length,
     [suppliers],
+  );
+  const materialUsageRows = useMemo(
+    () => getMaintenanceMaterialUsageRows(maintenances),
+    [maintenances],
+  );
+  const materialUsageThisMonth = useMemo(
+    () => summarizeMaterialUsageRows(materialUsageRows.filter((row) => row.completedDate.startsWith(currentMonthPrefix))),
+    [currentMonthPrefix, materialUsageRows],
+  );
+  const purchasesThisMonth = useMemo(
+    () => summarizePurchasesForMonth(purchases, currentMonthPrefix),
+    [currentMonthPrefix, purchases],
   );
   const lowStockItems = useMemo(
     () => items.filter((item) => {
@@ -164,20 +196,23 @@ export default function InventoryOverviewPage() {
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Jatuh Tempo Supplier</div>
-            <div className="kpi-value">{overduePurchases.length}</div>
-          </div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-content">
             <div className="kpi-label">Stok Menipis</div>
             <div className="kpi-value">{lowStockItems.length}</div>
+            <div className="kpi-sub">{outOfStockItems.length} item sudah habis</div>
           </div>
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Supplier Aktif</div>
-            <div className="kpi-value">{activeSuppliers}</div>
+            <div className="kpi-label">Pemakaian Material Bulan Ini</div>
+            <div className="kpi-value">{formatCurrency(materialUsageThisMonth.totalValue)}</div>
+            <div className="kpi-sub">{materialUsageThisMonth.rowCount} aktivitas material</div>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-content">
+            <div className="kpi-label">Pembelian Bulan Ini</div>
+            <div className="kpi-value">{formatCurrency(purchasesThisMonth.totalAmount)}</div>
+            <div className="kpi-sub">{purchasesThisMonth.purchaseCount} dokumen pembelian</div>
           </div>
         </div>
       </div>
@@ -280,6 +315,48 @@ export default function InventoryOverviewPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <span className="card-header-title">Snapshot Bulan Ini</span>
+        </div>
+        <div className="card-body">
+          <div className="detail-grid">
+            <div className="detail-row">
+              <span className="detail-label">Periode</span>
+              <span className="detail-value">{currentMonthPrefix || '-'}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Supplier Aktif</span>
+              <span className="detail-value">{activeSuppliers}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Pembelian Jatuh Tempo</span>
+              <span className="detail-value">{overduePurchases.length}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Barang Dipakai</span>
+              <span className="detail-value">{materialUsageThisMonth.uniqueItemCount} item</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Unit Terdampak</span>
+              <span className="detail-value">{materialUsageThisMonth.uniqueVehicleCount} kendaraan</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Tindak Lanjut Owner</span>
+              <span className="detail-value">
+                {canOpenMaintenance ? (
+                  <Link href="/inventory/material-usage" style={{ color: 'var(--color-primary)' }}>
+                    Buka laporan pemakaian barang
+                  </Link>
+                ) : (
+                  'Lihat stok & pembelian'
+                )}
+              </span>
+            </div>
           </div>
         </div>
       </div>

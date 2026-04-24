@@ -19,8 +19,8 @@
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
     "audit:supabase": "node scripts/audit-supabase-migration.mjs",
     "import:supabase": "node scripts/import-supabase.mjs",
-    "reset:supabase": "tsx scripts/reset-supabase.ts",
-    "seed:supabase": "tsx scripts/seed-supabase.ts",
+    "reset:supabase": "npx tsx scripts/reset-supabase.ts",
+    "seed:supabase": "npx tsx scripts/seed-supabase.ts",
     "reseed:supabase": "npm run reset:supabase && npm run seed:supabase"
   },
   "dependencies": {

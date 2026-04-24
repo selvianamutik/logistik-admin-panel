@@ -8,6 +8,7 @@ import AppPagination from '@/components/AppPagination';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
+import { getMonthPrefix } from '@/lib/inventory-material-usage';
 import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -47,10 +48,23 @@ export default function PurchasesPage() {
   const canExportPurchases = user ? hasPermission(user.role, 'purchases', 'export') : false;
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const today = getBusinessDateValue();
+  const currentMonthPrefix = getMonthPrefix(today);
   const openCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases]);
   const overdueCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.dueDate && purchase.dueDate < today && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases, today]);
   const outstandingTotal = useMemo(() => allFilteredPurchases.reduce((sum, purchase) => sum + Number(purchase.outstandingAmount || 0), 0), [allFilteredPurchases]);
   const paidCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.status === 'PAID').length, [allFilteredPurchases]);
+  const purchasesThisMonth = useMemo(
+    () => allFilteredPurchases.filter((purchase) => String(purchase.orderDate || '').startsWith(currentMonthPrefix)),
+    [allFilteredPurchases, currentMonthPrefix],
+  );
+  const purchaseAmountThisMonth = useMemo(
+    () => purchasesThisMonth.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0),
+    [purchasesThisMonth],
+  );
+  const activeSupplierCount = useMemo(
+    () => new Set(allFilteredPurchases.map((purchase) => purchase.supplierRef).filter(Boolean)).size,
+    [allFilteredPurchases],
+  );
 
   const buildQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
     const params = new URLSearchParams({ entity: 'purchases', page: String(targetPage), pageSize: String(targetPageSize), sortField: 'orderDate', sortDir: 'desc' });
@@ -136,7 +150,8 @@ export default function PurchasesPage() {
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatCurrency(outstandingTotal)}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Lunas</div><div className="kpi-value">{openCount}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Jatuh Tempo</div><div className="kpi-value">{overdueCount}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sudah Lunas</div><div className="kpi-value">{paidCount}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pembelian Bulan Ini</div><div className="kpi-value">{formatCurrency(purchaseAmountThisMonth)}</div><div className="kpi-sub">{purchasesThisMonth.length} dokumen</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supplier Terlibat</div><div className="kpi-value">{activeSupplierCount}</div><div className="kpi-sub">{paidCount} pembelian sudah lunas</div></div></div>
       </div>
 
       <div className="table-container">

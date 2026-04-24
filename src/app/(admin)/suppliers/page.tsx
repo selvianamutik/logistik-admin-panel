@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Building2, Edit, FileDown, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
@@ -10,9 +10,12 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
+import { getMonthPrefix } from '@/lib/inventory-material-usage';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPermission } from '@/lib/rbac';
-import type { Supplier } from '@/lib/types';
+import { buildSupplierOwnerSummaryMap } from '@/lib/supplier-purchase-support';
+import type { Purchase, Supplier } from '@/lib/types';
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 import { useApp, useToast } from '../layout';
 
@@ -50,6 +53,7 @@ export default function SuppliersPage() {
     const [filteredTotal, setFilteredTotal] = useState(0);
     const [totalSuppliers, setTotalSuppliers] = useState(0);
     const [inactiveSuppliers, setInactiveSuppliers] = useState(0);
+    const [allPurchases, setAllPurchases] = useState<Purchase[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
     const [saving, setSaving] = useState(false);
@@ -59,6 +63,8 @@ export default function SuppliersPage() {
     const canManage = user ? hasPermission(user.role, 'suppliers', 'create') || hasPermission(user.role, 'suppliers', 'update') : false;
     const canExport = user ? hasPermission(user.role, 'suppliers', 'export') : false;
     const activeSuppliers = totalSuppliers - inactiveSuppliers;
+    const today = getBusinessDateValue();
+    const currentMonthPrefix = getMonthPrefix(today);
 
     const buildQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -78,11 +84,12 @@ export default function SuppliersPage() {
     const loadSuppliers = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, totalRes, inactiveRes, supplierRows] = await Promise.all([
+            const [listRes, totalRes, inactiveRes, supplierRows, purchaseRows] = await Promise.all([
                 fetch(`/api/data?${buildQuery()}`),
                 fetch('/api/data?entity=suppliers&countOnly=1'),
                 fetch(`/api/data?entity=suppliers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
                 fetchAllAdminCollectionData<Supplier>('/api/data?entity=suppliers&pageSize=200', 'Gagal memuat supplier', 200),
+                fetchAllAdminCollectionData<Purchase>('/api/data?entity=purchases&pageSize=200&sortField=orderDate&sortDir=desc', 'Gagal memuat pembelian supplier', 200),
             ]);
             const [listPayload, totalPayload, inactivePayload] = await Promise.all([
                 listRes.json(),
@@ -97,12 +104,34 @@ export default function SuppliersPage() {
             setTotalSuppliers(totalPayload.meta?.total || 0);
             setInactiveSuppliers(inactivePayload.meta?.total || 0);
             setAllSuppliers(supplierRows || []);
+            setAllPurchases(purchaseRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat supplier');
         } finally {
             setLoading(false);
         }
     }, [addToast, buildQuery]);
+
+    const supplierSummaryMap = useMemo(
+        () => buildSupplierOwnerSummaryMap(allPurchases, today),
+        [allPurchases, today],
+    );
+    const suppliersWithOutstanding = useMemo(
+        () => Object.values(supplierSummaryMap).filter((summary) => summary.outstandingAmount > 0).length,
+        [supplierSummaryMap],
+    );
+    const supplierOutstandingTotal = useMemo(
+        () => Object.values(supplierSummaryMap).reduce((sum, summary) => sum + summary.outstandingAmount, 0),
+        [supplierSummaryMap],
+    );
+    const purchasesThisMonth = useMemo(
+        () => allPurchases.filter((purchase) => String(purchase.orderDate || '').startsWith(currentMonthPrefix)),
+        [allPurchases, currentMonthPrefix],
+    );
+    const purchaseAmountThisMonth = useMemo(
+        () => purchasesThisMonth.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0),
+        [purchasesThisMonth],
+    );
 
     useEffect(() => {
         void loadSuppliers();
@@ -281,14 +310,21 @@ export default function SuppliersPage() {
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-content">
-                        <div className="kpi-label">Supplier Nonaktif</div>
-                        <div className="kpi-value">{inactiveSuppliers}</div>
+                        <div className="kpi-label">Supplier Dengan Outstanding</div>
+                        <div className="kpi-value">{suppliersWithOutstanding}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-content">
-                        <div className="kpi-label">Hak Kelola</div>
-                        <div className="kpi-value">{canManage ? 'Aktif' : 'Lihat Saja'}</div>
+                        <div className="kpi-label">Outstanding Supplier</div>
+                        <div className="kpi-value">{formatCurrency(supplierOutstandingTotal)}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-content">
+                        <div className="kpi-label">Pembelian Bulan Ini</div>
+                        <div className="kpi-value">{formatCurrency(purchaseAmountThisMonth)}</div>
+                        <div className="kpi-sub">{purchasesThisMonth.length} dokumen pembelian</div>
                     </div>
                 </div>
             </div>
@@ -315,6 +351,8 @@ export default function SuppliersPage() {
                                 <th>Nama Supplier</th>
                                 <th>PIC</th>
                                 <th>Termin</th>
+                                <th>Outstanding</th>
+                                <th>Pembelian Terakhir</th>
                                 <th>Status</th>
                                 <th>Aksi</th>
                             </tr>
@@ -322,20 +360,22 @@ export default function SuppliersPage() {
                         <tbody>
                             {loading ? [1, 2, 3].map(index => (
                                 <tr key={index}>
-                                    {[1, 2, 3, 4, 5, 6].map(cell => (
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => (
                                         <td key={cell}><div className="skeleton skeleton-text" /></td>
                                     ))}
                                 </tr>
                             )) : filteredTotal === 0 ? (
                                 <tr>
-                                    <td colSpan={6}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <Building2 size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada master supplier</div>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : suppliers.map(supplier => (
+                            ) : suppliers.map(supplier => {
+                                const summary = supplierSummaryMap[supplier._id];
+                                return (
                                 <tr key={supplier._id}>
                                     <td className="font-mono">{supplier.supplierCode}</td>
                                     <td>
@@ -351,6 +391,13 @@ export default function SuppliersPage() {
                                         <div className="text-muted text-xs">{supplier.phone || 'Tanpa telepon'}</div>
                                     </td>
                                     <td>{supplier.defaultTermDays || 0} hari</td>
+                                    <td>
+                                        <div>{formatCurrency(summary?.outstandingAmount || 0)}</div>
+                                        <div className="text-muted text-xs">
+                                            {summary?.purchaseCount ? `${summary.purchaseCount} pembelian` : 'Belum ada pembelian'}
+                                        </div>
+                                    </td>
+                                    <td>{summary?.lastPurchaseDate ? formatDate(summary.lastPurchaseDate) : '-'}</td>
                                     <td>
                                         <span className={`badge ${supplier.active !== false ? 'badge-success' : 'badge-gray'}`}>
                                             {supplier.active !== false ? 'Aktif' : 'Nonaktif'}
@@ -385,7 +432,8 @@ export default function SuppliersPage() {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -420,6 +468,14 @@ export default function SuppliersPage() {
                                     <div className="mobile-record-field">
                                         <span className="mobile-record-label">Termin</span>
                                         <span className="mobile-record-value">{supplier.defaultTermDays || 0} hari</span>
+                                    </div>
+                                    <div className="mobile-record-field">
+                                        <span className="mobile-record-label">Outstanding</span>
+                                        <span className="mobile-record-value">{formatCurrency(supplierSummaryMap[supplier._id]?.outstandingAmount || 0)}</span>
+                                    </div>
+                                    <div className="mobile-record-field">
+                                        <span className="mobile-record-label">Pembelian Terakhir</span>
+                                        <span className="mobile-record-value">{supplierSummaryMap[supplier._id]?.lastPurchaseDate ? formatDate(supplierSummaryMap[supplier._id]?.lastPurchaseDate) : '-'}</span>
                                     </div>
                                     <div className="mobile-record-field mobile-record-field-full">
                                         <span className="mobile-record-label">Kontak</span>

@@ -11,8 +11,13 @@ import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-cli
 import { getBusinessDateValue } from '@/lib/business-date';
 import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
-import type { Purchase, PurchasePayment, Supplier, WarehouseItem } from '@/lib/types';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import {
+  buildSupplierOwnerSummaryMap,
+  buildSupplierRelatedItems,
+  type SupplierRelatedItem,
+} from '@/lib/supplier-purchase-support';
+import type { Purchase, PurchaseItem, PurchasePayment, Supplier, WarehouseItem } from '@/lib/types';
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/utils';
 
 import { useApp, useToast } from '../../layout';
 
@@ -55,7 +60,7 @@ export default function SupplierDetailPage() {
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<PurchasePayment[]>([]);
-  const [items, setItems] = useState<WarehouseItem[]>([]);
+  const [items, setItems] = useState<SupplierRelatedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SupplierDetailTab>('detail');
   const [showEditModal, setShowEditModal] = useState(false);
@@ -76,17 +81,37 @@ export default function SupplierDetailPage() {
         return;
       }
 
-      const [purchaseRows, paymentRows, itemRows] = await Promise.all([
+      const [purchaseRows, paymentRows, defaultItemRows] = await Promise.all([
         fetchAllAdminCollectionData<Purchase>(`/api/data?entity=purchases&filter=${encodeURIComponent(JSON.stringify({ supplierRef: supplierId }))}&sortField=orderDate&sortDir=desc`, 'Gagal memuat pembelian supplier'),
         fetchAllAdminCollectionData<PurchasePayment>(`/api/data?entity=purchase-payments&filter=${encodeURIComponent(JSON.stringify({ supplierRef: supplierId }))}&sortField=date&sortDir=desc`, 'Gagal memuat pembayaran supplier'),
         fetchAllAdminCollectionData<WarehouseItem>(`/api/data?entity=warehouse-items&filter=${encodeURIComponent(JSON.stringify({ defaultSupplierRef: supplierId }))}&sortField=itemCode&sortDir=asc`, 'Gagal memuat barang gudang supplier'),
       ]);
+      const purchaseIds = (purchaseRows || []).map((purchase) => purchase._id).filter(Boolean);
+      const purchaseItemRows = purchaseIds.length > 0
+        ? await fetchAllAdminCollectionData<PurchaseItem>(
+          `/api/data?entity=purchase-items&filter=${encodeURIComponent(JSON.stringify({ purchaseRef: purchaseIds }))}&sortField=itemCode&sortDir=asc`,
+          'Gagal memuat item pembelian supplier'
+        )
+        : [];
+      const purchasedItemRefs = Array.from(new Set((purchaseItemRows || []).map((item) => item.warehouseItemRef).filter(Boolean)));
+      const purchasedWarehouseItems = purchasedItemRefs.length > 0
+        ? await fetchAllAdminCollectionData<WarehouseItem>(
+          `/api/data?entity=warehouse-items&filter=${encodeURIComponent(JSON.stringify({ _id: purchasedItemRefs }))}&sortField=itemCode&sortDir=asc`,
+          'Gagal memuat master barang pembelian supplier'
+        )
+        : [];
+      const warehouseItems = Array.from(
+        new Map(
+          [...(defaultItemRows || []), ...(purchasedWarehouseItems || [])].map((item) => [item._id, item] as const),
+        ).values(),
+      );
+      const relatedItems = buildSupplierRelatedItems(supplierId, purchaseRows || [], purchaseItemRows || [], warehouseItems);
 
       setSupplier(supplierData);
       setForm(createDefaultForm(supplierData));
       setPurchases((purchaseRows || []).sort((a, b) => String(b.orderDate || '').localeCompare(String(a.orderDate || ''))));
       setPayments((paymentRows || []).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))));
-      setItems((itemRows || []).sort((a, b) => String(a.itemCode || '').localeCompare(String(b.itemCode || ''))));
+      setItems(relatedItems);
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supplier');
     } finally {
@@ -115,6 +140,25 @@ export default function SupplierDetailPage() {
   const overdueCount = useMemo(
     () => openPurchases.filter((purchase) => purchase.dueDate && purchase.dueDate < today).length,
     [openPurchases, today]
+  );
+  const supplierSummary = useMemo(
+    () => buildSupplierOwnerSummaryMap(purchases, today)[supplierId] || {
+      purchaseCount: 0,
+      totalAmount: 0,
+      outstandingAmount: 0,
+      paidAmount: 0,
+      overdueCount: 0,
+      lastPurchaseDate: '',
+    },
+    [purchases, supplierId, today],
+  );
+  const purchasedItemCount = useMemo(
+    () => items.filter((item) => item.relationType !== 'DEFAULT').length,
+    [items],
+  );
+  const defaultOnlyItemCount = useMemo(
+    () => items.filter((item) => item.relationType === 'DEFAULT').length,
+    [items],
   );
 
   const openEditModal = () => {
@@ -222,24 +266,28 @@ export default function SupplierDetailPage() {
           <div className="kpi-content">
             <div className="kpi-label">Outstanding</div>
             <div className="kpi-value">{formatCurrency(outstandingTotal)}</div>
+            <div className="kpi-sub">{overdueCount} pembelian jatuh tempo</div>
           </div>
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Pembelian Aktif</div>
-            <div className="kpi-value">{openPurchases.length}</div>
+            <div className="kpi-label">Dokumen Pembelian</div>
+            <div className="kpi-value">{supplierSummary.purchaseCount}</div>
+            <div className="kpi-sub">{formatCurrency(totalPurchaseAmount)} total pembelian</div>
           </div>
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Jatuh Tempo</div>
-            <div className="kpi-value">{overdueCount}</div>
+            <div className="kpi-label">Pembelian Terakhir</div>
+            <div className="kpi-value">{supplierSummary.lastPurchaseDate ? formatDate(supplierSummary.lastPurchaseDate) : '-'}</div>
+            <div className="kpi-sub">{formatCurrency(paidTotal)} sudah dibayar</div>
           </div>
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Barang Default</div>
+            <div className="kpi-label">Barang Terkait</div>
             <div className="kpi-value">{items.length}</div>
+            <div className="kpi-sub">{purchasedItemCount} pernah dibeli, {defaultOnlyItemCount} hanya default</div>
           </div>
         </div>
       </div>
@@ -489,18 +537,23 @@ export default function SupplierDetailPage() {
           {items.length === 0 ? (
             <div className="empty-state">
               <Package size={40} className="empty-state-icon" />
-              <div className="empty-state-title">Belum ada barang gudang yang memakai supplier ini sebagai default</div>
+              <div className="empty-state-title">Belum ada barang default atau riwayat pembelian untuk supplier ini</div>
             </div>
           ) : (
             <>
+              <div className="text-muted" style={{ marginBottom: '1rem', lineHeight: 1.6 }}>
+                Barang di bawah ini diambil dari dua sumber: master barang yang memakai supplier ini sebagai default, dan item yang benar-benar pernah dibeli dari supplier ini.
+              </div>
               <div className="table-wrapper table-desktop-only">
                 <table>
                   <thead>
                     <tr>
                       <th>Kode</th>
                       <th>Barang</th>
+                      <th>Relasi</th>
+                      <th>Qty Diterima</th>
                       <th>Stok</th>
-                      <th>Min. Stok</th>
+                      <th>Pembelian Terakhir</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -515,11 +568,17 @@ export default function SupplierDetailPage() {
                           ) : item.itemCode}
                         </td>
                         <td>{item.name}</td>
-                        <td>{item.currentStockQty || 0} {item.unit}</td>
-                        <td>{item.minStockQty || 0} {item.unit}</td>
                         <td>
-                          <span className={`badge ${item.active !== false ? 'badge-success' : 'badge-gray'}`}>
-                            {item.active !== false ? 'Aktif' : 'Nonaktif'}
+                          <span className={`badge ${item.relationType === 'DEFAULT' ? 'badge-info' : item.relationType === 'PURCHASED' ? 'badge-warning' : 'badge-success'}`}>
+                            {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
+                          </span>
+                        </td>
+                        <td>{formatQuantity(item.totalReceivedQty)} {item.unit}</td>
+                        <td>{formatQuantity(item.currentStockQty)} {item.unit}</td>
+                        <td>{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</td>
+                        <td>
+                          <span className={`badge ${item.active ? 'badge-success' : 'badge-gray'}`}>
+                            {item.active ? 'Aktif' : 'Nonaktif'}
                           </span>
                         </td>
                       </tr>
@@ -541,18 +600,28 @@ export default function SupplierDetailPage() {
                         </div>
                         <div className="mobile-record-subtitle">{item.itemCode}</div>
                       </div>
-                      <span className={`badge ${item.active !== false ? 'badge-success' : 'badge-gray'}`}>
-                        {item.active !== false ? 'Aktif' : 'Nonaktif'}
+                      <span className={`badge ${item.active ? 'badge-success' : 'badge-gray'}`}>
+                        {item.active ? 'Aktif' : 'Nonaktif'}
                       </span>
                     </div>
                     <div className="mobile-record-grid">
                       <div className="mobile-record-field">
-                        <span className="mobile-record-label">Stok</span>
-                        <span className="mobile-record-value">{item.currentStockQty || 0} {item.unit}</span>
+                        <span className="mobile-record-label">Relasi</span>
+                        <span className="mobile-record-value">
+                          {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
+                        </span>
                       </div>
                       <div className="mobile-record-field">
-                        <span className="mobile-record-label">Min. Stok</span>
-                        <span className="mobile-record-value">{item.minStockQty || 0} {item.unit}</span>
+                        <span className="mobile-record-label">Qty Diterima</span>
+                        <span className="mobile-record-value">{formatQuantity(item.totalReceivedQty)} {item.unit}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Stok</span>
+                        <span className="mobile-record-value">{formatQuantity(item.currentStockQty)} {item.unit}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Pembelian Terakhir</span>
+                        <span className="mobile-record-value">{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</span>
                       </div>
                     </div>
                   </div>

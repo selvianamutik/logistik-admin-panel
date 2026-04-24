@@ -18,6 +18,7 @@ import {
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS,
 } from '@/lib/inventory';
+import { getMaintenanceMaterialUsageRows, summarizeItemUsageRows } from '@/lib/inventory-material-usage';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Maintenance, Purchase, PurchaseItem, StockMovement, Supplier, TireEvent, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -224,6 +225,16 @@ export default function WarehouseItemDetailPage() {
     () => new Set(purchaseRows.filter((row) => Number(row.purchase?.outstandingAmount || 0) > 0 && row.purchase?.status !== 'CANCELLED' && row.purchase?.status !== 'PAID').map((row) => row.purchase?._id)).size,
     [purchaseRows]
   );
+  const purchaseSummary = useMemo(() => {
+    const uniquePurchases = new Set(purchaseRows.map((row) => row.purchase?._id).filter(Boolean));
+    const totalReceivedQty = purchaseRows.reduce((sum, row) => sum + Number(row.purchaseItem.receivedQty || 0), 0);
+    const lastPurchaseDate = purchaseRows[0]?.purchase?.orderDate || '';
+    return {
+      purchaseCount: uniquePurchases.size,
+      totalReceivedQty,
+      lastPurchaseDate,
+    };
+  }, [purchaseRows]);
 
   const maintenanceUsageRows = useMemo<MaintenanceUsageRow[]>(() => {
     if (!canOpenMaintenance) return [];
@@ -243,6 +254,20 @@ export default function WarehouseItemDetailPage() {
       });
     });
     return rows.sort((a, b) => `${b.completedDate || ''}-${b.maintenanceId}`.localeCompare(`${a.completedDate || ''}-${a.maintenanceId}`));
+  }, [canOpenMaintenance, itemId, maintenancesById]);
+  const maintenanceUsageSummary = useMemo(() => {
+    if (!canOpenMaintenance) {
+      return {
+        usageCount: 0,
+        totalQuantity: 0,
+        totalValue: 0,
+        lastUsedDate: '',
+      };
+    }
+    const itemUsageRows = getMaintenanceMaterialUsageRows(Object.values(maintenancesById)).filter(
+      (row) => row.warehouseItemRef === itemId,
+    );
+    return summarizeItemUsageRows(itemUsageRows);
   }, [canOpenMaintenance, itemId, maintenancesById]);
 
   const getMovementSourceMeta = (movement: StockMovement) => {
@@ -459,6 +484,66 @@ export default function WarehouseItemDetailPage() {
           )}
         </div>
       </div>
+      )}
+
+      {activeTab === 'detail' && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <span className="card-header-title">Ringkasan Pemakaian & Pembelian</span>
+          </div>
+          <div className="card-body">
+            <div className="detail-grid">
+              <div className="detail-row">
+                <span className="detail-label">Pembelian Tercatat</span>
+                <span className="detail-value">{purchaseSummary.purchaseCount} dokumen</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Qty Diterima</span>
+                <span className="detail-value">
+                  {formatInventoryQuantity(purchaseSummary.totalReceivedQty)} {item.unit}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Pembelian Terakhir</span>
+                <span className="detail-value">
+                  {purchaseSummary.lastPurchaseDate ? formatDate(purchaseSummary.lastPurchaseDate) : '-'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Dipakai di Maintenance</span>
+                <span className="detail-value">{maintenanceUsageSummary.usageCount} aktivitas</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Qty Terpakai</span>
+                <span className="detail-value">
+                  {formatInventoryQuantity(maintenanceUsageSummary.totalQuantity)} {item.unit}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Nilai Material Terpakai</span>
+                <span className="detail-value">{formatCurrency(maintenanceUsageSummary.totalValue)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Dipakai Terakhir</span>
+                <span className="detail-value">
+                  {maintenanceUsageSummary.lastUsedDate ? formatDate(maintenanceUsageSummary.lastUsedDate) : '-'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Arah Owner</span>
+                <span className="detail-value">
+                  {canOpenMaintenance ? (
+                    <Link href={`/inventory/material-usage?itemRef=${encodeURIComponent(item._id)}`} style={{ color: 'var(--color-primary)' }}>
+                      Buka laporan pemakaian barang
+                    </Link>
+                  ) : (
+                    'Pantau stok & pembelian'
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'movements' && canOpenMaintenance && maintenanceUsageRows.length > 0 && (
