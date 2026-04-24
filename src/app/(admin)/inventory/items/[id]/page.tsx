@@ -12,7 +12,13 @@ import {
   formatInventoryQuantity,
   INVENTORY_UNIT_OPTIONS,
   isTireTrackedWarehouseItem,
-  PURCHASE_STATUS_LABELS,
+  getDerivedPurchasePaymentStatus,
+  getDerivedPurchaseReceiptStatus,
+  getPurchasePaymentBadgeClass,
+  getPurchaseReceiptBadgeClass,
+  isCancelledPurchase,
+  PURCHASE_PAYMENT_STATUS_LABELS,
+  PURCHASE_RECEIPT_STATUS_LABELS,
   STOCK_MOVEMENT_SOURCE_LABELS,
   STOCK_MOVEMENT_TYPE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
@@ -34,11 +40,24 @@ function getStockBadge(item: WarehouseItem) {
   return { label: 'Aman', className: 'badge-success' };
 }
 
-function getPurchaseStatusBadge(status?: Purchase['status']) {
-  if (status === 'PAID') return 'badge-success';
-  if (status === 'CANCELLED') return 'badge-gray';
-  if (status === 'PARTIALLY_PAID' || status === 'PARTIALLY_RECEIVED') return 'badge-warning';
-  return 'badge-info';
+function PurchaseLifecycleBadges({ purchase }: { purchase?: Purchase }) {
+  if (!purchase) {
+    return <span className="text-muted">-</span>;
+  }
+
+  const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
+  const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
+
+  return (
+    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'start' }}>
+      <span className={`badge ${getPurchaseReceiptBadgeClass(receiptStatus)}`}>
+        Terima: {PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus]}
+      </span>
+      <span className={`badge ${getPurchasePaymentBadgeClass(paymentStatus)}`}>
+        Bayar: {PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus]}
+      </span>
+    </div>
+  );
 }
 
 type MaintenanceUsageRow = {
@@ -222,7 +241,17 @@ export default function WarehouseItemDetailPage() {
   );
 
   const openPurchaseCount = useMemo(
-    () => new Set(purchaseRows.filter((row) => Number(row.purchase?.outstandingAmount || 0) > 0 && row.purchase?.status !== 'CANCELLED' && row.purchase?.status !== 'PAID').map((row) => row.purchase?._id)).size,
+    () =>
+      new Set(
+        purchaseRows
+          .filter((row) =>
+            row.purchase
+            && !isCancelledPurchase(row.purchase)
+            && getDerivedPurchasePaymentStatus(row.purchase) !== 'PAID'
+            && Number(row.purchase.outstandingAmount || 0) > 0
+          )
+          .map((row) => row.purchase?._id)
+      ).size,
     [purchaseRows]
   );
   const purchaseSummary = useMemo(() => {
@@ -455,7 +484,7 @@ export default function WarehouseItemDetailPage() {
                         <td>{formatInventoryQuantity(purchaseItem.orderedQty)} {purchaseItem.itemUnit || item.unit}</td>
                         <td>{formatInventoryQuantity(purchaseItem.receivedQty || 0)} {purchaseItem.itemUnit || item.unit}</td>
                         <td>{formatCurrency(Number(purchaseItem.unitPrice || 0))}</td>
-                        <td><span className={`badge ${getPurchaseStatusBadge(purchase?.status)}`}>{purchase?.status ? PURCHASE_STATUS_LABELS[purchase.status] : '-'}</span></td>
+                        <td><PurchaseLifecycleBadges purchase={purchase} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -469,7 +498,7 @@ export default function WarehouseItemDetailPage() {
                         <div className="mobile-record-title">{canOpenPurchases && purchase ? <Link href={`/inventory/purchases/${purchase._id}`} style={{ color: 'var(--color-primary)' }}>{purchase.purchaseNumber}</Link> : (purchase?.purchaseNumber || '-')}</div>
                         <div className="mobile-record-subtitle">{purchase?.supplierName || '-'}</div>
                       </div>
-                      <span className={`badge ${getPurchaseStatusBadge(purchase?.status)}`}>{purchase?.status ? PURCHASE_STATUS_LABELS[purchase.status] : '-'}</span>
+                      <PurchaseLifecycleBadges purchase={purchase} />
                     </div>
                     <div className="mobile-record-grid">
                       <div className="mobile-record-field"><span className="mobile-record-label">Tanggal</span><span className="mobile-record-value">{purchase?.orderDate ? formatDate(purchase.orderDate) : '-'}</span></div>

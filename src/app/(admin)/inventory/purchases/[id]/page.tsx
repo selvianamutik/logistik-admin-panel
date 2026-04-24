@@ -12,8 +12,14 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import {
   computePurchaseSummary,
   formatInventoryQuantity,
+  getDerivedPurchasePaymentStatus,
+  getDerivedPurchaseReceiptStatus,
+  getPurchasePaymentBadgeClass,
+  getPurchaseReceiptBadgeClass,
   isTireTrackedWarehouseItem,
-  PURCHASE_STATUS_LABELS,
+  isCancelledPurchase,
+  PURCHASE_PAYMENT_STATUS_LABELS,
+  PURCHASE_RECEIPT_STATUS_LABELS,
   STOCK_MOVEMENT_SOURCE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
 } from '@/lib/inventory';
@@ -27,11 +33,20 @@ import { useApp, useToast } from '../../../layout';
 type ReceiveLineState = { purchaseItemRef: string; itemName: string; remainingQty: number; receivedQty: number; note: string; unit: string };
 type PaymentFormState = { date: string; bankAccountRef: string; amount: number; note: string };
 
-function getStatusBadge(status: Purchase['status']) {
-  if (status === 'PAID') return 'badge-success';
-  if (status === 'CANCELLED') return 'badge-gray';
-  if (status === 'PARTIALLY_PAID' || status === 'PARTIALLY_RECEIVED') return 'badge-warning';
-  return 'badge-info';
+function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
+  const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
+  const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
+
+  return (
+    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'start' }}>
+      <span className={`badge ${getPurchaseReceiptBadgeClass(receiptStatus)}`}>
+        Terima: {PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus]}
+      </span>
+      <span className={`badge ${getPurchasePaymentBadgeClass(paymentStatus)}`}>
+        Bayar: {PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus]}
+      </span>
+    </div>
+  );
 }
 
 function getDateOnly(value: string | undefined | null) {
@@ -93,6 +108,8 @@ export default function PurchaseDetailPage() {
   const canOpenTires = user ? hasPageAccess(user.role, 'tires') : false;
 
   const summary = useMemo(() => purchase ? computePurchaseSummary({ purchase, items, payments }) : null, [items, payments, purchase]);
+  const receiptStatus = useMemo(() => (purchase ? getDerivedPurchaseReceiptStatus(purchase) : null), [purchase]);
+  const paymentStatus = useMemo(() => (purchase ? getDerivedPurchasePaymentStatus(purchase) : null), [purchase]);
   const tiresByPurchaseItemRef = useMemo(() => linkedTires.reduce<Record<string, TireEvent[]>>((acc, tire) => {
     const key = tire.sourcePurchaseItemRef || '';
     if (!key) return acc;
@@ -207,6 +224,8 @@ export default function PurchaseDetailPage() {
       const company = await fetchCompanyProfile().catch(() => null);
       const itemRows = items.map((item) => `<tr><td>${escapeHtml(item.itemCode || '-')}</td><td>${escapeHtml(item.itemName || '-')}</td><td class="c">${escapeHtml(item.itemUnit || '-')}</td><td class="r">${escapeHtml(formatInventoryQuantity(item.orderedQty || 0))}</td><td class="r">${escapeHtml(formatInventoryQuantity(item.receivedQty || 0))}</td><td class="r">${escapeHtml(formatCurrency(Number(item.unitPrice || 0)))}</td><td class="r">${escapeHtml(formatCurrency(Number(item.subtotal || 0)))}</td></tr>`).join('');
       const paymentRows = payments.length === 0 ? '<tr><td colspan="4" class="c">Belum ada pembayaran supplier</td></tr>' : payments.map((payment) => `<tr><td>${escapeHtml(formatDate(payment.date))}</td><td>${escapeHtml(payment.bankAccountName || '-')}</td><td class="r">${escapeHtml(formatCurrency(Number(payment.amount || 0)))}</td><td>${escapeHtml(payment.note || '-')}</td></tr>`).join('');
+      const printReceiptStatus = PURCHASE_RECEIPT_STATUS_LABELS[getDerivedPurchaseReceiptStatus(purchase)];
+      const printPaymentStatus = PURCHASE_PAYMENT_STATUS_LABELS[getDerivedPurchasePaymentStatus(purchase)];
       openBrandedPrint({
         title: 'Pembelian Supplier',
         subtitle: purchase.purchaseNumber,
@@ -216,7 +235,8 @@ export default function PurchaseDetailPage() {
           <div class="stats-row">
             <div class="stat-box"><div class="stat-label">Supplier</div><div class="stat-value">${escapeHtml(purchase.supplierName || '-')}</div></div>
             <div class="stat-box"><div class="stat-label">Tanggal</div><div class="stat-value">${escapeHtml(formatDate(purchase.orderDate))}</div></div>
-            <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value">${escapeHtml(PURCHASE_STATUS_LABELS[purchase.status])}</div></div>
+            <div class="stat-box"><div class="stat-label">Penerimaan</div><div class="stat-value">${escapeHtml(printReceiptStatus)}</div></div>
+            <div class="stat-box"><div class="stat-label">Pembayaran</div><div class="stat-value">${escapeHtml(printPaymentStatus)}</div></div>
           </div>
           <table><tbody>
             <tr><td>Jatuh Tempo</td><td>${escapeHtml(purchase.dueDate ? formatDate(purchase.dueDate) : '-')}</td><td>Total</td><td class="r">${escapeHtml(formatCurrency(Number(summary.totalAmount || 0)))}</td></tr>
@@ -227,7 +247,7 @@ export default function PurchaseDetailPage() {
           <h3 style="margin-top:1.5rem">Pembayaran Supplier</h3>
           <table><thead><tr><th>Tanggal</th><th>Rekening</th><th class="r">Nominal</th><th>Catatan</th></tr></thead><tbody>${paymentRows}</tbody></table>
         `,
-        extraStyles: '.stats-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat-box{border:1px solid #e2e8f0;border-radius:12px;padding:12px}.stat-label{font-size:.75rem;color:#64748b;margin-bottom:4px}.stat-value{font-size:1rem;font-weight:700}',
+        extraStyles: '.stats-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat-box{border:1px solid #e2e8f0;border-radius:12px;padding:12px}.stat-label{font-size:.75rem;color:#64748b;margin-bottom:4px}.stat-value{font-size:1rem;font-weight:700}',
       });
     } finally {
       setPrinting(false);
@@ -243,8 +263,8 @@ export default function PurchaseDetailPage() {
         <div className="page-header-left"><PageBackButton href="/inventory/purchases" /><h1 className="page-title">Detail Pembelian</h1></div>
         <div className="page-actions">
           {canPrint && <button className="btn btn-secondary" onClick={() => void handlePrint()} disabled={printing}><Printer size={18} /> {printing ? 'Menyiapkan...' : 'Print'}</button>}
-          {canPay && purchase.status !== 'CANCELLED' && Number(summary.outstandingAmount || 0) > 0 && <button className="btn btn-secondary" onClick={openPaymentModal}><Wallet size={18} /> Bayar Supplier</button>}
-          {canReceive && purchase.status !== 'CANCELLED' && buildReceiveState(items).length > 0 && <button className="btn btn-primary" onClick={openReceiveModal}><FileDown size={18} /> Terima Barang</button>}
+          {canPay && !isCancelledPurchase(purchase) && Number(summary.outstandingAmount || 0) > 0 && <button className="btn btn-secondary" onClick={openPaymentModal}><Wallet size={18} /> Bayar Supplier</button>}
+          {canReceive && !isCancelledPurchase(purchase) && buildReceiveState(items).length > 0 && <button className="btn btn-primary" onClick={openReceiveModal}><FileDown size={18} /> Terima Barang</button>}
         </div>
       </div>
 
@@ -252,7 +272,15 @@ export default function PurchaseDetailPage() {
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Pembelian</div><div className="kpi-value">{formatCurrency(Number(summary.totalAmount || 0))}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatCurrency(Number(summary.outstandingAmount || 0))}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Qty Diterima</div><div className="kpi-value">{formatInventoryQuantity(summary.totalReceivedQty)}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Status</div><div className="kpi-value"><span className={`badge ${getStatusBadge(purchase.status)}`}>{PURCHASE_STATUS_LABELS[purchase.status]}</span></div></div></div>
+        <div className="kpi-card">
+          <div className="kpi-content">
+            <div className="kpi-label">Status</div>
+            <div className="kpi-value" style={{ fontSize: '1rem' }}>
+              <div className="text-muted" style={{ marginBottom: '0.35rem' }}>Penerimaan: {receiptStatus ? PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus] : '-'}</div>
+              <div className="text-muted">Pembayaran: {paymentStatus ? PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus] : '-'}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -265,6 +293,7 @@ export default function PurchaseDetailPage() {
             <div className="detail-row"><span className="detail-label">Total Dibayar</span><span className="detail-value">{formatCurrency(Number(summary.paidAmount || 0))}</span></div>
             <div className="detail-row"><span className="detail-label">Terima Terakhir</span><span className="detail-value">{purchase.lastReceivedAt ? formatDate(purchase.lastReceivedAt) : '-'}</span></div>
             <div className="detail-row"><span className="detail-label">Bayar Terakhir</span><span className="detail-value">{purchase.lastPaidAt ? formatDate(purchase.lastPaidAt) : '-'}</span></div>
+            <div className="detail-row"><span className="detail-label">Status Operasional</span><span className="detail-value"><PurchaseLifecycleBadges purchase={purchase} /></span></div>
             <div className="detail-row"><span className="detail-label">Catatan</span><span className="detail-value">{purchase.notes || '-'}</span></div>
           </div>
         </div>

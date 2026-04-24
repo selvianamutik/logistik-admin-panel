@@ -9,7 +9,14 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
+import {
+  getDerivedPurchasePaymentStatus,
+  getDerivedPurchaseReceiptStatus,
+  getPurchasePaymentBadgeClass,
+  getPurchaseReceiptBadgeClass,
+  PURCHASE_PAYMENT_STATUS_LABELS,
+  PURCHASE_RECEIPT_STATUS_LABELS,
+} from '@/lib/inventory';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
   buildSupplierOwnerSummaryMap,
@@ -45,11 +52,20 @@ const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => (
   active: supplier?.active !== false,
 });
 
-function getPurchaseStatusBadge(status: Purchase['status']) {
-  if (status === 'PAID') return 'badge-success';
-  if (status === 'CANCELLED') return 'badge-gray';
-  if (status === 'PARTIALLY_PAID' || status === 'PARTIALLY_RECEIVED') return 'badge-warning';
-  return 'badge-info';
+function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
+  const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
+  const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
+
+  return (
+    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'start' }}>
+      <span className={`badge ${getPurchaseReceiptBadgeClass(receiptStatus)}`}>
+        Terima: {PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus]}
+      </span>
+      <span className={`badge ${getPurchasePaymentBadgeClass(paymentStatus)}`}>
+        Bayar: {PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus]}
+      </span>
+    </div>
+  );
 }
 
 export default function SupplierDetailPage() {
@@ -121,26 +137,6 @@ export default function SupplierDetailPage() {
 
   useEffect(() => { void loadSupplierDetail(); }, [loadSupplierDetail]);
 
-  const openPurchases = useMemo(
-    () => purchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0),
-    [purchases]
-  );
-  const outstandingTotal = useMemo(
-    () => purchases.reduce((sum, purchase) => sum + Number(purchase.outstandingAmount || 0), 0),
-    [purchases]
-  );
-  const totalPurchaseAmount = useMemo(
-    () => purchases.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0),
-    [purchases]
-  );
-  const paidTotal = useMemo(
-    () => payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-    [payments]
-  );
-  const overdueCount = useMemo(
-    () => openPurchases.filter((purchase) => purchase.dueDate && purchase.dueDate < today).length,
-    [openPurchases, today]
-  );
   const supplierSummary = useMemo(
     () => buildSupplierOwnerSummaryMap(purchases, today)[supplierId] || {
       purchaseCount: 0,
@@ -152,6 +148,14 @@ export default function SupplierDetailPage() {
     },
     [purchases, supplierId, today],
   );
+
+  const outstandingTotal = supplierSummary.outstandingAmount;
+  const totalPurchaseAmount = supplierSummary.totalAmount;
+  const paidTotal = useMemo(
+    () => payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    [payments]
+  );
+  const overdueCount = supplierSummary.overdueCount;
   const purchasedItemCount = useMemo(
     () => items.filter((item) => item.relationType !== 'DEFAULT').length,
     [items],
@@ -280,7 +284,7 @@ export default function SupplierDetailPage() {
           <div className="kpi-content">
             <div className="kpi-label">Pembelian Terakhir</div>
             <div className="kpi-value">{supplierSummary.lastPurchaseDate ? formatDate(supplierSummary.lastPurchaseDate) : '-'}</div>
-            <div className="kpi-sub">{formatCurrency(paidTotal)} sudah dibayar</div>
+            <div className="kpi-sub">{formatCurrency(supplierSummary.paidAmount)} sudah dibayar</div>
           </div>
         </div>
         <div className="kpi-card">
@@ -385,9 +389,7 @@ export default function SupplierDetailPage() {
                         <td>{formatCurrency(Number(purchase.totalAmount || 0))}</td>
                         <td>{formatCurrency(Number(purchase.outstandingAmount || 0))}</td>
                         <td>
-                          <span className={`badge ${getPurchaseStatusBadge(purchase.status)}`}>
-                            {PURCHASE_STATUS_LABELS[purchase.status]}
-                          </span>
+                          <PurchaseLifecycleBadges purchase={purchase} />
                         </td>
                       </tr>
                     ))}
@@ -408,9 +410,7 @@ export default function SupplierDetailPage() {
                         </div>
                         <div className="mobile-record-subtitle">{formatDate(purchase.orderDate)}</div>
                       </div>
-                      <span className={`badge ${getPurchaseStatusBadge(purchase.status)}`}>
-                        {PURCHASE_STATUS_LABELS[purchase.status]}
-                      </span>
+                      <PurchaseLifecycleBadges purchase={purchase} />
                     </div>
                     <div className="mobile-record-grid">
                       <div className="mobile-record-field">

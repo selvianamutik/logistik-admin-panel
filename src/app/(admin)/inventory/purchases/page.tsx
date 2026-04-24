@@ -9,7 +9,16 @@ import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
 import { getMonthPrefix } from '@/lib/inventory-material-usage';
-import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
+import {
+  getDerivedPurchasePaymentStatus,
+  getDerivedPurchaseReceiptStatus,
+  getPurchasePaymentBadgeClass,
+  getPurchaseReceiptBadgeClass,
+  isCancelledPurchase,
+  PURCHASE_PAYMENT_STATUS_LABELS,
+  PURCHASE_RECEIPT_STATUS_LABELS,
+  PURCHASE_STATUS_LABELS,
+} from '@/lib/inventory';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Purchase, PurchaseStatus } from '@/lib/types';
@@ -26,11 +35,20 @@ const STATUS_OPTIONS: Array<{ value: PurchaseStatus; label: string }> = [
   { value: 'CANCELLED', label: PURCHASE_STATUS_LABELS.CANCELLED },
 ];
 
-function getStatusBadge(status: PurchaseStatus) {
-  if (status === 'PAID') return 'badge-success';
-  if (status === 'CANCELLED') return 'badge-gray';
-  if (status === 'PARTIALLY_PAID' || status === 'PARTIALLY_RECEIVED') return 'badge-warning';
-  return 'badge-info';
+function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
+  const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
+  const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
+
+  return (
+    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'start' }}>
+      <span className={`badge ${getPurchaseReceiptBadgeClass(receiptStatus)}`}>
+        Terima: {PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus]}
+      </span>
+      <span className={`badge ${getPurchasePaymentBadgeClass(paymentStatus)}`}>
+        Bayar: {PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus]}
+      </span>
+    </div>
+  );
 }
 
 export default function PurchasesPage() {
@@ -49,12 +67,39 @@ export default function PurchasesPage() {
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const today = getBusinessDateValue();
   const currentMonthPrefix = getMonthPrefix(today);
-  const openCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases]);
-  const overdueCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.dueDate && purchase.dueDate < today && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases, today]);
-  const outstandingTotal = useMemo(() => allFilteredPurchases.reduce((sum, purchase) => sum + Number(purchase.outstandingAmount || 0), 0), [allFilteredPurchases]);
-  const paidCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.status === 'PAID').length, [allFilteredPurchases]);
+  const openCount = useMemo(
+    () =>
+      allFilteredPurchases.filter((purchase) =>
+        !isCancelledPurchase(purchase)
+        && getDerivedPurchasePaymentStatus(purchase) !== 'PAID'
+        && Number(purchase.outstandingAmount || 0) > 0
+      ).length,
+    [allFilteredPurchases]
+  );
+  const overdueCount = useMemo(
+    () =>
+      allFilteredPurchases.filter((purchase) =>
+        !isCancelledPurchase(purchase)
+        && purchase.dueDate
+        && purchase.dueDate < today
+        && Number(purchase.outstandingAmount || 0) > 0
+      ).length,
+    [allFilteredPurchases, today]
+  );
+  const outstandingTotal = useMemo(
+    () =>
+      allFilteredPurchases.reduce(
+        (sum, purchase) => sum + (isCancelledPurchase(purchase) ? 0 : Number(purchase.outstandingAmount || 0)),
+        0
+      ),
+    [allFilteredPurchases]
+  );
+  const paidCount = useMemo(
+    () => allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase) && getDerivedPurchasePaymentStatus(purchase) === 'PAID').length,
+    [allFilteredPurchases]
+  );
   const purchasesThisMonth = useMemo(
-    () => allFilteredPurchases.filter((purchase) => String(purchase.orderDate || '').startsWith(currentMonthPrefix)),
+    () => allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase) && String(purchase.orderDate || '').startsWith(currentMonthPrefix)),
     [allFilteredPurchases, currentMonthPrefix],
   );
   const purchaseAmountThisMonth = useMemo(
@@ -62,7 +107,7 @@ export default function PurchasesPage() {
     [purchasesThisMonth],
   );
   const activeSupplierCount = useMemo(
-    () => new Set(allFilteredPurchases.map((purchase) => purchase.supplierRef).filter(Boolean)).size,
+    () => new Set(allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase)).map((purchase) => purchase.supplierRef).filter(Boolean)).size,
     [allFilteredPurchases],
   );
 
@@ -112,7 +157,8 @@ export default function PurchasesPage() {
           total: Number(purchase.totalAmount || 0),
           dibayar: Number(purchase.paidAmount || 0),
           outstanding: Number(purchase.outstandingAmount || 0),
-          status: PURCHASE_STATUS_LABELS[purchase.status],
+          statusPenerimaan: PURCHASE_RECEIPT_STATUS_LABELS[getDerivedPurchaseReceiptStatus(purchase)],
+          statusPembayaran: PURCHASE_PAYMENT_STATUS_LABELS[getDerivedPurchasePaymentStatus(purchase)],
           catatan: purchase.notes || '',
         })),
         [
@@ -123,7 +169,8 @@ export default function PurchasesPage() {
           { header: 'Total', key: 'total', width: 18 },
           { header: 'Dibayar', key: 'dibayar', width: 18 },
           { header: 'Outstanding', key: 'outstanding', width: 18 },
-          { header: 'Status', key: 'status', width: 18 },
+          { header: 'Status Penerimaan', key: 'statusPenerimaan', width: 20 },
+          { header: 'Status Pembayaran', key: 'statusPembayaran', width: 20 },
           { header: 'Catatan', key: 'catatan', width: 30 },
         ],
         `pembelian-${today}`,
@@ -198,7 +245,7 @@ export default function PurchasesPage() {
                   <td>{purchase.dueDate ? formatDate(purchase.dueDate) : '-'}</td>
                   <td>{formatCurrency(Number(purchase.totalAmount || 0))}</td>
                   <td>{formatCurrency(Number(purchase.outstandingAmount || 0))}</td>
-                  <td><span className={`badge ${getStatusBadge(purchase.status)}`}>{PURCHASE_STATUS_LABELS[purchase.status]}</span></td>
+                  <td><PurchaseLifecycleBadges purchase={purchase} /></td>
                   <td><Link href={`/inventory/purchases/${purchase._id}`} className="table-action-btn">Lihat Detail</Link></td>
                 </tr>
               ))}
@@ -223,7 +270,7 @@ export default function PurchasesPage() {
                       ) : (purchase.supplierName || '-')}
                     </div>
                   </div>
-                  <span className={`badge ${getStatusBadge(purchase.status)}`}>{PURCHASE_STATUS_LABELS[purchase.status]}</span>
+                  <PurchaseLifecycleBadges purchase={purchase} />
                 </div>
                 <div className="mobile-record-grid">
                   <div className="mobile-record-field"><span className="mobile-record-label">Tanggal</span><span className="mobile-record-value">{formatDate(purchase.orderDate)}</span></div>

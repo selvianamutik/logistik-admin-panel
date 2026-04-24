@@ -473,7 +473,7 @@ export default function AttendancePage() {
                 )
                 : Promise.resolve([] as EmployeeAttendanceRecord[]);
             const [summaryRes, employeeRows, dailyRows, recapRecordRows] = await Promise.all([
-                fetch(`/api/data?entity=employee-attendance-summary&period=${encodeURIComponent(period)}&date=${encodeURIComponent(selectedDate)}${search.trim() ? `&q=${encodeURIComponent(search.trim())}&searchFields=${encodeURIComponent('employeeCode,employeeName,division,position,note,date')}` : ''}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}${employeeFilter ? `&employeeRef=${encodeURIComponent(employeeFilter)}` : ''}`),
+                fetch(`/api/data?entity=employee-attendance-summary&period=${encodeURIComponent(period)}&date=${encodeURIComponent(selectedDate)}${employeeFilter ? `&employeeRef=${encodeURIComponent(employeeFilter)}` : ''}`),
                 employeesPromise,
                 dailyRecordsPromise,
                 recapRowsPromise,
@@ -492,7 +492,7 @@ export default function AttendancePage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildAttendanceQuery, employeeFilter, period, search, selectedDate, statusFilter, viewMode]);
+    }, [addToast, buildAttendanceQuery, employeeFilter, period, selectedDate, viewMode]);
 
     useEffect(() => {
         void loadAttendance();

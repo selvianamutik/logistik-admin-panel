@@ -1,4 +1,4 @@
-import { parseInventoryQuantity, parseWholeMoneyAmount } from './inventory';
+import { isCancelledPurchase, parseInventoryQuantity, parseWholeMoneyAmount } from './inventory';
 import type { Purchase, PurchaseItem, WarehouseItem } from './types';
 
 export type SupplierOwnerSummary = {
@@ -58,12 +58,15 @@ export function buildSupplierOwnerSummaryMap(
     const orderDate = normalizeDateValue(purchase.orderDate);
     const dueDate = normalizeDateValue(purchase.dueDate);
     const outstandingAmount = Math.max(parseWholeMoneyAmount(purchase.outstandingAmount), 0);
+    const isCancelled = isCancelledPurchase(purchase);
 
     current.purchaseCount += 1;
-    current.totalAmount += Math.max(parseWholeMoneyAmount(purchase.totalAmount), 0);
-    current.outstandingAmount += outstandingAmount;
-    current.paidAmount += Math.max(parseWholeMoneyAmount(purchase.paidAmount), 0);
-    if (dueDate && dueDate < today && outstandingAmount > 0) {
+    if (!isCancelled) {
+      current.totalAmount += Math.max(parseWholeMoneyAmount(purchase.totalAmount), 0);
+      current.outstandingAmount += outstandingAmount;
+      current.paidAmount += Math.max(parseWholeMoneyAmount(purchase.paidAmount), 0);
+    }
+    if (!isCancelled && dueDate && dueDate < today && outstandingAmount > 0) {
       current.overdueCount += 1;
     }
     if (orderDate && orderDate > current.lastPurchaseDate) {

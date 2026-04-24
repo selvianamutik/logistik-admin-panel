@@ -30,6 +30,23 @@ export const PURCHASE_STATUS_LABELS: Record<PurchaseStatus, string> = {
   CANCELLED: 'Dibatalkan',
 };
 
+export type PurchaseReceiptStatus = 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
+export type PurchasePaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED';
+
+export const PURCHASE_RECEIPT_STATUS_LABELS: Record<PurchaseReceiptStatus, string> = {
+  ORDERED: 'Belum Diterima',
+  PARTIALLY_RECEIVED: 'Diterima Sebagian',
+  RECEIVED: 'Diterima Lengkap',
+  CANCELLED: 'Dibatalkan',
+};
+
+export const PURCHASE_PAYMENT_STATUS_LABELS: Record<PurchasePaymentStatus, string> = {
+  UNPAID: 'Belum Dibayar',
+  PARTIALLY_PAID: 'Sebagian Dibayar',
+  PAID: 'Lunas',
+  CANCELLED: 'Dibatalkan',
+};
+
 export const STOCK_MOVEMENT_TYPE_LABELS: Record<StockMovementType, string> = {
   IN: 'Stok Masuk',
   OUT: 'Stok Keluar',
@@ -109,19 +126,86 @@ export function computePurchaseStatus(params: {
   const fullyPaid = params.totalAmount > 0 && params.paidAmount >= params.totalAmount;
   const partiallyPaid = params.paidAmount > 0 && params.paidAmount < params.totalAmount;
 
+  if (fullyReceived) {
+    if (fullyPaid) {
+      return 'PAID' satisfies PurchaseStatus;
+    }
+    if (partiallyPaid) {
+      return 'PARTIALLY_PAID' satisfies PurchaseStatus;
+    }
+    return 'RECEIVED' satisfies PurchaseStatus;
+  }
+  if (partiallyReceived) {
+    return 'PARTIALLY_RECEIVED' satisfies PurchaseStatus;
+  }
   if (fullyPaid) {
     return 'PAID' satisfies PurchaseStatus;
   }
   if (partiallyPaid) {
     return 'PARTIALLY_PAID' satisfies PurchaseStatus;
   }
-  if (fullyReceived) {
-    return 'RECEIVED' satisfies PurchaseStatus;
-  }
-  if (partiallyReceived) {
-    return 'PARTIALLY_RECEIVED' satisfies PurchaseStatus;
-  }
   return 'ORDERED' satisfies PurchaseStatus;
+}
+
+type PurchaseStateSource = Pick<
+  Purchase,
+  'status' | 'totalOrderedQty' | 'totalReceivedQty' | 'totalAmount' | 'paidAmount' | 'outstandingAmount'
+>;
+
+export function isCancelledPurchase(purchase: Pick<Purchase, 'status'> | null | undefined) {
+  return purchase?.status === 'CANCELLED';
+}
+
+export function getDerivedPurchaseReceiptStatus(purchase: PurchaseStateSource): PurchaseReceiptStatus {
+  if (isCancelledPurchase(purchase)) {
+    return 'CANCELLED';
+  }
+
+  const totalOrderedQty = Math.max(parseInventoryQuantity(purchase.totalOrderedQty), 0);
+  const totalReceivedQty = Math.max(parseInventoryQuantity(purchase.totalReceivedQty), 0);
+
+  if (totalReceivedQty <= 0) {
+    return 'ORDERED';
+  }
+  if (totalOrderedQty <= 0 || totalReceivedQty >= totalOrderedQty) {
+    return 'RECEIVED';
+  }
+  return 'PARTIALLY_RECEIVED';
+}
+
+export function getDerivedPurchasePaymentStatus(purchase: PurchaseStateSource): PurchasePaymentStatus {
+  if (isCancelledPurchase(purchase)) {
+    return 'CANCELLED';
+  }
+
+  const totalAmount = Math.max(parseWholeMoneyAmount(purchase.totalAmount), 0);
+  const paidAmount = Math.max(parseWholeMoneyAmount(purchase.paidAmount), 0);
+  const outstandingAmount =
+    purchase.outstandingAmount === undefined
+      ? Math.max(totalAmount - paidAmount, 0)
+      : Math.max(parseWholeMoneyAmount(purchase.outstandingAmount), 0);
+
+  if (totalAmount > 0 && outstandingAmount <= 0) {
+    return 'PAID';
+  }
+  if (paidAmount > 0) {
+    return 'PARTIALLY_PAID';
+  }
+  return 'UNPAID';
+}
+
+export function getPurchaseReceiptBadgeClass(status: PurchaseReceiptStatus) {
+  if (status === 'RECEIVED') return 'badge-success';
+  if (status === 'PARTIALLY_RECEIVED') return 'badge-warning';
+  if (status === 'CANCELLED') return 'badge-gray';
+  return 'badge-info';
+}
+
+export function getPurchasePaymentBadgeClass(status: PurchasePaymentStatus) {
+  if (status === 'PAID') return 'badge-success';
+  if (status === 'PARTIALLY_PAID') return 'badge-warning';
+  if (status === 'CANCELLED') return 'badge-gray';
+  return 'badge-info';
 }
 
 export function computePurchaseSummary(input: {

@@ -12,7 +12,16 @@ import {
   summarizeMaterialUsageRows,
   summarizePurchasesForMonth,
 } from '@/lib/inventory-material-usage';
-import { formatInventoryQuantity, PURCHASE_STATUS_LABELS } from '@/lib/inventory';
+import {
+  formatInventoryQuantity,
+  getDerivedPurchasePaymentStatus,
+  getDerivedPurchaseReceiptStatus,
+  getPurchasePaymentBadgeClass,
+  getPurchaseReceiptBadgeClass,
+  isCancelledPurchase,
+  PURCHASE_PAYMENT_STATUS_LABELS,
+  PURCHASE_RECEIPT_STATUS_LABELS,
+} from '@/lib/inventory';
 import { hasPageAccess } from '@/lib/rbac';
 import type { Maintenance, Purchase, Supplier, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -59,6 +68,22 @@ function canOpenModule(role: NonNullable<ReturnType<typeof useApp>['user']>['rol
   if (href === '/inventory/purchases') return hasPageAccess(role, 'purchases');
   if (href === '/inventory/material-usage') return hasPageAccess(role, 'maintenance');
   return false;
+}
+
+function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
+  const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
+  const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
+
+  return (
+    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'start' }}>
+      <span className={`badge ${getPurchaseReceiptBadgeClass(receiptStatus)}`}>
+        Terima: {PURCHASE_RECEIPT_STATUS_LABELS[receiptStatus]}
+      </span>
+      <span className={`badge ${getPurchasePaymentBadgeClass(paymentStatus)}`}>
+        Bayar: {PURCHASE_PAYMENT_STATUS_LABELS[paymentStatus]}
+      </span>
+    </div>
+  );
 }
 
 export default function InventoryOverviewPage() {
@@ -115,7 +140,12 @@ export default function InventoryOverviewPage() {
   }, [addToast, canOpenItems, canOpenMaintenance, canOpenPurchases, canOpenSuppliers, user]);
 
   const outstandingPurchases = useMemo(
-    () => purchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0),
+    () =>
+      purchases.filter((purchase) =>
+        !isCancelledPurchase(purchase)
+        && getDerivedPurchasePaymentStatus(purchase) !== 'PAID'
+        && Number(purchase.outstandingAmount || 0) > 0
+      ),
     [purchases],
   );
   const overduePurchases = useMemo(
@@ -251,7 +281,7 @@ export default function InventoryOverviewPage() {
                           ) : (purchase.supplierName || '-')}
                         </div>
                       </div>
-                      <span className="badge badge-warning">{PURCHASE_STATUS_LABELS[purchase.status]}</span>
+                      <PurchaseLifecycleBadges purchase={purchase} />
                     </div>
                     <div className="mobile-record-grid">
                       <div className="mobile-record-field">

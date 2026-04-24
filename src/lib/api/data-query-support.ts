@@ -440,12 +440,11 @@ export async function getEmployeeAttendanceSummary(params?: {
     const period = normalizeEmployeeAttendancePeriod(params?.period);
     const anchorDate = params?.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : getBusinessDateValue();
     const range = getEmployeeAttendancePeriodRange(period, anchorDate);
+    // KPI ringkasan harus mengikuti periode (dan opsi karyawan tertentu), bukan filter tabel seperti status/search.
+    // Kalau tidak, "tercatat" dan "belum tercatat" akan ikut berubah hanya karena user sedang memfilter row.
     const records = filterEmployeeAttendanceRecords(attendanceRows, {
-        search: params?.search,
-        searchFields: params?.searchFields,
         period,
         date: anchorDate,
-        status: params?.status,
         employeeRef: params?.employeeRef,
     });
     const activeEmployees = employees.filter(employee => employee.active !== false);

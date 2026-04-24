@@ -168,7 +168,7 @@ export default function DriverVouchersPage() {
                                                     <th class="r">Total Diberikan</th>
                                                     <th class="r">Biaya Lain-lain</th>
                                                     <th class="r">Upah Borongan</th>
-                                                    <th class="r">Total Hak Trip</th>
+                                                    <th class="r">Total Klaim Trip</th>
                                                     <th class="r">Sisa Bon Operasional</th>
                                                     <th class="r">Net Settlement Akhir</th>
                                                     <th>Status</th>
@@ -282,7 +282,7 @@ export default function DriverVouchersPage() {
                                 <th>Total Diberikan</th>
                                 <th>Biaya Lain-lain</th>
                                 <th>Upah Borongan</th>
-                                <th>Total Hak Trip</th>
+                                <th>Total Klaim Trip</th>
                                 <th>Sisa Bon Operasional</th>
                                 <th>Net Settlement Akhir</th>
                                 <th>Status</th>
@@ -448,7 +448,7 @@ export default function DriverVouchersPage() {
                                             <span className="mobile-record-value">{formatCurrency(driverFeeAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Total Hak Trip</span>
+                                            <span className="mobile-record-label">Total Klaim Trip</span>
                                             <span className="mobile-record-value">{formatCurrency(totalClaimAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">

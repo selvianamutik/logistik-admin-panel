@@ -1,4 +1,4 @@
-import { parseInventoryQuantity, parseWholeMoneyAmount } from './inventory';
+import { isCancelledPurchase, parseInventoryQuantity, parseWholeMoneyAmount } from './inventory';
 import type { Maintenance, Purchase } from './types';
 
 export type MaterialUsageRow = {
@@ -98,7 +98,9 @@ export function summarizeItemUsageRows(rows: MaterialUsageRow[]) {
 }
 
 export function summarizePurchasesForMonth(purchases: Purchase[], monthPrefix: string) {
-  const monthRows = purchases.filter((purchase) => normalizeDateValue(purchase.orderDate).startsWith(monthPrefix));
+  const monthRows = purchases.filter(
+    (purchase) => !isCancelledPurchase(purchase) && normalizeDateValue(purchase.orderDate).startsWith(monthPrefix)
+  );
   return {
     purchaseCount: monthRows.length,
     totalAmount: monthRows.reduce((sum, purchase) => sum + Math.max(parseWholeMoneyAmount(purchase.totalAmount), 0), 0),
