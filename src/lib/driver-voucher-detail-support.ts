@@ -154,7 +154,6 @@ export function buildDriverVoucherPrintHtml(params: {
         operationalSpent,
         operationalBalance,
         driverFeeAmount,
-        totalClaimAmount,
         initialCashGiven,
         totalIssuedAmount,
         topUpAmount,
@@ -305,24 +304,37 @@ export function buildDriverVoucherPrintHtml(params: {
         <div style="margin-top:16px">
             <div class="section-title">Ringkasan Settlement</div>
             <table>
+            <thead>
+                <tr><th class="c" style="width:64px">Simbol</th><th>Keterangan</th><th class="r">Jumlah</th></tr>
+            </thead>
             <tbody>
-                <tr><td class="b">Bon Pertama</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
-                <tr><td class="b">Bon Tambahan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
-                <tr style="border-top:2px solid #1e293b"><td class="b">Total Uang Jalan Diberikan</td><td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td></tr>
-                <tr><td>Dikurangi Biaya Lain-lain Aktual</td><td class="r">(${escapePrintHtml(formatCurrency(operationalSpent))})</td></tr>
-                <tr><td>Sisa Bon Operasional</td><td class="r">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
-                <tr><td>Dikurangi Upah Borongan</td><td class="r">(${escapePrintHtml(formatCurrency(driverFeeAmount))})</td></tr>
-                <tr><td>Total Dipertanggungjawabkan + Upah</td><td class="r">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td></tr>
+                <tr>
+                    <td class="c b">=</td>
+                    <td class="b">Total Uang Jalan Diberikan</td>
+                    <td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td>
+                </tr>
+                <tr>
+                    <td class="c b">-</td>
+                    <td>Biaya Lain-lain Aktual</td>
+                    <td class="r">${escapePrintHtml(formatCurrency(operationalSpent))}</td>
+                </tr>
+                <tr>
+                    <td class="c b">=</td>
+                    <td class="b">Sisa Bon Operasional</td>
+                    <td class="r b">${escapePrintHtml(formatCurrency(operationalBalance))}</td>
+                </tr>
+                <tr>
+                    <td class="c b">-</td>
+                    <td>Upah Borongan</td>
+                    <td class="r">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td>
+                </tr>
                 <tr style="border-top:2px solid #1e293b">
+                    <td class="c b">=</td>
                     <td class="b">${escapePrintHtml(settlementDirectionLabel)}</td>
                     <td class="r b" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td>
                 </tr>
             </tbody>
             </table>
-        </div>
-        <div style="margin-top:40px;display:flex;justify-content:space-between">
-            <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Supir,</div><div style="border-top:1px solid #333;padding-top:4px">(${escapePrintHtml(voucher.driverName || '________________')})</div></div>
-            <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Mengetahui,</div><div style="border-top:1px solid #333;padding-top:4px">(________________)</div></div>
         </div>
     `;
 }

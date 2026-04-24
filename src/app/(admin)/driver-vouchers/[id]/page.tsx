@@ -393,6 +393,7 @@ export default function DriverVoucherDetailPage() {
                 company,
                 targetWindow: printWindow,
                 bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
+                showFooter: false,
             });
         } catch {
             try {
