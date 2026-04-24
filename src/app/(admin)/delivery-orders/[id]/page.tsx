@@ -1871,6 +1871,7 @@ export default function DODetailPage() {
     const baseTripFee = doData.baseTaripBorongan ?? doData.taripBorongan ?? 0;
     const overtonaseDriverAmount = doData.overtonaseDriverAmount || 0;
     const totalTripFee = doData.taripBorongan || 0;
+    const hasFinalActualWeight = (doData.actualTotalWeightKg || 0) > 0;
     const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
     const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
     const effectiveOvertonaseLimitKg = doData.vehicleCapacityKg || doData.serviceMaxPayloadKg || 0;
@@ -2475,18 +2476,22 @@ export default function DODetailPage() {
                                         {baseTripFee ? formatCurrency(baseTripFee) : 'Belum diisi'}
                                     </div>
                                 </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Tambahan Overtonase</div>
-                                    <div className="detail-value font-semibold" style={{ color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
-                                        {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : '-'}
+                                {hasFinalActualWeight && (
+                                    <div className="detail-item">
+                                        <div className="detail-label">Tambahan Overtonase</div>
+                                        <div className="detail-value font-semibold" style={{ color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
+                                            {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : formatCurrency(0)}
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Total Upah Trip Final</div>
-                                    <div className="detail-value font-semibold" style={{ color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                        {totalTripFee ? formatCurrency(totalTripFee) : 'Belum diisi'}
+                                )}
+                                {hasFinalActualWeight && (
+                                    <div className="detail-item">
+                                        <div className="detail-label">Total Upah Trip Final</div>
+                                        <div className="detail-value font-semibold" style={{ color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                                            {totalTripFee ? formatCurrency(totalTripFee) : 'Belum diisi'}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                             <div className="detail-row" style={{ marginTop: '0.75rem' }}>
                                 <div className="detail-item">
@@ -2505,34 +2510,7 @@ export default function DODetailPage() {
                                 <div className="detail-item">
                                     <div className="detail-label">Berat Aktual Final</div>
                                     <div className="detail-value">
-                                        {doData.actualTotalWeightKg ? `${doData.actualTotalWeightKg} kg` : 'Belum difinalkan'}
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Acuan Batas Overtonase</div>
-                                    <div className="detail-value">
-                                        {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
-                                    </div>
-                                    <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? effectiveOvertonaseLimitSource : ''}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Referensi Layanan</div>
-                                    <div className="detail-value">
-                                        {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
-                                <div className="detail-item">
-                                    <div className="detail-label">Berat Overtonase</div>
-                                    <div className="detail-value">
-                                        {hasOvertonase ? `${doData.overtonaseWeightKg} kg` : '-'}
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Rate Tambahan / kg</div>
-                                    <div className="detail-value">
-                                        {doData.overtonaseDriverRatePerKg ? formatCurrency(doData.overtonaseDriverRatePerKg) : '-'}
+                                        {hasFinalActualWeight ? `${doData.actualTotalWeightKg} kg` : 'Belum difinalkan'}
                                     </div>
                                 </div>
                                 <div className="detail-item">
@@ -2554,6 +2532,39 @@ export default function DODetailPage() {
                                     </div>
                                 </div>
                             </div>
+                            {hasFinalActualWeight ? (
+                                <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Acuan Batas Overtonase</div>
+                                        <div className="detail-value">
+                                            {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
+                                        </div>
+                                        <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? effectiveOvertonaseLimitSource : ''}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Referensi Layanan</div>
+                                        <div className="detail-value">
+                                            {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
+                                        </div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Berat Overtonase</div>
+                                        <div className="detail-value">
+                                            {hasOvertonase ? `${doData.overtonaseWeightKg} kg` : '-'}
+                                        </div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Rate Tambahan / kg</div>
+                                        <div className="detail-value">
+                                            {doData.overtonaseDriverRatePerKg ? formatCurrency(doData.overtonaseDriverRatePerKg) : '-'}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
+                                    Referensi overtonase baru muncul setelah berat aktual final difinalkan. Saat itu sistem akan menilai apakah muatan melewati kapasitas kendaraan atau referensi layanan.
+                                </div>
+                            )}
                             {exceedsVehicleCapacity && (
                                 <div className="text-danger text-sm" style={{ marginTop: '0.75rem' }}>
                                     Berat aktual final melebihi kapasitas kendaraan sebesar {doData.vehicleCapacityExceededKg} kg. Ini bukan sekadar overtonase tarif, tapi sudah melewati batas armada dan perlu evaluasi operasional.

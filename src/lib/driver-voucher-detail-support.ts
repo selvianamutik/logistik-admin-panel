@@ -1,5 +1,5 @@
 import { escapePrintHtml } from './print';
-import type { DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
+import type { DeliveryOrder, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
 import { getBusinessDateValue } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
@@ -145,11 +145,12 @@ export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, i
 
 export function buildDriverVoucherPrintHtml(params: {
     voucher: DriverVoucher;
+    deliveryOrder?: DeliveryOrder | null;
     items: DriverVoucherItem[];
     disbursements: DriverVoucherDisbursement[];
     summary: ReturnType<typeof buildDriverVoucherDetailSummary>;
 }) {
-    const { voucher, items, disbursements, summary } = params;
+    const { voucher, deliveryOrder, items, disbursements, summary } = params;
     const {
         operationalSpent,
         operationalBalance,
@@ -168,6 +169,13 @@ export function buildDriverVoucherPrintHtml(params: {
             : 'Nihil';
     const settlementColor = balance < 0 ? '#dc2626' : balance > 0 ? '#16a34a' : '#1e293b';
     const statusLabel = DRIVER_VOUCHER_STATUS_MAP[voucher.status || '']?.label || voucher.status || '-';
+    const deliveryOrderBaseTripFee =
+        deliveryOrder?.baseTaripBorongan
+        ?? deliveryOrder?.taripBorongan
+        ?? 0;
+    const deliveryOrderOvertonaseAmount = deliveryOrder?.overtonaseDriverAmount || 0;
+    const deliveryOrderHasFinalActualWeight = (deliveryOrder?.actualTotalWeightKg || 0) > 0;
+    const deliveryOrderFinalTripFee = deliveryOrder?.taripBorongan || driverFeeAmount;
 
     const disbursementSection = printedDisbursements.length > 0 ? `
         <div style="margin-top:16px">
@@ -299,6 +307,40 @@ export function buildDriverVoucherPrintHtml(params: {
                 </tbody>
             </table>
         </div>
+        ${deliveryOrder ? `
+            <div style="margin-top:16px">
+                <div class="section-title">Referensi Upah Trip DO</div>
+                <table>
+                    <thead>
+                        <tr><th>Keterangan</th><th class="r">Nilai</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Upah Dasar DO</td>
+                            <td class="r">${escapePrintHtml(formatCurrency(deliveryOrderBaseTripFee))}</td>
+                        </tr>
+                        <tr>
+                            <td>Tambahan Overtonase</td>
+                            <td class="r">${deliveryOrderHasFinalActualWeight ? escapePrintHtml(formatCurrency(deliveryOrderOvertonaseAmount)) : 'Menunggu aktual final'}</td>
+                        </tr>
+                        <tr>
+                            <td>Upah Borongan Final DO</td>
+                            <td class="r">${deliveryOrderHasFinalActualWeight ? escapePrintHtml(formatCurrency(deliveryOrderFinalTripFee)) : 'Menunggu aktual final'}</td>
+                        </tr>
+                        ${deliveryOrderHasFinalActualWeight ? `
+                            <tr>
+                                <td>Berat Aktual Final</td>
+                                <td class="r">${escapePrintHtml(`${deliveryOrder.actualTotalWeightKg || 0} kg`)}</td>
+                            </tr>
+                            <tr>
+                                <td>Berat Overtonase</td>
+                                <td class="r">${escapePrintHtml(deliveryOrder.overtonaseWeightKg ? `${deliveryOrder.overtonaseWeightKg} kg` : '-') }</td>
+                            </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+        ` : ''}
         ${disbursementSection}
         ${expenseSection}
         <div style="margin-top:16px">

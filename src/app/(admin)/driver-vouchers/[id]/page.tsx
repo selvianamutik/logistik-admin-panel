@@ -25,7 +25,7 @@ import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
 import { useApp, useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
-import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
+import type { BankAccount, DeliveryOrder, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 export default function DriverVoucherDetailPage() {
@@ -33,6 +33,7 @@ export default function DriverVoucherDetailPage() {
     const { addToast } = useToast();
     const { user } = useApp();
     const [voucher, setVoucher] = useState<DriverVoucher | null>(null);
+    const [linkedDeliveryOrder, setLinkedDeliveryOrder] = useState<DeliveryOrder | null>(null);
     const [items, setItems] = useState<DriverVoucherItem[]>([]);
     const [disbursements, setDisbursements] = useState<DriverVoucherDisbursement[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -69,7 +70,14 @@ export default function DriverVoucherDetailPage() {
                 fetchAllAdminCollectionData<DriverVoucherDisbursement>(`/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail uang jalan trip'),
             ]);
+            const deliveryOrderData = voucherData?.deliveryOrderRef
+                ? await fetchAdminData<DeliveryOrder | null>(
+                    `/api/data?entity=delivery-orders&id=${voucherData.deliveryOrderRef}`,
+                    'Gagal memuat referensi Surat Jalan'
+                ).catch(() => null)
+                : null;
             setVoucher(voucherData || null);
+            setLinkedDeliveryOrder(deliveryOrderData || null);
             setItems(sortDriverVoucherItems(voucherItems || []));
             setDisbursements(sortDriverVoucherDisbursements(voucherDisbursements || []));
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
@@ -115,6 +123,13 @@ export default function DriverVoucherDetailPage() {
     } = buildDriverVoucherDetailSummary(voucher, items);
     const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, { initialCashGiven, topUpAmount });
     const routeLabel = formatDriverVoucherRouteForDisplay(voucher?.route) || voucher?.route || '-';
+    const linkedDoBaseTripFee =
+        linkedDeliveryOrder?.baseTaripBorongan
+        ?? linkedDeliveryOrder?.taripBorongan
+        ?? 0;
+    const linkedDoOvertonaseAmount = linkedDeliveryOrder?.overtonaseDriverAmount || 0;
+    const linkedDoHasFinalActualWeight = (linkedDeliveryOrder?.actualTotalWeightKg || 0) > 0;
+    const linkedDoFinalTripFee = linkedDeliveryOrder?.taripBorongan || driverFeeAmount;
 
     const handleAddItem = async () => {
         if (!canManageVoucherItems) return;
@@ -392,7 +407,13 @@ export default function DriverVoucherDetailPage() {
                 title: `Uang Jalan Trip ${voucher?.bonNumber}`,
                 company,
                 targetWindow: printWindow,
-                bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
+                bodyHtml: voucher ? buildDriverVoucherPrintHtml({
+                    voucher,
+                    deliveryOrder: linkedDeliveryOrder,
+                    items,
+                    disbursements,
+                    summary: buildDriverVoucherDetailSummary(voucher, items),
+                }) : '',
                 showFooter: false,
             });
         } catch {
@@ -482,7 +503,9 @@ export default function DriverVoucherDetailPage() {
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Borongan</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Nilai ini mengikuti upah borongan pada DO dan master biaya rute trip
+                        {linkedDeliveryOrder
+                            ? `Dasar ${formatCurrency(linkedDoBaseTripFee)}${linkedDoHasFinalActualWeight ? ` | Overtonase ${formatCurrency(linkedDoOvertonaseAmount)} | Final ${formatCurrency(linkedDoFinalTripFee)}` : ' | Overtonase menunggu aktual final'}`
+                            : 'Nilai ini mengikuti upah borongan pada DO dan master biaya rute trip'}
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
@@ -505,6 +528,10 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA BON OPERASIONAL</div><div>{formatCurrency(operationalBalance)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN</div><div>{formatCurrency(driverFeeAmount)}</div></div>
+                        {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH DASAR DO</div><div>{formatCurrency(linkedDoBaseTripFee)}</div></div>}
+                        {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TAMBAHAN OVERTONASE</div><div>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoOvertonaseAmount) : 'Menunggu aktual final'}</div></div>}
+                        {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN FINAL DO</div><div>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</div></div>}
+                        {linkedDeliveryOrder && linkedDoHasFinalActualWeight && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BERAT AKTUAL FINAL</div><div>{linkedDeliveryOrder.actualTotalWeightKg} kg</div></div>}
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NET SETTLEMENT AKHIR</div><div>{formatCurrency(balance)}</div></div>
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
@@ -662,7 +689,7 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Total Hak Trip</div>
+                                        <div className="text-muted text-sm">Total Klaim Trip</div>
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
@@ -712,7 +739,7 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold" style={{ color: operationalBalance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(operationalBalance)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Total Hak Trip</div>
+                                        <div className="text-muted text-sm">Total Klaim Trip</div>
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
@@ -739,8 +766,11 @@ export default function DriverVoucherDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>{formatCurrency(operationalSpent)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>
+                                {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Dasar DO</span><strong>{formatCurrency(linkedDoBaseTripFee)}</strong></div>}
+                                {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Tambahan Overtonase</span><strong>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoOvertonaseAmount) : 'Menunggu aktual final'}</strong></div>}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Hak Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
+                                {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan Final DO</span><strong>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</strong></div>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Klaim Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Net Settlement Akhir</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
                             </div>
                         </div>
