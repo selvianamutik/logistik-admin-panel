@@ -29,6 +29,22 @@ export function getDefaultInventoryReportPeriod() {
   return { year, monthIndex };
 }
 
+export function getInventoryReportYearOptions(selectedYear?: number, yearsBack = 5, yearsForward = 1) {
+  const defaultPeriod = getDefaultInventoryReportPeriod();
+  const currentYear = Number.isFinite(defaultPeriod.year) ? defaultPeriod.year : new Date().getFullYear();
+  const years = new Set<number>();
+
+  for (let year = currentYear - yearsBack; year <= currentYear + yearsForward; year += 1) {
+    years.add(year);
+  }
+
+  if (Number.isFinite(selectedYear)) {
+    years.add(Number(selectedYear));
+  }
+
+  return Array.from(years).sort((left, right) => right - left);
+}
+
 export function normalizeInventoryReportDate(value: string | undefined | null) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
     ? value.slice(0, 10)

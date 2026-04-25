@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileDown, Plus, Receipt, Search } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
-import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
@@ -13,6 +12,7 @@ import {
   buildInventoryReportPeriodLabel,
   getDefaultInventoryReportPeriod,
   getInventoryReportDateRange,
+  getInventoryReportYearOptions,
   INVENTORY_REPORT_MONTH_NAMES,
   isDateInInventoryReportRange,
   type InventoryReportPeriodMode,
@@ -82,6 +82,7 @@ export default function PurchasesPage() {
     () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
     [dateFrom, dateTo, monthIndex, periodMode, year],
   );
+  const yearOptions = useMemo(() => getInventoryReportYearOptions(year), [year]);
   const isValidRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
   const periodLabel = buildInventoryReportPeriodLabel({
     mode: periodMode,
@@ -215,6 +216,7 @@ export default function PurchasesPage() {
       <div className="page-header">
         <div className="page-header-left"><h1 className="page-title">Pembelian</h1></div>
         <div className="page-actions">
+          <Link href="/inventory/stock-recap" className="btn btn-secondary">Laporan Stok</Link>
           {canExportPurchases && <button className="btn btn-secondary" onClick={() => void handleExport()}><FileDown size={18} /> Excel</button>}
           {canCreatePurchase && <Link href="/inventory/purchases/new" className="btn btn-primary"><Plus size={18} /> Buat Pembelian</Link>}
         </div>
@@ -255,12 +257,9 @@ export default function PurchasesPage() {
               </select>
             )}
             {periodMode !== 'custom' && (
-              <FormattedNumberInput
-                className="form-input purchase-status-filter"
-                value={year}
-                onValueChange={(value) => setYear(value || defaultPeriod.year)}
-                allowDecimal={false}
-              />
+              <select className="form-select purchase-status-filter" value={year} onChange={(event) => setYear(Number(event.target.value) || defaultPeriod.year)}>
+                {yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
             )}
             {periodMode === 'custom' && (
               <>

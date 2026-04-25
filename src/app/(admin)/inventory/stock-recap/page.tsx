@@ -5,13 +5,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileDown, Printer, Search } from 'lucide-react';
 
 import PageBackButton from '@/components/PageBackButton';
-import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { exportToExcel } from '@/lib/export';
 import {
   buildInventoryReportPeriodLabel,
   getDefaultInventoryReportPeriod,
   getInventoryReportDateRange,
+  getInventoryReportYearOptions,
   INVENTORY_REPORT_MONTH_NAMES,
   type InventoryReportPeriodMode,
 } from '@/lib/inventory-report-period';
@@ -93,6 +93,7 @@ export default function InventoryStockRecapPage() {
     () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
     [dateFrom, dateTo, monthIndex, periodMode, year],
   );
+  const yearOptions = useMemo(() => getInventoryReportYearOptions(year), [year]);
   const isValidRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
   const periodLabel = buildInventoryReportPeriodLabel({
     mode: periodMode,
@@ -335,7 +336,9 @@ export default function InventoryStockRecapPage() {
             {periodMode !== 'custom' && (
               <div className="form-group">
                 <label className="form-label">Tahun</label>
-                <FormattedNumberInput className="form-input" value={year} onValueChange={(value) => setYear(value || defaultPeriod.year)} allowDecimal={false} />
+                <select className="form-select" value={year} onChange={(event) => setYear(Number(event.target.value) || defaultPeriod.year)}>
+                  {yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
             )}
           </div>
