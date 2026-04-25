@@ -1,0 +1,115 @@
+import type { ChartOfAccount, JournalEntry, JournalLine } from './types';
+
+export type LedgerLine = JournalLine & {
+  entryDate?: string;
+  entryNumber?: string;
+  sourceLabel?: string;
+  status?: string;
+};
+
+export type LedgerAccountSummary = {
+  account: ChartOfAccount;
+  debit: number;
+  credit: number;
+  balance: number;
+};
+
+export type BalanceSheetSummary = {
+  assets: number;
+  liabilities: number;
+  equity: number;
+  currentEarnings: number;
+  totalEquity: number;
+  liabilitiesAndEquity: number;
+  balanceGap: number;
+};
+
+function getFinancialStatementBalance(summary: Pick<LedgerAccountSummary, 'account' | 'debit' | 'credit'>) {
+  if (
+    summary.account.accountType === 'ASSET' ||
+    summary.account.accountType === 'EXPENSE' ||
+    summary.account.accountType === 'CONTRA_REVENUE'
+  ) {
+    return summary.debit - summary.credit;
+  }
+  return summary.credit - summary.debit;
+}
+
+export function formatAccountingCurrency(amount: number) {
+  return `Rp ${Math.round(amount || 0).toLocaleString('id-ID')}`;
+}
+
+export function isDateInPeriod(dateValue: string | undefined, startDate: string, endDate: string) {
+  if (!dateValue) return false;
+  return dateValue >= startDate && dateValue <= endDate;
+}
+
+export function buildJournalLineLookup(entries: JournalEntry[], lines: JournalLine[]) {
+  const entryById = new Map(entries.map(entry => [entry._id, entry]));
+  return lines.map<LedgerLine>(line => {
+    const entry = entryById.get(line.journalEntryRef);
+    return {
+      ...line,
+      entryDate: entry?.entryDate,
+      entryNumber: entry?.entryNumber,
+      sourceLabel: entry?.sourceLabel,
+      status: entry?.status,
+    };
+  });
+}
+
+export function buildLedgerSummary(accounts: ChartOfAccount[], lines: JournalLine[]): LedgerAccountSummary[] {
+  return accounts
+    .map(account => {
+      const accountLines = lines.filter(line => line.accountRef === account._id);
+      const debit = accountLines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+      const credit = accountLines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+      const balance = getFinancialStatementBalance({ account, debit, credit });
+      return { account, debit, credit, balance };
+    })
+    .filter(summary => summary.debit !== 0 || summary.credit !== 0 || summary.account.active !== false)
+    .sort((left, right) => left.account.code.localeCompare(right.account.code));
+}
+
+export function buildProfitLossFromLedger(summaries: LedgerAccountSummary[]) {
+  const revenue = summaries
+    .filter(summary => summary.account.accountType === 'REVENUE')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  const deductions = summaries
+    .filter(summary => summary.account.accountType === 'CONTRA_REVENUE')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  const expenses = summaries
+    .filter(summary => summary.account.accountType === 'EXPENSE')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  return {
+    revenue,
+    deductions,
+    netRevenue: revenue - deductions,
+    expenses,
+    netProfit: revenue - deductions - expenses,
+  };
+}
+
+export function buildBalanceSheetFromLedger(summaries: LedgerAccountSummary[]) {
+  const assets = summaries
+    .filter(summary => summary.account.accountType === 'ASSET')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  const liabilities = summaries
+    .filter(summary => summary.account.accountType === 'LIABILITY')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  const equity = summaries
+    .filter(summary => summary.account.accountType === 'EQUITY')
+    .reduce((sum, summary) => sum + summary.balance, 0);
+  const currentEarnings = buildProfitLossFromLedger(summaries).netProfit;
+  const totalEquity = equity + currentEarnings;
+  const liabilitiesAndEquity = liabilities + totalEquity;
+  return {
+    assets,
+    liabilities,
+    equity,
+    currentEarnings,
+    totalEquity,
+    liabilitiesAndEquity,
+    balanceGap: assets - liabilitiesAndEquity,
+  } satisfies BalanceSheetSummary;
+}

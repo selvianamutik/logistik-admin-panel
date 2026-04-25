@@ -38,6 +38,11 @@ import {
     type ApiSession,
 } from './data-helpers';
 import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
+import {
+    postPurchasePaymentJournal,
+    postPurchaseReceiptJournal,
+    postStockMovementJournal,
+} from './accounting-posting';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -526,6 +531,12 @@ export async function handlePurchaseReceive(
             lastReceivedAt: receiveDate,
             updatedAt: new Date().toISOString(),
         }, 'purchase');
+        const receivedValue = bundle.items.reduce((sum, item) => {
+            const receipt = receiptMap.get(item._id);
+            return sum + (receipt ? receipt.receivedQty * parseWholeMoneyAmount(item.unitPrice) : 0);
+        }, 0);
+        const receiptBatchRef = movementDocs.map(item => item._id).join('|') || `${bundle.purchase._id}:${receiveDate}`;
+        await postPurchaseReceiptJournal(session, bundle.purchase, receiveDate, receivedValue, receiptBatchRef);
 
         await addAuditLog(
             session,
@@ -612,6 +623,11 @@ export async function handleStockMovementCreate(
 
         await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty }, 'warehouseItem');
         await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
+        await postStockMovementJournal(
+            session,
+            movementDoc,
+            parseWholeMoneyAmount(warehouseItem.defaultPurchasePrice ?? 0)
+        );
 
         await addAuditLog(
             session,
@@ -756,6 +772,7 @@ export async function handlePurchasePaymentCreate(
             lastPaidAt: date,
             updatedAt: new Date().toISOString(),
         }, 'purchase');
+        await postPurchasePaymentJournal(session, paymentDoc, bankAccount);
 
         await addAuditLog(
             session,

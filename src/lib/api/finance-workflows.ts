@@ -28,9 +28,13 @@ import { buildFreightNotaCoverageRowKeys, buildNotaRowsFromDeliveryOrder } from 
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
     CustomerOverpaymentRefund,
+    CustomerReceipt,
     DeliveryOrder,
     DeliveryOrderItem,
+    Expense,
+    FreightNota,
     FreightNotaInstructionAccount,
+    InvoiceAdjustment,
     InvoiceAdjustmentKind,
     Order,
     Payment,
@@ -68,6 +72,16 @@ import {
     type ReceivableDoc,
     type ReceivableSnapshot,
 } from './finance-workflow-support';
+import {
+    postBankTransferJournal,
+    postCustomerOverpaymentRefundJournal,
+    postCustomerReceiptJournal,
+    postExpenseJournal,
+    postFreightNotaIssueJournal,
+    postInvoiceAdjustmentJournal,
+    postPaymentJournal,
+    voidJournalEntryForSource,
+} from './accounting-posting';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -610,7 +624,7 @@ export async function handlePaymentCreate(
     const nextTotalPaid = loaded.totalPaid + amount;
     const paymentNote = normalizeOptionalText(data.note);
     const paymentAttachmentUrl = normalizeOptionalText(data.attachmentUrl);
-    const paymentDoc: { _id: string; _type: 'payment'; [key: string]: unknown } = {
+    const paymentDoc: Payment & { [key: string]: unknown } = {
         _id: paymentId,
         _type: 'payment',
         invoiceRef,
@@ -668,6 +682,8 @@ export async function handlePaymentCreate(
         });
         await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
     }
+
+    await postPaymentJournal(session, paymentDoc, bankAcc, loaded.label);
 
     await addAuditLog(
         session,
@@ -827,7 +843,7 @@ export async function handleCustomerReceiptCreate(
     const incomeId = crypto.randomUUID();
     const bankTransactionId = crypto.randomUUID();
     const receiptNumber = await getNextNumber('receipt', receiptDate);
-    await createDocument({
+    const receiptDoc: CustomerReceipt = {
         _id: receiptId,
         _type: 'customerReceipt',
         receiptNumber,
@@ -843,7 +859,8 @@ export async function handleCustomerReceiptCreate(
         bankAccountName: bankAcc?.bankName,
         bankAccountNumber: bankAcc?.accountNumber,
         note: receiptNote,
-    });
+    };
+    await createDocument(receiptDoc as unknown as { _type: string; [key: string]: unknown });
     await createDocument({
         _id: incomeId,
         _type: 'income',
@@ -904,6 +921,17 @@ export async function handleCustomerReceiptCreate(
             snapshot.totalAdjustmentAmount,
         ), 'invoice');
     }
+
+    await postCustomerReceiptJournal(
+        session,
+        receiptDoc,
+        bankAcc,
+        allocations.map(allocation => ({
+            invoiceRef: allocation.invoiceRef,
+            amount: allocation.amount,
+            label: loadedSnapshots.find(snapshot => snapshot.doc._id === allocation.invoiceRef)?.label,
+        }))
+    );
 
     await addAuditLog(
         session,
@@ -982,7 +1010,7 @@ export async function handleInvoiceAdjustmentCreate(
     }
 
     const adjustmentId = crypto.randomUUID();
-    await createDocument({
+    const adjustmentDoc: InvoiceAdjustment & { [key: string]: unknown } = {
         _id: adjustmentId,
         _type: 'invoiceAdjustment',
         invoiceRef,
@@ -995,8 +1023,10 @@ export async function handleInvoiceAdjustmentCreate(
         note,
         createdBy: session._id,
         createdByName: session.name,
-    });
+    };
+    await createDocument(adjustmentDoc);
     await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await postInvoiceAdjustmentJournal(session, adjustmentDoc as InvoiceAdjustment, snapshot.label);
 
     await addAuditLog(
         session,
@@ -1081,6 +1111,14 @@ export async function handleInvoiceAdjustmentUpdate(
         editedByName: session.name,
     }), 'invoiceAdjustment');
     await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await postInvoiceAdjustmentJournal(session, {
+        ...adjustment,
+        date,
+        amount,
+        kind,
+        note,
+        status: adjustment.status || 'APPROVED',
+    } as InvoiceAdjustment, snapshot.label);
 
     await addAuditLog(
         session,
@@ -1136,6 +1174,7 @@ async function finalizeInvoiceAdjustmentDelete(
         voidedByName: session.name,
     }, 'invoiceAdjustment');
     await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await voidJournalEntryForSource(session, 'INVOICE_ADJUSTMENT', adjustmentId, 'APPROVE');
 
     await addAuditLog(
         session,
@@ -1300,7 +1339,7 @@ export async function handleCustomerOverpaymentRefund(
 
     const refundId = crypto.randomUUID();
     const bankTransactionId = crypto.randomUUID();
-    await createDocument({
+    const refundDoc: CustomerOverpaymentRefund = {
         _id: refundId,
         _type: 'customerOverpaymentRefund',
         sourceType,
@@ -1319,7 +1358,8 @@ export async function handleCustomerOverpaymentRefund(
         note,
         createdBy: session._id,
         createdByName: session.name,
-    });
+    };
+    await createDocument(refundDoc as unknown as { _type: string; [key: string]: unknown });
     await createDocument({
         _id: bankTransactionId,
         _type: 'bankTransaction',
@@ -1353,6 +1393,7 @@ export async function handleCustomerOverpaymentRefund(
             invoicePatch.totalAdjustmentAmount
         ), 'invoice');
     }
+    await postCustomerOverpaymentRefundJournal(session, refundDoc, bankAcc);
 
     const refundSourceLabel =
         sourceType === 'RECEIPT_UNAPPLIED'
@@ -1440,6 +1481,13 @@ export async function handleBankTransfer(
     });
     await updateDocument(fromAccountRef, { currentBalance: fromBalance }, 'bankAccount');
     await updateDocument(toAccountRef, { currentBalance: toBalance }, 'bankAccount');
+    await postBankTransferJournal(session, {
+        transferId,
+        date: transferDate,
+        amount,
+        fromAccount: fromAcc,
+        toAccount: toAcc,
+    });
 
     await addAuditLog(
         session,
@@ -1778,6 +1826,7 @@ export async function handleExpenseCreate(
                 userName: session.name,
             });
         }
+        await postExpenseJournal(session, expenseDoc as Expense, null);
         await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
         if (incidentSettlementLine) {
             await addAuditLog(
@@ -1878,6 +1927,7 @@ export async function handleExpenseCreate(
                 userName: session.name,
             });
         }
+        await postExpenseJournal(session, expenseDoc as Expense, bankAcc);
         await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummaryWithBank);
         if (incidentSettlementLine) {
             await addAuditLog(
@@ -2684,6 +2734,7 @@ export async function handleFreightNotaCreate(
         notaNumber,
         nextDeliveryOrderRefs: uniqueDoRefs,
     });
+    await postFreightNotaIssueJournal(session, notaDoc as FreightNota);
     await addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
     return NextResponse.json({ data: notaDoc, id: notaId });
 }
@@ -3247,6 +3298,31 @@ export async function handleFreightNotaUpdate(
         notaNumber,
         nextDeliveryOrderRefs: uniqueDoRefs,
     });
+    await postFreightNotaIssueJournal(session, {
+        ...snapshot.doc,
+        customerRef: resolvedCustomerRef,
+        customerName: finalCustomerName,
+        customerAddress: finalCustomerAddress,
+        customerContactPerson: finalCustomerContactPerson,
+        customerPhone: finalCustomerPhone,
+        issueDate,
+        dueDate: resolvedDueDate,
+        notaDisplayNumber,
+        totalAmount,
+        totalAdjustmentAmount: 0,
+        pph23Enabled: pph23Settings.pph23Enabled,
+        pph23RatePercent: pph23Settings.pph23RatePercent,
+        pph23BaseMode: pph23Settings.pph23BaseMode,
+        pph23BaseAmount: receivablePatch.pph23BaseAmount,
+        pph23Amount: receivablePatch.pph23Amount,
+        netAmount: receivablePatch.netAmount,
+        status: receivablePatch.status,
+        totalCollie,
+        totalWeightKg,
+        totalVolumeM3,
+        billingMode,
+        notes: normalizedNotes,
+    } as FreightNota);
 
     await addAuditLog(session, 'UPDATE', 'freight-notas', notaId, `Revised freight-notas: ${notaNumber}`);
     return NextResponse.json({ success: true, id: notaId });
@@ -3295,6 +3371,10 @@ export async function handleFreightNotaPph23Update(
     const patch = buildReceivablePatch(snapshot, snapshot.totalPaid, snapshot.totalAdjustmentAmount, pph23Settings);
 
     await updateDocument(notaId, patch, 'freightNota');
+    await postFreightNotaIssueJournal(session, {
+        ...snapshot.doc,
+        ...patch,
+    } as FreightNota);
 
     await addAuditLog(
         session,
@@ -3380,6 +3460,8 @@ export async function handleFreightNotaDelete(
         ));
 
         await deleteDocument(id, 'freightNota');
+        await voidJournalEntryForSource(session, 'FREIGHT_NOTA', id, 'ISSUE');
+        await voidJournalEntryForSource(session, 'FREIGHT_NOTA', id, 'PPH23');
     } catch (error) {
         const message = error instanceof Error ? error.message : '';
         if (/revision|conflict|document|not found/i.test(message)) {

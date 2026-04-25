@@ -1372,6 +1372,81 @@ export interface AuditLog {
   timestamp: string;
 }
 
+// Accounting Ledger
+export type AccountingAccountType =
+  | 'ASSET'
+  | 'LIABILITY'
+  | 'EQUITY'
+  | 'REVENUE'
+  | 'EXPENSE'
+  | 'CONTRA_REVENUE';
+
+export type AccountingNormalBalance = 'DEBIT' | 'CREDIT';
+export type JournalEntryStatus = 'POSTED' | 'VOID';
+
+export interface ChartOfAccount {
+  _id: string;
+  _type: 'chartOfAccount';
+  code: string;
+  name: string;
+  accountType: AccountingAccountType;
+  normalBalance: AccountingNormalBalance;
+  systemKey?: string;
+  parentRef?: string;
+  active: boolean;
+  description?: string;
+}
+
+export interface JournalEntry {
+  _id: string;
+  _type: 'journalEntry';
+  entryNumber: string;
+  entryDate: string;
+  memo: string;
+  sourceType?: string;
+  sourceRef?: string;
+  sourceEvent?: string;
+  sourceNumber?: string;
+  sourceLabel?: string;
+  status: JournalEntryStatus;
+  totalDebit: number;
+  totalCredit: number;
+  postedAt?: string;
+  postedBy?: string;
+  postedByName?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
+}
+
+export interface JournalLine {
+  _id: string;
+  _type: 'journalLine';
+  journalEntryRef: string;
+  lineNumber: number;
+  accountRef: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  debit: number;
+  credit: number;
+  memo?: string;
+  entityRef?: string;
+  entityType?: string;
+}
+
+export interface AccountingPeriod {
+  _id: string;
+  _type: 'accountingPeriod';
+  period: string;
+  startDate: string;
+  endDate: string;
+  status: 'OPEN' | 'CLOSED';
+  closedAt?: string;
+  closedBy?: string;
+  closedByName?: string;
+}
+
 // ── Bank Account ──
 export interface BankAccount {
   _id: string;

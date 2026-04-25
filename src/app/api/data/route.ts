@@ -155,6 +155,10 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'purchase-items': 'purchases',
     'purchase-payments': 'purchases',
     'stock-movements': 'warehouseItems',
+    'chart-of-accounts': 'reports',
+    'journal-entries': 'reports',
+    'journal-lines': 'reports',
+    'accounting-periods': 'reports',
     customers: 'customers',
     'customer-products': 'customers',
     'customer-billing-rates': 'customers',
@@ -1306,6 +1310,7 @@ export async function POST(request: Request) {
         }
 
         const docType = DOCUMENT_TYPE_MAP[entity];
+        const isCreateAction = !action || action === 'create';
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
             return await handleBoronganPayment(session, data, addAuditLog);
@@ -1442,15 +1447,15 @@ export async function POST(request: Request) {
             return await handleBankTransfer(session, data, addAuditLog);
         }
 
-        if (entity === 'payments') {
+        if (entity === 'payments' && isCreateAction) {
             return await handlePaymentCreate(session, data, addAuditLog);
         }
 
-        if (entity === 'customer-receipts') {
+        if (entity === 'customer-receipts' && isCreateAction) {
             return await handleCustomerReceiptCreate(session, data, addAuditLog);
         }
 
-        if (entity === 'customer-overpayment-refunds') {
+        if (entity === 'customer-overpayment-refunds' && isCreateAction) {
             return await handleCustomerOverpaymentRefund(session, data, addAuditLog);
         }
 
@@ -1458,7 +1463,7 @@ export async function POST(request: Request) {
             return await handlePurchasePaymentCreate(session, data, addAuditLog);
         }
 
-        if (entity === 'stock-movements') {
+        if (entity === 'stock-movements' && isCreateAction) {
             return await handleStockMovementCreate(session, data, addAuditLog);
         }
 
@@ -1488,6 +1493,10 @@ export async function POST(request: Request) {
 
         if (action === 'delete') {
             return await handleGenericDelete(session, entity, data, addAuditLog);
+        }
+
+        if (action && action !== 'create') {
+            return jsonNoStore({ error: 'Aksi tidak dikenal atau tidak didukung untuk entity ini' }, { status: 400 });
         }
 
         if (entity === 'expenses') {

@@ -31,6 +31,10 @@ type SupportedDocType =
     | 'bankAccount'
     | 'bankTransaction'
     | 'expense'
+    | 'chartOfAccount'
+    | 'journalEntry'
+    | 'journalLine'
+    | 'accountingPeriod'
     | 'purchase'
     | 'purchaseItem'
     | 'purchasePayment'
@@ -569,6 +573,69 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
             relatedMaintenanceRef: 'related_maintenance_ref',
             boronganRef: 'borongan_ref',
             voucherRef: 'voucher_ref',
+        },
+    },
+    chartOfAccount: {
+        table: 'chart_of_accounts',
+        fieldMap: {
+            code: 'code',
+            name: 'name',
+            accountType: 'account_type',
+            normalBalance: 'normal_balance',
+            systemKey: 'system_key',
+            parentRef: 'parent_ref',
+            active: 'active',
+            description: 'description',
+        },
+    },
+    journalEntry: {
+        table: 'journal_entries',
+        fieldMap: {
+            entryNumber: 'entry_number',
+            entryDate: 'entry_date',
+            memo: 'memo',
+            sourceType: 'source_type',
+            sourceRef: 'source_ref',
+            sourceEvent: 'source_event',
+            sourceNumber: 'source_number',
+            sourceLabel: 'source_label',
+            status: 'status',
+            totalDebit: 'total_debit',
+            totalCredit: 'total_credit',
+            postedAt: 'posted_at',
+            postedBy: 'posted_by',
+            postedByName: 'posted_by_name',
+            voidedAt: 'voided_at',
+            voidedBy: 'voided_by',
+            voidedByName: 'voided_by_name',
+        },
+    },
+    journalLine: {
+        table: 'journal_lines',
+        fieldMap: {
+            journalEntryRef: 'journal_entry_ref',
+            lineNumber: 'line_number',
+            accountRef: 'account_ref',
+            accountCode: 'account_code',
+            accountName: 'account_name',
+            accountType: 'account_type',
+            debit: 'debit',
+            credit: 'credit',
+            memo: 'memo',
+            entityRef: 'entity_ref',
+            entityType: 'entity_type',
+        },
+    },
+    accountingPeriod: {
+        table: 'accounting_periods',
+        fieldMap: {
+            period: 'period',
+            startDate: 'start_date',
+            endDate: 'end_date',
+            status: 'status',
+            closedAt: 'closed_at',
+            closedBy: 'closed_by',
+            closedByName: 'closed_by_name',
         },
     },
     purchase: {

@@ -336,6 +336,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             invoices: 'Invoice', customers: 'Customer', 'trip-rates': 'Biaya Rute Trip', services: 'Jenis Armada',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
             employees: 'Karyawan', attendance: 'Absensi',
+            accounting: 'Akuntansi', journals: 'Jurnal Umum', ledger: 'Buku Besar', accounts: 'Akun Perkiraan', statements: 'Laporan Keuangan',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan', drivers: 'Supir',
             skors: 'Skors',
             scoring: 'Skors',

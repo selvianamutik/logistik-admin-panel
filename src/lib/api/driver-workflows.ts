@@ -14,7 +14,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
-import type { CompanyProfile } from '@/lib/types';
+import type { CompanyProfile, Expense } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -40,6 +40,13 @@ import {
     summarizeBoronganDeliveryOrderItems,
     type DriverBoronganDeliveryOrderItemSummarySource,
 } from './driver-workflow-support';
+import {
+    postDriverVoucherIssueJournal,
+    postDriverVoucherSettlementJournal,
+    postDriverVoucherTopUpJournal,
+    postExpenseJournal,
+    voidJournalEntryForSource,
+} from './accounting-posting';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -690,7 +697,7 @@ export async function handleBoronganPayment(
     }
 
     const bankAccountRef = bankAccount?._id;
-    await createDocument({
+    const expenseDoc: Expense & { paymentMethod?: string } = {
         _id: expenseId,
         _type: 'expense',
         categoryRef: 'driver-borongan',
@@ -705,7 +712,8 @@ export async function handleBoronganPayment(
         bankAccountName: bankAccount?.bankName,
         bankAccountNumber: bankAccount?.accountNumber,
         boronganRef: boronganId,
-    });
+    };
+    await createDocument(expenseDoc as unknown as { _type: string; [key: string]: unknown });
     await updateDocument(boronganId, {
         totalAmount: derivedTotalAmount,
         totalCollie: derivedTotalCollie,
@@ -735,6 +743,7 @@ export async function handleBoronganPayment(
         });
         await updateDocument(bankAccountRef, { currentBalance: newBalance }, 'bankAccount');
     }
+    await postExpenseJournal(session, expenseDoc, bankAccount);
 
     await addAuditLog(
         session,
@@ -1060,6 +1069,7 @@ export async function handleDriverVoucherCreate(
     if (linkedVehicle) {
         await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
     }
+    await postDriverVoucherIssueJournal(session, voucherDoc, issueBank);
 
     await addAuditLog(
         session,
@@ -1166,6 +1176,14 @@ export async function handleDriverVoucherTopUp(
         totalClaimAmount: totals.totalClaimAmount,
         balance: totals.balance,
     }, 'driverVoucher');
+    await postDriverVoucherTopUpJournal(session, {
+        voucherId,
+        bonNumber: state.voucher.bonNumber,
+        date: topUpDate,
+        amount,
+        disbursementId,
+        bankAccount: bank,
+    });
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1422,6 +1440,7 @@ export async function handleDriverVoucherDisbursementDelete(
         totalClaimAmount: totals.totalClaimAmount,
         balance: totals.balance,
     }, 'driverVoucher');
+    await voidJournalEntryForSource(session, 'DRIVER_VOUCHER_DISBURSEMENT', disbursementId, 'TOP_UP');
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1654,6 +1673,7 @@ export async function handleDriverVoucherSettlement(
         settlementBankRef,
         settlementBankName: settlementBank?.bankName,
     };
+    await postDriverVoucherSettlementJournal(session, updatedVoucher, settlementBank);
 
     await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
     return NextResponse.json({ data: updatedVoucher });
@@ -1755,6 +1775,7 @@ export async function handleDriverVoucherIssueRepair(
         initialCashGiven: initialAmount,
         totalIssuedAmount: getDriverVoucherIssuedAmount(voucher),
     };
+    await postDriverVoucherIssueJournal(session, updatedVoucher, bank);
 
     await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);
     return NextResponse.json({ data: updatedVoucher });

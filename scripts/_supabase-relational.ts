@@ -8,6 +8,8 @@ type SeedDoc = {
 
 type SupabaseRequestFn = (path: string, init?: RequestInit) => Promise<Response>;
 
+import { DEFAULT_CHART_OF_ACCOUNTS, buildDefaultChartOfAccountDocument } from '../src/lib/accounting';
+
 const RELATIONAL_SEED_ORDER = [
     'company_profiles',
     'drivers',
@@ -21,6 +23,10 @@ const RELATIONAL_SEED_ORDER = [
     'expense_categories',
     'bank_accounts',
     'bank_transactions',
+    'chart_of_accounts',
+    'accounting_periods',
+    'journal_entries',
+    'journal_lines',
     'suppliers',
     'warehouse_items',
     'purchases',
@@ -89,6 +95,10 @@ export const RELATIONAL_SUPPORTED_DOC_TYPES = [
     'user',
     'bankAccount',
     'bankTransaction',
+    'chartOfAccount',
+    'accountingPeriod',
+    'journalEntry',
+    'journalLine',
     'expense',
     'purchase',
     'purchaseItem',
@@ -1601,6 +1611,109 @@ function mapIncidentSettlementLines(docs: SeedDoc[]) {
         }));
 }
 
+function mapChartOfAccounts(docs: SeedDoc[]) {
+    const defaults = DEFAULT_CHART_OF_ACCOUNTS.map(definition =>
+        buildDefaultChartOfAccountDocument(definition) as unknown as SeedDoc
+    );
+    const explicitDocs = docs.filter(doc => doc._type === 'chartOfAccount');
+    const merged = new Map<string, SeedDoc>();
+    [...defaults, ...explicitDocs].forEach(doc => merged.set(doc._id, doc));
+
+    return [...merged.values()].map(doc => ({
+        ...mapCommon(doc),
+        code: toText(doc.code),
+        name: toText(doc.name),
+        account_type: toText(doc.accountType),
+        normal_balance: toText(doc.normalBalance),
+        system_key: toText(doc.systemKey),
+        parent_ref: toText(doc.parentRef),
+        active: toBoolean(doc.active, true),
+        description: toText(doc.description),
+        extra_data: omitKeys(doc, [
+            '_id', '_type', '_createdAt', '_updatedAt',
+            'code', 'name', 'accountType', 'normalBalance', 'systemKey',
+            'parentRef', 'active', 'description',
+        ]),
+    }));
+}
+
+function mapAccountingPeriods(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'accountingPeriod')
+        .map(doc => ({
+            ...mapCommon(doc),
+            period: toText(doc.period),
+            start_date: toText(doc.startDate),
+            end_date: toText(doc.endDate),
+            status: toText(doc.status) || 'OPEN',
+            closed_at: toTimestamp(doc.closedAt),
+            closed_by: resolveSeedUserRef(docs, doc.closedBy),
+            closed_by_name: toText(doc.closedByName),
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'period', 'startDate', 'endDate', 'status', 'closedAt',
+                'closedBy', 'closedByName',
+            ]),
+        }));
+}
+
+function mapJournalEntries(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'journalEntry')
+        .map(doc => ({
+            ...mapCommon(doc),
+            entry_number: toText(doc.entryNumber),
+            entry_date: toText(doc.entryDate),
+            memo: toText(doc.memo),
+            source_type: toText(doc.sourceType),
+            source_ref: toText(doc.sourceRef),
+            source_event: toText(doc.sourceEvent),
+            source_number: toText(doc.sourceNumber),
+            source_label: toText(doc.sourceLabel),
+            status: toText(doc.status) || 'POSTED',
+            total_debit: toNumber(doc.totalDebit) ?? 0,
+            total_credit: toNumber(doc.totalCredit) ?? 0,
+            posted_at: toTimestamp(doc.postedAt),
+            posted_by: resolveSeedUserRef(docs, doc.postedBy),
+            posted_by_name: toText(doc.postedByName),
+            voided_at: toTimestamp(doc.voidedAt),
+            voided_by: resolveSeedUserRef(docs, doc.voidedBy),
+            voided_by_name: toText(doc.voidedByName),
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'entryNumber', 'entryDate', 'memo', 'sourceType', 'sourceRef',
+                'sourceEvent', 'sourceNumber', 'sourceLabel', 'status',
+                'totalDebit', 'totalCredit', 'postedAt', 'postedBy', 'postedByName',
+                'voidedAt', 'voidedBy', 'voidedByName',
+            ]),
+        }));
+}
+
+function mapJournalLines(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'journalLine')
+        .map(doc => ({
+            ...mapCommon(doc),
+            journal_entry_ref: toText(doc.journalEntryRef),
+            line_number: toNumber(doc.lineNumber) ?? 0,
+            account_ref: toText(doc.accountRef),
+            account_code: toText(doc.accountCode),
+            account_name: toText(doc.accountName),
+            account_type: toText(doc.accountType),
+            debit: toNumber(doc.debit) ?? 0,
+            credit: toNumber(doc.credit) ?? 0,
+            memo: toText(doc.memo),
+            entity_ref: toText(doc.entityRef),
+            entity_type: toText(doc.entityType),
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'journalEntryRef', 'lineNumber', 'accountRef', 'accountCode',
+                'accountName', 'accountType', 'debit', 'credit', 'memo',
+                'entityRef', 'entityType',
+            ]),
+        }));
+}
+
 function mapAuditLogs(docs: SeedDoc[]) {
     return docs
         .filter(doc => doc._type === 'auditLog')
@@ -1650,6 +1763,10 @@ function buildRelationalPayloads(docs: SeedDoc[]) {
         app_users: mapUsers(docs),
         bank_accounts: mapBankAccounts(docs),
         bank_transactions: mapBankTransactions(docs),
+        chart_of_accounts: mapChartOfAccounts(docs),
+        accounting_periods: mapAccountingPeriods(docs),
+        journal_entries: mapJournalEntries(docs),
+        journal_lines: mapJournalLines(docs),
         expenses: mapExpenses(docs),
         purchases: mapPurchases(docs),
         purchase_items: mapPurchaseItems(docs),

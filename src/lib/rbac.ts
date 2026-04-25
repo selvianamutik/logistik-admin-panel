@@ -312,7 +312,10 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             items: [
                 { label: 'Invoice', href: '/invoices', icon: 'Receipt', module: 'freightNotas' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
-                { label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' },
+                { label: 'Laporan Keuangan', href: '/accounting/statements', icon: 'BarChart3', module: 'reports' },
+                { label: 'Jurnal Umum', href: '/accounting/journals', icon: 'ScrollText', module: 'reports' },
+                { label: 'Buku Besar', href: '/accounting/ledger', icon: 'Landmark', module: 'reports' },
+                { label: 'Akun Perkiraan', href: '/accounting/accounts', icon: 'Tags', module: 'reports' },
             ],
         },
         {

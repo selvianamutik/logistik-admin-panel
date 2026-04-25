@@ -22,6 +22,7 @@ import {
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
+import { postStockMovementJournal } from './accounting-posting';
 import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 
 type AuditLogFn = (
@@ -271,6 +272,7 @@ export async function handleMaintenanceComplete(
                 createdByName: session.name,
             };
             await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
+            await postStockMovementJournal(session, movementDoc, unitCostSnapshot);
             movementDocs.push(movementDoc);
 
             materialUsages.push({
