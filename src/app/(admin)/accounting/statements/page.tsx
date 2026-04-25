@@ -47,9 +47,10 @@ function getPeriodRange(mode: PeriodMode, year: number, month: number) {
   const startDate = mode === "year"
     ? `${year}-01-01`
     : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  const endDay = new Date(year, month + 1, 0).getDate();
   const endDate = mode === "year"
     ? `${year}-12-31`
-    : new Date(year, month + 1, 0).toISOString().slice(0, 10);
+    : `${year}-${String(month + 1).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
   return { startDate, endDate };
 }
 

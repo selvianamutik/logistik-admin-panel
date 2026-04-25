@@ -5,6 +5,7 @@ import {
     normalizeLedgerAmount,
     type AccountingSystemKey,
 } from '@/lib/accounting';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     createDocument,
     deleteDocument,
@@ -541,7 +542,7 @@ export async function postDriverVoucherIssueJournal(
 ) {
     const amount = cleanLineAmount(voucher.cashGiven || voucher.initialCashGiven || voucher.totalIssuedAmount);
     await postJournalEntry(session, {
-        entryDate: voucher.issuedDate || new Date().toISOString().slice(0, 10),
+        entryDate: voucher.issuedDate || getBusinessDateValue(),
         memo: `Pencairan uang jalan ${voucher.bonNumber || voucher._id}`,
         sourceType: 'DRIVER_VOUCHER',
         sourceRef: voucher._id,
@@ -605,7 +606,7 @@ export async function postDriverVoucherSettlementJournal(
     }
 
     await postJournalEntry(session, {
-        entryDate: voucher.settledDate || new Date().toISOString().slice(0, 10),
+        entryDate: voucher.settledDate || getBusinessDateValue(),
         memo: `Settlement uang jalan ${voucher.bonNumber || voucher._id}`,
         sourceType: 'DRIVER_VOUCHER',
         sourceRef: voucher._id,

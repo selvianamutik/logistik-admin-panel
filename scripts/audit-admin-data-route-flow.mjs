@@ -5,6 +5,10 @@ const routePath = path.join(process.cwd(), 'src/app/api/data/route.ts');
 const source = fs.readFileSync(routePath, 'utf8');
 const financeWorkflowPath = path.join(process.cwd(), 'src/lib/api/finance-workflows.ts');
 const financeWorkflowSource = fs.readFileSync(financeWorkflowPath, 'utf8');
+const accountingStatementsPath = path.join(process.cwd(), 'src/app/(admin)/accounting/statements/page.tsx');
+const accountingStatementsSource = fs.readFileSync(accountingStatementsPath, 'utf8');
+const accountingPostingPath = path.join(process.cwd(), 'src/lib/api/accounting-posting.ts');
+const accountingPostingSource = fs.readFileSync(accountingPostingPath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -200,5 +204,13 @@ assert(
         financeWorkflowSource.includes('async function updateReceivableSnapshot'),
     'Finance workflow harus memakai helper updateReceivableSnapshot agar tipe dokumen piutang mengikuti snapshot.'
 );
+assert(
+    !accountingStatementsSource.includes('toISOString().slice(0, 10)'),
+    'Laporan keuangan tidak boleh memakai toISOString().slice(0, 10) untuk periode karena timezone bisa menggeser tanggal akhir bulan.'
+);
+assert(
+    !accountingPostingSource.includes('new Date().toISOString().slice(0, 10)'),
+    'Posting jurnal fallback harus memakai business date, bukan tanggal UTC dari toISOString().'
+);
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, and receivable document-type guard verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, and accounting date guards verified.`);

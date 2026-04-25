@@ -59,11 +59,19 @@ export function buildJournalLineLookup(entries: JournalEntry[], lines: JournalLi
 }
 
 export function buildLedgerSummary(accounts: ChartOfAccount[], lines: JournalLine[]): LedgerAccountSummary[] {
+  const totalsByAccount = new Map<string, { debit: number; credit: number }>();
+  for (const line of lines) {
+    const existing = totalsByAccount.get(line.accountRef) || { debit: 0, credit: 0 };
+    existing.debit += Number(line.debit || 0);
+    existing.credit += Number(line.credit || 0);
+    totalsByAccount.set(line.accountRef, existing);
+  }
+
   return accounts
     .map(account => {
-      const accountLines = lines.filter(line => line.accountRef === account._id);
-      const debit = accountLines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
-      const credit = accountLines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+      const totals = totalsByAccount.get(account._id);
+      const debit = totals?.debit || 0;
+      const credit = totals?.credit || 0;
       const balance = getFinancialStatementBalance({ account, debit, credit });
       return { account, debit, credit, balance };
     })
