@@ -18,6 +18,7 @@
     "audit:order-to-nota-e2e": "npx tsx scripts/audit-order-to-nota-e2e.ts",
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
     "audit:supabase": "node scripts/audit-supabase-migration.mjs",
+    "backfill:accounting": "npx tsx --conditions react-server scripts/backfill-accounting-journals.ts",
     "import:supabase": "node scripts/import-supabase.mjs",
     "reset:supabase": "npx tsx scripts/reset-supabase.ts",
     "seed:supabase": "npx tsx scripts/seed-supabase.ts",
@@ -36,7 +37,8 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-chartjs-2": "^5.3.1",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^20",
