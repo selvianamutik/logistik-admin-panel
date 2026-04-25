@@ -5,15 +5,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { BarChart3 } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
-import { getBusinessDateValue } from '@/lib/business-date';
 import {
   filterMaterialUsageRows,
   getMaintenanceMaterialUsageRows,
-  getMonthPrefix,
   summarizeMaterialUsageRows,
 } from '@/lib/inventory-material-usage';
+import {
+  buildInventoryReportPeriodLabel,
+  getDefaultInventoryReportPeriod,
+  getInventoryReportDateRange,
+  INVENTORY_REPORT_MONTH_NAMES,
+  type InventoryReportPeriodMode,
+} from '@/lib/inventory-report-period';
 import { formatInventoryQuantity } from '@/lib/inventory';
 import { hasPageAccess } from '@/lib/rbac';
 import type { Maintenance, Vehicle, WarehouseItem } from '@/lib/types';
@@ -25,16 +31,17 @@ export default function InventoryMaterialUsagePage() {
   const searchParams = useSearchParams();
   const { user } = useApp();
   const { addToast } = useToast();
-  const today = getBusinessDateValue();
-  const currentMonthPrefix = getMonthPrefix(today);
-  const defaultDateFrom = currentMonthPrefix ? `${currentMonthPrefix}-01` : '';
+  const defaultPeriod = getDefaultInventoryReportPeriod();
 
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [warehouseItems, setWarehouseItems] = useState<WarehouseItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
-  const [dateTo, setDateTo] = useState(today);
+  const [periodMode, setPeriodMode] = useState<InventoryReportPeriodMode>('month');
+  const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+  const [year, setYear] = useState(defaultPeriod.year);
+  const [dateFrom, setDateFrom] = useState(`${defaultPeriod.year}-${String(defaultPeriod.monthIndex + 1).padStart(2, '0')}-01`);
+  const [dateTo, setDateTo] = useState('');
   const [vehicleRef, setVehicleRef] = useState('');
   const [category, setCategory] = useState('');
   const [itemRef, setItemRef] = useState(searchParams.get('itemRef') || '');
@@ -84,20 +91,34 @@ export default function InventoryMaterialUsagePage() {
     () => getMaintenanceMaterialUsageRows(maintenances),
     [maintenances],
   );
+  const dateRange = useMemo(
+    () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+    [dateFrom, dateTo, monthIndex, periodMode, year],
+  );
+  const isValidRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
+  const periodLabel = buildInventoryReportPeriodLabel({
+    mode: periodMode,
+    monthIndex,
+    year,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
   const filteredRows = useMemo(
     () =>
-      filterMaterialUsageRows(baseRows, {
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        vehicleRef: vehicleRef || undefined,
-        category: category || undefined,
-        warehouseItemRef: itemRef || undefined,
-      }).sort((left, right) =>
-        `${right.completedDate}-${right.maintenanceId}-${right.warehouseItemRef}`.localeCompare(
-          `${left.completedDate}-${left.maintenanceId}-${left.warehouseItemRef}`,
-        ),
-      ),
-    [baseRows, category, dateFrom, dateTo, itemRef, vehicleRef],
+      isValidRange
+        ? filterMaterialUsageRows(baseRows, {
+            dateFrom: dateRange.startDate,
+            dateTo: dateRange.endDate,
+            vehicleRef: vehicleRef || undefined,
+            category: category || undefined,
+            warehouseItemRef: itemRef || undefined,
+          }).sort((left, right) =>
+            `${right.completedDate}-${right.maintenanceId}-${right.warehouseItemRef}`.localeCompare(
+              `${left.completedDate}-${left.maintenanceId}-${left.warehouseItemRef}`,
+            ),
+          )
+        : [],
+    [baseRows, category, dateRange.endDate, dateRange.startDate, isValidRange, itemRef, vehicleRef],
   );
   const summary = useMemo(
     () => summarizeMaterialUsageRows(filteredRows),
@@ -130,8 +151,11 @@ export default function InventoryMaterialUsagePage() {
   }, [baseRows, warehouseItems]);
 
   const resetFilters = () => {
-    setDateFrom(defaultDateFrom);
-    setDateTo(today);
+    setPeriodMode('month');
+    setMonthIndex(defaultPeriod.monthIndex);
+    setYear(defaultPeriod.year);
+    setDateFrom(`${defaultPeriod.year}-${String(defaultPeriod.monthIndex + 1).padStart(2, '0')}-01`);
+    setDateTo('');
     setVehicleRef('');
     setCategory('');
     setItemRef('');
@@ -172,14 +196,49 @@ export default function InventoryMaterialUsagePage() {
         <div className="card-body">
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Dari Tanggal</label>
-              <input type="date" className="form-input" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+              <label className="form-label">Mode Periode</label>
+              <select className="form-select" value={periodMode} onChange={(event) => setPeriodMode(event.target.value as InventoryReportPeriodMode)}>
+                <option value="month">Bulanan</option>
+                <option value="year">Tahunan</option>
+                <option value="custom">Rentang Tanggal</option>
+              </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Sampai Tanggal</label>
-              <input type="date" className="form-input" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            </div>
+            {periodMode === 'month' && (
+              <div className="form-group">
+                <label className="form-label">Bulan</label>
+                <select className="form-select" value={monthIndex} onChange={(event) => setMonthIndex(Number(event.target.value))}>
+                  {INVENTORY_REPORT_MONTH_NAMES.map((name, index) => (
+                    <option key={name} value={index}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {periodMode !== 'custom' && (
+              <div className="form-group">
+                <label className="form-label">Tahun</label>
+                <FormattedNumberInput className="form-input" value={year} onValueChange={(value) => setYear(value || defaultPeriod.year)} allowDecimal={false} />
+              </div>
+            )}
           </div>
+          {periodMode === 'custom' && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Dari Tanggal</label>
+                <input type="date" className="form-input" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Sampai Tanggal</label>
+                <input type="date" className="form-input" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+              </div>
+            </div>
+          )}
+          {!isValidRange && (
+            <div className="info-banner" style={{ marginBottom: '1rem' }}>
+              <div className="info-banner-title">Periode belum valid</div>
+              <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+            </div>
+          )}
+          <div className="text-muted text-sm" style={{ marginBottom: '1rem' }}>Periode aktif: {periodLabel}</div>
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Kendaraan</label>

@@ -5,10 +5,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileDown, Plus, Receipt, Search } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
-import { getMonthPrefix } from '@/lib/inventory-material-usage';
+import {
+  buildInventoryReportPeriodLabel,
+  getDefaultInventoryReportPeriod,
+  getInventoryReportDateRange,
+  INVENTORY_REPORT_MONTH_NAMES,
+  isDateInInventoryReportRange,
+  type InventoryReportPeriodMode,
+} from '@/lib/inventory-report-period';
 import {
   getDerivedPurchasePaymentStatus,
   getDerivedPurchaseReceiptStatus,
@@ -54,65 +62,88 @@ function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
 export default function PurchasesPage() {
   const { user } = useApp();
   const { addToast } = useToast();
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const defaultPeriod = getDefaultInventoryReportPeriod();
   const [allFilteredPurchases, setAllFilteredPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [periodMode, setPeriodMode] = useState<InventoryReportPeriodMode>('month');
+  const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+  const [year, setYear] = useState(defaultPeriod.year);
+  const [dateFrom, setDateFrom] = useState(`${defaultPeriod.year}-${String(defaultPeriod.monthIndex + 1).padStart(2, '0')}-01`);
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
-  const [filteredTotal, setFilteredTotal] = useState(0);
 
   const canCreatePurchase = user ? hasPermission(user.role, 'purchases', 'create') : false;
   const canExportPurchases = user ? hasPermission(user.role, 'purchases', 'export') : false;
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const today = getBusinessDateValue();
-  const currentMonthPrefix = getMonthPrefix(today);
+  const dateRange = useMemo(
+    () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+    [dateFrom, dateTo, monthIndex, periodMode, year],
+  );
+  const isValidRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
+  const periodLabel = buildInventoryReportPeriodLabel({
+    mode: periodMode,
+    monthIndex,
+    year,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
+  const periodPurchases = useMemo(
+    () =>
+      isValidRange
+        ? allFilteredPurchases.filter((purchase) => isDateInInventoryReportRange(purchase.orderDate, dateRange.startDate, dateRange.endDate))
+        : [],
+    [allFilteredPurchases, dateRange.endDate, dateRange.startDate, isValidRange],
+  );
+  const filteredTotal = periodPurchases.length;
+  const purchases = useMemo(
+    () => periodPurchases.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE),
+    [page, periodPurchases],
+  );
   const openCount = useMemo(
     () =>
-      allFilteredPurchases.filter((purchase) =>
+      periodPurchases.filter((purchase) =>
         !isCancelledPurchase(purchase)
         && getDerivedPurchasePaymentStatus(purchase) !== 'PAID'
         && Number(purchase.outstandingAmount || 0) > 0
       ).length,
-    [allFilteredPurchases]
+    [periodPurchases]
   );
   const overdueCount = useMemo(
     () =>
-      allFilteredPurchases.filter((purchase) =>
+      periodPurchases.filter((purchase) =>
         !isCancelledPurchase(purchase)
         && purchase.dueDate
         && purchase.dueDate < today
         && Number(purchase.outstandingAmount || 0) > 0
       ).length,
-    [allFilteredPurchases, today]
+    [periodPurchases, today]
   );
   const outstandingTotal = useMemo(
     () =>
-      allFilteredPurchases.reduce(
+      periodPurchases.reduce(
         (sum, purchase) => sum + (isCancelledPurchase(purchase) ? 0 : Number(purchase.outstandingAmount || 0)),
         0
       ),
-    [allFilteredPurchases]
+    [periodPurchases]
   );
   const paidCount = useMemo(
-    () => allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase) && getDerivedPurchasePaymentStatus(purchase) === 'PAID').length,
-    [allFilteredPurchases]
+    () => periodPurchases.filter((purchase) => !isCancelledPurchase(purchase) && getDerivedPurchasePaymentStatus(purchase) === 'PAID').length,
+    [periodPurchases]
   );
-  const purchasesThisMonth = useMemo(
-    () => allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase) && String(purchase.orderDate || '').startsWith(currentMonthPrefix)),
-    [allFilteredPurchases, currentMonthPrefix],
-  );
-  const purchaseAmountThisMonth = useMemo(
-    () => purchasesThisMonth.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0),
-    [purchasesThisMonth],
+  const purchaseAmountForPeriod = useMemo(
+    () => periodPurchases.reduce((sum, purchase) => sum + (isCancelledPurchase(purchase) ? 0 : Number(purchase.totalAmount || 0)), 0),
+    [periodPurchases],
   );
   const activeSupplierCount = useMemo(
-    () => new Set(allFilteredPurchases.filter((purchase) => !isCancelledPurchase(purchase)).map((purchase) => purchase.supplierRef).filter(Boolean)).size,
-    [allFilteredPurchases],
+    () => new Set(periodPurchases.filter((purchase) => !isCancelledPurchase(purchase)).map((purchase) => purchase.supplierRef).filter(Boolean)).size,
+    [periodPurchases],
   );
 
-  const buildQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-    const params = new URLSearchParams({ entity: 'purchases', page: String(targetPage), pageSize: String(targetPageSize), sortField: 'orderDate', sortDir: 'desc' });
+  const buildQuery = useCallback((targetPageSize = 500) => {
+    const params = new URLSearchParams({ entity: 'purchases', page: '1', pageSize: String(targetPageSize), sortField: 'orderDate', sortDir: 'desc' });
     if (search.trim()) {
       params.set('q', search.trim());
       params.set('searchFields', 'purchaseNumber,supplierName,notes,status');
@@ -121,19 +152,12 @@ export default function PurchasesPage() {
       params.set('filter', JSON.stringify({ status: statusFilter }));
     }
     return params.toString();
-  }, [page, search, statusFilter]);
+  }, [search, statusFilter]);
 
   const loadPurchases = useCallback(async () => {
     setLoading(true);
     try {
-      const [listRes, rows] = await Promise.all([
-        fetch(`/api/data?${buildQuery()}`),
-        fetchAllAdminCollectionData<Purchase>(`/api/data?${buildQuery(1, 200)}`, 'Gagal memuat pembelian', 200),
-      ]);
-      const payload = await listRes.json();
-      if (!listRes.ok) throw new Error(payload.error || 'Gagal memuat pembelian');
-      setPurchases((payload.data || []) as Purchase[]);
-      setFilteredTotal(payload.meta?.total || 0);
+      const rows = await fetchAllAdminCollectionData<Purchase>(`/api/data?${buildQuery(500)}`, 'Gagal memuat pembelian', 500);
       setAllFilteredPurchases(rows || []);
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Gagal memuat pembelian');
@@ -143,13 +167,13 @@ export default function PurchasesPage() {
   }, [addToast, buildQuery]);
 
   useEffect(() => { void loadPurchases(); }, [loadPurchases]);
-  useEffect(() => { setPage(1); }, [search, statusFilter]);
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo, monthIndex, periodMode, search, statusFilter, year]);
 
   const handleExport = async () => {
     if (!canExportPurchases) return;
     try {
       await exportToExcel(
-        allFilteredPurchases.map((purchase) => ({
+        periodPurchases.map((purchase) => ({
           nomorPembelian: purchase.purchaseNumber,
           supplier: purchase.supplierName || '-',
           tanggalPembelian: purchase.orderDate,
@@ -173,9 +197,12 @@ export default function PurchasesPage() {
           { header: 'Status Pembayaran', key: 'statusPembayaran', width: 20 },
           { header: 'Catatan', key: 'catatan', width: 30 },
         ],
-        `pembelian-${today}`,
+        `pembelian-${periodLabel.replace(/\s+/g, '-')}`,
         'Pembelian',
-        { title: 'Daftar Pembelian Supplier', subtitle: `Filter status: ${statusFilter ? PURCHASE_STATUS_LABELS[statusFilter as PurchaseStatus] : 'Semua status'}` },
+        {
+          title: 'Daftar Pembelian Supplier',
+          subtitle: `${periodLabel} | Status: ${statusFilter ? PURCHASE_STATUS_LABELS[statusFilter as PurchaseStatus] : 'Semua status'}`,
+        },
       );
       addToast('success', 'Excel pembelian berhasil di-download');
     } catch (error) {
@@ -197,7 +224,7 @@ export default function PurchasesPage() {
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatCurrency(outstandingTotal)}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Lunas</div><div className="kpi-value">{openCount}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Jatuh Tempo</div><div className="kpi-value">{overdueCount}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pembelian Bulan Ini</div><div className="kpi-value">{formatCurrency(purchaseAmountThisMonth)}</div><div className="kpi-sub">{purchasesThisMonth.length} dokumen</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pembelian Periode</div><div className="kpi-value">{formatCurrency(purchaseAmountForPeriod)}</div><div className="kpi-sub">{periodPurchases.length} dokumen</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supplier Terlibat</div><div className="kpi-value">{activeSupplierCount}</div><div className="kpi-sub">{paidCount} pembelian sudah lunas</div></div></div>
       </div>
 
@@ -217,8 +244,43 @@ export default function PurchasesPage() {
               <option value="">Semua Status</option>
               {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
+            <select className="form-select purchase-status-filter" value={periodMode} onChange={(event) => setPeriodMode(event.target.value as InventoryReportPeriodMode)}>
+              <option value="month">Bulanan</option>
+              <option value="year">Tahunan</option>
+              <option value="custom">Rentang Tanggal</option>
+            </select>
+            {periodMode === 'month' && (
+              <select className="form-select purchase-status-filter" value={monthIndex} onChange={(event) => setMonthIndex(Number(event.target.value))}>
+                {INVENTORY_REPORT_MONTH_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+              </select>
+            )}
+            {periodMode !== 'custom' && (
+              <FormattedNumberInput
+                className="form-input purchase-status-filter"
+                value={year}
+                onValueChange={(value) => setYear(value || defaultPeriod.year)}
+                allowDecimal={false}
+              />
+            )}
+            {periodMode === 'custom' && (
+              <>
+                <input type="date" className="form-input purchase-status-filter" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                <input type="date" className="form-input purchase-status-filter" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+              </>
+            )}
           </div>
         </div>
+        <div className="text-muted text-sm" style={{ padding: '0 1.5rem 1rem' }}>
+          Periode aktif: {periodLabel}
+        </div>
+        {!isValidRange && (
+          <div style={{ padding: '0 1.5rem 1rem' }}>
+            <div className="info-banner">
+              <div className="info-banner-title">Periode belum valid</div>
+              <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+            </div>
+          </div>
+        )}
 
         <div className="table-wrapper table-desktop-only">
           <table>

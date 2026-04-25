@@ -60,6 +60,12 @@ const MODULES: InventoryModuleCard[] = [
     description: 'Lihat barang gudang yang dipakai ke maintenance/unit per periode secara ringkas.',
     icon: BarChart3,
   },
+  {
+    href: '/inventory/stock-recap',
+    title: 'Rekap Gudang',
+    description: 'Rekap stok awal, barang masuk, keluar, dan stok akhir semua item per periode.',
+    icon: BarChart3,
+  },
 ];
 
 function canOpenModule(role: NonNullable<ReturnType<typeof useApp>['user']>['role'], href: string) {
@@ -67,6 +73,7 @@ function canOpenModule(role: NonNullable<ReturnType<typeof useApp>['user']>['rol
   if (href === '/inventory/items') return hasPageAccess(role, 'warehouseItems');
   if (href === '/inventory/purchases') return hasPageAccess(role, 'purchases');
   if (href === '/inventory/material-usage') return hasPageAccess(role, 'maintenance');
+  if (href === '/inventory/stock-recap') return hasPageAccess(role, 'warehouseItems');
   return false;
 }
 
@@ -378,9 +385,9 @@ export default function InventoryOverviewPage() {
             <div className="detail-row">
               <span className="detail-label">Tindak Lanjut Owner</span>
               <span className="detail-value">
-                {canOpenMaintenance ? (
-                  <Link href="/inventory/material-usage" style={{ color: 'var(--color-primary)' }}>
-                    Buka laporan pemakaian barang
+                {canOpenItems ? (
+                  <Link href="/inventory/stock-recap" style={{ color: 'var(--color-primary)' }}>
+                    Buka rekap gudang
                   </Link>
                 ) : (
                   'Lihat stok & pembelian'
