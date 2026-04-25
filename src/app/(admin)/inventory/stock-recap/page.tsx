@@ -360,9 +360,6 @@ export default function InventoryStockRecapPage() {
               <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
             </div>
           )}
-          <div className="text-muted text-sm" style={{ marginTop: '1rem' }}>
-            Laporan stok gudang periode: {periodLabel}
-          </div>
         </div>
       </div>
 

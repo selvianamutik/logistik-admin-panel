@@ -13,7 +13,6 @@ import {
   summarizeMaterialUsageRows,
 } from '@/lib/inventory-material-usage';
 import {
-  buildInventoryReportPeriodLabel,
   getDefaultInventoryReportPeriod,
   getInventoryReportDateRange,
   getInventoryReportYearOptions,
@@ -97,13 +96,6 @@ export default function InventoryMaterialUsagePage() {
   );
   const yearOptions = useMemo(() => getInventoryReportYearOptions(year), [year]);
   const isValidRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
-  const periodLabel = buildInventoryReportPeriodLabel({
-    mode: periodMode,
-    monthIndex,
-    year,
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-  });
   const filteredRows = useMemo(
     () =>
       isValidRange
@@ -182,15 +174,6 @@ export default function InventoryMaterialUsagePage() {
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-body">
-          <div className="text-muted" style={{ maxWidth: 760, lineHeight: 1.7 }}>
-            Fokus halaman ini hanya untuk barang gudang yang keluar ke maintenance dan unit kendaraan.
-            Gunakan filter periode untuk melihat material yang dipakai, nilainya, dan unit mana yang terdampak.
-          </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-header-title">Filter Laporan</span>
         </div>
@@ -241,7 +224,6 @@ export default function InventoryMaterialUsagePage() {
               <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
             </div>
           )}
-          <div className="text-muted text-sm" style={{ marginBottom: '1rem' }}>Periode aktif: {periodLabel}</div>
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Kendaraan</label>

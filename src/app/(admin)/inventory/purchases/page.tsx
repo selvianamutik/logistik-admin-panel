@@ -270,9 +270,6 @@ export default function PurchasesPage() {
             )}
           </div>
         </div>
-        <div className="text-muted text-sm" style={{ padding: '0 1.5rem 1rem' }}>
-          Periode aktif: {periodLabel}
-        </div>
         {!isValidRange && (
           <div style={{ padding: '0 1.5rem 1rem' }}>
             <div className="info-banner">
