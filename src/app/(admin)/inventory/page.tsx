@@ -62,8 +62,8 @@ const MODULES: InventoryModuleCard[] = [
   },
   {
     href: '/inventory/stock-recap',
-    title: 'Rekap Gudang',
-    description: 'Rekap stok awal, barang masuk, keluar, dan stok akhir semua item per periode.',
+    title: 'Laporan Stok Gudang',
+    description: 'Laporan stok awal, barang masuk, keluar, dan stok akhir semua item per bulan, tahun, atau rentang tanggal.',
     icon: BarChart3,
   },
 ];
@@ -387,7 +387,7 @@ export default function InventoryOverviewPage() {
               <span className="detail-value">
                 {canOpenItems ? (
                   <Link href="/inventory/stock-recap" style={{ color: 'var(--color-primary)' }}>
-                    Buka rekap gudang
+                    Buka laporan stok gudang
                   </Link>
                 ) : (
                   'Lihat stok & pembelian'

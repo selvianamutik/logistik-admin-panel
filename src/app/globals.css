@@ -1119,6 +1119,8 @@ a:hover {
 
 .purchase-status-filter {
   flex: 0 1 220px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .attendance-toolbar-filters {
@@ -2896,6 +2898,23 @@ tbody td {
   }
 
   .table-search {
+    max-width: 100%;
+  }
+
+  .purchase-filter-toolbar {
+    width: 100%;
+  }
+
+  .purchase-filter-toolbar > * {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .purchase-search,
+  .purchase-status-filter {
+    flex-basis: auto;
     max-width: 100%;
   }
 

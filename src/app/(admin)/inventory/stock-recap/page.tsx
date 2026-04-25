@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { FileDown, Search } from 'lucide-react';
+import { FileDown, Printer, Search } from 'lucide-react';
 
 import PageBackButton from '@/components/PageBackButton';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -23,6 +23,7 @@ import {
   summarizeInventoryStockRecapRows,
 } from '@/lib/inventory-stock-recap';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, escapePrintHtml } from '@/lib/print';
 import type { StockMovement, WarehouseItem } from '@/lib/types';
 
 import { useApp, useToast } from '../../layout';
@@ -54,6 +55,7 @@ export default function InventoryStockRecapPage() {
   const canViewPage = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const canOpenItemDetail = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const canExport = user ? hasPermission(user.role, 'warehouseItems', 'export') : false;
+  const canPrint = user ? hasPermission(user.role, 'warehouseItems', 'print') || canExport : false;
 
   useEffect(() => {
     async function loadData() {
@@ -78,7 +80,7 @@ export default function InventoryStockRecapPage() {
         setItems(itemRows || []);
         setMovements(movementRows || []);
       } catch (error) {
-        addToast('error', error instanceof Error ? error.message : 'Gagal memuat rekap gudang');
+        addToast('error', error instanceof Error ? error.message : 'Gagal memuat laporan stok gudang');
       } finally {
         setLoading(false);
       }
@@ -164,10 +166,10 @@ export default function InventoryStockRecapPage() {
           { header: 'Mutasi', key: 'mutasi', width: 12 },
           { header: 'Status', key: 'status', width: 14 },
         ],
-        `rekap-gudang-${periodLabel.replace(/\s+/g, '-')}`,
-        'Rekap Gudang',
+        `laporan-stok-gudang-${periodLabel.replace(/\s+/g, '-')}`,
+        'Laporan Stok Gudang',
         {
-          title: 'Rekap Gudang',
+          title: 'Laporan Stok Gudang',
           subtitle: periodLabel,
           metadata: [
             { label: 'Periode', value: periodLabel },
@@ -176,16 +178,111 @@ export default function InventoryStockRecapPage() {
           emptyMessage: 'Tidak ada barang gudang pada filter ini',
         },
       );
-      addToast('success', 'Excel rekap gudang berhasil di-download');
+      addToast('success', 'Excel laporan stok gudang berhasil di-download');
     } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel rekap gudang');
+      addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel laporan stok gudang');
+    }
+  };
+
+  const buildPrintHtml = () => {
+    const rowsHtml = filteredRows.length > 0
+      ? filteredRows.map((row, index) => `
+          <tr>
+            <td class="c">${index + 1}</td>
+            <td>
+              <div class="b">${escapePrintHtml(row.itemName)}</div>
+              <div class="muted">${escapePrintHtml(row.itemCode)}</div>
+            </td>
+            <td>${escapePrintHtml(row.category || '-')}</td>
+            <td class="r">${escapePrintHtml(formatStockRecapQty(row.openingStock, row.unit))}</td>
+            <td class="r">${escapePrintHtml(formatStockRecapQty(row.incomingQty, row.unit))}</td>
+            <td class="r">${escapePrintHtml(formatStockRecapQty(row.outgoingQty, row.unit))}</td>
+            <td class="r">${escapePrintHtml(formatStockRecapQty(row.adjustmentQty, row.unit))}</td>
+            <td class="r b">${escapePrintHtml(formatStockRecapQty(row.endingStock, row.unit))}</td>
+            <td class="r">${escapePrintHtml(formatStockRecapQty(row.minStockQty, row.unit))}</td>
+            <td>${escapePrintHtml(INVENTORY_STOCK_RECAP_STATUS_LABELS[row.status])}</td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="10" class="c muted">Tidak ada data stok gudang pada filter ini.</td></tr>';
+
+    return `
+      <div class="stats-row">
+        <div class="stat-box"><div class="stat-label">Item Aktif</div><div class="stat-value">${summary.activeItemCount}</div></div>
+        <div class="stat-box"><div class="stat-label">Item Masuk</div><div class="stat-value">${summary.incomingItemCount}</div></div>
+        <div class="stat-box"><div class="stat-label">Item Keluar</div><div class="stat-value">${summary.outgoingItemCount}</div></div>
+        <div class="stat-box"><div class="stat-label">Stok Perlu Perhatian</div><div class="stat-value">${summary.lowStockCount + summary.outOfStockCount}</div></div>
+      </div>
+      <div class="report-meta">
+        <div><span class="b">Periode:</span> ${escapePrintHtml(periodLabel)}</div>
+        <div><span class="b">Kategori:</span> ${escapePrintHtml(category || 'Semua Kategori')}</div>
+        <div><span class="b">Status:</span> ${escapePrintHtml(statusFilter ? INVENTORY_STOCK_RECAP_STATUS_LABELS[statusFilter as keyof typeof INVENTORY_STOCK_RECAP_STATUS_LABELS] : 'Semua Status')}</div>
+        <div><span class="b">Pencarian:</span> ${escapePrintHtml(search.trim() || '-')}</div>
+      </div>
+      <div class="section-title">Rincian Stok Gudang</div>
+      <table class="stock-report-table">
+        <thead>
+          <tr>
+            <th class="c">No</th>
+            <th>Barang</th>
+            <th>Kategori</th>
+            <th class="r">Stok Awal</th>
+            <th class="r">Masuk</th>
+            <th class="r">Keluar</th>
+            <th class="r">Adjustment</th>
+            <th class="r">Stok Akhir</th>
+            <th class="r">Min Stok</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+  };
+
+  const handlePrintPreview = async () => {
+    if (!canPrint) return;
+    const printWindow = openPrintWindow('Menyiapkan preview laporan stok gudang...');
+    if (!printWindow) {
+      addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+      return;
+    }
+
+    try {
+      const company = await fetchCompanyProfile();
+      openBrandedPrint({
+        title: 'Laporan Stok Gudang',
+        subtitle: periodLabel,
+        company,
+        targetWindow: printWindow,
+        autoPrint: false,
+        bodyHtml: buildPrintHtml(),
+        extraStyles: `
+          body { max-width: 1120px; }
+          .report-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1rem; margin-bottom: 1rem; color: #334155; font-size: 0.82rem; }
+          .stock-report-table { table-layout: fixed; }
+          .stock-report-table th, .stock-report-table td { font-size: 0.76rem; vertical-align: top; }
+          .stock-report-table th:nth-child(1) { width: 5%; }
+          .stock-report-table th:nth-child(2) { width: 22%; }
+          .stock-report-table th:nth-child(3) { width: 12%; }
+          .stock-report-table th:nth-child(10) { width: 10%; }
+          .muted { color: #64748b; font-size: 0.72rem; margin-top: 0.1rem; }
+          @page { size: A4 landscape; margin: 10mm; }
+          @media print {
+            body { max-width: none; }
+            .report-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          }
+        `,
+      });
+    } catch (error) {
+      try { printWindow.close(); } catch {}
+      addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan preview laporan stok gudang');
     }
   };
 
   if (!user || !canViewPage) {
     return (
       <div className="card">
-        <div className="card-body">Role Anda tidak punya akses ke rekap gudang.</div>
+        <div className="card-body">Role Anda tidak punya akses ke laporan stok gudang.</div>
       </div>
     );
   }
@@ -195,9 +292,14 @@ export default function InventoryStockRecapPage() {
       <div className="page-header">
         <div className="page-header-left">
           <PageBackButton href="/inventory" />
-          <h1 className="page-title">Rekap Gudang</h1>
+          <h1 className="page-title">Laporan Stok Gudang</h1>
         </div>
         <div className="page-actions">
+          {canPrint && (
+            <button className="btn btn-secondary" onClick={() => void handlePrintPreview()}>
+              <Printer size={18} /> Print Preview
+            </button>
+          )}
           {canExport && (
             <button className="btn btn-secondary" onClick={() => void handleExport()}>
               <FileDown size={18} /> Excel
@@ -208,7 +310,7 @@ export default function InventoryStockRecapPage() {
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
-          <span className="card-header-title">Periode Rekap</span>
+          <span className="card-header-title">Periode Laporan</span>
         </div>
         <div className="card-body">
           <div className="form-row">
@@ -255,6 +357,9 @@ export default function InventoryStockRecapPage() {
               <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
             </div>
           )}
+          <div className="text-muted text-sm" style={{ marginTop: '1rem' }}>
+            Laporan stok gudang periode: {periodLabel}
+          </div>
         </div>
       </div>
 
@@ -302,7 +407,7 @@ export default function InventoryStockRecapPage() {
               {loading ? [1, 2, 3].map((index) => (
                 <tr key={index}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((cell) => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>
               )) : filteredRows.length === 0 ? (
-                <tr><td colSpan={9}><div className="empty-state"><div className="empty-state-title">Tidak ada data rekap gudang</div></div></td></tr>
+                <tr><td colSpan={9}><div className="empty-state"><div className="empty-state-title">Tidak ada data laporan stok gudang</div></div></td></tr>
               ) : filteredRows.map((row) => (
                 <tr key={row.warehouseItemRef}>
                   <td>
@@ -330,7 +435,7 @@ export default function InventoryStockRecapPage() {
         {!loading && (
           <div className="mobile-record-list">
             {filteredRows.length === 0 ? (
-              <div className="mobile-record-card"><div className="mobile-record-title">Tidak ada data rekap gudang</div></div>
+              <div className="mobile-record-card"><div className="mobile-record-title">Tidak ada data laporan stok gudang</div></div>
             ) : filteredRows.map((row) => (
               <div key={row.warehouseItemRef} className="mobile-record-card">
                 <div className="mobile-record-header">

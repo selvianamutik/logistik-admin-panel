@@ -166,6 +166,7 @@ export function openBrandedPrint(opts: {
     showCompanyHeader?: boolean;
     showFooter?: boolean;
     targetWindow?: Window | null;
+    autoPrint?: boolean;
 }) {
     const w = opts.targetWindow && !opts.targetWindow.closed
         ? opts.targetWindow
@@ -180,6 +181,7 @@ export function openBrandedPrint(opts: {
         extraStyles,
         showCompanyHeader = true,
         showFooter = true,
+        autoPrint = true,
         targetWindow: _targetWindow,
     } = opts;
     void _targetWindow;
@@ -212,6 +214,13 @@ export function openBrandedPrint(opts: {
         .print-header .co-sub { color: #64748b; font-size: 0.85rem; }
         .print-header .print-date { margin-left: auto; text-align: right; font-size: 0.72rem; color: #94a3b8; }
         .print-footer { margin-top: 1.5rem; font-size: 0.72rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 0.75rem; display: flex; justify-content: space-between; }
+        .print-preview-toolbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: -2rem -2rem 1.25rem; padding: 0.85rem 2rem; background: #0f172a; color: white; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18); }
+        .print-preview-title { font-weight: 700; letter-spacing: 0.01em; }
+        .print-preview-subtitle { color: #cbd5e1; font-size: 0.78rem; margin-top: 0.1rem; }
+        .print-preview-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+        .print-preview-actions button { border: 0; border-radius: 8px; padding: 0.5rem 0.8rem; font-weight: 700; cursor: pointer; }
+        .print-preview-actions .primary { background: #0f766e; color: white; }
+        .print-preview-actions .secondary { background: #334155; color: white; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 0.5rem 0.65rem; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 0.82rem; }
         th { background: #f1f5f9; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; }
@@ -227,9 +236,21 @@ export function openBrandedPrint(opts: {
         .stat-label { font-size: 0.65rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
         .stat-value { font-size: 1rem; font-weight: 700; margin-top: 0.15rem; }
         .section-title { font-size: 0.85rem; font-weight: 700; color: #1e293b; margin: 1rem 0 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e2e8f0; }
-        @media print { body { padding: 0.5rem; } .no-print { display: none; } }
+        @media print { body { padding: 0.5rem; } .no-print { display: none !important; } }
         ${extraStyles || ''}
     </style></head><body>
+        ${!autoPrint ? `
+            <div class="print-preview-toolbar no-print">
+                <div>
+                    <div class="print-preview-title">Preview Cetak</div>
+                    <div class="print-preview-subtitle">${safeBrowserTitle}</div>
+                </div>
+                <div class="print-preview-actions">
+                    <button class="primary" onclick="window.print()">Print</button>
+                    <button class="secondary" onclick="window.close()">Tutup</button>
+                </div>
+            </div>
+        ` : ''}
         ${showCompanyHeader ? `
             <div class="print-header">
                 ${safeCompanyLogo ? `<img src="${safeCompanyLogo}" />` : ''}
@@ -249,7 +270,11 @@ export function openBrandedPrint(opts: {
         ` : ''}
     </body></html>`);
     w.document.close();
-    setTimeout(() => w.print(), 300);
+    if (autoPrint) {
+        setTimeout(() => w.print(), 300);
+    } else {
+        setTimeout(() => w.focus(), 50);
+    }
 }
 
 export function escapePrintHtml(value: unknown) {
