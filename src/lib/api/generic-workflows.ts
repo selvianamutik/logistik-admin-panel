@@ -432,7 +432,11 @@ function isProtectedLedgerEntity(entity: string) {
         entity === 'incomes' ||
         entity === 'expenses' ||
         entity === 'bank-transactions' ||
-        entity === 'purchase-payments'
+        entity === 'purchase-payments' ||
+        entity === 'chart-of-accounts' ||
+        entity === 'journal-entries' ||
+        entity === 'journal-lines' ||
+        entity === 'accounting-periods'
     );
 }
 
@@ -461,6 +465,10 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'incomes' ||
         entity === 'expenses' ||
         entity === 'bank-transactions' ||
+        entity === 'chart-of-accounts' ||
+        entity === 'journal-entries' ||
+        entity === 'journal-lines' ||
+        entity === 'accounting-periods' ||
         entity === 'driver-vouchers' ||
         entity === 'driver-voucher-items' ||
         entity === 'driver-voucher-disbursements' ||

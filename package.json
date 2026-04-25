@@ -10,6 +10,7 @@
     "lint": "eslint",
     "typecheck": "node scripts/typecheck.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
+    "audit:accounting-integrity": "npx tsx --conditions react-server scripts/audit-accounting-integrity.ts",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
     "audit:delivery-order-billing-eligibility": "npx tsx scripts/audit-delivery-order-billing-eligibility.ts",
     "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",

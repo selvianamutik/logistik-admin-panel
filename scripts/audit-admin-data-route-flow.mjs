@@ -212,5 +212,13 @@ assert(
     !accountingPostingSource.includes('new Date().toISOString().slice(0, 10)'),
     'Posting jurnal fallback harus memakai business date, bukan tanggal UTC dari toISOString().'
 );
+const genericWorkflowPath = path.join(process.cwd(), 'src/lib/api/generic-workflows.ts');
+const genericWorkflowSource = fs.readFileSync(genericWorkflowPath, 'utf8');
+for (const accountingEntity of ['chart-of-accounts', 'journal-entries', 'journal-lines', 'accounting-periods']) {
+    assert(
+        genericWorkflowSource.includes(`entity === '${accountingEntity}'`),
+        `Entity akuntansi ${accountingEntity} harus dilindungi dari mutation API umum.`
+    );
+}
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, and accounting date guards verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date guards, and accounting mutation guards verified.`);
