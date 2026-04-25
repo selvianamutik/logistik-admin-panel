@@ -7,6 +7,8 @@ const financeWorkflowPath = path.join(process.cwd(), 'src/lib/api/finance-workfl
 const financeWorkflowSource = fs.readFileSync(financeWorkflowPath, 'utf8');
 const accountingStatementsPath = path.join(process.cwd(), 'src/app/(admin)/accounting/statements/page.tsx');
 const accountingStatementsSource = fs.readFileSync(accountingStatementsPath, 'utf8');
+const accountingLedgerPath = path.join(process.cwd(), 'src/app/(admin)/accounting/ledger/page.tsx');
+const accountingLedgerSource = fs.readFileSync(accountingLedgerPath, 'utf8');
 const accountingPostingPath = path.join(process.cwd(), 'src/lib/api/accounting-posting.ts');
 const accountingPostingSource = fs.readFileSync(accountingPostingPath, 'utf8');
 
@@ -212,6 +214,13 @@ assert(
     !accountingPostingSource.includes('new Date().toISOString().slice(0, 10)'),
     'Posting jurnal fallback harus memakai business date, bukan tanggal UTC dari toISOString().'
 );
+assert(
+    accountingLedgerSource.includes('const periodLines') &&
+        accountingLedgerSource.includes('const cumulativeLines') &&
+        accountingLedgerSource.includes('buildProfitLossFromLedger(periodSummaries)') &&
+        accountingLedgerSource.includes('buildBalanceSheetFromLedger(balanceSummaries)'),
+    'Buku besar harus memisahkan mutasi periode untuk laba/rugi dan saldo kumulatif untuk neraca.'
+);
 const genericWorkflowPath = path.join(process.cwd(), 'src/lib/api/generic-workflows.ts');
 const genericWorkflowSource = fs.readFileSync(genericWorkflowPath, 'utf8');
 for (const accountingEntity of ['chart-of-accounts', 'journal-entries', 'journal-lines', 'accounting-periods']) {
@@ -221,4 +230,4 @@ for (const accountingEntity of ['chart-of-accounts', 'journal-entries', 'journal
     );
 }
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date guards, and accounting mutation guards verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date/ledger guards, and accounting mutation guards verified.`);
