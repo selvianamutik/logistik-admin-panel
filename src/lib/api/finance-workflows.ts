@@ -450,6 +450,21 @@ async function loadReceivableSnapshot(invoiceRef: string) {
     );
 }
 
+function getReceivableDocumentType(snapshot: ReceivableSnapshot) {
+    return snapshot.doc._type === 'freightNota' ? 'freightNota' : 'invoice';
+}
+
+async function updateReceivableSnapshot(
+    snapshot: ReceivableSnapshot,
+    totalPaid: number,
+    totalAdjustmentAmount: number,
+    pph23Override?: Partial<Pick<ReceivableSnapshot, 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode'>>
+) {
+    const patch = buildReceivablePatch(snapshot, totalPaid, totalAdjustmentAmount, pph23Override);
+    await updateDocument(snapshot.doc._id, patch, getReceivableDocumentType(snapshot));
+    return patch;
+}
+
 async function loadReceiptOverpaymentSnapshot(receiptRef: string) {
     const receipt = await getDocumentById<{
         _id: string;
@@ -658,7 +673,7 @@ export async function handlePaymentCreate(
         amount,
             note: loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice',
     });
-    await updateDocument(invoiceRef, buildReceivablePatch(loaded, nextTotalPaid, loaded.totalAdjustmentAmount), 'invoice');
+    await updateReceivableSnapshot(loaded, nextTotalPaid, loaded.totalAdjustmentAmount);
 
     if (bankAcc) {
         const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + amount;
@@ -915,11 +930,11 @@ export async function handleCustomerReceiptCreate(
             method: paymentMethod,
             note: allocation.note ?? receiptNote,
         });
-        await updateDocument(allocation.invoiceRef, buildReceivablePatch(
+        await updateReceivableSnapshot(
             snapshot,
             snapshot.totalPaid + allocation.amount,
             snapshot.totalAdjustmentAmount,
-        ), 'invoice');
+        );
     }
 
     await postCustomerReceiptJournal(
@@ -1025,7 +1040,7 @@ export async function handleInvoiceAdjustmentCreate(
         createdByName: session.name,
     };
     await createDocument(adjustmentDoc);
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await updateReceivableSnapshot(snapshot, snapshot.totalPaid, nextAdjustmentAmount);
     await postInvoiceAdjustmentJournal(session, adjustmentDoc as InvoiceAdjustment, snapshot.label);
 
     await addAuditLog(
@@ -1110,7 +1125,7 @@ export async function handleInvoiceAdjustmentUpdate(
         editedBy: session._id,
         editedByName: session.name,
     }), 'invoiceAdjustment');
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await updateReceivableSnapshot(snapshot, snapshot.totalPaid, nextAdjustmentAmount);
     await postInvoiceAdjustmentJournal(session, {
         ...adjustment,
         date,
@@ -1173,7 +1188,7 @@ async function finalizeInvoiceAdjustmentDelete(
         voidedBy: session._id,
         voidedByName: session.name,
     }, 'invoiceAdjustment');
-    await updateDocument(invoiceRef, buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount), 'invoice');
+    await updateReceivableSnapshot(snapshot, snapshot.totalPaid, nextAdjustmentAmount);
     await voidJournalEntryForSource(session, 'INVOICE_ADJUSTMENT', adjustmentId, 'APPROVE');
 
     await addAuditLog(
@@ -1387,11 +1402,11 @@ export async function handleCustomerOverpaymentRefund(
     }
 
     if (invoicePatch) {
-        await updateDocument(invoicePatch.invoiceRef, buildReceivablePatch(
+        await updateReceivableSnapshot(
             invoicePatch.snapshot,
             invoicePatch.nextTotalPaid,
             invoicePatch.totalAdjustmentAmount
-        ), 'invoice');
+        );
     }
     await postCustomerOverpaymentRefundJournal(session, refundDoc, bankAcc);
 

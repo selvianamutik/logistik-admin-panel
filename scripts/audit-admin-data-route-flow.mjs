@@ -3,6 +3,8 @@ import path from 'node:path';
 
 const routePath = path.join(process.cwd(), 'src/app/api/data/route.ts');
 const source = fs.readFileSync(routePath, 'utf8');
+const financeWorkflowPath = path.join(process.cwd(), 'src/lib/api/finance-workflows.ts');
+const financeWorkflowSource = fs.readFileSync(financeWorkflowPath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -186,4 +188,17 @@ assert(
     'POST /api/data harus tetap menolak role DRIVER karena driver memakai route /api/driver.'
 );
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions and ${freightNotaUpdateActions.length} freight-nota update actions verified.`);
+const hardCodedReceivableLegacyUpdates = financeWorkflowSource.match(
+    /updateDocument\([\s\S]{0,220}buildReceivablePatch\([\s\S]{0,220}['"]invoice['"]\)/g
+) || [];
+assert(
+    hardCodedReceivableLegacyUpdates.length === 0,
+    'Mutasi piutang tidak boleh hard-code updateDocument(..., buildReceivablePatch(...), "invoice") karena invoice aktif memakai freightNota.'
+);
+assert(
+    financeWorkflowSource.includes('function getReceivableDocumentType') &&
+        financeWorkflowSource.includes('async function updateReceivableSnapshot'),
+    'Finance workflow harus memakai helper updateReceivableSnapshot agar tipe dokumen piutang mengikuti snapshot.'
+);
+
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, and receivable document-type guard verified.`);
