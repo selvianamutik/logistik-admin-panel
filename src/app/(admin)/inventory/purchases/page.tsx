@@ -77,6 +77,7 @@ export default function PurchasesPage() {
   const canCreatePurchase = user ? hasPermission(user.role, 'purchases', 'create') : false;
   const canExportPurchases = user ? hasPermission(user.role, 'purchases', 'export') : false;
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
+  const canOpenStockReport = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const today = getBusinessDateValue();
   const dateRange = useMemo(
     () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
@@ -216,7 +217,7 @@ export default function PurchasesPage() {
       <div className="page-header">
         <div className="page-header-left"><h1 className="page-title">Pembelian</h1></div>
         <div className="page-actions">
-          <Link href="/inventory/stock-recap" className="btn btn-secondary">Laporan Stok</Link>
+          {canOpenStockReport && <Link href="/inventory/stock-recap" className="btn btn-secondary">Laporan Stok</Link>}
           {canExportPurchases && <button className="btn btn-secondary" onClick={() => void handleExport()}><FileDown size={18} /> Excel</button>}
           {canCreatePurchase && <Link href="/inventory/purchases/new" className="btn btn-primary"><Plus size={18} /> Buat Pembelian</Link>}
         </div>

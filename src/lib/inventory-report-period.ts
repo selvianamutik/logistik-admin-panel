@@ -66,10 +66,16 @@ export function getInventoryReportDateRange(params: {
   dateFrom?: string;
   dateTo?: string;
 }) {
+  const defaultPeriod = getDefaultInventoryReportPeriod();
+  const safeYear = Number.isFinite(params.year) ? Math.trunc(params.year) : defaultPeriod.year;
+  const safeMonthIndex = Number.isFinite(params.monthIndex)
+    ? Math.max(0, Math.min(11, Math.trunc(params.monthIndex)))
+    : defaultPeriod.monthIndex;
+
   if (params.mode === 'year') {
     return {
-      startDate: `${params.year}-01-01`,
-      endDate: `${params.year}-12-31`,
+      startDate: `${safeYear}-01-01`,
+      endDate: `${safeYear}-12-31`,
     };
   }
 
@@ -82,10 +88,10 @@ export function getInventoryReportDateRange(params: {
     };
   }
 
-  const month = String(params.monthIndex + 1).padStart(2, '0');
+  const month = String(safeMonthIndex + 1).padStart(2, '0');
   return {
-    startDate: `${params.year}-${month}-01`,
-    endDate: getLastDateOfMonth(params.year, params.monthIndex),
+    startDate: `${safeYear}-${month}-01`,
+    endDate: getLastDateOfMonth(safeYear, safeMonthIndex),
   };
 }
 
@@ -96,14 +102,20 @@ export function buildInventoryReportPeriodLabel(params: {
   startDate?: string;
   endDate?: string;
 }) {
-  if (params.mode === 'year') return `Tahun ${params.year}`;
+  const defaultPeriod = getDefaultInventoryReportPeriod();
+  const safeYear = Number.isFinite(params.year) ? Math.trunc(params.year) : defaultPeriod.year;
+  const safeMonthIndex = Number.isFinite(params.monthIndex)
+    ? Math.max(0, Math.min(11, Math.trunc(params.monthIndex)))
+    : defaultPeriod.monthIndex;
+
+  if (params.mode === 'year') return `Tahun ${safeYear}`;
   if (params.mode === 'custom') {
     const startDate = normalizeInventoryReportDate(params.startDate) || '-';
     const endDate = normalizeInventoryReportDate(params.endDate) || '-';
     return `${startDate} s.d. ${endDate}`;
   }
 
-  return `${INVENTORY_REPORT_MONTH_NAMES[params.monthIndex] || '-'} ${params.year}`;
+  return `${INVENTORY_REPORT_MONTH_NAMES[safeMonthIndex]} ${safeYear}`;
 }
 
 export function isDateInInventoryReportRange(dateValue: string | undefined | null, startDate: string, endDate: string) {

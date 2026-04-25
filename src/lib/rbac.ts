@@ -101,7 +101,7 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
     warehouseItems: {
         OWNER: OWNER_FULL,
         OPERASIONAL: OWNER_FULL,
-        FINANCE: { ...DENY_ALL, view: true, export: true },
+        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
     purchases: {
         OWNER: OWNER_FULL,

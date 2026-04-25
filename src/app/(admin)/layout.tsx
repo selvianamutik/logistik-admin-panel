@@ -344,6 +344,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
             tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Uang Jalan Trip',
             inventory: 'Inventory', purchases: 'Pembelian', suppliers: 'Supplier', items: 'Barang Gudang',
+            'stock-recap': 'Laporan Stok', 'material-usage': 'Pemakaian Barang',
         };
         const resolvedLabel =
             labels[part] ||

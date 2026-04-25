@@ -22,19 +22,33 @@ export type InventoryStockRecapRow = {
 function getMovementDelta(movement: StockMovement) {
   const quantity = getNonNegativeQuantity(movement.quantity);
   if (movement.type === 'OUT') return -quantity;
-  if (movement.type === 'ADJUSTMENT') return parseInventoryQuantity(movement.quantity) || 0;
+  if (movement.type === 'ADJUSTMENT') return parseStockRecapQuantity(movement.quantity) || 0;
   return quantity;
 }
 
+function parseStockRecapQuantity(value: unknown) {
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^\d,.\-]/g, '').trim();
+    const isGroupedIdNumber = /^-?\d{1,3}(\.\d{3})+$/.test(cleaned);
+    if (isGroupedIdNumber && !cleaned.includes(',')) {
+      const grouped = Number(cleaned.replace(/\./g, ''));
+      return Number.isFinite(grouped) ? grouped : Number.NaN;
+    }
+  }
+
+  return parseInventoryQuantity(value);
+}
+
 function getNonNegativeQuantity(value: unknown) {
-  const quantity = parseInventoryQuantity(value);
+  const quantity = parseStockRecapQuantity(value);
   return Number.isFinite(quantity) ? Math.max(quantity, 0) : 0;
 }
 
 function getStockStatus(item: WarehouseItem, endingStock: number): InventoryStockRecapRow['status'] {
+  const minStockQty = getNonNegativeQuantity(item.minStockQty || 0);
   if (item.active === false) return 'INACTIVE';
   if (endingStock <= 0) return 'OUT_OF_STOCK';
-  if (Number(item.minStockQty || 0) > 0 && endingStock <= Number(item.minStockQty || 0)) return 'LOW_STOCK';
+  if (minStockQty > 0 && endingStock <= minStockQty) return 'LOW_STOCK';
   return 'OK';
 }
 
