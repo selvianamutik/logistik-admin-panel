@@ -244,6 +244,12 @@ const relationalAdapterChecks = [
   },
 ];
 
+const expectedTripRouteRatePhotoSources = new Map([
+  ['Engkel Jawa Timur', 80],
+  ['Tronton dan Trailer Jawa Timur', 81],
+  ['Tronton dan Trailer Jawa Tengah', 80],
+]);
+
 function fail(message) {
   console.error(`ERROR: ${message}`);
   process.exitCode = 1;
@@ -456,6 +462,90 @@ for (const check of relationalAdapterChecks) {
   }
 
   console.log(`- OK   ${check.name}`);
+}
+
+console.log('');
+console.log('Seed data checks');
+const seedPath = path.join(repoRoot, 'artifacts/default-supabase-seed.json');
+const seedDocuments = JSON.parse(readFileSync(seedPath, 'utf8'));
+const tripRouteRates = seedDocuments.filter(doc => doc?._type === 'tripRouteRate');
+const tripRouteRateSourceCounts = new Map();
+const tripRouteRateKeys = new Set();
+const duplicateTripRouteRateKeys = [];
+const removedDemoTripRateRefs = new Set(Array.from({ length: 9 }, (_, index) => `trip-rate-00${index + 1}`));
+const staleRemovedDemoTripRateRefs = [];
+let invalidTripRouteRates = 0;
+let tripRouteRatesWithoutPhotoSource = 0;
+
+for (const rate of tripRouteRates) {
+  const photoSource = typeof rate.photoSource === 'string' ? rate.photoSource.trim() : '';
+  if (!photoSource) {
+    tripRouteRatesWithoutPhotoSource += 1;
+  }
+  tripRouteRateSourceCounts.set(photoSource, (tripRouteRateSourceCounts.get(photoSource) || 0) + 1);
+
+  if (
+    typeof rate.originArea !== 'string' ||
+    !rate.originArea.trim() ||
+    typeof rate.destinationArea !== 'string' ||
+    !rate.destinationArea.trim() ||
+    typeof rate.serviceRef !== 'string' ||
+    !rate.serviceRef.trim() ||
+    typeof rate.rate !== 'number' ||
+    !Number.isFinite(rate.rate) ||
+    rate.rate <= 0
+  ) {
+    invalidTripRouteRates += 1;
+  }
+
+  const key = [
+    String(rate.originArea || '').trim().toLowerCase(),
+    String(rate.destinationArea || '').trim().toLowerCase(),
+    String(rate.serviceRef || '').trim().toLowerCase(),
+  ].join('|');
+  if (tripRouteRateKeys.has(key)) {
+    duplicateTripRouteRateKeys.push(key);
+  }
+  tripRouteRateKeys.add(key);
+}
+
+if (tripRouteRatesWithoutPhotoSource > 0) {
+  fail(`Seed biaya trip masih punya ${tripRouteRatesWithoutPhotoSource} data tanpa photoSource.`);
+} else {
+  console.log('- OK   trip-route-rates all photo-backed');
+}
+
+for (const [photoSource, expectedCount] of expectedTripRouteRatePhotoSources.entries()) {
+  const actualCount = tripRouteRateSourceCounts.get(photoSource) || 0;
+  if (actualCount !== expectedCount) {
+    fail(`Seed biaya trip ${photoSource} harus ${expectedCount}, sekarang ${actualCount}.`);
+  }
+}
+
+if (invalidTripRouteRates > 0) {
+  fail(`Seed biaya trip punya ${invalidTripRouteRates} data tidak valid.`);
+} else {
+  console.log('- OK   trip-route-rates required fields valid');
+}
+
+if (duplicateTripRouteRateKeys.length > 0) {
+  fail(`Seed biaya trip punya duplikasi rute/kategori: ${duplicateTripRouteRateKeys.slice(0, 5).join(', ')}`);
+} else {
+  console.log(`- OK   trip-route-rates photo counts ${tripRouteRates.length} and no duplicate route/service keys`);
+}
+
+for (const doc of seedDocuments) {
+  for (const [key, value] of Object.entries(doc)) {
+    if (removedDemoTripRateRefs.has(value)) {
+      staleRemovedDemoTripRateRefs.push(`${doc._type}/${doc._id}.${key}=${value}`);
+    }
+  }
+}
+
+if (staleRemovedDemoTripRateRefs.length > 0) {
+  fail(`Seed masih mereferensikan biaya trip demo yang sudah dihapus: ${staleRemovedDemoTripRateRefs.slice(0, 5).join(', ')}`);
+} else {
+  console.log('- OK   removed demo trip-route-rate refs are not referenced by seed docs');
 }
 
 console.log('');
