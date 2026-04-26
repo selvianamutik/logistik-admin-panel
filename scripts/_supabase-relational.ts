@@ -1808,7 +1808,7 @@ export async function seedRelationalTables(supabaseRequest: SupabaseRequestFn, d
         for (let index = 0; index < rows.length; index += batchSize) {
             const batch = rows.slice(index, index + batchSize);
             try {
-                await supabaseRequest(table, {
+                await supabaseRequest(`${table}?on_conflict=source_document_id`, {
                     method: 'POST',
                     headers: {
                         Prefer: 'resolution=merge-duplicates,return=minimal',
