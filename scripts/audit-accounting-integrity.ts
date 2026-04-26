@@ -3,6 +3,7 @@ import { loadScriptEnv } from './_env';
 loadScriptEnv();
 
 import { getAllDocuments } from '../src/lib/repositories/document-store';
+import { buildBalanceSheetFromLedger, buildLedgerSummary, getJournalLinesUntil } from '../src/lib/accounting-reports';
 import type { ChartOfAccount, JournalEntry, JournalLine } from '../src/lib/types';
 
 function normalizeAmount(value: unknown) {
@@ -87,6 +88,13 @@ async function main() {
 
     assert(postedDebit === postedCredit, `Total jurnal POSTED tidak balance: debit ${postedDebit}, kredit ${postedCredit}.`);
 
+    const balanceSheetLines = getJournalLinesUntil(entries, lines, '9999-12-31');
+    const balanceSheet = buildBalanceSheetFromLedger(buildLedgerSummary(accounts, balanceSheetLines));
+    assert(
+        Math.abs(balanceSheet.balanceGap) <= 0.01,
+        `Neraca tidak balance: aktiva ${balanceSheet.assets}, pasiva ${balanceSheet.liabilitiesAndEquity}, selisih ${balanceSheet.balanceGap}.`
+    );
+
     console.log(JSON.stringify({
         ok: true,
         summary: {
@@ -97,6 +105,7 @@ async function main() {
             lines: lines.length,
             postedDebit,
             postedCredit,
+            balanceSheetGap: balanceSheet.balanceGap,
         },
     }, null, 2));
 }

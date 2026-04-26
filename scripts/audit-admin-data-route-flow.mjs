@@ -234,6 +234,14 @@ assert(
         accountingPostingSource.includes('Promise.all(existing.map'),
     'Void jurnal harus menutup semua jurnal aktif untuk source yang sama, bukan hanya hasil query pertama.'
 );
+assert(
+    accountingPostingSource.includes('function resolveDriverVoucherIssuedAmount') &&
+        accountingPostingSource.includes('const driverAdvanceCloseAmount = resolveDriverVoucherIssuedAmount') &&
+        accountingPostingSource.includes('const additionalPaymentAmount = Math.max(-balance, 0)') &&
+        !accountingPostingSource.includes('totalExpense + Math.max(balance, 0)') &&
+        !accountingPostingSource.includes("lines.push({ account: 'driver_advance', debit: shortage"),
+    'Settlement uang jalan harus menutup akun bon sebesar total uang diberikan dan mencatat kekurangan sebagai kredit kas/bank, bukan debit-kredit ulang di akun bon.'
+);
 for (const [label, migrationSource] of [
     ['schema awal accounting ledger', accountingLedgerMigrationSource],
     ['migration revisi accounting journal unique index', accountingRevisionMigrationSource],

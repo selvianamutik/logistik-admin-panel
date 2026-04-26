@@ -92,6 +92,17 @@ function cleanLineAmount(value: unknown) {
     return Math.max(normalizeLedgerAmount(value), 0);
 }
 
+function resolveDriverVoucherIssuedAmount(voucher: DriverVoucherPosting, totalExpense: number, balance: number) {
+    const explicitIssuedAmount = cleanLineAmount(
+        voucher.totalIssuedAmount ?? voucher.cashGiven ?? voucher.initialCashGiven
+    );
+    if (explicitIssuedAmount > 0) {
+        return explicitIssuedAmount;
+    }
+
+    return cleanLineAmount(totalExpense + balance);
+}
+
 function resolveCashBankAccount(bankAccount?: Pick<BankAccount, 'accountType' | 'systemKey'> | BankAccountSummary | null): AccountingSystemKey {
     const accountType = typeof bankAccount?.accountType === 'string' ? bankAccount.accountType : '';
     const systemKey = typeof bankAccount?.systemKey === 'string' ? bankAccount.systemKey : '';
@@ -658,19 +669,16 @@ export async function postDriverVoucherSettlementJournal(
     const driverFeeAmount = cleanLineAmount(voucher.driverFeeAmount);
     const totalExpense = tripMiscAmount + driverFeeAmount;
     const balance = normalizeLedgerAmount(voucher.balance);
+    const driverAdvanceCloseAmount = resolveDriverVoucherIssuedAmount(voucher, totalExpense, balance);
+    const returnToCompanyAmount = Math.max(balance, 0);
+    const additionalPaymentAmount = Math.max(-balance, 0);
     const lines: JournalLineInput[] = [];
 
     if (tripMiscAmount > 0) lines.push({ account: 'trip_misc_expense', debit: tripMiscAmount, entityRef: voucher._id, entityType: 'driverVoucher' });
     if (driverFeeAmount > 0) lines.push({ account: 'driver_fee_expense', debit: driverFeeAmount, entityRef: voucher._id, entityType: 'driverVoucher' });
-    if (balance > 0) lines.push({ account: resolveCashBankAccount(settlementBank), debit: balance, entityRef: voucher.settlementBankRef, entityType: 'bankAccount' });
-
-    lines.push({ account: 'driver_advance', credit: totalExpense + Math.max(balance, 0), entityRef: voucher._id, entityType: 'driverVoucher' });
-
-    if (balance < 0) {
-        const shortage = Math.abs(balance);
-        lines.push({ account: 'driver_advance', debit: shortage, entityRef: voucher._id, entityType: 'driverVoucher' });
-        lines.push({ account: resolveCashBankAccount(settlementBank), credit: shortage, entityRef: voucher.settlementBankRef, entityType: 'bankAccount' });
-    }
+    if (returnToCompanyAmount > 0) lines.push({ account: resolveCashBankAccount(settlementBank), debit: returnToCompanyAmount, entityRef: voucher.settlementBankRef, entityType: 'bankAccount' });
+    if (driverAdvanceCloseAmount > 0) lines.push({ account: 'driver_advance', credit: driverAdvanceCloseAmount, entityRef: voucher._id, entityType: 'driverVoucher' });
+    if (additionalPaymentAmount > 0) lines.push({ account: resolveCashBankAccount(settlementBank), credit: additionalPaymentAmount, entityRef: voucher.settlementBankRef, entityType: 'bankAccount' });
 
     await postJournalEntry(session, {
         entryDate: voucher.settledDate || getBusinessDateValue(),
