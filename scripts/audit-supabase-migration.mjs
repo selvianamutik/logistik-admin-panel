@@ -20,6 +20,7 @@ const genericWorkflowFile = 'src/lib/api/generic-workflows.ts';
 const supportWorkflowFile = 'src/lib/api/support-workflows.ts';
 const dataRouteFile = 'src/app/api/data/route.ts';
 const relationalFile = 'src/lib/supabase-relational.ts';
+const resetSupabaseFile = 'scripts/reset-supabase.ts';
 const migrationHotspots = [
   'src/lib/auth.ts',
   'src/app/api/data/route.ts',
@@ -466,6 +467,16 @@ for (const check of relationalAdapterChecks) {
 
 console.log('');
 console.log('Seed data checks');
+const resetSupabaseSource = readFileSync(path.join(repoRoot, resetSupabaseFile), 'utf8');
+if (
+  !resetSupabaseSource.includes("PRESERVED_RESEED_TABLES = new Set(['trip_route_rates'])") ||
+  !resetSupabaseSource.includes('Preserving Supabase table during reseed:') ||
+  !resetSupabaseSource.includes('Cleaning removed demo trip route rates only.')
+) {
+  fail('Reset Supabase harus preserve trip_route_rates saat reseed dan hanya membersihkan demo trip-rate lama secara spesifik.');
+} else {
+  console.log('- OK   reset:supabase preserves trip_route_rates during reseed');
+}
 const seedPath = path.join(repoRoot, 'artifacts/default-supabase-seed.json');
 const seedDocuments = JSON.parse(readFileSync(seedPath, 'utf8'));
 const tripRouteRates = seedDocuments.filter(doc => doc?._type === 'tripRouteRate');
