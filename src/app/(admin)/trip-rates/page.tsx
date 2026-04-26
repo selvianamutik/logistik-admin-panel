@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Edit, MapPin, Plus, Save, Trash2, X } from 'lucide-react';
+import { Edit, MapPin, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
@@ -31,6 +31,7 @@ export default function TripRouteRatesPage() {
     const [page, setPage] = useState(1);
     const [sortField, setSortField] = useState<TripRouteRateSortField>('serviceName');
     const [sortDir, setSortDir] = useState<SortDirection>('asc');
+    const [search, setSearch] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
     const [totalItems, setTotalItems] = useState(0);
     const [inactiveCount, setInactiveCount] = useState(0);
@@ -65,6 +66,10 @@ export default function TripRouteRatesPage() {
             if (serviceFilter) {
                 listParams.set('filter', JSON.stringify({ serviceRef: serviceFilter }));
             }
+            if (search.trim()) {
+                listParams.set('search', search.trim());
+                listParams.set('searchFields', 'originArea,destinationArea,serviceName,notes');
+            }
             const inactiveFilter: Record<string, unknown> = { active: false };
             if (serviceFilter) {
                 inactiveFilter.serviceRef = serviceFilter;
@@ -92,7 +97,7 @@ export default function TripRouteRatesPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, page, serviceFilter, sortDir, sortField]);
+    }, [addToast, page, search, serviceFilter, sortDir, sortField]);
 
     useEffect(() => {
         void loadTripRouteRates();
@@ -111,7 +116,7 @@ export default function TripRouteRatesPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [serviceFilter]);
+    }, [search, serviceFilter]);
 
     const openNew = () => {
         setEditItem(null);
@@ -256,6 +261,14 @@ export default function TripRouteRatesPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
+                        <div className="table-search">
+                            <Search className="table-search-icon" size={16} />
+                            <input
+                                value={search}
+                                onChange={event => setSearch(event.target.value)}
+                                placeholder="Cari area, tujuan, armada, catatan..."
+                            />
+                        </div>
                         <select
                             className="filter-select"
                             value={serviceFilter}
