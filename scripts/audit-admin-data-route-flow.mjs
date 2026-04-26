@@ -11,6 +11,10 @@ const accountingLedgerPath = path.join(process.cwd(), 'src/app/(admin)/accountin
 const accountingLedgerSource = fs.readFileSync(accountingLedgerPath, 'utf8');
 const accountingPostingPath = path.join(process.cwd(), 'src/lib/api/accounting-posting.ts');
 const accountingPostingSource = fs.readFileSync(accountingPostingPath, 'utf8');
+const accountingLedgerMigrationPath = path.join(process.cwd(), 'supabase/migrations/0015_relational_accounting_ledger.sql');
+const accountingLedgerMigrationSource = fs.readFileSync(accountingLedgerMigrationPath, 'utf8').toLowerCase();
+const accountingRevisionMigrationPath = path.join(process.cwd(), 'supabase/migrations/0016_accounting_journal_revision_unique_index.sql');
+const accountingRevisionMigrationSource = fs.readFileSync(accountingRevisionMigrationPath, 'utf8').toLowerCase();
 
 function assert(condition, message) {
     if (!condition) {
@@ -229,6 +233,23 @@ assert(
     accountingPostingSource.includes("filter(entry => entry.status !== 'VOID')") &&
         accountingPostingSource.includes('Promise.all(existing.map'),
     'Void jurnal harus menutup semua jurnal aktif untuk source yang sama, bukan hanya hasil query pertama.'
+);
+for (const [label, migrationSource] of [
+    ['schema awal accounting ledger', accountingLedgerMigrationSource],
+    ['migration revisi accounting journal unique index', accountingRevisionMigrationSource],
+]) {
+    assert(
+        migrationSource.includes('idx_journal_entries_source_event_unique') &&
+            migrationSource.includes("where status = 'posted'") &&
+            migrationSource.includes('source_type is not null') &&
+            migrationSource.includes('source_ref is not null') &&
+            migrationSource.includes('source_event is not null'),
+        `Unique index source jurnal di ${label} harus hanya membatasi jurnal POSTED agar jurnal VOID tetap menjadi riwayat revisi.`
+    );
+}
+assert(
+    accountingRevisionMigrationSource.includes('drop index if exists public.idx_journal_entries_source_event_unique'),
+    'Migration revisi jurnal harus drop unique index lama yang belum memfilter status POSTED.'
 );
 assert(
     accountingLedgerSource.includes('const periodLines') &&

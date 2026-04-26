@@ -44,7 +44,10 @@ create table if not exists public.journal_entries (
 
 create unique index if not exists idx_journal_entries_source_event_unique
     on public.journal_entries (source_type, source_ref, source_event)
-    where source_type is not null and source_ref is not null and source_event is not null;
+    where status = 'POSTED'
+        and source_type is not null
+        and source_ref is not null
+        and source_event is not null;
 
 create table if not exists public.journal_lines (
     id uuid primary key default gen_random_uuid(),
