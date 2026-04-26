@@ -1123,6 +1123,27 @@ a:hover {
   max-width: 100%;
 }
 
+.accounting-filter-toolbar {
+  flex-wrap: wrap;
+}
+
+.accounting-search {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+.accounting-filter {
+  flex: 0 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.accounting-period-filter {
+  flex: 0 1 170px;
+  min-width: 130px;
+  max-width: 220px;
+}
+
 .statement-section {
   border-top: 1px solid var(--color-gray-100);
 }
@@ -2947,7 +2968,8 @@ tbody td {
     width: 100%;
   }
 
-  .purchase-filter-toolbar > * {
+  .purchase-filter-toolbar > *,
+  .accounting-filter-toolbar > * {
     flex: 1 1 100%;
     width: 100%;
     max-width: 100%;
@@ -2955,7 +2977,10 @@ tbody td {
   }
 
   .purchase-search,
-  .purchase-status-filter {
+  .purchase-status-filter,
+  .accounting-search,
+  .accounting-filter,
+  .accounting-period-filter {
     flex-basis: auto;
     max-width: 100%;
   }
@@ -3059,6 +3084,18 @@ tbody td {
 
   .mobile-record-meta {
     grid-template-columns: 1fr;
+  }
+
+  .statement-line-row,
+  .statement-total-row {
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .statement-line-row strong,
+  .statement-total-row strong {
+    text-align: left;
+    white-space: normal;
   }
 
   .login-header,

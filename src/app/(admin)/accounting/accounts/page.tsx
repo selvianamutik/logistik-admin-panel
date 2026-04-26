@@ -46,16 +46,18 @@ export default function ChartOfAccountsPage() {
 
       <div className="table-container">
         <div className="table-toolbar">
-          <label className="table-search">
-            <Search className="table-search-icon" />
-            <input
-              className="form-input"
-              style={{ paddingLeft: "2.5rem" }}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Cari kode, akun, tipe..."
-            />
-          </label>
+          <div className="table-toolbar-left accounting-filter-toolbar">
+            <label className="table-search accounting-search">
+              <Search className="table-search-icon" />
+              <input
+                className="form-input"
+                style={{ paddingLeft: "2.5rem" }}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari kode, akun, tipe..."
+              />
+            </label>
+          </div>
         </div>
 
         <div className="table-wrapper table-desktop-only">
@@ -104,6 +106,11 @@ export default function ChartOfAccountsPage() {
               </span>
             </article>
           ))}
+          {!loading && filtered.length === 0 && (
+            <article className="mobile-record-card">
+              <p className="mobile-record-title">Tidak ada akun.</p>
+            </article>
+          )}
         </div>
       </div>
     </div>

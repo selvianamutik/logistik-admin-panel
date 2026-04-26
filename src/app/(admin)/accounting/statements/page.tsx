@@ -9,7 +9,8 @@ import {
   buildLedgerSummary,
   buildProfitLossFromLedger,
   formatAccountingCurrency,
-  isDateInPeriod,
+  getJournalLinesForPeriod,
+  getJournalLinesUntil,
   type LedgerAccountSummary,
 } from "@/lib/accounting-reports";
 import { getBusinessCalendarDateParts } from "@/lib/business-date";
@@ -124,23 +125,15 @@ export default function AccountingStatementsPage() {
   const period = useMemo(() => getPeriodRange(periodMode, year, month), [month, periodMode, year]);
   const periodLabel = useMemo(() => getPeriodLabel(periodMode, year, month), [month, periodMode, year]);
 
-  const entryById = useMemo(() => new Map(entries.map(entry => [entry._id, entry])), [entries]);
+  const periodLines = useMemo(
+    () => getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate),
+    [entries, lines, period.endDate, period.startDate],
+  );
 
-  const periodLines = useMemo(() => {
-    const activeEntryRefs = new Set(
-      entries
-        .filter(entry => isDateInPeriod(entry.entryDate, period.startDate, period.endDate))
-        .map(entry => entry._id),
-    );
-    return lines.filter(line => activeEntryRefs.has(line.journalEntryRef));
-  }, [entries, lines, period.endDate, period.startDate]);
-
-  const cumulativeLines = useMemo(() => (
-    lines.filter(line => {
-      const entry = entryById.get(line.journalEntryRef);
-      return Boolean(entry?.entryDate && entry.entryDate <= period.endDate);
-    })
-  ), [entryById, lines, period.endDate]);
+  const cumulativeLines = useMemo(
+    () => getJournalLinesUntil(entries, lines, period.endDate),
+    [entries, lines, period.endDate],
+  );
 
   const pnlSummaries = useMemo(() => buildLedgerSummary(accounts, periodLines), [accounts, periodLines]);
   const balanceSummaries = useMemo(() => buildLedgerSummary(accounts, cumulativeLines), [accounts, cumulativeLines]);
@@ -208,22 +201,24 @@ export default function AccountingStatementsPage() {
           </div>
         </div>
         <div className="page-toolbar-side">
-          <select className="form-select" value={periodMode} onChange={event => setPeriodMode(event.target.value as PeriodMode)}>
-            <option value="month">Bulanan</option>
-            <option value="year">Tahunan</option>
-          </select>
-          {periodMode === "month" && (
-            <select className="form-select" value={month} onChange={event => setMonth(Number(event.target.value))}>
-              {MONTH_NAMES.map((name, index) => (
-                <option key={name} value={index}>{name}</option>
+          <div className="period-controls">
+            <select className="form-select accounting-period-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as PeriodMode)}>
+              <option value="month">Bulanan</option>
+              <option value="year">Tahunan</option>
+            </select>
+            {periodMode === "month" && (
+              <select className="form-select accounting-period-filter" value={month} onChange={event => setMonth(Number(event.target.value))}>
+                {MONTH_NAMES.map((name, index) => (
+                  <option key={name} value={index}>{name}</option>
+                ))}
+              </select>
+            )}
+            <select className="form-select accounting-period-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+              {yearOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
               ))}
             </select>
-          )}
-          <select className="form-select" value={year} onChange={event => setYear(Number(event.target.value))}>
-            {yearOptions.map(option => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
+          </div>
         </div>
       </div>
 

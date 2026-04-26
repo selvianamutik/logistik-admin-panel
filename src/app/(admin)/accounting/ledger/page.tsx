@@ -9,7 +9,8 @@ import {
   buildLedgerSummary,
   buildProfitLossFromLedger,
   formatAccountingCurrency,
-  isDateInPeriod,
+  getJournalLinesForPeriod,
+  getJournalLinesUntil,
 } from "@/lib/accounting-reports";
 import type { ChartOfAccount, JournalEntry, JournalLine } from "@/lib/types";
 
@@ -68,42 +69,48 @@ export default function LedgerPage() {
   }, [entries, year]);
 
   const period = useMemo(() => getYearPeriod(year), [year]);
-  const entryById = useMemo(() => new Map(entries.map(entry => [entry._id, entry])), [entries]);
 
-  const periodLines = useMemo(() => {
-    const activeEntryRefs = new Set(
-      entries
-        .filter(entry => isDateInPeriod(entry.entryDate, period.startDate, period.endDate))
-        .map(entry => entry._id),
-    );
-    return lines.filter(line => activeEntryRefs.has(line.journalEntryRef));
-  }, [entries, lines, period.endDate, period.startDate]);
+  const periodLines = useMemo(
+    () => getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate),
+    [entries, lines, period.endDate, period.startDate],
+  );
 
-  const cumulativeLines = useMemo(() => (
-    lines.filter(line => {
-      const entry = entryById.get(line.journalEntryRef);
-      return Boolean(entry?.entryDate && entry.entryDate <= period.endDate);
-    })
-  ), [entryById, lines, period.endDate]);
+  const cumulativeLines = useMemo(
+    () => getJournalLinesUntil(entries, lines, period.endDate),
+    [entries, lines, period.endDate],
+  );
 
   const periodSummaries = useMemo(() => buildLedgerSummary(accounts, periodLines), [accounts, periodLines]);
   const balanceSummaries = useMemo(() => buildLedgerSummary(accounts, cumulativeLines), [accounts, cumulativeLines]);
 
   const pnl = useMemo(() => buildProfitLossFromLedger(periodSummaries), [periodSummaries]);
   const balanceSheet = useMemo(() => buildBalanceSheetFromLedger(balanceSummaries), [balanceSummaries]);
-  const ledgerLines = useMemo(() => buildJournalLineLookup(entries, lines), [entries, lines]);
+  const recentLedgerLines = useMemo(
+    () => buildJournalLineLookup(entries, periodLines).slice(-40).reverse(),
+    [entries, periodLines],
+  );
 
   return (
     <div>
       <div className="page-header">
-        <div>
+        <div className="page-header-left">
           <h1 className="page-title">Buku Besar</h1>
         </div>
-        <select className="form-select" value={year} onChange={(event) => setYear(Number(event.target.value))}>
-          {yearOptions.map(option => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
+      </div>
+
+      <div className="page-toolbar">
+        <div className="page-toolbar-main">
+          <span className="period-label-pill">Tahun {year}</span>
+        </div>
+        <div className="page-toolbar-side">
+          <div className="period-controls">
+            <select className="form-select accounting-period-filter" value={year} onChange={(event) => setYear(Number(event.target.value))}>
+              {yearOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="kpi-grid">
@@ -179,6 +186,11 @@ export default function LedgerPage() {
               <strong>{formatAccountingCurrency(summary.balance)}</strong>
             </article>
           ))}
+          {!loading && periodSummaries.length === 0 && (
+            <article className="mobile-record-card">
+              <p className="mobile-record-title">Belum ada mutasi jurnal.</p>
+            </article>
+          )}
         </div>
       </div>
 
@@ -186,7 +198,7 @@ export default function LedgerPage() {
         <div className="card-header">
           <h2 className="card-header-title">Mutasi Terakhir</h2>
         </div>
-        <div className="table-wrapper">
+        <div className="table-wrapper table-desktop-only">
           <table style={{ minWidth: 820 }}>
             <thead>
               <tr>
@@ -198,21 +210,53 @@ export default function LedgerPage() {
               </tr>
             </thead>
             <tbody>
-              {ledgerLines
-                .filter(line => isDateInPeriod(line.entryDate, period.startDate, period.endDate))
-                .slice(-40)
-                .reverse()
-                .map(line => (
-                  <tr key={line._id}>
-                    <td>{line.entryDate || "-"}</td>
-                    <td>{line.entryNumber || "-"}</td>
-                    <td>{line.accountCode} - {line.accountName}</td>
-                    <td style={{ textAlign: "right" }}>{line.debit ? formatAccountingCurrency(line.debit) : "-"}</td>
-                    <td style={{ textAlign: "right" }}>{line.credit ? formatAccountingCurrency(line.credit) : "-"}</td>
-                  </tr>
-                ))}
+              {recentLedgerLines.map(line => (
+                <tr key={line._id}>
+                  <td>{line.entryDate || "-"}</td>
+                  <td>{line.entryNumber || "-"}</td>
+                  <td>{line.accountCode} - {line.accountName}</td>
+                  <td style={{ textAlign: "right" }}>{line.debit ? formatAccountingCurrency(line.debit) : "-"}</td>
+                  <td style={{ textAlign: "right" }}>{line.credit ? formatAccountingCurrency(line.credit) : "-"}</td>
+                </tr>
+              ))}
+              {!loading && recentLedgerLines.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-gray-500)" }}>Belum ada mutasi jurnal.</td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+        <div className="mobile-record-list" style={{ padding: "var(--space-3)" }}>
+          {recentLedgerLines.map(line => (
+            <article key={line._id} className="mobile-record-card">
+              <div className="mobile-record-header">
+                <div>
+                  <p className="mobile-record-title">{line.entryNumber || "-"}</p>
+                  <p className="mobile-record-subtitle">{line.entryDate || "-"}</p>
+                </div>
+              </div>
+              <div className="mobile-record-meta">
+                <div className="mobile-record-kv">
+                  <span className="mobile-record-label">Akun</span>
+                  <span className="mobile-record-value">{line.accountCode} - {line.accountName}</span>
+                </div>
+                <div className="mobile-record-kv">
+                  <span className="mobile-record-label">Debit</span>
+                  <span className="mobile-record-value">{line.debit ? formatAccountingCurrency(line.debit) : "-"}</span>
+                </div>
+                <div className="mobile-record-kv">
+                  <span className="mobile-record-label">Kredit</span>
+                  <span className="mobile-record-value">{line.credit ? formatAccountingCurrency(line.credit) : "-"}</span>
+                </div>
+              </div>
+            </article>
+          ))}
+          {!loading && recentLedgerLines.length === 0 && (
+            <article className="mobile-record-card">
+              <p className="mobile-record-title">Belum ada mutasi jurnal.</p>
+            </article>
+          )}
         </div>
       </div>
     </div>

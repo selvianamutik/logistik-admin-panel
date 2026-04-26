@@ -74,26 +74,27 @@ export default function JournalEntriesPage() {
 
       <div className="table-container">
         <div className="table-toolbar">
-          <label className="table-search">
-            <Search className="table-search-icon" />
-            <input
-              className="form-input"
-              style={{ paddingLeft: "2.5rem" }}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Cari nomor jurnal, memo, sumber..."
-            />
-          </label>
-          <select
-            className="form-select"
-            value={statusFilter}
-            onChange={event => setStatusFilter(event.target.value as JournalStatusFilter)}
-            style={{ maxWidth: 220 }}
-          >
-            <option value="POSTED">Posted ({postedCount})</option>
-            <option value="VOID">Void ({voidCount})</option>
-            <option value="ALL">Semua Jurnal ({entries.length})</option>
-          </select>
+          <div className="table-toolbar-left accounting-filter-toolbar">
+            <label className="table-search accounting-search">
+              <Search className="table-search-icon" />
+              <input
+                className="form-input"
+                style={{ paddingLeft: "2.5rem" }}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari nomor jurnal, memo, sumber..."
+              />
+            </label>
+            <select
+              className="form-select accounting-filter"
+              value={statusFilter}
+              onChange={event => setStatusFilter(event.target.value as JournalStatusFilter)}
+            >
+              <option value="POSTED">Posted ({postedCount})</option>
+              <option value="VOID">Void ({voidCount})</option>
+              <option value="ALL">Semua Jurnal ({entries.length})</option>
+            </select>
+          </div>
         </div>
 
         <div>
@@ -129,7 +130,7 @@ export default function JournalEntriesPage() {
                   </div>
                 </div>
 
-                <div className="table-wrapper" style={{ marginTop: "1rem" }}>
+                <div className="table-wrapper table-desktop-only" style={{ marginTop: "1rem" }}>
                   <table style={{ minWidth: 720 }}>
                     <thead>
                       <tr>
@@ -150,6 +151,32 @@ export default function JournalEntriesPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <div className="mobile-record-list" style={{ marginTop: "1rem" }}>
+                  {entryLines.map(line => (
+                    <div key={line._id} className="mobile-record-card" style={isVoid ? { color: "var(--color-gray-500)" } : undefined}>
+                      <div className="mobile-record-kv">
+                        <span className="mobile-record-label">Akun</span>
+                        <span className="mobile-record-value">{line.accountCode} - {line.accountName}</span>
+                      </div>
+                      <div className="mobile-record-meta">
+                        <div className="mobile-record-kv">
+                          <span className="mobile-record-label">Debit</span>
+                          <span className="mobile-record-value">{line.debit ? formatAccountingCurrency(line.debit) : "-"}</span>
+                        </div>
+                        <div className="mobile-record-kv">
+                          <span className="mobile-record-label">Kredit</span>
+                          <span className="mobile-record-value">{line.credit ? formatAccountingCurrency(line.credit) : "-"}</span>
+                        </div>
+                      </div>
+                      {line.memo && (
+                        <div className="mobile-record-kv">
+                          <span className="mobile-record-label">Memo</span>
+                          <span className="mobile-record-value">{line.memo}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </article>
             );

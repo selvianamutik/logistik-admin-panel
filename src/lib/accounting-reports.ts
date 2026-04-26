@@ -44,6 +44,28 @@ export function isDateInPeriod(dateValue: string | undefined, startDate: string,
   return dateValue >= startDate && dateValue <= endDate;
 }
 
+export function getJournalLinesForPeriod(
+  entries: JournalEntry[],
+  lines: JournalLine[],
+  startDate: string,
+  endDate: string,
+) {
+  const activeEntryRefs = new Set(
+    entries
+      .filter(entry => entry.status !== 'VOID' && isDateInPeriod(entry.entryDate, startDate, endDate))
+      .map(entry => entry._id),
+  );
+  return lines.filter(line => activeEntryRefs.has(line.journalEntryRef));
+}
+
+export function getJournalLinesUntil(entries: JournalEntry[], lines: JournalLine[], endDate: string) {
+  const entryById = new Map(entries.map(entry => [entry._id, entry]));
+  return lines.filter(line => {
+    const entry = entryById.get(line.journalEntryRef);
+    return Boolean(entry?.status !== 'VOID' && entry?.entryDate && entry.entryDate <= endDate);
+  });
+}
+
 export function buildJournalLineLookup(entries: JournalEntry[], lines: JournalLine[]) {
   const entryById = new Map(entries.map(entry => [entry._id, entry]));
   return lines.map<LedgerLine>(line => {
