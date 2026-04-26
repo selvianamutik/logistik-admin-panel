@@ -10,7 +10,6 @@ import {
   Landmark,
   Printer,
 } from "lucide-react";
-import FormattedNumberInput from "@/components/FormattedNumberInput";
 import { useApp, useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
@@ -54,6 +53,12 @@ import type {
 import { hasPageAccess } from "@/lib/rbac";
 
 type Tab = "pnl" | "cashflow";
+
+function extractYearFromDate(value: unknown) {
+  if (typeof value !== "string" || value.length < 4) return null;
+  const year = Number(value.slice(0, 4));
+  return Number.isFinite(year) ? year : null;
+}
 
 export default function ReportsPage() {
   const { user } = useApp();
@@ -107,6 +112,32 @@ export default function ReportsPage() {
     "November",
     "Desember",
   ];
+  const yearOptions = useMemo(() => {
+    const years = [
+      defaultBusinessYear,
+      year,
+      ...payments.map(item => extractYearFromDate(item.date)),
+      ...overpaymentRefunds.map(item => extractYearFromDate(item.date)),
+      ...expenses.map(item => extractYearFromDate(item.date)),
+      ...purchases.map(item => extractYearFromDate(item.orderDate)),
+      ...freightNotas.map(item => extractYearFromDate(item.issueDate)),
+      ...driverVouchers.map(item => extractYearFromDate(item.issuedDate)),
+      ...bankTransactions.map(item => extractYearFromDate(item.date)),
+    ].filter((item): item is number => typeof item === "number");
+    const minYear = Math.min(...years) - 1;
+    const maxYear = Math.max(...years) + 1;
+    return Array.from({ length: maxYear - minYear + 1 }, (_, index) => maxYear - index);
+  }, [
+    bankTransactions,
+    defaultBusinessYear,
+    driverVouchers,
+    expenses,
+    freightNotas,
+    overpaymentRefunds,
+    payments,
+    purchases,
+    year,
+  ]);
 
   useEffect(() => {
     async function loadReportData() {
@@ -388,11 +419,15 @@ export default function ReportsPage() {
               >
                 <ChevronLeft size={14} />
               </button>
-              <FormattedNumberInput
-                allowDecimal={false}
+              <select
+                className="form-select period-year-select"
                 value={year}
-                onValueChange={(value) => setYear(value || defaultBusinessYear)}
-              />
+                onChange={(event) => setYear(Number(event.target.value))}
+              >
+                {yearOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={nextPeriod}

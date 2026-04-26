@@ -589,7 +589,8 @@ a:hover {
   padding-right: 0;
 }
 
-.period-nav-group .form-input {
+.period-nav-group .form-input,
+.period-nav-group .form-select {
   width: 100px;
   min-width: 100px;
   text-align: center;
@@ -1142,6 +1143,21 @@ a:hover {
   flex: 0 1 170px;
   min-width: 130px;
   max-width: 220px;
+}
+
+.finance-filter-toolbar {
+  flex-wrap: wrap;
+}
+
+.finance-search {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+.finance-filter {
+  flex: 0 1 190px;
+  min-width: 140px;
+  max-width: 100%;
 }
 
 .statement-section {
@@ -2873,7 +2889,8 @@ tbody td {
   }
 
   .period-nav-group .btn,
-  .period-nav-group .form-input {
+  .period-nav-group .form-input,
+  .period-nav-group .form-select {
     width: 100%;
     min-width: 0;
   }
@@ -2969,7 +2986,8 @@ tbody td {
   }
 
   .purchase-filter-toolbar > *,
-  .accounting-filter-toolbar > * {
+  .accounting-filter-toolbar > *,
+  .finance-filter-toolbar > * {
     flex: 1 1 100%;
     width: 100%;
     max-width: 100%;
@@ -2980,7 +2998,9 @@ tbody td {
   .purchase-status-filter,
   .accounting-search,
   .accounting-filter,
-  .accounting-period-filter {
+  .accounting-period-filter,
+  .finance-search,
+  .finance-filter {
     flex-basis: auto;
     max-width: 100%;
   }

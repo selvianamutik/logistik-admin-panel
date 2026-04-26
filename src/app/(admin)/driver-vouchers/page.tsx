@@ -252,14 +252,14 @@ export default function DriverVouchersPage() {
 
             <div className="table-container">
                 <div className="table-toolbar">
-                    <div className="table-toolbar-left">
-                        <div className="table-search">
+                    <div className="table-toolbar-left finance-filter-toolbar">
+                        <div className="table-search finance-search">
                             <Search size={16} className="table-search-icon" />
                             <input placeholder="Cari no. bon, supir, no. DO internal..." value={search} onChange={event => setSearch(event.target.value)} />
                         </div>
                     </div>
                     <div className="table-toolbar-right">
-                        <select className="form-select" style={{ width: 150, fontSize: '0.8rem' }} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                        <select className="form-select finance-filter" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
                             <option value="">Semua Status</option>
                             <option value="DRAFT">Draft</option>
                             <option value="ISSUED">Diberikan</option>

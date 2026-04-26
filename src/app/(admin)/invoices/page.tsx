@@ -788,7 +788,8 @@ export default function NotaListPage() {
                                 <div className="empty-state-text">Queue ini otomatis menangkap sisa penerimaan customer dan invoice yang menjadi overpaid setelah klaim/potongan.</div>
                             </div>
                         ) : (
-                            <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                            <>
+                            <div className="table-wrapper table-desktop-only" style={{ overflowX: 'auto' }}>
                                 <table style={{ minWidth: 760 }}>
                                     <thead>
                                         <tr>
@@ -844,6 +845,60 @@ export default function NotaListPage() {
                                     </tbody>
                                 </table>
                             </div>
+                            <div className="mobile-record-list">
+                                {openOverpayments.map(item => {
+                                    const sourceHref = getOverpaymentSourceHref(item);
+                                    return (
+                                        <article key={item._id} className="mobile-record-card">
+                                            <div className="mobile-record-header">
+                                                <div>
+                                                    <div className="mobile-record-title">
+                                                        {sourceHref ? (
+                                                            <Link href={sourceHref} style={{ color: 'var(--color-primary)', fontWeight: 700 }}>
+                                                                {item.sourceLabel}
+                                                            </Link>
+                                                        ) : item.sourceLabel}
+                                                    </div>
+                                                    <div className="mobile-record-subtitle">{item.sourceDescription}</div>
+                                                </div>
+                                                <span className="badge badge-warning"><span className="badge-dot" /> Belum Ditindaklanjuti</span>
+                                            </div>
+                                            <div className="mobile-record-meta">
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Customer</span>
+                                                    <span className="mobile-record-value">
+                                                        {item.customerRef && canOpenCustomers ? (
+                                                            <Link href={`/customers/${item.customerRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                {item.customerName}
+                                                            </Link>
+                                                        ) : item.customerName}
+                                                    </span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Terdeteksi</span>
+                                                    <span className="mobile-record-value">{formatDate(item.detectedDate)}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Nominal Terbuka</span>
+                                                    <span className="mobile-record-value" style={{ fontWeight: 700, color: 'var(--color-warning)' }}>{formatCurrency(item.remainingAmount)}</span>
+                                                </div>
+                                                {parseWholeMoneyLike(item.refundedAmount) > 0 && (
+                                                    <div className="mobile-record-kv">
+                                                        <span className="mobile-record-label">Sudah Refund</span>
+                                                        <span className="mobile-record-value">{formatCurrency(item.refundedAmount)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="mobile-record-actions">
+                                                <button className="btn btn-secondary" onClick={() => openRefundModal(item)}>
+                                                    Konfirmasi Transfer Balik
+                                                </button>
+                                            </div>
+                                        </article>
+                                    );
+                                })}
+                            </div>
+                            </>
                         )}
                     </div>
                 </div>
@@ -851,9 +906,9 @@ export default function NotaListPage() {
 
             <div className="table-container">
                 <div className="table-toolbar">
-                    <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari invoice, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
-                        <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                    <div className="table-toolbar-left finance-filter-toolbar">
+                        <div className="table-search finance-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari invoice, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <select className="form-select finance-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>

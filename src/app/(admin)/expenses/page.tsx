@@ -307,7 +307,7 @@ export default function ExpensesPage() {
             )}
 
             <div className="table-container">
-                <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={event => setSearch(event.target.value)} /></div></div></div>
+                <div className="table-toolbar"><div className="table-toolbar-left finance-filter-toolbar"><div className="table-search finance-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={event => setSearch(event.target.value)} /></div></div></div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
