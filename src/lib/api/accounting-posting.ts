@@ -8,7 +8,6 @@ import {
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     createDocument,
-    deleteDocument,
     getAllDocuments,
     listDocumentsByFilter,
     updateDocument,
@@ -50,6 +49,12 @@ type JournalInput = {
     sourceNumber?: string;
     sourceLabel?: string;
     lines: JournalLineInput[];
+};
+
+type ResolvedJournalLineInput = JournalLineInput & {
+    debit: number;
+    credit: number;
+    accountDocument: ChartOfAccount;
 };
 
 type ReceiptAllocationPosting = {
@@ -147,6 +152,49 @@ async function buildJournalNumber(entryDate: string, existing?: JournalEntry | n
     return formatJournalNumber(entryDate, periodCount + 1);
 }
 
+function sameOptionalText(left: unknown, right: unknown) {
+    return String(left || '') === String(right || '');
+}
+
+function isSamePostedJournal(
+    existing: JournalEntry,
+    existingLines: JournalLine[],
+    input: JournalInput,
+    resolvedLines: ResolvedJournalLineInput[],
+    totalDebit: number,
+    totalCredit: number,
+) {
+    if (
+        existing.entryDate !== input.entryDate ||
+        existing.memo !== input.memo ||
+        !sameOptionalText(existing.sourceNumber, input.sourceNumber) ||
+        !sameOptionalText(existing.sourceLabel, input.sourceLabel) ||
+        cleanLineAmount(existing.totalDebit) !== totalDebit ||
+        cleanLineAmount(existing.totalCredit) !== totalCredit
+    ) {
+        return false;
+    }
+
+    const sortedExistingLines = [...existingLines].sort((left, right) => {
+        const leftLine = Number(left.lineNumber || 0);
+        const rightLine = Number(right.lineNumber || 0);
+        return leftLine - rightLine;
+    });
+    if (sortedExistingLines.length !== resolvedLines.length) return false;
+
+    return resolvedLines.every((line, index) => {
+        const existingLine = sortedExistingLines[index];
+        return (
+            existingLine.accountRef === line.accountDocument._id &&
+            cleanLineAmount(existingLine.debit) === line.debit &&
+            cleanLineAmount(existingLine.credit) === line.credit &&
+            sameOptionalText(existingLine.memo, line.memo) &&
+            sameOptionalText(existingLine.entityRef, line.entityRef) &&
+            sameOptionalText(existingLine.entityType, line.entityType)
+        );
+    });
+}
+
 export async function postJournalEntry(
     session: Pick<ApiSession, '_id' | 'name'>,
     input: JournalInput,
@@ -168,14 +216,44 @@ export async function postJournalEntry(
             throw new Error(`Jurnal tidak balance: debit ${totalDebit}, kredit ${totalCredit}`);
         }
 
-        const existing = (await listDocumentsByFilter<JournalEntry>('journalEntry', {
+        const accountCache = new Map<AccountingSystemKey, ChartOfAccount>();
+        const resolvedLines: ResolvedJournalLineInput[] = [];
+        for (const line of normalizedLines) {
+            let account = accountCache.get(line.account);
+            if (!account) {
+                account = await resolveAccount(line.account);
+                accountCache.set(line.account, account);
+            }
+            resolvedLines.push({ ...line, accountDocument: account });
+        }
+
+        const sourceEntries = await listDocumentsByFilter<JournalEntry>('journalEntry', {
             sourceType: input.sourceType,
             sourceRef: input.sourceRef,
             sourceEvent: input.sourceEvent,
-        }))[0] || null;
+        });
+        const activeEntries = sourceEntries.filter(entry => entry.status !== 'VOID');
+        const activeExisting = activeEntries[0] || null;
+        if (activeExisting) {
+            const existingLines = await listDocumentsByFilter<JournalLine>('journalLine', {
+                journalEntryRef: activeExisting._id,
+            });
+            if (
+                activeEntries.length === 1 &&
+                isSamePostedJournal(activeExisting, existingLines, input, resolvedLines, totalDebit, totalCredit)
+            ) {
+                return activeExisting;
+            }
+            await Promise.all(activeEntries.map(entry => updateDocument(entry._id, {
+                status: 'VOID',
+                voidedAt: new Date().toISOString(),
+                voidedBy: session._id,
+                voidedByName: session.name,
+            }, 'journalEntry')));
+        }
 
-        const entryId = existing?._id || `journal-${crypto.randomUUID()}`;
-        const entryNumber = await buildJournalNumber(input.entryDate, existing);
+        const entryId = `journal-${crypto.randomUUID()}`;
+        const entryNumber = await buildJournalNumber(input.entryDate);
         const now = new Date().toISOString();
         const entryDoc: JournalEntry = {
             _id: entryId,
@@ -191,26 +269,15 @@ export async function postJournalEntry(
             status: 'POSTED',
             totalDebit,
             totalCredit,
-            postedAt: existing?.postedAt || now,
-            postedBy: existing?.postedBy || session._id,
-            postedByName: existing?.postedByName || session.name,
+            postedAt: now,
+            postedBy: session._id,
+            postedByName: session.name,
         };
 
-        if (existing) {
-            const oldLines = await listDocumentsByFilter<JournalLine>('journalLine', { journalEntryRef: entryId });
-            await Promise.all(oldLines.map(line => deleteDocument(line._id, 'journalLine')));
-            await updateDocument(entryId, entryDoc as unknown as Record<string, unknown>, 'journalEntry');
-        } else {
-            await createDocument(entryDoc as unknown as { _type: string; [key: string]: unknown });
-        }
+        await createDocument(entryDoc as unknown as { _type: string; [key: string]: unknown });
 
-        const accountCache = new Map<AccountingSystemKey, ChartOfAccount>();
-        for (const [index, line] of normalizedLines.entries()) {
-            let account = accountCache.get(line.account);
-            if (!account) {
-                account = await resolveAccount(line.account);
-                accountCache.set(line.account, account);
-            }
+        for (const [index, line] of resolvedLines.entries()) {
+            const account = line.accountDocument;
             const lineDoc: JournalLine = {
                 _id: `journal-line-${crypto.randomUUID()}`,
                 _type: 'journalLine',
@@ -250,14 +317,14 @@ export async function voidJournalEntryForSource(
             sourceType,
             sourceRef,
             sourceEvent,
-        }))[0] || null;
-        if (!existing || existing.status === 'VOID') return;
-        await updateDocument(existing._id, {
+        })).filter(entry => entry.status !== 'VOID');
+        if (existing.length === 0) return;
+        await Promise.all(existing.map(entry => updateDocument(entry._id, {
             status: 'VOID',
             voidedAt: new Date().toISOString(),
             voidedBy: session._id,
             voidedByName: session.name,
-        }, 'journalEntry');
+        }, 'journalEntry')));
     } catch (error) {
         if (isMissingAccountingStorageError(error)) return;
         throw error;

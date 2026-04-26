@@ -215,6 +215,22 @@ assert(
     'Posting jurnal fallback harus memakai business date, bukan tanggal UTC dari toISOString().'
 );
 assert(
+    !accountingPostingSource.includes('deleteDocument('),
+    'Posting jurnal tidak boleh menghapus line jurnal lama. Revisi jurnal harus void entry lama lalu post entry baru agar riwayat tetap utuh.'
+);
+assert(
+    accountingPostingSource.includes('function isSamePostedJournal') &&
+        accountingPostingSource.includes("const activeEntries = sourceEntries.filter(entry => entry.status !== 'VOID')") &&
+        accountingPostingSource.includes('activeEntries.length === 1') &&
+        accountingPostingSource.includes("status: 'VOID'"),
+    'Posting jurnal harus idempotent: jika isi sama jangan repost, jika berubah void jurnal aktif lama lalu buat jurnal baru.'
+);
+assert(
+    accountingPostingSource.includes("filter(entry => entry.status !== 'VOID')") &&
+        accountingPostingSource.includes('Promise.all(existing.map'),
+    'Void jurnal harus menutup semua jurnal aktif untuk source yang sama, bukan hanya hasil query pertama.'
+);
+assert(
     accountingLedgerSource.includes('const periodLines') &&
         accountingLedgerSource.includes('const cumulativeLines') &&
         accountingLedgerSource.includes('buildProfitLossFromLedger(periodSummaries)') &&
@@ -230,4 +246,4 @@ for (const accountingEntity of ['chart-of-accounts', 'journal-entries', 'journal
     );
 }
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date/ledger guards, and accounting mutation guards verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date/ledger guards, accounting revision history, and accounting mutation guards verified.`);
