@@ -361,7 +361,7 @@ export function getDeliveryOrderDisplayStatusMeta(
             };
         }
         return {
-            label: 'Trip Selesai',
+            label: 'Terkirim',
             color: 'success',
             tripClosed: true,
         };

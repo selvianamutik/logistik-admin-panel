@@ -634,6 +634,7 @@ export type DOStatus =
     | 'HEADING_TO_PICKUP'
     | 'ON_DELIVERY'
     | 'ARRIVED'
+    | 'PARTIAL_HOLD'
     | 'DELIVERED'
     | 'CANCELLED';
 
@@ -740,6 +741,9 @@ export interface DeliveryOrder {
   trackingLastSpeedKph?: number;
   trackingLastSource?: 'DRIVER_APP';
   pendingDriverStatus?: DOStatus;
+  tripClosedByAdminAt?: string;
+  tripClosedByAdminRef?: string;
+  tripClosedByAdminName?: string;
   pendingDriverStatusRequestedAt?: string;
   pendingDriverStatusRequestedBy?: string;
   pendingDriverStatusRequestedByName?: string;

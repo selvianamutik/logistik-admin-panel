@@ -208,12 +208,17 @@ const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
     'EXTRA_DROP',
     'RETURN',
 ]);
+const BILLABLE_DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
+    'DROP',
+    'EXTRA_DROP',
+]);
 
 export const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
     HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
     ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
     ARRIVED: ['DELIVERED', 'CANCELLED'],
+    PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
     DELIVERED: [],
     CANCELLED: [],
 };
@@ -386,7 +391,7 @@ export async function resolveOrderPickupData(customerRef: string, customerPickup
         return null;
     }
 
-    const pickup = await getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickup');
+    const pickup = await getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickupLocation');
     if (!pickup || pickup._id !== customerPickupRef) {
         throw new Error('Master pickup customer tidak ditemukan');
     }
@@ -918,14 +923,16 @@ export function normalizeDeliveryActualDropPoints(
         return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
     }
 
-    const aggregated = normalized.reduce<ActualCargoTotals>(
-        (sum, point) => ({
-            qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(point.qtyKoli ?? 0)),
-            weightKg: roundQuantity(sum.weightKg + normalizeNumber(point.weightKg ?? 0)),
-            volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(point.volumeM3 ?? 0), 3),
-        }),
-        { qtyKoli: 0, weightKg: 0, volumeM3: 0 }
-    );
+    const aggregated = normalized
+        .filter(point => BILLABLE_DELIVERY_ACTUAL_DROP_TYPES.has(point.stopType))
+        .reduce<ActualCargoTotals>(
+            (sum, point) => ({
+                qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(point.qtyKoli ?? 0)),
+                weightKg: roundQuantity(sum.weightKg + normalizeNumber(point.weightKg ?? 0)),
+                volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(point.volumeM3 ?? 0), 3),
+            }),
+            { qtyKoli: 0, weightKg: 0, volumeM3: 0 }
+        );
 
     if (actualTotals.qtyKoli > 0 && Math.abs(aggregated.qtyKoli - actualTotals.qtyKoli) > 0.01) {
         throw new Error('Total qty titik drop harus sama dengan qty aktual DO');

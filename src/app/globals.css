@@ -687,6 +687,10 @@ a:hover {
   display: block;
 }
 
+.mobile-card-list {
+  display: none;
+}
+
 /* ── Buttons ── */
 .btn {
   display: inline-flex;
@@ -3016,6 +3020,11 @@ tbody td {
   }
 
   .mobile-record-list {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .mobile-card-list {
     display: grid;
     gap: var(--space-3);
   }

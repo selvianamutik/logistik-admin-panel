@@ -43,6 +43,9 @@ type SupportedDocType =
     | 'orderItem'
     | 'deliveryOrder'
     | 'deliveryOrderItem'
+    | 'trip'
+    | 'suratJalan'
+    | 'suratJalanItem'
     | 'trackingLog'
     | 'invoice'
     | 'invoiceItem'
@@ -825,6 +828,82 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
             actualVolumeM3: 'actual_volume_m3',
         },
     },
+    trip: {
+        table: 'trips',
+        fieldMap: {
+            deliveryOrderRef: 'delivery_order_ref',
+            orderRef: 'order_ref',
+            tripNumber: 'trip_number',
+            masterResi: 'master_resi',
+            customerRef: 'customer_ref',
+            customerName: 'customer_name',
+            vehicleRef: 'vehicle_ref',
+            vehiclePlate: 'vehicle_plate',
+            driverRef: 'driver_ref',
+            driverName: 'driver_name',
+            tripDate: 'trip_date',
+            status: 'status',
+            pickupAddress: 'pickup_address',
+            receiverName: 'receiver_name',
+            receiverPhone: 'receiver_phone',
+            receiverAddress: 'receiver_address',
+            receiverCompany: 'receiver_company',
+            serviceRef: 'service_ref',
+            serviceName: 'service_name',
+            vehicleServiceRef: 'vehicle_service_ref',
+            vehicleServiceName: 'vehicle_service_name',
+            vehicleCategoryOverrideReason: 'vehicle_category_override_reason',
+            tripRouteRateRef: 'trip_route_rate_ref',
+            tripOriginArea: 'trip_origin_area',
+            tripDestinationArea: 'trip_destination_area',
+            trackingState: 'tracking_state',
+            trackingStartedAt: 'tracking_started_at',
+            trackingStoppedAt: 'tracking_stopped_at',
+            trackingLastSeenAt: 'tracking_last_seen_at',
+            pendingDriverStatus: 'pending_driver_status',
+            cargoFinalizedAt: 'cargo_finalized_at',
+            taripBorongan: 'tarip_borongan',
+            notes: 'notes',
+        },
+    },
+    suratJalan: {
+        table: 'surat_jalan_documents',
+        fieldMap: {
+            tripRef: 'trip_ref',
+            deliveryOrderRef: 'delivery_order_ref',
+            orderRef: 'order_ref',
+            customerRef: 'customer_ref',
+            customerName: 'customer_name',
+            referenceKey: 'reference_key',
+            suratJalanNumber: 'surat_jalan_number',
+            pickupAddress: 'pickup_address',
+            receiverName: 'receiver_name',
+            receiverCompany: 'receiver_company',
+            receiverAddress: 'receiver_address',
+            tripDate: 'trip_date',
+            tripStatus: 'trip_status',
+            vehiclePlate: 'vehicle_plate',
+            driverName: 'driver_name',
+            itemCount: 'item_count',
+            cargoSummary: 'cargo_summary',
+            billableCargo: 'billable_cargo',
+            holdCargo: 'hold_cargo',
+            returnCargo: 'return_cargo',
+        },
+    },
+    suratJalanItem: {
+        table: 'surat_jalan_items',
+        fieldMap: {
+            suratJalanRef: 'surat_jalan_ref',
+            tripRef: 'trip_ref',
+            deliveryOrderItemRef: 'delivery_order_item_ref',
+            referenceKey: 'reference_key',
+            suratJalanNumber: 'surat_jalan_number',
+            orderItemDescription: 'order_item_description',
+            plannedCargo: 'planned_cargo',
+            actualCargo: 'actual_cargo',
+        },
+    },
     trackingLog: {
         table: 'tracking_logs',
         fieldMap: {
@@ -1463,7 +1542,7 @@ function getSortPresetComparator(
     }
 
     if (docType === 'deliveryOrder') {
-        const ranks = { ARRIVED: 0, ON_DELIVERY: 1, HEADING_TO_PICKUP: 2, CREATED: 3, DELIVERED: 4, CANCELLED: 5 };
+        const ranks = { ARRIVED: 0, PARTIAL_HOLD: 0, ON_DELIVERY: 1, HEADING_TO_PICKUP: 2, CREATED: 3, DELIVERED: 4, CANCELLED: 5 };
         return (left, right) => {
             const leftPendingRank = hasMeaningfulValue(left.pendingDriverStatus) ? 0 : 1;
             const rightPendingRank = hasMeaningfulValue(right.pendingDriverStatus) ? 0 : 1;

@@ -68,12 +68,145 @@ import {
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals } from './driver-workflow-support';
+import {
+    aggregateTripStatusFromSuratJalanStatuses,
+    mapDeliveryOrderToSuratJalanRecords,
+    mapDeliveryOrderToTripRecord,
+} from '@/lib/trip-document-mappers';
+
+const MANUAL_DO_STATUSES = ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
+
+function getDeliveryOrderSuratJalanIdentity(params: {
+    deliveryOrderId: string;
+    shipperReferenceKey?: string | null;
+    shipperReferenceNumber?: string | null;
+}) {
+    return `${params.deliveryOrderId}:${params.shipperReferenceKey || params.shipperReferenceNumber || 'primary'}`;
+}
+
+function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, deliveryOrderId: string) {
+    return Array.from(
+        new Set(
+            (Array.isArray(data.targetSuratJalanRefs) ? data.targetSuratJalanRefs : [])
+                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                .map(value => value.trim())
+                .filter(value => value === `${deliveryOrderId}:primary` || value.startsWith(`${deliveryOrderId}:`))
+        )
+    );
+}
+
+function getDeliveryOrderSuratJalanStatusMap(
+    deliveryOrder: DeliveryOrder,
+    deliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>
+) {
+    return new Map(
+        mapDeliveryOrderToSuratJalanRecords(deliveryOrder, deliveryOrderItems as DeliveryOrderItem[])
+            .map(record => [record._id, record.tripStatus || deliveryOrder.status || 'CREATED'] as const)
+    );
+}
+
+function getDeliveryOrderItemSuratJalanStatus(
+    deliveryOrder: DeliveryOrder,
+    deliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>,
+    item: Pick<DeliveryOrderItem, 'shipperReferenceKey' | 'shipperReferenceNumber'>
+) {
+    const statusMap = getDeliveryOrderSuratJalanStatusMap(deliveryOrder, deliveryOrderItems);
+    return statusMap.get(getDeliveryOrderSuratJalanIdentity({
+        deliveryOrderId: deliveryOrder._id,
+        shipperReferenceKey: item.shipperReferenceKey,
+        shipperReferenceNumber: item.shipperReferenceNumber,
+    })) || deliveryOrder.status || 'CREATED';
+}
+
+function buildAutoFinalizeBatchRawDropPoints(
+    deliveryOrderId: string,
+    deliveryOrder: {
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
+    },
+    doItems: DeliveryOrderItemCargoSnapshot[],
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>,
+    selectedSuratJalanRefs: Set<string>
+) {
+    const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
+    const groupedItems = doItems.reduce<Map<string, DeliveryOrderItemCargoSnapshot[]>>((acc, item) => {
+        const suratJalanRef = getDeliveryOrderSuratJalanIdentity({
+            deliveryOrderId,
+            shipperReferenceKey: item.shipperReferenceKey,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+        });
+        const current = acc.get(suratJalanRef) || [];
+        current.push(item);
+        acc.set(suratJalanRef, current);
+        return acc;
+    }, new Map());
+
+    return [...groupedItems.entries()].flatMap(([suratJalanRef, items]) => {
+        const matchedReference = shipperReferences.find(reference =>
+            suratJalanRef === getDeliveryOrderSuratJalanIdentity({
+                deliveryOrderId,
+                shipperReferenceKey: reference._key,
+                shipperReferenceNumber: reference.referenceNumber,
+            })
+        ) || null;
+
+        const totals = items.reduce((sum, item) => {
+            const actual = actualCargoByDoItemId.get(item._id);
+            if (!actual) {
+                return sum;
+            }
+            return {
+                qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(actual.actualQtyKoli)),
+                weightKg: roundQuantity(sum.weightKg + normalizeNumber(actual.actualWeightKg)),
+                volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(actual.actualVolumeM3 ?? 0), 3),
+            };
+        }, { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+
+        if (totals.qtyKoli <= 0 && totals.weightKg <= 0 && totals.volumeM3 <= 0) {
+            return [];
+        }
+
+        const isSelected = selectedSuratJalanRefs.has(suratJalanRef);
+        const targetName =
+            matchedReference?.receiverCompany?.trim()
+            || matchedReference?.receiverName?.trim()
+            || matchedReference?.receiverAddress?.trim()
+            || deliveryOrder.receiverCompany?.trim()
+            || deliveryOrder.receiverName?.trim()
+            || 'Tujuan Invoice';
+        const targetAddress =
+            matchedReference?.receiverAddress?.trim()
+            || deliveryOrder.receiverAddress?.trim()
+            || '';
+
+        return [{
+            stopType: isSelected ? 'DROP' : 'HOLD',
+            deliveryOrderItemRefs: items.map(item => item._id),
+            shipperReferenceKey: matchedReference?._key || items[0]?.shipperReferenceKey,
+            shipperReferenceNumber: matchedReference?.referenceNumber || items[0]?.shipperReferenceNumber,
+            locationName: targetName,
+            locationAddress: targetAddress,
+            qtyKoli: totals.qtyKoli > 0 ? totals.qtyKoli : undefined,
+            weightKg: totals.weightKg > 0 ? totals.weightKg : undefined,
+            volumeM3: totals.volumeM3 > 0 ? totals.volumeM3 : undefined,
+            note: isSelected ? 'Finalisasi batch SJ terpilih' : 'Menunggu batch SJ berikutnya',
+        }];
+    });
+}
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import {
     getDeliveryOrderBillableCargoSummary,
     getDeliveryOrderNonBillableCargoSummary,
 } from '@/lib/delivery-order-completion';
-import type { CompanyProfile, OrderPickupStop, OrderTripPlan } from '@/lib/types';
+import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, OrderPickupStop, OrderTripPlan } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -928,7 +1061,7 @@ export async function handleOrderCreate(
             touchPromises.push(updateDocument(customerRecipient._id, { updatedAt: createdAt }, 'customerRecipient'));
         }
         if (customerPickupRef && customerPickup?._id) {
-            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickup'));
+            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickupLocation'));
         }
         await Promise.all([
             ...touchPromises,
@@ -1124,7 +1257,7 @@ export async function handleOrderUpdateWithItems(
             touchPromises.push(updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient'));
         }
         if (customerPickupRef && customerPickup?._id) {
-            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup'));
+            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickupLocation'));
         }
         await Promise.all(touchPromises);
         await Promise.all(existingItems.map(existingItem => deleteDocument(existingItem._id, 'orderItem')));
@@ -1330,7 +1463,7 @@ export async function handleOrderHeaderBookingUpdate(
             await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient');
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup');
+            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickupLocation');
         }
         updatedOrder = await updateDocument(id, {
             cargoEntryMode: 'DELIVERY_ORDER',
@@ -1367,6 +1500,472 @@ export async function handleOrderHeaderBookingUpdate(
         `Update header booking ${order.masterResi || id}: customer, tujuan, armada, atau catatan diperbarui`
     );
     return NextResponse.json({ data: updatedOrder, id });
+}
+
+export async function handleOrderTripPlanAppend(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    if (!id) {
+        return NextResponse.json({ error: 'Order tidak valid' }, { status: 400 });
+    }
+
+    const order = await getDocumentById<{
+        _id: string;
+        _rev?: string;
+        masterResi?: string;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        customerRef?: string;
+        customerPickupRef?: string;
+        pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
+        tripPlans?: OrderTripPlan[];
+        serviceRef?: string;
+    }>(id, 'order');
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Tambah rencana trip hanya berlaku untuk order header booking.' },
+            { status: 409 }
+        );
+    }
+    if (!order._rev && !isSupabaseBackendEnabled()) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const requestedCustomerRef = normalizeOptionalText(data.customerRef);
+    const orderCustomerRef = normalizeText(order.customerRef);
+    if (!orderCustomerRef) {
+        return NextResponse.json({ error: 'Customer order tidak valid' }, { status: 409 });
+    }
+    if (requestedCustomerRef && requestedCustomerRef !== orderCustomerRef) {
+        return NextResponse.json({ error: 'Customer order tidak boleh diganti saat menambah trip.' }, { status: 409 });
+    }
+
+    const currentOrderPickupStops = normalizeOrderPickupStopsInput(
+        Array.isArray(order.pickupStops) ? order.pickupStops : [],
+        order.pickupAddress
+    ).map((stop, index) => ({
+        ...stop,
+        sequence: index + 1,
+    }));
+    if (currentOrderPickupStops.length === 0) {
+        return NextResponse.json({ error: 'Order belum punya titik pickup yang bisa dipakai untuk trip.' }, { status: 409 });
+    }
+
+    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
+        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
+        : [];
+    const extraPickupRefs = [
+        ...new Set([
+            ...requestedPickupStopKeys
+                .filter(key => key.startsWith('customer-pickup:'))
+                .map(key => key.replace('customer-pickup:', '')),
+            ...(Array.isArray(data.extraPickupRefs)
+                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
+                : []),
+        ]),
+    ];
+    const extraPickupDocs = extraPickupRefs.length > 0
+        ? await listDocumentsByFilter<{
+            _id: string;
+            customerRef?: unknown;
+            label?: string;
+            pickupAddress?: string;
+            notes?: string;
+            active?: boolean;
+        }>('customerPickupLocation', { _id: extraPickupRefs })
+        : [];
+    if (extraPickupDocs.length !== extraPickupRefs.length) {
+        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
+    }
+    const invalidExtraPickup = extraPickupDocs.find(pickup =>
+        extractRefId(pickup.customerRef) !== orderCustomerRef ||
+        pickup.active === false ||
+        !normalizeOptionalText(pickup.pickupAddress)
+    );
+    if (invalidExtraPickup) {
+        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
+    }
+
+    const orderPickupByMasterRef = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
+            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
+    );
+    const orderPickupByAddress = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
+            .filter(([pickupAddress]) => Boolean(pickupAddress))
+    );
+    const pickupStopKeyAlias = new Map<string, string>();
+    const extraOrderPickupStops: OrderPickupStop[] = [];
+    for (const pickup of extraPickupDocs) {
+        const pickupAddress = normalizeText(pickup.pickupAddress);
+        const existingStop =
+            orderPickupByMasterRef.get(pickup._id) ||
+            orderPickupByAddress.get(pickupAddress.toLowerCase());
+        if (existingStop?._key) {
+            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
+            continue;
+        }
+
+        const newStop: OrderPickupStop = {
+            _key: crypto.randomUUID(),
+            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
+            customerPickupRef: pickup._id,
+            pickupLabel: normalizeOptionalText(pickup.label),
+            pickupAddress,
+            notes: normalizeOptionalText(pickup.notes),
+        };
+        extraOrderPickupStops.push(newStop);
+        orderPickupByMasterRef.set(pickup._id, newStop);
+        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
+        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
+    }
+
+    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
+        .map((stop, index) => ({
+            ...stop,
+            sequence: index + 1,
+        }));
+    const remapPickupStopKey = (key: unknown) => {
+        const normalizedKey = normalizeOptionalText(key);
+        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
+    };
+    const nextTripPayload = {
+        ...data,
+        _key: crypto.randomUUID(),
+        pickupStopKeys: requestedPickupStopKeys
+            .map(remapPickupStopKey)
+            .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:'))),
+    };
+
+    let normalizedNewTripPlans: OrderTripPlan[];
+    try {
+        normalizedNewTripPlans = await normalizeOrderTripPlansInput(
+            [nextTripPayload],
+            effectiveOrderPickupStops,
+            normalizeOptionalText(order.serviceRef) || undefined
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Data trip tidak valid';
+        const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
+        return NextResponse.json({ error: message }, { status });
+    }
+
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const nextTripPlans = [...currentTripPlans, ...normalizedNewTripPlans].map((plan, index) => ({
+        ...plan,
+        sequence: index + 1,
+    }));
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await updateDocument(id, {
+            pickupStops: effectiveOrderPickupStops,
+            pickupAddress: effectiveOrderPickupStops[0]?.pickupAddress || order.pickupAddress,
+            customerPickupRef: effectiveOrderPickupStops[0]?.customerPickupRef || order.customerPickupRef,
+            tripPlans: nextTripPlans,
+        }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Rencana trip order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    const createdTripPlan = nextTripPlans[nextTripPlans.length - 1];
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Tambah rencana trip pada ${order.masterResi || id}: ${createdTripPlan.vehiclePlate || createdTripPlan.vehicleRef} / ${createdTripPlan.driverName || createdTripPlan.driverRef}`
+    );
+    return NextResponse.json({ data: updatedOrder, id, tripPlan: createdTripPlan });
+}
+
+export async function handleOrderTripPlanUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    const tripPlanKey = normalizeText(data.tripPlanKey);
+    if (!id || !tripPlanKey) {
+        return NextResponse.json({ error: 'Rencana trip tidak valid' }, { status: 400 });
+    }
+
+    const order = await getDocumentById<{
+        _id: string;
+        _rev?: string;
+        masterResi?: string;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        customerRef?: string;
+        customerPickupRef?: string;
+        pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
+        tripPlans?: OrderTripPlan[];
+        serviceRef?: string;
+    }>(id, 'order');
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Edit rencana trip hanya berlaku untuk order header booking.' },
+            { status: 409 }
+        );
+    }
+    if (!order._rev && !isSupabaseBackendEnabled()) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const existingTripPlan = currentTripPlans.find(plan => normalizeOptionalText(plan._key) === tripPlanKey) || null;
+    if (!existingTripPlan) {
+        return NextResponse.json({ error: 'Rencana trip tidak ditemukan. Refresh lalu coba lagi.' }, { status: 404 });
+    }
+    if (existingTripPlan.linkedDeliveryOrderRef) {
+        return NextResponse.json(
+            { error: 'Rencana trip yang sudah punya SJ tidak bisa diedit dari detail order.' },
+            { status: 409 }
+        );
+    }
+
+    const requestedCustomerRef = normalizeOptionalText(data.customerRef);
+    const orderCustomerRef = normalizeText(order.customerRef);
+    if (!orderCustomerRef) {
+        return NextResponse.json({ error: 'Customer order tidak valid' }, { status: 409 });
+    }
+    if (requestedCustomerRef && requestedCustomerRef !== orderCustomerRef) {
+        return NextResponse.json({ error: 'Customer order tidak boleh diganti saat mengubah trip.' }, { status: 409 });
+    }
+
+    const currentOrderPickupStops = normalizeOrderPickupStopsInput(
+        Array.isArray(order.pickupStops) ? order.pickupStops : [],
+        order.pickupAddress
+    ).map((stop, index) => ({
+        ...stop,
+        sequence: index + 1,
+    }));
+    if (currentOrderPickupStops.length === 0) {
+        return NextResponse.json({ error: 'Order belum punya titik pickup yang bisa dipakai untuk trip.' }, { status: 409 });
+    }
+
+    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
+        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
+        : [];
+    const extraPickupRefs = [
+        ...new Set([
+            ...requestedPickupStopKeys
+                .filter(key => key.startsWith('customer-pickup:'))
+                .map(key => key.replace('customer-pickup:', '')),
+            ...(Array.isArray(data.extraPickupRefs)
+                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
+                : []),
+        ]),
+    ];
+    const extraPickupDocs = extraPickupRefs.length > 0
+        ? await listDocumentsByFilter<{
+            _id: string;
+            customerRef?: unknown;
+            label?: string;
+            pickupAddress?: string;
+            notes?: string;
+            active?: boolean;
+        }>('customerPickupLocation', { _id: extraPickupRefs })
+        : [];
+    if (extraPickupDocs.length !== extraPickupRefs.length) {
+        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
+    }
+    const invalidExtraPickup = extraPickupDocs.find(pickup =>
+        extractRefId(pickup.customerRef) !== orderCustomerRef ||
+        pickup.active === false ||
+        !normalizeOptionalText(pickup.pickupAddress)
+    );
+    if (invalidExtraPickup) {
+        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
+    }
+
+    const orderPickupByMasterRef = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
+            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
+    );
+    const orderPickupByAddress = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
+            .filter(([pickupAddress]) => Boolean(pickupAddress))
+    );
+    const pickupStopKeyAlias = new Map<string, string>();
+    const extraOrderPickupStops: OrderPickupStop[] = [];
+    for (const pickup of extraPickupDocs) {
+        const pickupAddress = normalizeText(pickup.pickupAddress);
+        const existingStop =
+            orderPickupByMasterRef.get(pickup._id) ||
+            orderPickupByAddress.get(pickupAddress.toLowerCase());
+        if (existingStop?._key) {
+            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
+            continue;
+        }
+
+        const newStop: OrderPickupStop = {
+            _key: crypto.randomUUID(),
+            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
+            customerPickupRef: pickup._id,
+            pickupLabel: normalizeOptionalText(pickup.label),
+            pickupAddress,
+            notes: normalizeOptionalText(pickup.notes),
+        };
+        extraOrderPickupStops.push(newStop);
+        orderPickupByMasterRef.set(pickup._id, newStop);
+        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
+        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
+    }
+
+    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
+        .map((stop, index) => ({
+            ...stop,
+            sequence: index + 1,
+        }));
+    const remapPickupStopKey = (key: unknown) => {
+        const normalizedKey = normalizeOptionalText(key);
+        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
+    };
+    const nextTripPayload = {
+        ...data,
+        _key: tripPlanKey,
+        pickupStopKeys: requestedPickupStopKeys
+            .map(remapPickupStopKey)
+            .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:'))),
+    };
+
+    let normalizedTripPlans: OrderTripPlan[];
+    try {
+        normalizedTripPlans = await normalizeOrderTripPlansInput(
+            [nextTripPayload],
+            effectiveOrderPickupStops,
+            normalizeOptionalText(order.serviceRef) || undefined
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Data trip tidak valid';
+        const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
+        return NextResponse.json({ error: message }, { status });
+    }
+
+    const updatedTripPlan = normalizedTripPlans[0];
+    const nextTripPlans = currentTripPlans.map(plan =>
+        normalizeOptionalText(plan._key) === tripPlanKey
+            ? { ...updatedTripPlan, sequence: plan.sequence, _key: tripPlanKey }
+            : plan
+    ).map((plan, index) => ({
+        ...plan,
+        sequence: index + 1,
+    }));
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await updateDocument(id, {
+            pickupStops: effectiveOrderPickupStops,
+            pickupAddress: effectiveOrderPickupStops[0]?.pickupAddress || order.pickupAddress,
+            customerPickupRef: effectiveOrderPickupStops[0]?.customerPickupRef || order.customerPickupRef,
+            tripPlans: nextTripPlans,
+        }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Rencana trip order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Edit rencana trip pada ${order.masterResi || id}: ${updatedTripPlan.vehiclePlate || updatedTripPlan.vehicleRef} / ${updatedTripPlan.driverName || updatedTripPlan.driverRef}`
+    );
+    return NextResponse.json({ data: updatedOrder, id, tripPlan: updatedTripPlan });
+}
+
+export async function handleOrderTripPlanDelete(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    const tripPlanKey = normalizeText(data.tripPlanKey);
+    if (!id || !tripPlanKey) {
+        return NextResponse.json({ error: 'Rencana trip tidak valid' }, { status: 400 });
+    }
+
+    const order = await getDocumentById<{
+        _id: string;
+        _rev?: string;
+        masterResi?: string;
+        tripPlans?: OrderTripPlan[];
+    }>(id, 'order');
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (!order._rev && !isSupabaseBackendEnabled()) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const tripPlan = currentTripPlans.find(plan => normalizeOptionalText(plan._key) === tripPlanKey) || null;
+    if (!tripPlan) {
+        return NextResponse.json({ error: 'Rencana trip tidak ditemukan. Refresh lalu coba lagi.' }, { status: 404 });
+    }
+    if (tripPlan.linkedDeliveryOrderRef) {
+        return NextResponse.json(
+            { error: 'Rencana trip yang sudah punya SJ tidak bisa dihapus dari detail order.' },
+            { status: 409 }
+        );
+    }
+
+    const nextTripPlans = currentTripPlans
+        .filter(plan => normalizeOptionalText(plan._key) !== tripPlanKey)
+        .map((plan, index) => ({
+            ...plan,
+            sequence: index + 1,
+        }));
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await updateDocument(id, {
+            tripPlans: nextTripPlans.length > 0 ? nextTripPlans : undefined,
+        }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Rencana trip order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Hapus rencana trip ${tripPlan.sequence} pada ${order.masterResi || id}`
+    );
+    return NextResponse.json({ data: updatedOrder, id, deletedTripPlanKey: tripPlanKey });
 }
 
 export async function handleOrderTargetRevision(
@@ -1662,8 +2261,7 @@ export async function handleDeliveryOrderStatusUpdate(
         );
     }
 
-    const allowedStatuses = DO_STATUS_TRANSITIONS[deliveryOrder.status || ''] || [];
-    if (!allowedStatuses.includes(status)) {
+    if (!MANUAL_DO_STATUSES.includes(status as (typeof MANUAL_DO_STATUSES)[number])) {
         return NextResponse.json({ error: 'Transisi status DO tidak valid' }, { status: 400 });
     }
 
@@ -1702,6 +2300,11 @@ export async function handleDeliveryOrderStatusUpdate(
             totalClaimAmount: number;
         }
         | undefined;
+    const targetSuratJalanRefs = normalizeSelectedSuratJalanRefs(data, id);
+    const shouldAutoFinalizeSelectedSuratJalan =
+        status === 'DELIVERED' &&
+        Boolean(data.autoFinalizeSelectedSuratJalan) &&
+        targetSuratJalanRefs.length > 0;
     if (status === 'DELIVERED') {
         if (doItems.length === 0) {
             return NextResponse.json(
@@ -1712,7 +2315,23 @@ export async function handleDeliveryOrderStatusUpdate(
 
         try {
             actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
-            actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+            if (shouldAutoFinalizeSelectedSuratJalan) {
+                actualDropPoints = normalizeDeliveryActualDropPoints(
+                    {
+                        actualDropPoints: buildAutoFinalizeBatchRawDropPoints(
+                            id,
+                            deliveryOrder,
+                            doItems,
+                            actualCargoByDoItemId,
+                            new Set(targetSuratJalanRefs)
+                        ),
+                    },
+                    deliveryOrder,
+                    actualCargoByDoItemId
+                );
+            } else {
+                actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+            }
             const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(actualDropPoints, doItems);
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
@@ -2126,6 +2745,831 @@ export async function handleDeliveryOrderStatusUpdate(
     });
 }
 
+export async function handleDeliveryOrderContinueHeldCargo(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const note = normalizeOptionalText(data.note);
+    if (!id) {
+        return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await getDocumentById<{
+        _id: string;
+        doNumber?: string;
+        status?: string;
+        orderRef?: unknown;
+        pendingDriverStatus?: string;
+        actualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
+    }>(id, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.status !== 'DELIVERED' && deliveryOrder.status !== 'PARTIAL_HOLD') {
+        return NextResponse.json(
+            { error: 'Lanjutan hold di SJ yang sama hanya tersedia untuk surat jalan yang sudah selesai atau masih punya hold.' },
+            { status: 409 }
+        );
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum muatan hold dilanjutkan.` },
+            { status: 409 }
+        );
+    }
+
+    const currentDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
+        ? deliveryOrder.actualDropPoints
+        : [];
+    const continuableDropPoints = currentDropPoints.filter(point =>
+        point.stopType === 'HOLD' || point.stopType === 'TRANSIT'
+    );
+    if (continuableDropPoints.length === 0) {
+        return NextResponse.json(
+            { error: 'Tidak ada titik hold/transit yang bisa dilanjutkan di surat jalan ini.' },
+            { status: 409 }
+        );
+    }
+
+    const nextDropPoints = currentDropPoints.map(point =>
+        point.stopType === 'HOLD' || point.stopType === 'TRANSIT'
+            ? {
+                ...point,
+                stopType: 'DROP' as const,
+                note: normalizeOptionalText(point.note)
+                    ? `${point.note} | Lanjutan hold dikirim di SJ yang sama`
+                    : 'Lanjutan hold dikirim di SJ yang sama',
+            }
+            : point
+    );
+
+    const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const orderItemProgressUpdates: Array<{
+        orderItemRef: string;
+        updates: Record<string, unknown>;
+    }> = [];
+    for (const item of doItems) {
+        const orderItemRef = extractRefId(item.orderItemRef);
+        if (!orderItemRef) {
+            continue;
+        }
+
+        const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef, 'orderItem');
+        if (!orderItem) {
+            continue;
+        }
+        if (!orderItem._rev && !isSupabaseBackendEnabled()) {
+            return NextResponse.json(
+                { error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+
+        const progress = getOrderItemProgress(orderItem);
+        const requiresQty = progress.totalQtyKoli > 0;
+        const actualQtyKoli = requiresQty ? roundQuantity(normalizeNumber(item.actualQtyKoli ?? item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0)) : 0;
+        const actualWeight = roundQuantity(normalizeNumber(item.actualWeightKg ?? item.shippedWeight ?? item.orderItemWeight ?? 0));
+        const actualVolume = roundQuantity(normalizeNumber(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0), 3);
+
+        const previousSplit = splitActualCargoForOrderProgress({
+            actualQtyKoli,
+            actualWeight,
+            actualVolume,
+            deliveryOrderItemRef: item._id,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+            actualDropPoints: currentDropPoints,
+        });
+        const nextSplit = splitActualCargoForOrderProgress({
+            actualQtyKoli,
+            actualWeight,
+            actualVolume,
+            deliveryOrderItemRef: item._id,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+            actualDropPoints: nextDropPoints,
+        });
+
+        const nextProgress = {
+            ...progress,
+            deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + nextSplit.delivered.qtyKoli - previousSplit.delivered.qtyKoli),
+            deliveredWeight: roundQuantity(progress.deliveredWeight + nextSplit.delivered.weight - previousSplit.delivered.weight),
+            deliveredVolume: roundQuantity(progress.deliveredVolume + nextSplit.delivered.volume - previousSplit.delivered.volume, 3),
+            heldQtyKoli: roundQuantity(Math.max(progress.heldQtyKoli + nextSplit.held.qtyKoli - previousSplit.held.qtyKoli, 0)),
+            heldWeight: roundQuantity(Math.max(progress.heldWeight + nextSplit.held.weight - previousSplit.held.weight, 0)),
+            heldVolume: roundQuantity(Math.max(progress.heldVolume + nextSplit.held.volume - previousSplit.held.volume, 0), 3),
+        };
+
+        orderItemProgressUpdates.push({
+            orderItemRef,
+            updates: {
+                deliveredQtyKoli: nextProgress.deliveredQtyKoli,
+                deliveredWeight: nextProgress.deliveredWeight,
+                deliveredVolume: nextProgress.deliveredVolume,
+                heldQtyKoli: nextProgress.heldQtyKoli,
+                heldWeight: nextProgress.heldWeight,
+                heldVolume: nextProgress.heldVolume,
+                status: deriveOrderItemStatusFromProgress(nextProgress),
+            },
+        });
+    }
+
+    const timestamp = new Date().toISOString();
+
+    try {
+        await updateDocument(id, {
+            status: 'DELIVERED',
+            actualDropPoints: nextDropPoints,
+            cargoFinalizedAt: timestamp,
+            cargoFinalizedBy: session._id,
+            cargoFinalizedByName: session.name,
+        }, 'deliveryOrder');
+
+        const suratJalanRecords = await listDocumentsByFilter<{ _id: string; tripStatus?: DOStatus }>('suratJalan', { tripRef: id });
+        for (const record of suratJalanRecords.filter(item => item.tripStatus === 'PARTIAL_HOLD')) {
+            await updateDocument(record._id, { tripStatus: 'DELIVERED', syncedAt: timestamp }, 'suratJalan');
+        }
+
+        const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
+        if (tripRecord) {
+            await updateDocument(id, { status: 'DELIVERED' }, 'trip');
+        }
+
+        for (const progressUpdate of orderItemProgressUpdates) {
+            await updateDocument(progressUpdate.orderItemRef, progressUpdate.updates, 'orderItem');
+        }
+
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: id,
+            status: 'DELIVERED',
+            note: note || 'Lanjutan hold dikirim di SJ yang sama',
+            timestamp,
+            userRef: session._id,
+            userName: session.name,
+        });
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data surat jalan atau item order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Lanjutan hold di SJ yang sama: ${deliveryOrder.doNumber || id} (${continuableDropPoints.length} titik hold/transit jadi drop)`
+    );
+
+    const updatedDeliveryOrder = await getDocumentById(id, 'deliveryOrder');
+    return NextResponse.json({
+        data: updatedDeliveryOrder || {
+            ...deliveryOrder,
+            actualDropPoints: nextDropPoints,
+            cargoFinalizedAt: timestamp,
+            cargoFinalizedBy: session._id,
+            cargoFinalizedByName: session.name,
+        },
+    });
+}
+
+export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const status = normalizeText(data.status);
+    const note = normalizeOptionalText(data.note);
+    const targetSuratJalanRefs = Array.from(new Set(
+        (Array.isArray(data.targetSuratJalanRefs) ? data.targetSuratJalanRefs : [])
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            .map(value => value.trim())
+            .filter(value => value.startsWith(`${id}:`) || value === `${id}:primary`)
+    ));
+
+    if (!id) {
+        return NextResponse.json({ error: 'Trip tidak valid' }, { status: 400 });
+    }
+    if (!MANUAL_DO_STATUSES.includes(status as (typeof MANUAL_DO_STATUSES)[number])) {
+        return NextResponse.json({ error: 'Status batch SJ tidak valid' }, { status: 400 });
+    }
+    if (targetSuratJalanRefs.length === 0) {
+        return NextResponse.json({ error: 'Pilih minimal 1 surat jalan' }, { status: 400 });
+    }
+
+    const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Trip tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `Trip ${deliveryOrder.doNumber || id} masih punya permintaan driver ${deliveryOrder.pendingDriverStatus} yang belum diputuskan.` },
+            { status: 409 }
+        );
+    }
+
+    let suratJalanRecords = await listDocumentsByFilter<{
+        _id: string;
+        _rev?: string;
+        tripRef: string;
+        tripStatus?: DOStatus;
+        referenceKey?: string;
+        suratJalanNumber?: string;
+    }>('suratJalan', { tripRef: id });
+
+    if (suratJalanRecords.length === 0) {
+        const deliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
+        const derivedSuratJalanRecords = mapDeliveryOrderToSuratJalanRecords(deliveryOrder, deliveryOrderItems);
+
+        if (derivedSuratJalanRecords.length === 0) {
+            return NextResponse.json({ error: 'Trip ini belum punya surat jalan yang bisa diupdate.' }, { status: 409 });
+        }
+
+        const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
+        if (!tripRecord) {
+            await createDocument({ ...mapDeliveryOrderToTripRecord(deliveryOrder) });
+        }
+
+        for (const record of derivedSuratJalanRecords) {
+            await createDocument({ ...record });
+        }
+
+        suratJalanRecords = await listDocumentsByFilter<{
+            _id: string;
+            _rev?: string;
+            tripRef: string;
+            tripStatus?: DOStatus;
+            referenceKey?: string;
+            suratJalanNumber?: string;
+        }>('suratJalan', { tripRef: id });
+    }
+
+    const allowedStatusesByCurrent: Record<DOStatus, DOStatus[]> = {
+        CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
+        HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
+        ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
+        ARRIVED: ['DELIVERED', 'CANCELLED'],
+        PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
+        DELIVERED: ['CANCELLED'],
+        CANCELLED: [],
+    };
+
+    const targetedRecords = suratJalanRecords.filter(item => targetSuratJalanRefs.includes(item._id));
+    if (targetedRecords.length === 0) {
+        return NextResponse.json({ error: 'Surat jalan yang dipilih tidak ditemukan dalam trip ini.' }, { status: 404 });
+    }
+    const isPartialHoldContinuationFinalize =
+        status === 'DELIVERED' &&
+        targetedRecords.some(item => item.tripStatus === 'PARTIAL_HOLD');
+
+    const ineligible = targetedRecords.filter(item => {
+        const currentStatus = item.tripStatus || deliveryOrder.status || 'CREATED';
+        return !allowedStatusesByCurrent[currentStatus]?.includes(status as DOStatus);
+    });
+    if (ineligible.length > 0) {
+        return NextResponse.json(
+            { error: `Ada SJ yang belum memenuhi syarat untuk pindah ke ${status}: ${ineligible.map(item => item.suratJalanNumber || item._id).join(', ')}` },
+            { status: 409 }
+        );
+    }
+
+    const timestamp = new Date().toISOString();
+    const podReceiverName = normalizeOptionalText(data.podReceiverName);
+    const podReceivedDate = normalizeOptionalText(data.podReceivedDate);
+    const podNote = normalizeOptionalText(data.podNote);
+    const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const currentDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
+        ? deliveryOrder.actualDropPoints
+        : [];
+    const targetSuratJalanRefSet = new Set(targetSuratJalanRefs);
+    const targetedDoItems = doItems.filter(item =>
+        targetSuratJalanRefSet.has(getDeliveryOrderSuratJalanIdentity({
+            deliveryOrderId: id,
+            shipperReferenceKey: item.shipperReferenceKey,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+        }))
+    );
+    const targetedDoItemIds = new Set(targetedDoItems.map(item => item._id));
+    const targetedReferenceKeys = new Set(
+        targetedDoItems
+            .map(item => normalizeOptionalText(item.shipperReferenceKey))
+            .filter((value): value is string => Boolean(value))
+    );
+    const targetedReferenceNumbers = new Set(
+        targetedDoItems
+            .map(item => normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase())
+            .filter((value): value is string => Boolean(value))
+    );
+    const shouldTreatUntargetedGenericPointsAsSelected =
+        suratJalanRecords.length <= 1 || targetSuratJalanRefs.length === suratJalanRecords.length;
+
+    const matchesTargetedDropPoint = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => {
+        const dropItemRefs = [
+            normalizeOptionalText(point.deliveryOrderItemRef),
+            ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                .map(ref => normalizeOptionalText(ref))
+                .filter((ref): ref is string => Boolean(ref))),
+        ].filter((ref): ref is string => Boolean(ref));
+        if (dropItemRefs.some(ref => targetedDoItemIds.has(ref))) {
+            return true;
+        }
+
+        const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+        const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
+        if ((pointReferenceKey && targetedReferenceKeys.has(pointReferenceKey)) || (pointReferenceNumber && targetedReferenceNumbers.has(pointReferenceNumber))) {
+            return true;
+        }
+
+        return shouldTreatUntargetedGenericPointsAsSelected && !pointReferenceKey && !pointReferenceNumber && dropItemRefs.length === 0;
+    };
+
+    let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
+    let scopedActualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
+    const orderItemProgressUpdates: Array<{
+        orderItemRef: string;
+        orderItemUpdates: Record<string, unknown>;
+        deliveryOrderItemRef: string;
+        deliveryOrderItemUpdates: Record<string, unknown>;
+    }> = [];
+    let mergedActualDropPoints: NonNullable<DeliveryOrder['actualDropPoints']> = currentDropPoints;
+
+    if (status === 'DELIVERED') {
+        if (!podReceiverName || !podReceivedDate) {
+            return NextResponse.json({ error: 'Nama penerima POD dan tanggal terima POD wajib diisi untuk finalisasi SJ.' }, { status: 400 });
+        }
+        try {
+            assertIsoDate(podReceivedDate, 'Tanggal terima POD');
+        } catch (error) {
+            return NextResponse.json({ error: error instanceof Error ? error.message : 'Tanggal terima POD tidak valid' }, { status: 400 });
+        }
+        if (targetedDoItems.length === 0) {
+            return NextResponse.json({ error: 'SJ yang dipilih belum punya item muatan untuk difinalkan.' }, { status: 409 });
+        }
+
+        try {
+            actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, targetedDoItems);
+            const normalizedDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+            scopedActualDropPoints = normalizedDropPoints.map(point => {
+                const normalizedPointItemRefs = [
+                    normalizeOptionalText(point.deliveryOrderItemRef),
+                    ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                        .map(ref => normalizeOptionalText(ref))
+                        .filter((ref): ref is string => Boolean(ref))),
+                ];
+                if (
+                    normalizedPointItemRefs.length > 0 ||
+                    normalizeOptionalText(point.shipperReferenceKey) ||
+                    normalizeOptionalText(point.shipperReferenceNumber)
+                ) {
+                    return point;
+                }
+
+                const pointItems = targetedDoItems;
+                const pointItemRefs = pointItems.map(item => item._id);
+                const pointReferenceKeys = Array.from(new Set(
+                    pointItems
+                        .map(item => normalizeOptionalText(item.shipperReferenceKey))
+                        .filter((value): value is string => Boolean(value))
+                ));
+                const pointReferenceNumbers = Array.from(new Set(
+                    pointItems
+                        .map(item => normalizeOptionalText(item.shipperReferenceNumber))
+                        .filter((value): value is string => Boolean(value))
+                ));
+
+                return {
+                    ...point,
+                    deliveryOrderItemRef: pointItemRefs.length === 1 ? pointItemRefs[0] : undefined,
+                    deliveryOrderItemRefs: pointItemRefs.length > 1 ? pointItemRefs : undefined,
+                    shipperReferenceKey: pointReferenceKeys.length === 1 ? pointReferenceKeys[0] : point.shipperReferenceKey,
+                    shipperReferenceNumber: pointReferenceNumbers.length === 1 ? pointReferenceNumbers[0] : point.shipperReferenceNumber,
+                };
+            });
+
+            const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(scopedActualDropPoints, targetedDoItems);
+            if (ambiguousDropMappingMessage) {
+                return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+            }
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Muatan aktual batch SJ tidak valid' },
+                { status: 400 }
+            );
+        }
+
+        const isBillableActualDropPoint = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) =>
+            point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP';
+        const preservedActualDropPoints = currentDropPoints.filter(point =>
+            !matchesTargetedDropPoint(point) ||
+            (isPartialHoldContinuationFinalize && isBillableActualDropPoint(point))
+        );
+        mergedActualDropPoints = [...preservedActualDropPoints, ...(scopedActualDropPoints || [])];
+
+        for (const item of targetedDoItems) {
+            const orderItemRef = extractRefId(item.orderItemRef);
+            if (!orderItemRef) {
+                continue;
+            }
+
+            const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef, 'orderItem');
+            if (!orderItem) {
+                continue;
+            }
+            if (!orderItem._rev && !isSupabaseBackendEnabled()) {
+                return NextResponse.json(
+                    { error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            if (!item._rev && !isSupabaseBackendEnabled()) {
+                return NextResponse.json(
+                    { error: 'Revisi item surat jalan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+
+            const progress = getOrderItemProgress(orderItem);
+            const usesDeliveryOrderOwnedTarget =
+                orderItem.entrySource === 'DELIVERY_ORDER' &&
+                extractRefId(orderItem.sourceDeliveryOrderRef) === id;
+            const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+            const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
+            const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
+            const actualCargo = actualCargoByDoItemId.get(item._id);
+
+            if (!actualCargo) {
+                return NextResponse.json({ error: 'Muatan aktual batch SJ tidak lengkap' }, { status: 400 });
+            }
+
+            const requireQty = progress.totalQtyKoli > 0;
+            const actualQtyKoli = requireQty ? actualCargo.actualQtyKoli : 0;
+            const actualWeight = roundQuantity(actualCargo.actualWeightKg);
+            const actualVolume = roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3);
+            const itemNonBillableCargo = getDeliveryOrderNonBillableCargoSummary(
+                { actualDropPoints: scopedActualDropPoints || [] },
+                item.shipperReferenceNumber,
+                item._id
+            );
+            const itemHasHoldCargo =
+                itemNonBillableCargo.qtyKoli > 0 ||
+                itemNonBillableCargo.weightKg > 0 ||
+                itemNonBillableCargo.volumeM3 > 0;
+
+            if (requireQty && (!Number.isFinite(actualQtyKoli) || (actualQtyKoli <= 0 && !itemHasHoldCargo))) {
+                return NextResponse.json(
+                    { error: `Qty aktual untuk ${orderItem.description || 'item order'} harus lebih besar dari 0` },
+                    { status: 400 }
+                );
+            }
+            if (!Number.isFinite(actualWeight) || actualWeight < 0) {
+                return NextResponse.json(
+                    { error: `Berat aktual untuk ${orderItem.description || 'item order'} tidak valid` },
+                    { status: 400 }
+                );
+            }
+            if ((plannedWeight > 0 || normalizeNumber(item.orderItemWeight ?? 0) > 0) && actualWeight <= 0 && !itemHasHoldCargo) {
+                return NextResponse.json(
+                    { error: `Berat aktual untuk ${orderItem.description || 'item order'} wajib diisi` },
+                    { status: 400 }
+                );
+            }
+            if (actualCargo.actualVolumeM3 !== undefined && (!Number.isFinite(actualCargo.actualVolumeM3) || actualCargo.actualVolumeM3 < 0)) {
+                return NextResponse.json(
+                    { error: `Volume aktual untuk ${orderItem.description || 'item order'} tidak valid` },
+                    { status: 400 }
+                );
+            }
+            if ((plannedVolume > 0 || normalizeNumber(item.orderItemVolumeM3 ?? 0) > 0) && actualVolume <= 0 && !itemHasHoldCargo) {
+                return NextResponse.json(
+                    { error: `Volume aktual untuk ${orderItem.description || 'item order'} wajib diisi` },
+                    { status: 400 }
+                );
+            }
+
+            const previousTargetedDropPoints = currentDropPoints
+                .filter(point => matchesTargetedDropPoint(point))
+                .map((point, index) => ({
+                    ...point,
+                    _key: point._key || `existing-drop-${index + 1}`,
+                }));
+            const previousBillableCargo = getDeliveryOrderBillableCargoSummary(
+                { actualDropPoints: previousTargetedDropPoints },
+                item.shipperReferenceNumber,
+                item._id
+            );
+            const previousNonBillableCargo = getDeliveryOrderNonBillableCargoSummary(
+                { actualDropPoints: previousTargetedDropPoints },
+                item.shipperReferenceNumber,
+                item._id
+            );
+            const previousSplit = {
+                delivered: {
+                    qtyKoli: roundQuantity(previousBillableCargo.qtyKoli),
+                    weight: roundQuantity(previousBillableCargo.weightKg),
+                    volume: roundQuantity(previousBillableCargo.volumeM3, 3),
+                },
+                held: {
+                    qtyKoli: roundQuantity(previousNonBillableCargo.qtyKoli),
+                    weight: roundQuantity(previousNonBillableCargo.weightKg),
+                    volume: roundQuantity(previousNonBillableCargo.volumeM3, 3),
+                },
+            };
+            const nextActualDropPointsForProgress = isPartialHoldContinuationFinalize
+                ? [
+                    ...previousTargetedDropPoints.filter(point => point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP'),
+                    ...(scopedActualDropPoints || []),
+                ]
+                : scopedActualDropPoints || [];
+            const itemBillableCargo = getDeliveryOrderBillableCargoSummary(
+                { actualDropPoints: nextActualDropPointsForProgress },
+                item.shipperReferenceNumber,
+                item._id
+            );
+            const nextSplit = {
+                delivered: {
+                    qtyKoli: roundQuantity(itemBillableCargo.qtyKoli),
+                    weight: roundQuantity(itemBillableCargo.weightKg),
+                    volume: roundQuantity(itemBillableCargo.volumeM3, 3),
+                },
+                held: {
+                    qtyKoli: roundQuantity(itemNonBillableCargo.qtyKoli),
+                    weight: roundQuantity(itemNonBillableCargo.weightKg),
+                    volume: roundQuantity(itemNonBillableCargo.volumeM3, 3),
+                },
+            };
+            const itemNonBillableCargoForProgress = getDeliveryOrderNonBillableCargoSummary(
+                { actualDropPoints: nextActualDropPointsForProgress },
+                item.shipperReferenceNumber,
+                item._id
+            );
+            nextSplit.held = {
+                qtyKoli: roundQuantity(itemNonBillableCargoForProgress.qtyKoli),
+                weight: roundQuantity(itemNonBillableCargoForProgress.weightKg),
+                volume: roundQuantity(itemNonBillableCargoForProgress.volumeM3, 3),
+            };
+
+            if (!usesDeliveryOrderOwnedTarget && requireQty) {
+                const otherReservedQtyKoli = roundQuantity(
+                    Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli - previousSplit.delivered.qtyKoli - plannedQtyKoli, 0)
+                );
+                const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
+                if (actualQtyKoli > maxActualQtyKoli) {
+                    return NextResponse.json(
+                        {
+                            error: `Qty aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualQtyKoli} koli).`,
+                        },
+                        { status: 409 }
+                    );
+                }
+            }
+            if (!usesDeliveryOrderOwnedTarget && progress.totalWeight > 0) {
+                const otherReservedWeight = roundQuantity(
+                    Math.max(progress.deliveredWeight + progress.assignedWeight - previousSplit.delivered.weight - plannedWeight, 0)
+                );
+                const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
+                if (actualWeight - maxActualWeight > 0.00001) {
+                    return NextResponse.json(
+                        {
+                            error: `Berat aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualWeight} kg).`,
+                        },
+                        { status: 409 }
+                    );
+                }
+            }
+            if (!usesDeliveryOrderOwnedTarget && progress.totalVolume > 0) {
+                const otherReservedVolume = roundQuantity(
+                    Math.max(progress.deliveredVolume + progress.assignedVolume - previousSplit.delivered.volume - plannedVolume, 0),
+                    3
+                );
+                const maxActualVolume = roundQuantity(Math.max(progress.totalVolume - otherReservedVolume, 0), 3);
+                if (actualVolume - maxActualVolume > 0.00001) {
+                    return NextResponse.json(
+                        {
+                            error: `Volume aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualVolume} m3).`,
+                        },
+                        { status: 409 }
+                    );
+                }
+            }
+
+            const nextProgress = {
+                ...progress,
+                assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
+                assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
+                assignedVolume: roundQuantity(Math.max(progress.assignedVolume - plannedVolume, 0), 3),
+                deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + nextSplit.delivered.qtyKoli - previousSplit.delivered.qtyKoli),
+                deliveredWeight: roundQuantity(progress.deliveredWeight + nextSplit.delivered.weight - previousSplit.delivered.weight),
+                deliveredVolume: roundQuantity(progress.deliveredVolume + nextSplit.delivered.volume - previousSplit.delivered.volume, 3),
+                heldQtyKoli: roundQuantity(Math.max(progress.heldQtyKoli + nextSplit.held.qtyKoli - previousSplit.held.qtyKoli, 0)),
+                heldWeight: roundQuantity(Math.max(progress.heldWeight + nextSplit.held.weight - previousSplit.held.weight, 0)),
+                heldVolume: roundQuantity(Math.max(progress.heldVolume + nextSplit.held.volume - previousSplit.held.volume, 0), 3),
+            };
+            const nextActualQtyKoli = requireQty ? nextSplit.delivered.qtyKoli : 0;
+            const nextActualWeightInputUnit = actualCargo.actualWeightInputUnit || 'KG';
+            const nextActualVolumeInputUnit = actualCargo.actualVolumeInputUnit || 'M3';
+            const nextActualWeightInputValue = convertKgToWeightInputValue(nextSplit.delivered.weight, nextActualWeightInputUnit);
+            const nextActualVolumeInputValue = convertM3ToVolumeInputValue(nextSplit.delivered.volume, nextActualVolumeInputUnit);
+
+            const orderItemUpdates: Record<string, unknown> = {
+                assignedQtyKoli: nextProgress.assignedQtyKoli,
+                assignedWeight: nextProgress.assignedWeight,
+                assignedVolume: nextProgress.assignedVolume,
+                deliveredQtyKoli: nextProgress.deliveredQtyKoli,
+                deliveredWeight: nextProgress.deliveredWeight,
+                deliveredVolume: nextProgress.deliveredVolume,
+                heldQtyKoli: nextProgress.heldQtyKoli,
+                heldWeight: nextProgress.heldWeight,
+                heldVolume: nextProgress.heldVolume,
+                status: deriveOrderItemStatusFromProgress(nextProgress),
+            };
+
+            if (usesDeliveryOrderOwnedTarget) {
+                if (requireQty) {
+                    orderItemUpdates.qtyKoli = nextActualQtyKoli;
+                }
+                orderItemUpdates.weight = nextSplit.delivered.weight;
+                orderItemUpdates.weightInputValue = nextActualWeightInputValue;
+                orderItemUpdates.weightInputUnit = nextActualWeightInputUnit;
+                if (nextSplit.delivered.volume > 0) {
+                    orderItemUpdates.volume = nextSplit.delivered.volume;
+                    orderItemUpdates.volumeInputValue = nextActualVolumeInputValue;
+                    orderItemUpdates.volumeInputUnit = nextActualVolumeInputUnit;
+                } else {
+                    orderItemUpdates.volume = null;
+                    orderItemUpdates.volumeInputValue = null;
+                    orderItemUpdates.volumeInputUnit = null;
+                }
+            }
+
+            orderItemProgressUpdates.push({
+                orderItemRef,
+                orderItemUpdates,
+                deliveryOrderItemRef: item._id,
+                deliveryOrderItemUpdates: {
+                    actualQtyKoli: requireQty ? nextActualQtyKoli : null,
+                    actualWeightKg: nextSplit.delivered.weight,
+                    actualVolumeM3: nextSplit.delivered.volume > 0 ? nextSplit.delivered.volume : null,
+                    actualWeightInputValue: nextActualWeightInputValue,
+                    actualWeightInputUnit: nextActualWeightInputUnit,
+                    actualVolumeInputValue: nextActualVolumeInputValue,
+                    actualVolumeInputUnit: nextActualVolumeInputUnit,
+                },
+            });
+        }
+    }
+
+    const isContinuableHoldPoint = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) =>
+        point.stopType === 'HOLD' || point.stopType === 'TRANSIT';
+    const getSuratJalanStatusAfterFinalize = (
+        record: {
+            _id: string;
+            referenceKey?: string;
+            suratJalanNumber?: string;
+        }
+    ): DOStatus => {
+        if (status !== 'DELIVERED') {
+            return status as DOStatus;
+        }
+
+        const recordDoItems = targetedDoItems.filter(item =>
+            getDeliveryOrderSuratJalanIdentity({
+                deliveryOrderId: id,
+                shipperReferenceKey: item.shipperReferenceKey,
+                shipperReferenceNumber: item.shipperReferenceNumber,
+            }) === record._id
+        );
+        const recordDoItemIds = new Set(recordDoItems.map(item => item._id));
+        const recordReferenceKeys = new Set([
+            normalizeOptionalText(record.referenceKey),
+            ...recordDoItems.map(item => normalizeOptionalText(item.shipperReferenceKey)),
+        ].filter((value): value is string => Boolean(value)));
+        const recordReferenceNumbers = new Set([
+            normalizeOptionalText(record.suratJalanNumber)?.toUpperCase(),
+            ...recordDoItems.map(item => normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase()),
+        ].filter((value): value is string => Boolean(value)));
+
+        const hasContinuableHold = (scopedActualDropPoints || []).some(point => {
+            if (!isContinuableHoldPoint(point)) {
+                return false;
+            }
+            const pointItemRefs = [
+                normalizeOptionalText(point.deliveryOrderItemRef),
+                ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                    .map(ref => normalizeOptionalText(ref))
+                    .filter((ref): ref is string => Boolean(ref))),
+            ].filter((ref): ref is string => Boolean(ref));
+            if (pointItemRefs.some(ref => recordDoItemIds.has(ref))) {
+                return true;
+            }
+
+            const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+            const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
+            return (
+                (pointReferenceKey && recordReferenceKeys.has(pointReferenceKey)) ||
+                (pointReferenceNumber && recordReferenceNumbers.has(pointReferenceNumber))
+            );
+        });
+
+        return hasContinuableHold ? 'PARTIAL_HOLD' : 'DELIVERED';
+    };
+
+    try {
+        for (const record of targetedRecords) {
+            await updateDocument(record._id, {
+                tripStatus: getSuratJalanStatusAfterFinalize(record),
+                syncedAt: timestamp,
+                ...(status === 'DELIVERED'
+                    ? {
+                        podReceiverName,
+                        podReceivedDate,
+                        podNote,
+                    }
+                    : {}),
+            }, 'suratJalan');
+        }
+
+        const refreshedSuratJalanRecords = suratJalanRecords.map(record =>
+            targetSuratJalanRefs.includes(record._id)
+                ? { ...record, tripStatus: getSuratJalanStatusAfterFinalize(record) }
+                : record
+        );
+        const aggregatedTripStatus = aggregateTripStatusFromSuratJalanStatuses(
+            deliveryOrder.status || 'CREATED',
+            refreshedSuratJalanRecords.map(record => record.tripStatus || deliveryOrder.status || 'CREATED')
+        );
+
+        await updateDocument(id, {
+            status: aggregatedTripStatus,
+            ...(status === 'DELIVERED' && targetedRecords.length === refreshedSuratJalanRecords.length
+                ? {
+                    podReceiverName,
+                    podReceivedDate,
+                    podNote,
+                }
+                : {}),
+            ...(status === 'DELIVERED'
+                ? {
+                    actualDropPoints: mergedActualDropPoints,
+                    cargoFinalizedAt: timestamp,
+                    cargoFinalizedBy: session._id,
+                    cargoFinalizedByName: session.name,
+                }
+                : {}),
+        }, 'deliveryOrder');
+
+        for (const progressUpdate of orderItemProgressUpdates) {
+            await updateDocument(progressUpdate.orderItemRef, progressUpdate.orderItemUpdates, 'orderItem');
+            await updateDocument(progressUpdate.deliveryOrderItemRef, progressUpdate.deliveryOrderItemUpdates, 'deliveryOrderItem');
+        }
+
+        const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
+        if (tripRecord) {
+            await updateDocument(id, { status: aggregatedTripStatus }, 'trip');
+        }
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json({ error: 'Data trip / surat jalan berubah karena update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        throw error;
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Batch status SJ ${status}: ${targetedRecords.map(item => item.suratJalanNumber || item._id).join(', ')}${status === 'DELIVERED'
+            ? ` (${targetedDoItems.length} item order/resi ikut diperbarui)`
+            : ''}${note ? ` | ${note}` : ''}`
+    );
+
+    return NextResponse.json({
+        data: {
+            tripRef: id,
+            updatedCount: targetedRecords.length,
+            targetSuratJalanRefs,
+            status,
+        },
+    });
+}
+
 export async function handleDeliveryOrderDriverStatusRequest(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -2437,6 +3881,7 @@ export async function handleDeliveryOrderCreate(
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
         customerRef?: string;
         customerName?: string;
+        customerPickupRef?: string;
         receiverName?: string;
         receiverPhone?: string;
         receiverAddress?: string;
@@ -2450,6 +3895,7 @@ export async function handleDeliveryOrderCreate(
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
+    const orderCustomerRef = extractRefId(order.customerRef);
 
     const orderTripPlanKey = normalizeOptionalText(data.orderTripPlanKey);
     const selectedTripPlan = orderTripPlanKey
@@ -2470,20 +3916,119 @@ export async function handleDeliveryOrderCreate(
             );
         }
     }
+    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
+        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
+        : [];
+    const extraPickupRefs = [
+        ...new Set([
+            ...requestedPickupStopKeys
+                .filter(key => key.startsWith('customer-pickup:'))
+                .map(key => key.replace('customer-pickup:', '')),
+            ...(Array.isArray(data.extraPickupRefs)
+                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
+                : []),
+        ]),
+    ];
+    const extraPickupDocs = extraPickupRefs.length > 0
+        ? await listDocumentsByFilter<{
+            _id: string;
+            customerRef?: unknown;
+            label?: string;
+            pickupAddress?: string;
+            notes?: string;
+            active?: boolean;
+        }>('customerPickupLocation', { _id: extraPickupRefs })
+        : [];
+    if (extraPickupDocs.length !== extraPickupRefs.length) {
+        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
+    }
+    const invalidExtraPickup = extraPickupDocs.find(pickup =>
+        extractRefId(pickup.customerRef) !== orderCustomerRef ||
+        pickup.active === false ||
+        !normalizeOptionalText(pickup.pickupAddress)
+    );
+    if (invalidExtraPickup) {
+        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
+    }
+    const currentOrderPickupStops = normalizeOrderPickupStopsInput(
+        Array.isArray(order.pickupStops) ? order.pickupStops : [],
+        order.pickupAddress
+    ).map((stop, index) => ({
+        ...stop,
+        sequence: index + 1,
+    }));
+    const orderPickupByMasterRef = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
+            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
+    );
+    const orderPickupByAddress = new Map(
+        currentOrderPickupStops
+            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
+            .filter(([pickupAddress]) => Boolean(pickupAddress))
+    );
+    const pickupStopKeyAlias = new Map<string, string>();
+    const extraOrderPickupStops: OrderPickupStop[] = [];
+    for (const pickup of extraPickupDocs) {
+        const pickupAddress = normalizeText(pickup.pickupAddress);
+        const existingStop =
+            orderPickupByMasterRef.get(pickup._id) ||
+            orderPickupByAddress.get(pickupAddress.toLowerCase());
+        if (existingStop?._key) {
+            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
+            continue;
+        }
+
+        const newStop: OrderPickupStop = {
+            _key: crypto.randomUUID(),
+            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
+            customerPickupRef: pickup._id,
+            pickupLabel: normalizeOptionalText(pickup.label),
+            pickupAddress,
+            notes: normalizeOptionalText(pickup.notes),
+        };
+        extraOrderPickupStops.push(newStop);
+        orderPickupByMasterRef.set(pickup._id, newStop);
+        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
+        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
+    }
+    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
+        .map((stop, index) => ({
+            ...stop,
+            sequence: index + 1,
+        }));
+    const remapPickupStopKey = (key: unknown) => {
+        const normalizedKey = normalizeOptionalText(key);
+        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
+    };
+    const requestedOrderPickupStopKeys = requestedPickupStopKeys
+        .map(remapPickupStopKey)
+        .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:')));
     const selectedPickupStopKeys = new Set(
-        (selectedTripPlan?.pickupStopKeys || []).map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
+        requestedOrderPickupStopKeys.length > 0
+            ? requestedOrderPickupStopKeys
+            : (selectedTripPlan?.pickupStopKeys || [])
+                .map(key => normalizeOptionalText(key))
+                .filter((key): key is string => Boolean(key))
     );
     const plannedPickupStops = selectedTripPlan
-        ? (order.pickupStops || []).filter(stop => selectedPickupStopKeys.size === 0 || (stop._key && selectedPickupStopKeys.has(stop._key)))
-        : [];
-    const deliveryOrderPickupStops = plannedPickupStops.map((stop, index) => ({
+        ? effectiveOrderPickupStops.filter(stop => selectedPickupStopKeys.size === 0 || (stop._key && selectedPickupStopKeys.has(stop._key)))
+        : requestedOrderPickupStopKeys.length > 0
+            ? effectiveOrderPickupStops.filter(stop => stop._key && selectedPickupStopKeys.has(stop._key))
+            : [];
+    const deliveryOrderPickupStops = [
+        ...plannedPickupStops.map(stop => ({
         _key: crypto.randomUUID(),
-        sequence: index + 1,
+        sequence: 0,
         orderPickupStopKey: stop._key,
         customerPickupRef: stop.customerPickupRef,
         pickupLabel: stop.pickupLabel,
         pickupAddress: stop.pickupAddress,
         notes: stop.notes,
+        })),
+    ].map((stop, index) => ({
+        ...stop,
+        sequence: index + 1,
     }));
     const pickupStopByOrderKey = new Map(
         deliveryOrderPickupStops
@@ -2497,7 +4042,7 @@ export async function handleDeliveryOrderCreate(
             if (!referenceNumber) {
                 return null;
             }
-            const pickupStopKey = normalizeOptionalText(reference.pickupStopKey);
+            const pickupStopKey = remapPickupStopKey(reference.pickupStopKey);
             const pickupStop = pickupStopKey ? pickupStopByOrderKey.get(pickupStopKey) : undefined;
             return {
                 _key: crypto.randomUUID(),
@@ -2516,7 +4061,6 @@ export async function handleDeliveryOrderCreate(
         })
         .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
 
-    const orderCustomerRef = extractRefId(order.customerRef);
     const customer = orderCustomerRef
         ? await getDocumentById<{
             _id: string;
@@ -2798,6 +4342,10 @@ export async function handleDeliveryOrderCreate(
                 Array.isArray(data.cargoItems) ? data.cargoItems : [],
                 { allowEmpty: false }
             );
+            directCargoItems = directCargoItems.map(item => ({
+                ...item,
+                pickupStopKey: remapPickupStopKey(item.pickupStopKey),
+            }));
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
             return NextResponse.json({ error: message }, { status: 400 });
@@ -3053,11 +4601,20 @@ export async function handleDeliveryOrderCreate(
             );
         }
         const orderUpdates: Record<string, unknown> = {};
+        if (extraOrderPickupStops.length > 0) {
+            const primaryCustomerPickupRef = effectiveOrderPickupStops[0]?.customerPickupRef || order.customerPickupRef;
+            orderUpdates.pickupStops = effectiveOrderPickupStops;
+            orderUpdates.pickupAddress = effectiveOrderPickupStops[0]?.pickupAddress || order.pickupAddress;
+            if (primaryCustomerPickupRef) {
+                orderUpdates.customerPickupRef = primaryCustomerPickupRef;
+            }
+        }
         if (selectedTripPlan?._key) {
             orderUpdates.tripPlans = (order.tripPlans || []).map(plan =>
                 normalizeOptionalText(plan._key) === selectedTripPlan._key
                     ? {
                         ...plan,
+                        pickupStopKeys: Array.from(selectedPickupStopKeys),
                         linkedDeliveryOrderRef: doId,
                         linkedDeliveryOrderNumber: doNumber,
                     }
@@ -3392,6 +4949,7 @@ export async function handleDeliveryOrderAppendCargoItems(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        tripClosedByAdminAt?: string;
         orderRef?: unknown;
         customerRef?: unknown;
         customerDoNumber?: string;
@@ -3417,9 +4975,15 @@ export async function handleDeliveryOrderAppendCargoItems(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json(
             { error: 'Muatan hanya bisa ditambahkan saat surat jalan masih aktif sebelum trip selesai atau dibatalkan.' },
+            { status: 409 }
+        );
+    }
+    if (deliveryOrder.tripClosedByAdminAt) {
+        return NextResponse.json(
+            { error: 'Trip ini sudah ditutup admin. Buka kembali trip jika masih ingin menambah SJ atau barang.' },
             { status: 409 }
         );
     }
@@ -3509,6 +5073,26 @@ export async function handleDeliveryOrderAppendCargoItems(
     }
 
     const mutationTimestamp = new Date().toISOString();
+    const currentDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
+    const currentSuratJalanStatusMap = getDeliveryOrderSuratJalanStatusMap(deliveryOrder as DeliveryOrder, currentDeliveryOrderItems);
+    const nextEffectiveShipperReferences = nextShipperReferences || deliveryOrder.shipperReferences;
+    for (const item of directCargoItems) {
+        const cargoItemContext = resolveDeliveryOrderCargoItemContext(item, {
+            pickupStops: deliveryOrder.pickupStops,
+            shipperReferences: nextEffectiveShipperReferences,
+        });
+        const targetSuratJalanStatus = currentSuratJalanStatusMap.get(getDeliveryOrderSuratJalanIdentity({
+            deliveryOrderId: id,
+            shipperReferenceKey: cargoItemContext.shipperReferenceKey,
+            shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
+        }));
+        if (targetSuratJalanStatus === 'DELIVERED') {
+            return NextResponse.json(
+                { error: `SJ ${cargoItemContext.shipperReferenceNumber || 'terpilih'} sudah delivered dan tidak bisa ditambah barang lagi.` },
+                { status: 409 }
+            );
+        }
+    }
     try {
         if (directCargoItems.length > 0 && order.cargoEntryMode !== 'DELIVERY_ORDER') {
             await updateDocument(orderRef, { cargoEntryMode: 'DELIVERY_ORDER' }, 'order');
@@ -3560,7 +5144,17 @@ export async function handleDeliveryOrderAppendCargoItems(
             await updateDocument(id, {
                 shipperReferences: nextShipperReferences,
                 customerDoNumber: resolvedCustomerDoNumber,
+                ...((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')
+                    ? { status: 'ARRIVED' }
+                    : {}),
             }, 'deliveryOrder');
+        }
+        if (directCargoItems.length > 0 && (deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')) {
+            await updateDocument(id, { status: 'ARRIVED' }, 'deliveryOrder');
+            const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
+            if (tripRecord) {
+                await updateDocument(id, { status: 'ARRIVED' }, 'trip');
+            }
         }
     } catch (error) {
         if (isMutationConflictError(error)) {
@@ -3590,6 +5184,62 @@ export async function handleDeliveryOrderAppendCargoItems(
     });
 }
 
+export async function handleDeliveryOrderTripClosureSet(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const closed = data.closed === true;
+    if (!id) {
+        return NextResponse.json({ error: 'Trip tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Trip tidak ditemukan' }, { status: 404 });
+    }
+
+    const timestamp = new Date().toISOString();
+    try {
+        await updateDocument(id, {
+            tripClosedByAdminAt: closed ? timestamp : null,
+            tripClosedByAdminRef: closed ? session._id : null,
+            tripClosedByAdminName: closed ? session.name : null,
+        }, 'deliveryOrder');
+
+        const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
+        if (tripRecord) {
+            await updateDocument(id, {
+                tripClosedByAdminAt: closed ? timestamp : null,
+                tripClosedByAdminRef: closed ? session._id : null,
+                tripClosedByAdminName: closed ? session.name : null,
+            }, 'trip');
+        }
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Trip berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        closed
+            ? `Tutup trip ${deliveryOrder.doNumber || id} dengan konfirmasi admin`
+            : `Buka kembali trip ${deliveryOrder.doNumber || id}`
+    );
+
+    const updatedDeliveryOrder = await getDocumentById(id, 'deliveryOrder');
+    return NextResponse.json({ data: updatedDeliveryOrder || deliveryOrder, id });
+}
+
 export async function handleDeliveryOrderCargoItemRemove(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -3606,6 +5256,7 @@ export async function handleDeliveryOrderCargoItemRemove(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        tripClosedByAdminAt?: string;
         orderRef?: unknown;
     }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
@@ -3617,15 +5268,32 @@ export async function handleDeliveryOrderCargoItemRemove(
     if (deliveryOrder.pendingDriverStatus) {
         return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval driver' }, { status: 409 });
     }
+    if (deliveryOrder.tripClosedByAdminAt) {
+        return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
+    }
 
     const deliveryOrderItem = await getDocumentById<{
         _id: string;
         deliveryOrderRef?: unknown;
         orderItemRef?: unknown;
         orderItemDescription?: string;
+        shipperReferenceKey?: string;
+        shipperReferenceNumber?: string;
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    const allDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
+    const targetSuratJalanStatus = getDeliveryOrderItemSuratJalanStatus(
+        deliveryOrder as DeliveryOrder,
+        allDeliveryOrderItems,
+        {
+            shipperReferenceKey: deliveryOrderItem.shipperReferenceKey,
+            shipperReferenceNumber: deliveryOrderItem.shipperReferenceNumber,
+        }
+    );
+    if (targetSuratJalanStatus === 'DELIVERED') {
+        return NextResponse.json({ error: 'Barang pada SJ yang sudah delivered tidak bisa dihapus.' }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -3699,6 +5367,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        tripClosedByAdminAt?: string;
         orderRef?: unknown;
         customerRef?: unknown;
         pickupStops?: Array<{
@@ -3722,14 +5391,31 @@ export async function handleDeliveryOrderCargoItemUpdate(
     if (deliveryOrder.pendingDriverStatus) {
         return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval driver' }, { status: 409 });
     }
+    if (deliveryOrder.tripClosedByAdminAt) {
+        return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
+    }
 
     const deliveryOrderItem = await getDocumentById<{
         _id: string;
         deliveryOrderRef?: unknown;
         orderItemRef?: unknown;
+        shipperReferenceKey?: string;
+        shipperReferenceNumber?: string;
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    const allDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
+    const targetSuratJalanStatus = getDeliveryOrderItemSuratJalanStatus(
+        deliveryOrder as DeliveryOrder,
+        allDeliveryOrderItems,
+        {
+            shipperReferenceKey: deliveryOrderItem.shipperReferenceKey,
+            shipperReferenceNumber: deliveryOrderItem.shipperReferenceNumber,
+        }
+    );
+    if (targetSuratJalanStatus === 'DELIVERED') {
+        return NextResponse.json({ error: 'Barang pada SJ yang sudah delivered tidak bisa diedit.' }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -4130,6 +5816,8 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         _rev?: string;
         doNumber?: string;
         customerDoNumber?: string;
+        status?: DOStatus;
+        tripClosedByAdminAt?: string;
         customerRef?: unknown;
         customerName?: string;
         pickupStops?: Array<{
@@ -4160,6 +5848,12 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.tripClosedByAdminAt) {
+        return NextResponse.json(
+            { error: 'Trip ini sudah ditutup admin. Buka kembali trip jika masih ingin mengubah SJ.' },
+            { status: 409 }
+        );
     }
 
     let nextShipperReferences:
@@ -4194,7 +5888,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         );
     }
 
-    const customerDoNumber = (nextShipperReferences?.[0]?.referenceNumber || legacyCustomerDoNumber)?.toUpperCase();
+    const customerDoNumber = (legacyCustomerDoNumber || deliveryOrder.customerDoNumber || nextShipperReferences?.[0]?.referenceNumber)?.toUpperCase();
     if (!customerDoNumber || !nextShipperReferences || nextShipperReferences.length === 0) {
         return NextResponse.json({ error: 'No. SJ pengirim wajib diisi' }, { status: 400 });
     }
@@ -4232,7 +5926,17 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const customerRef = extractRefId(deliveryOrder.customerRef);
     if (customerRef) {
-        const requestedReferenceNumbers = new Set(nextShipperReferences.map(reference => reference.referenceNumber.toLowerCase()));
+        const previousReferenceNumbers = new Set(
+            (Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [])
+                .map(reference => normalizeOptionalText(reference.referenceNumber)?.toLowerCase() || '')
+                .filter(Boolean)
+        );
+        const requestedReferenceNumbers = new Set(
+            nextShipperReferences
+                .map(reference => reference.referenceNumber.toLowerCase())
+                .filter(referenceNumber => !previousReferenceNumbers.has(referenceNumber))
+        );
+        let duplicateReferenceNumber = '';
         const duplicateCustomerDoNumber =
             (await listDocumentsByFilter<{
                 _id: string;
@@ -4240,17 +5944,28 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 customerDoNumber?: string;
                 shipperReferences?: Array<{ referenceNumber?: string }>;
             }>('deliveryOrder', { customerRef })).find(candidate =>
-                candidate._id !== id
-                && (
-                    normalizeOptionalText(candidate.customerDoNumber)?.toLowerCase() === customerDoNumber.toLowerCase()
-                    || (candidate.shipperReferences || []).some(reference =>
-                        requestedReferenceNumbers.has(normalizeOptionalText(reference.referenceNumber)?.toLowerCase() || '')
-                    )
-                )
+                candidate._id !== id && (() => {
+                    const duplicateByCustomerDoNumber =
+                        customerDoNumberChanged &&
+                        normalizeOptionalText(candidate.customerDoNumber)?.toLowerCase() === customerDoNumber.toLowerCase();
+                    if (duplicateByCustomerDoNumber) {
+                        duplicateReferenceNumber = customerDoNumber;
+                        return true;
+                    }
+                    const duplicateShipperReference = (candidate.shipperReferences || []).find(reference => {
+                        const normalizedReferenceNumber = normalizeOptionalText(reference.referenceNumber)?.toLowerCase() || '';
+                        return requestedReferenceNumbers.has(normalizedReferenceNumber);
+                    });
+                    if (duplicateShipperReference) {
+                        duplicateReferenceNumber = normalizeOptionalText(duplicateShipperReference.referenceNumber)?.toUpperCase() || '';
+                        return true;
+                    }
+                    return false;
+                })()
             ) || null;
         if (duplicateCustomerDoNumber) {
             return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { error: `No. SJ pengirim ${duplicateReferenceNumber || customerDoNumber} sudah dipakai untuk customer ini.` },
                 { status: 409 }
             );
         }
@@ -4267,6 +5982,15 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         pickupStopKey?: string;
         pickupAddress?: string;
     }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const suratJalanStatusMap = getDeliveryOrderSuratJalanStatusMap(
+        deliveryOrder as DeliveryOrder,
+        deliveryOrderItems.map(item => ({
+            _id: item._id,
+            deliveryOrderRef: id,
+            shipperReferenceKey: item.shipperReferenceKey,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+        }))
+    );
     const previousReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
     const previousReferenceByKey = new Map(
         previousReferences
@@ -4279,6 +6003,45 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
     );
     const nextReferenceByKey = new Map(nextShipperReferences.map(reference => [reference._key, reference]));
+    const normalizeReferenceSnapshot = (reference: {
+        referenceNumber?: string;
+        pickupStopKey?: string;
+        pickupAddress?: string;
+        billingCustomerRef?: string;
+        receiverName?: string;
+        receiverPhone?: string;
+        receiverAddress?: string;
+        receiverCompany?: string;
+        notes?: string;
+    } | undefined | null) => JSON.stringify({
+        referenceNumber: normalizeOptionalText(reference?.referenceNumber)?.toUpperCase() || '',
+        pickupStopKey: normalizeOptionalText(reference?.pickupStopKey) || '',
+        pickupAddress: normalizeOptionalText(reference?.pickupAddress) || '',
+        billingCustomerRef: normalizeOptionalText(reference?.billingCustomerRef) || '',
+        receiverName: normalizeOptionalText(reference?.receiverName) || '',
+        receiverPhone: normalizeOptionalText(reference?.receiverPhone) || '',
+        receiverAddress: normalizeOptionalText(reference?.receiverAddress) || '',
+        receiverCompany: normalizeOptionalText(reference?.receiverCompany) || '',
+        notes: normalizeOptionalText(reference?.notes) || '',
+    });
+    const changedDeliveredReference = previousReferences.find(reference => {
+        const identity = getDeliveryOrderSuratJalanIdentity({
+            deliveryOrderId: id,
+            shipperReferenceKey: reference._key,
+            shipperReferenceNumber: reference.referenceNumber,
+        });
+        if (suratJalanStatusMap.get(identity) !== 'DELIVERED') {
+            return false;
+        }
+        const nextReference = reference._key ? nextReferenceByKey.get(reference._key) : undefined;
+        return !nextReference || normalizeReferenceSnapshot(reference) !== normalizeReferenceSnapshot(nextReference);
+    });
+    if (changedDeliveredReference) {
+        return NextResponse.json(
+            { error: `SJ ${changedDeliveredReference.referenceNumber || 'delivered'} sudah delivered dan tidak bisa diedit atau dihapus.` },
+            { status: 409 }
+        );
+    }
     const singleNextReference = nextShipperReferences.length === 1 ? nextShipperReferences[0] : null;
     const itemReferencePatches = new Map<string, NonNullable<typeof singleNextReference>>();
 
@@ -4311,12 +6074,24 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 : point;
         })
         : undefined;
+    const addedReferences = nextShipperReferences.filter(nextReference => {
+        const normalizedKey = normalizeOptionalText(nextReference._key);
+        const normalizedNumber = normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase();
+        return !previousReferences.some(previousReference =>
+            (normalizedKey && normalizeOptionalText(previousReference._key) === normalizedKey) ||
+            (normalizedNumber && normalizeOptionalText(previousReference.referenceNumber)?.toUpperCase() === normalizedNumber)
+        );
+    });
 
     let updatedDeliveryOrder: unknown;
     try {
         updatedDeliveryOrder = await updateDocument(id, {
             customerDoNumber,
             shipperReferences: nextShipperReferences,
+            ...((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')
+                && nextShipperReferences.length > previousReferences.length
+                ? { status: 'ARRIVED' }
+                : {}),
             ...(nextActualDropPoints ? { actualDropPoints: nextActualDropPoints } : {}),
         }, 'deliveryOrder');
         for (const item of deliveryOrderItems) {
@@ -4330,6 +6105,58 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 pickupStopKey: nextReference.pickupStopKey || item.pickupStopKey,
                 pickupAddress: nextReference.pickupAddress || item.pickupAddress,
             }, 'deliveryOrderItem');
+        }
+        if (addedReferences.length > 0) {
+            const nextOperationalStatus =
+                (deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')
+                    ? 'ARRIVED'
+                    : (deliveryOrder.status || 'CREATED');
+            const deliveryOrderForNewRecords: DeliveryOrder = {
+                ...(deliveryOrder as DeliveryOrder),
+                customerDoNumber,
+                shipperReferences: nextShipperReferences,
+                status: nextOperationalStatus,
+                actualDropPoints: nextActualDropPoints as DeliveryOrder['actualDropPoints'],
+            };
+            const suratJalanRecords = mapDeliveryOrderToSuratJalanRecords(
+                deliveryOrderForNewRecords,
+                deliveryOrderItems.map(item => ({
+                    _id: item._id,
+                    _type: 'deliveryOrderItem',
+                    deliveryOrderRef: id,
+                    shipperReferenceKey: itemReferencePatches.get(item._id)?._key || item.shipperReferenceKey,
+                    shipperReferenceNumber: itemReferencePatches.get(item._id)?.referenceNumber || item.shipperReferenceNumber,
+                })) as DeliveryOrderItem[]
+            );
+            const existingSuratJalanRecords = await listDocumentsByFilter<{ _id: string }>('suratJalan', { tripRef: id });
+            const existingSuratJalanRecordIds = new Set(existingSuratJalanRecords.map(record => record._id));
+            for (const addedReference of addedReferences) {
+                const targetRecordId = getDeliveryOrderSuratJalanIdentity({
+                    deliveryOrderId: id,
+                    shipperReferenceKey: addedReference._key,
+                    shipperReferenceNumber: addedReference.referenceNumber,
+                });
+                if (existingSuratJalanRecordIds.has(targetRecordId)) {
+                    continue;
+                }
+                const mappedRecord = suratJalanRecords.find(record => record._id === targetRecordId);
+                if (!mappedRecord) {
+                    continue;
+                }
+                await createDocument({
+                    ...mappedRecord,
+                    tripStatus: 'CREATED',
+                    billableCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                    holdCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                    returnCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                });
+            }
+        }
+        if ((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD') && nextShipperReferences.length > previousReferences.length) {
+            const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
+            if (tripRecord) {
+                await updateDocument(id, { status: 'ARRIVED' }, 'trip');
+            }
         }
     } catch (error) {
         if (isMutationConflictError(error)) {

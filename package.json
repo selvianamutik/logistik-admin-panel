@@ -21,10 +21,15 @@
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
     "audit:supabase": "node scripts/audit-supabase-migration.mjs",
     "backfill:accounting": "npx tsx --conditions react-server scripts/backfill-accounting-journals.ts",
+    "backfill:trip-surat-jalan": "node scripts/backfill-trip-surat-jalan.mjs",
+    "convert:seed:trip-surat-jalan": "node scripts/convert-seed-to-trip-surat-jalan.mjs",
+    "verify:seed:trip-surat-jalan": "node scripts/verify-seed-trip-surat-jalan.mjs",
     "import:supabase": "node scripts/import-supabase.mjs",
-    "reset:supabase": "npx tsx scripts/reset-supabase.ts",
-    "seed:supabase": "npx tsx scripts/seed-supabase.ts",
-    "reseed:supabase": "npm run reset:supabase && npm run seed:supabase && npm run backfill:accounting"
+    "reset:supabase": "node scripts/reset-supabase.mjs",
+    "seed:supabase": "node scripts/seed-supabase.mjs",
+    "seed:supabase:trip-surat-jalan": "node scripts/seed-supabase.mjs --derive-trip-surat-jalan",
+    "reseed:supabase": "npm run reset:supabase && npm run seed:supabase && npm run backfill:accounting",
+    "reseed:supabase:trip-surat-jalan": "npm run reset:supabase && npm run seed:supabase:trip-surat-jalan"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

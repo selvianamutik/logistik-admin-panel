@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { Truck, FileText, Edit, Eye, Plus, X } from 'lucide-react';
+import { Truck, FileText, Edit, Eye, Plus, Trash2, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
@@ -36,6 +36,7 @@ import {
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
+    getAvailableDrivers,
     getAvailableVehicles,
     hasCargoAggregate,
     shouldRequireVehicleOverrideReason,
@@ -55,7 +56,8 @@ import {
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
-import type { Customer, CustomerProduct, CustomerRecipient, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
+import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -99,6 +101,40 @@ function formatDeliveryOrderShipperReferencePreview(
     return `${references.slice(0, limit).join(', ')} +${references.length - limit} lagi`;
 }
 
+function buildDeliveryOrderShipperReferenceLinks(
+    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
+    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>[] = []
+) {
+    const links = new Map<string, { id: string; label: string }>();
+
+    (deliveryOrder.shipperReferences || []).forEach((reference, index) => {
+        const label = reference.referenceNumber?.trim();
+        if (!label) return;
+        const referenceIdentity = reference._key || reference.referenceNumber || `reference-${index + 1}`;
+        const id = `${deliveryOrder._id}:${referenceIdentity}`;
+        links.set(id, { id, label });
+    });
+
+    deliveryOrderItems
+        .filter(item => item.deliveryOrderRef === deliveryOrder._id)
+        .forEach(item => {
+            const label = item.shipperReferenceNumber?.trim();
+            if (!label) return;
+            const referenceIdentity = item.shipperReferenceKey || item.shipperReferenceNumber || 'primary';
+            const id = `${deliveryOrder._id}:${referenceIdentity}`;
+            if (!links.has(id)) {
+                links.set(id, { id, label });
+            }
+        });
+
+    if (links.size === 0 && deliveryOrder.customerDoNumber?.trim()) {
+        const id = `${deliveryOrder._id}:primary`;
+        links.set(id, { id, label: deliveryOrder.customerDoNumber.trim() });
+    }
+
+    return [...links.values()];
+}
+
 type DirectCargoGroupItem = Omit<OrderItemForm, 'pickupStopKey' | 'shipperReferenceNumber'>;
 
 type DirectCargoGroup = {
@@ -107,6 +143,24 @@ type DirectCargoGroup = {
     shipperReferenceNumber: string;
     items: DirectCargoGroupItem[];
 };
+
+type TripDraftForm = {
+    id: string;
+    pickupStopKeys: string[];
+    vehicleRef: string;
+    driverRef: string;
+    tripOriginArea: string;
+    tripDestinationArea: string;
+    tripRouteRateRef: string;
+    tripFee: number;
+    vehicleOverrideReason: string;
+    issueBankRef: string;
+    cashGiven: number;
+    notes: string;
+    date: string;
+};
+
+type TripPlanModalMode = 'create' | 'edit' | 'delete';
 
 function toDirectCargoGroupItem(item: OrderItemForm): DirectCargoGroupItem {
     return {
@@ -131,6 +185,24 @@ function createDefaultDirectCargoGroup(pickupStopKey = ''): DirectCargoGroup {
         pickupStopKey,
         shipperReferenceNumber: '',
         items: [createDefaultDirectCargoGroupItem()],
+    };
+}
+
+function createDefaultTripDraftForm(pickupStopKeys: string[] = []): TripDraftForm {
+    return {
+        id: crypto.randomUUID(),
+        pickupStopKeys,
+        vehicleRef: '',
+        driverRef: '',
+        tripOriginArea: '',
+        tripDestinationArea: '',
+        tripRouteRateRef: '',
+        tripFee: 0,
+        vehicleOverrideReason: '',
+        issueBankRef: '',
+        cashGiven: 0,
+        notes: '',
+        date: getBusinessDateValue(),
     };
 }
 
@@ -176,6 +248,7 @@ export default function OrderDetailPage() {
     const [creatingDO, setCreatingDO] = useState(false);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
+    const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     // DO form
     const [doDate, setDoDate] = useState(getBusinessDateValue());
     const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
@@ -191,7 +264,20 @@ export default function OrderDetailPage() {
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [directCargoGroups, setDirectCargoGroups] = useState<DirectCargoGroup[]>([createDefaultDirectCargoGroup()]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
+    const [drivers, setDrivers] = useState<Driver[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
+    const [busyDriverIds, setBusyDriverIds] = useState<string[]>([]);
+    const [showAddTripModal, setShowAddTripModal] = useState(false);
+    const [showTripPlanActionModal, setShowTripPlanActionModal] = useState(false);
+    const [savingTripPlan, setSavingTripPlan] = useState(false);
+    const [tripDraft, setTripDraft] = useState<TripDraftForm>(createDefaultTripDraftForm());
+    const [tripDraftPickupToAdd, setTripDraftPickupToAdd] = useState('');
+    const [tripPlanModalMode, setTripPlanModalMode] = useState<TripPlanModalMode>('create');
+    const [selectedTripPlanActionKey, setSelectedTripPlanActionKey] = useState('');
+    const [editingTripPlanKey, setEditingTripPlanKey] = useState('');
+    const [deletingTripPlanKey, setDeletingTripPlanKey] = useState('');
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
@@ -204,10 +290,11 @@ export default function OrderDetailPage() {
     const [savingHold, setSavingHold] = useState(false);
     const loadedReferenceCustomerRef = useRef<string>('');
     const loadedVehicleOptionsRef = useRef(false);
+    const loadedTripPlanSupportRef = useRef(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
-    const hasOpenModal = showDOModal || showHoldModal;
+    const hasOpenModal = showDOModal || showAddTripModal || showTripPlanActionModal || showHoldModal;
     const currentPath = pathname || `/orders/${orderId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
 
@@ -228,7 +315,7 @@ export default function OrderDetailPage() {
     }, [hasOpenModal]);
 
     const loadOrderReferenceData = useCallback(async (orderData: Order | null) => {
-        const [customerData, customerProductData, customerRecipientData] = await Promise.all([
+        const [customerData, customerProductData, customerRecipientData, customerPickupData] = await Promise.all([
             orderData?.customerRef
                 ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
                 : Promise.resolve(null),
@@ -244,11 +331,18 @@ export default function OrderDetailPage() {
                     'Gagal memuat master tujuan customer'
                 )
                 : Promise.resolve([] as CustomerRecipient[]),
+            orderData?.customerRef
+                ? fetchAdminCollectionData<CustomerPickupLocation[]>(
+                    `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
+                    'Gagal memuat master pickup customer'
+                )
+                : Promise.resolve([] as CustomerPickupLocation[]),
         ]);
 
         setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
         setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
         setCustomerRecipients((customerRecipientData || []).filter(recipient => recipient.active !== false));
+        setCustomerPickups((customerPickupData || []).filter(pickup => pickup.active !== false));
         loadedReferenceCustomerRef.current = orderData?.customerRef || '';
     }, []);
 
@@ -309,8 +403,12 @@ export default function OrderDetailPage() {
             setItems(itemData || []);
             setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems || []);
-            const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            const {
+                busyVehicleIds: nextBusyVehicleIds,
+                busyDriverIds: nextBusyDriverIds,
+            } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setBusyVehicleIds(nextBusyVehicleIds);
+            setBusyDriverIds(nextBusyDriverIds);
 
             if (includeNotas) {
                 const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
@@ -339,6 +437,21 @@ export default function OrderDetailPage() {
         );
         setVehicles(vehicleData || []);
         loadedVehicleOptionsRef.current = true;
+    }, []);
+
+    const loadTripPlanSupportOptions = useCallback(async () => {
+        const [driverData, bankData, tripRateData] = await Promise.all([
+            fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat form trip'),
+            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form trip'),
+            fetchAdminCollectionData<TripRouteRate[]>(
+                `/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`,
+                'Gagal memuat form trip'
+            ),
+        ]);
+        setDrivers((driverData || []).filter(driver => driver.active !== false));
+        setBankAccounts((bankData || []).filter(account => account.active !== false));
+        setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
+        loadedTripPlanSupportRef.current = true;
     }, []);
 
     const loadOrderDetail = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
@@ -371,8 +484,12 @@ export default function OrderDetailPage() {
             setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems);
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
-            const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            const {
+                busyVehicleIds: nextBusyVehicleIds,
+                busyDriverIds: nextBusyDriverIds,
+            } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setBusyVehicleIds(nextBusyVehicleIds);
+            setBusyDriverIds(nextBusyDriverIds);
 
             if (mode === 'initial' || !loadedVehicleOptionsRef.current) {
                 await loadVehicleOptions();
@@ -398,6 +515,8 @@ export default function OrderDetailPage() {
 
     const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
     const availableVehicles = getAvailableVehicles(sortedVehicles, busyVehicleIds);
+    const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
+    const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(
         order?.serviceRef ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }] : [],
         vehicles
@@ -554,6 +673,191 @@ export default function OrderDetailPage() {
         setDoReceiverAddress(recipient.receiverAddress || '');
     };
 
+    const updateTripDraftField = <K extends keyof TripDraftForm>(field: K, value: TripDraftForm[K]) => {
+        setTripDraft(current => ({ ...current, [field]: value }));
+    };
+
+    const toggleTripDraftPickupStop = (pickupStopKey: string, checked: boolean) => {
+        setTripDraft(current => ({
+            ...current,
+            pickupStopKeys: checked
+                ? Array.from(new Set([...current.pickupStopKeys, pickupStopKey]))
+                : current.pickupStopKeys.filter(value => value !== pickupStopKey),
+        }));
+    };
+
+    const addTripDraftPickupStop = () => {
+        if (!tripDraftPickupToAdd) {
+            addToast('error', 'Pilih pickup yang ingin ditambahkan ke rencana trip.');
+            return;
+        }
+        setTripDraft(current => ({
+            ...current,
+            pickupStopKeys: Array.from(new Set([...current.pickupStopKeys, tripDraftPickupToAdd])),
+        }));
+        setTripDraftPickupToAdd('');
+    };
+
+    const updateTripDraftRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
+        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
+            originArea: nextOriginArea,
+            destinationArea: nextDestinationArea,
+            serviceRef: order?.serviceRef,
+        });
+        setTripDraft(current => ({
+            ...current,
+            tripOriginArea: nextOriginArea,
+            tripDestinationArea: nextDestinationArea,
+            tripRouteRateRef: matchedRate?._id || '',
+            tripFee: matchedRate?.rate || current.tripFee,
+        }));
+    };
+
+    const populateTripDraftFromTripPlan = (tripPlan: NonNullable<Order['tripPlans']>[number]) => {
+        setTripDraft({
+            id: tripPlan._key || crypto.randomUUID(),
+            pickupStopKeys: Array.isArray(tripPlan.pickupStopKeys) ? tripPlan.pickupStopKeys.filter(Boolean) : [],
+            vehicleRef: tripPlan.vehicleRef || '',
+            driverRef: tripPlan.driverRef || '',
+            tripOriginArea: tripPlan.tripOriginArea || '',
+            tripDestinationArea: tripPlan.tripDestinationArea || '',
+            tripRouteRateRef: tripPlan.tripRouteRateRef || '',
+            tripFee: tripPlan.taripBorongan || 0,
+            vehicleOverrideReason: tripPlan.vehicleCategoryOverrideReason || '',
+            issueBankRef: tripPlan.issueBankRef || '',
+            cashGiven: tripPlan.cashGiven || 0,
+            notes: tripPlan.notes || '',
+            date: tripPlan.date || getBusinessDateValue(),
+        });
+        setTripDraftPickupToAdd('');
+    };
+
+    const resetTripPlanModalState = () => {
+        setTripPlanModalMode('create');
+        setSelectedTripPlanActionKey('');
+        setEditingTripPlanKey('');
+        setTripDraft(createDefaultTripDraftForm());
+        setTripDraftPickupToAdd('');
+    };
+
+    const closeTripPlanModal = () => {
+        setShowAddTripModal(false);
+        resetTripPlanModalState();
+    };
+
+    const closeTripPlanActionModal = () => {
+        setShowTripPlanActionModal(false);
+        setTripPlanModalMode('create');
+        setSelectedTripPlanActionKey('');
+    };
+
+    const openAddTripModal = () => {
+        resetTripPlanModalState();
+        setShowAddTripModal(true);
+        if (!loadedTripPlanSupportRef.current) {
+            void loadTripPlanSupportOptions().catch(error => {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat form trip');
+            });
+        }
+    };
+
+    const openTripPlanActionModal = (nextMode: Exclude<TripPlanModalMode, 'create'>) => {
+        setTripPlanModalMode(nextMode);
+        setSelectedTripPlanActionKey('');
+        setEditingTripPlanKey('');
+        setTripDraft(createDefaultTripDraftForm());
+        setTripDraftPickupToAdd('');
+        if (nextMode === 'edit') {
+            setShowAddTripModal(true);
+            if (!loadedTripPlanSupportRef.current) {
+                void loadTripPlanSupportOptions().catch(error => {
+                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat form trip');
+                });
+            }
+            return;
+        }
+        setShowTripPlanActionModal(true);
+    };
+
+    const selectTripPlanForModalAction = (tripPlanKey: string) => {
+        setSelectedTripPlanActionKey(tripPlanKey);
+        if (tripPlanModalMode !== 'edit' || !tripPlanKey) {
+            if (tripPlanModalMode === 'edit') {
+                setEditingTripPlanKey('');
+                setTripDraft(createDefaultTripDraftForm());
+                setTripDraftPickupToAdd('');
+            }
+            return;
+        }
+        const tripPlan = editableOrderTripPlans.find(plan => plan._key === tripPlanKey);
+        if (!tripPlan) {
+            return;
+        }
+        setEditingTripPlanKey(tripPlan._key || '');
+        populateTripDraftFromTripPlan(tripPlan);
+    };
+
+    const continueSelectedTripPlanAction = () => {
+        if (!selectedTripPlanForAction) {
+            addToast('error', 'Pilih rencana trip terlebih dahulu.');
+            return;
+        }
+        if (tripPlanModalMode === 'edit') {
+            setEditingTripPlanKey(selectedTripPlanForAction._key || '');
+            populateTripDraftFromTripPlan(selectedTripPlanForAction);
+            setShowTripPlanActionModal(false);
+            setShowAddTripModal(true);
+            if (!loadedTripPlanSupportRef.current) {
+                void loadTripPlanSupportOptions().catch(error => {
+                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat form trip');
+                });
+            }
+            return;
+        }
+        if (tripPlanModalMode === 'delete') {
+            void deleteTripPlan(selectedTripPlanForAction);
+        }
+    };
+
+    const deleteTripPlan = async (tripPlan: NonNullable<Order['tripPlans']>[number]) => {
+        if (!order?._id || !tripPlan._key) return;
+        if (tripPlan.linkedDeliveryOrderRef) {
+            addToast('error', 'Rencana trip yang sudah punya SJ tidak bisa dihapus dari sini.');
+            return;
+        }
+        if (typeof window !== 'undefined' && !window.confirm(`Hapus rencana Trip ${tripPlan.sequence}?`)) {
+            return;
+        }
+
+        setDeletingTripPlanKey(tripPlan._key);
+        try {
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'orders',
+                    action: 'delete-trip-plan',
+                    data: {
+                        id: order._id,
+                        tripPlanKey: tripPlan._key,
+                    },
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                addToast('error', result.error || 'Gagal menghapus rencana trip');
+                return;
+            }
+            await refreshOrderDeliveryState('Gagal memuat ulang rencana trip order');
+            addToast('success', `Rencana Trip ${tripPlan.sequence} dihapus`);
+            closeTripPlanActionModal();
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menghapus rencana trip');
+        } finally {
+            setDeletingTripPlanKey('');
+        }
+    };
+
     const openCreateDOModal = (tripPlanKey?: string) => {
         const tripPlan = orderTripPlans.find(plan => plan._key === tripPlanKey) || null;
         const defaultPickupStopKey = tripPlan?.pickupStopKeys[0] || resolvedOrderPickupStops[0]?._key || '';
@@ -599,12 +903,13 @@ export default function OrderDetailPage() {
             return {
                 _key: stop._key || `pickup-stop-${index + 1}`,
                 sequence: stop.sequence || index + 1,
+                customerPickupRef: stop.customerPickupRef || '',
                 pickupLabel: stop.pickupLabel || '',
                 pickupAddress,
                 notes: stop.notes || '',
             };
         })
-        .filter((stop): stop is { _key: string; sequence: number; pickupLabel: string; pickupAddress: string; notes: string } => Boolean(stop))
+        .filter((stop): stop is { _key: string; sequence: number; customerPickupRef: string; pickupLabel: string; pickupAddress: string; notes: string } => Boolean(stop))
         .sort((left, right) => left.sequence - right.sequence);
     const resolvedOrderPickupStops =
         orderPickupStops.length > 0
@@ -613,11 +918,28 @@ export default function OrderDetailPage() {
                 ? [{
                     _key: 'pickup-stop-1',
                     sequence: 1,
+                    customerPickupRef: '',
                     pickupLabel: '',
                     pickupAddress: order.pickupAddress,
                     notes: '',
                 }]
                 : [];
+    const existingPickupMasterRefs = new Set(resolvedOrderPickupStops.map(stop => stop.customerPickupRef).filter(Boolean));
+    const existingPickupAddresses = new Set(resolvedOrderPickupStops.map(stop => stop.pickupAddress.trim().toLowerCase()).filter(Boolean));
+    const extraPickupStopOptions = customerPickups
+        .filter(pickup => !existingPickupMasterRefs.has(pickup._id))
+        .filter(pickup => !existingPickupAddresses.has((pickup.pickupAddress || '').trim().toLowerCase()))
+        .map((pickup, index) => ({
+            _key: `customer-pickup:${pickup._id}`,
+            sequence: resolvedOrderPickupStops.length + index + 1,
+            customerPickupRef: pickup._id,
+            pickupLabel: pickup.label || '',
+            pickupAddress: pickup.pickupAddress || '',
+            notes: pickup.notes || '',
+            fromMaster: true,
+        }))
+        .filter(stop => stop.pickupAddress.trim());
+    const selectablePickupStops = [...resolvedOrderPickupStops, ...extraPickupStopOptions];
     const orderTripPlans = ((order?.tripPlans || []) as NonNullable<Order['tripPlans']>)
         .map((plan, index) => ({
             ...plan,
@@ -627,6 +949,41 @@ export default function OrderDetailPage() {
         }))
         .filter(plan => plan.vehicleRef && plan.driverRef && plan.issueBankRef && Number(plan.cashGiven || 0) > 0)
         .sort((left, right) => left.sequence - right.sequence);
+    const editableOrderTripPlans = orderTripPlans.filter(plan => !plan.linkedDeliveryOrderRef);
+    const selectedTripPlanForAction = editableOrderTripPlans.find(plan => plan._key === selectedTripPlanActionKey) || null;
+    const reservedPlannedVehicleIds = orderTripPlans
+        .filter(plan => !plan.linkedDeliveryOrderRef)
+        .map(plan => plan.vehicleRef)
+        .filter((value): value is string => Boolean(value));
+    const reservedPlannedDriverIds = orderTripPlans
+        .filter(plan => !plan.linkedDeliveryOrderRef)
+        .map(plan => plan.driverRef)
+        .filter((value): value is string => Boolean(value));
+    const availableTripDraftVehicles = sortedVehicles.filter(
+        vehicle => (!busyVehicleIds.includes(vehicle._id) && !reservedPlannedVehicleIds.includes(vehicle._id)) || vehicle._id === tripDraft.vehicleRef
+    );
+    const availableTripDraftDrivers = availableDrivers.filter(
+        driver => !reservedPlannedDriverIds.includes(driver._id) || driver._id === tripDraft.driverRef
+    );
+    const selectedTripDraftVehicle = vehicles.find(vehicle => vehicle._id === tripDraft.vehicleRef) || null;
+    const requiresTripDraftOverrideReason = Boolean(
+        order?.serviceRef &&
+        selectedTripDraftVehicle &&
+        (!selectedTripDraftVehicle.serviceRef || selectedTripDraftVehicle.serviceRef !== order.serviceRef)
+    );
+    const tripDraftOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
+        serviceRef: order?.serviceRef,
+    });
+    const tripDraftDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+        originArea: tripDraft.tripOriginArea,
+        serviceRef: order?.serviceRef,
+    });
+    const matchedTripDraftRate = findMatchingTripRouteRate(tripRouteRates, {
+        originArea: tripDraft.tripOriginArea,
+        destinationArea: tripDraft.tripDestinationArea,
+        serviceRef: order?.serviceRef,
+    });
+    const isTripDraftFeeLockedToMaster = Boolean(matchedTripDraftRate);
     const selectedOrderTripPlan = orderTripPlans.find(plan => plan._key === selectedOrderTripPlanKey) || null;
     const effectiveDoVehicleRef = selectedOrderTripPlan?.vehicleRef || doVehicle;
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === effectiveDoVehicleRef);
@@ -647,6 +1004,12 @@ export default function OrderDetailPage() {
             setDoVehicleOverrideReason('');
         }
     }, [requiresVehicleOverrideReason, doVehicleOverrideReason]);
+
+    useEffect(() => {
+        if (!requiresTripDraftOverrideReason && tripDraft.vehicleOverrideReason) {
+            setTripDraft(current => ({ ...current, vehicleOverrideReason: '' }));
+        }
+    }, [requiresTripDraftOverrideReason, tripDraft.vehicleOverrideReason]);
 
     useEffect(() => {
         if (!selectedOrderTripPlan && doVehicle && busyVehicleIds.includes(doVehicle)) {
@@ -681,7 +1044,9 @@ export default function OrderDetailPage() {
         }))
         .filter(group => group.shipperReferenceNumber.trim() || group.draftItems.length > 0);
     const directCargoSummary = summarizeDraftOrderCargo(flattenedDirectCargoItems);
-    const selectedTripPickupStops = resolvedOrderPickupStops.filter(stop => selectedPickupStopKeys.includes(stop._key));
+    const selectedTripPickupStops = selectablePickupStops.filter(stop => selectedPickupStopKeys.includes(stop._key));
+    const selectedTripDraftPickupStops = selectablePickupStops.filter(stop => tripDraft.pickupStopKeys.includes(stop._key));
+    const availableTripDraftPickupStops = selectablePickupStops.filter(stop => !tripDraft.pickupStopKeys.includes(stop._key));
     const headerOnlyManifestByDo = isHeaderOnlyOrder
         ? dos.map(deliveryOrder => {
             const pickupMap = new Map(
@@ -772,6 +1137,87 @@ export default function OrderDetailPage() {
             })} (${progress}%)`
         : 'Belum ada muatan tercatat';
 
+    const handleAddTripPlan = async () => {
+        if (!order) {
+            addToast('error', 'Detail order belum siap');
+            return;
+        }
+        if (tripDraft.pickupStopKeys.length === 0) {
+            addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
+            return;
+        }
+        if (!tripDraft.vehicleRef) {
+            addToast('error', 'Kendaraan wajib dipilih');
+            return;
+        }
+        if (!tripDraft.driverRef) {
+            addToast('error', 'Supir wajib dipilih');
+            return;
+        }
+        if (!tripDraft.issueBankRef) {
+            addToast('error', 'Rekening atau kas sumber wajib dipilih');
+            return;
+        }
+        if (!tripDraft.cashGiven || tripDraft.cashGiven <= 0) {
+            addToast('error', 'Nominal uang jalan awal wajib diisi');
+            return;
+        }
+        if (!tripDraft.tripFee || tripDraft.tripFee <= 0) {
+            addToast('error', 'Upah trip wajib diisi');
+            return;
+        }
+        if (requiresTripDraftOverrideReason && !tripDraft.vehicleOverrideReason.trim()) {
+            addToast('error', 'Isi alasan override armada jika trip ini memakai kendaraan dengan kategori berbeda');
+            return;
+        }
+
+        setSavingTripPlan(true);
+        try {
+            const extraPickupRefs = tripDraft.pickupStopKeys
+                .filter(key => key.startsWith('customer-pickup:'))
+                .map(key => key.replace('customer-pickup:', ''));
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'orders',
+                    action: editingTripPlanKey ? 'update-trip-plan' : 'append-trip-plan',
+                    data: {
+                        id: order._id,
+                        tripPlanKey: editingTripPlanKey || undefined,
+                        customerRef: order.customerRef,
+                        pickupStopKeys: tripDraft.pickupStopKeys,
+                        extraPickupRefs,
+                        vehicleRef: tripDraft.vehicleRef,
+                        driverRef: tripDraft.driverRef,
+                        tripRouteRateRef: tripDraft.tripRouteRateRef || undefined,
+                        tripOriginArea: tripDraft.tripOriginArea || undefined,
+                        tripDestinationArea: tripDraft.tripDestinationArea || undefined,
+                        taripBorongan: tripDraft.tripFee,
+                        vehicleCategoryOverrideReason: requiresTripDraftOverrideReason ? tripDraft.vehicleOverrideReason.trim() : undefined,
+                        issueBankRef: tripDraft.issueBankRef,
+                        cashGiven: tripDraft.cashGiven,
+                        notes: tripDraft.notes.trim() || undefined,
+                        date: tripDraft.date,
+                    },
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                addToast('error', result.error || (editingTripPlanKey ? 'Gagal mengubah rencana trip' : 'Gagal menambah rencana trip'));
+                return;
+            }
+
+            addToast('success', editingTripPlanKey ? `Rencana trip diperbarui untuk ${order.masterResi}` : `Rencana trip baru disimpan untuk ${order.masterResi}`);
+            closeTripPlanModal();
+            await refreshOrderDeliveryState('Gagal memuat ulang rencana trip order');
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : (editingTripPlanKey ? 'Gagal mengubah rencana trip' : 'Gagal menambah rencana trip'));
+        } finally {
+            setSavingTripPlan(false);
+        }
+    };
+
     const handleCreateDO = async () => {
         const selectedItems = usesExistingItemsForDeliveryOrder
             ? buildCreateDeliveryOrderItems(
@@ -785,7 +1231,7 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih kendaraan sebelum membuat surat jalan');
             return;
         }
-        if (resolvedOrderPickupStops.length > 0 && selectedPickupStopKeys.length === 0) {
+        if (selectablePickupStops.length > 0 && selectedPickupStopKeys.length === 0) {
             addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
             return;
         }
@@ -797,7 +1243,7 @@ export default function OrderDetailPage() {
             }
             const invalidPickupGroup = draftDirectCargoGroups.findIndex(group => {
                 const resolvedPickupStopKey = group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
-                return resolvedOrderPickupStops.length > 0 && !resolvedPickupStopKey;
+                return selectablePickupStops.length > 0 && !resolvedPickupStopKey;
             });
             if (invalidPickupGroup >= 0) {
                 addToast('error', `Titik pickup wajib dipilih pada SJ ${invalidPickupGroup + 1}`);
@@ -830,6 +1276,10 @@ export default function OrderDetailPage() {
             resolvedPickupStopKey: group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : ''),
             resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
         }));
+        const extraPickupRefs = selectedPickupStopKeys
+            .filter(key => key.startsWith('customer-pickup:'))
+            .map(key => key.replace('customer-pickup:', ''))
+            .filter(Boolean);
         const deliveryOrderPayload = (isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder
             ? {
                 orderRef: order?._id,
@@ -837,6 +1287,14 @@ export default function OrderDetailPage() {
                 masterResi: order?.masterResi,
                 customerDoNumber: normalizedDirectCargoGroups[0]?.resolvedShipperReferenceNumber,
                 pickupStopKeys: selectedPickupStopKeys,
+                shipperReferences: normalizedDirectCargoGroups.map(group => ({
+                    referenceNumber: group.resolvedShipperReferenceNumber,
+                    pickupStopKey: group.resolvedPickupStopKey,
+                    receiverName: doReceiverName.trim() || undefined,
+                    receiverPhone: doReceiverPhone.trim() || undefined,
+                    receiverAddress: doReceiverAddress.trim() || undefined,
+                    receiverCompany: doReceiverCompany.trim() || undefined,
+                })),
                 vehicleRef: effectiveDoVehicleRef || undefined,
                 vehiclePlate: selVeh?.plateNumber || '',
                 driverRef: selectedOrderTripPlan?.driverRef || undefined,
@@ -878,6 +1336,9 @@ export default function OrderDetailPage() {
                 receiverAddress: doReceiverAddress,
                 receiverCompany: doReceiverCompany,
             })) as Record<string, unknown>;
+        if (extraPickupRefs.length > 0) {
+            deliveryOrderPayload.extraPickupRefs = extraPickupRefs;
+        }
         if (selectedOrderTripPlan) {
             deliveryOrderPayload.orderTripPlanKey = selectedOrderTripPlan._key;
             deliveryOrderPayload.driverRef = selectedOrderTripPlan.driverRef;
@@ -1178,7 +1639,16 @@ export default function OrderDetailPage() {
                     <div className="card-header"><span className="card-header-title">Informasi Order</span></div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value font-mono">{order.masterResi}</div></div>
+                            <div className="detail-item">
+                                <div className="detail-label">Master Resi</div>
+                                <div className="detail-value font-mono">{order.masterResi}</div>
+                                {(dos.length > 0 || notas.length > 0) && (
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                        {dos.length > 0 && <a href="#order-surat-jalan-section" style={{ color: 'var(--color-primary)' }}>{dos.length} trip / SJ terkait</a>}
+                                        {notas.length > 0 && <a href="#invoice-section" style={{ color: 'var(--color-primary)' }}>{notas.length} nota terkait</a>}
+                                    </div>
+                                )}
+                            </div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(order.createdAt)}</div></div>
                         </div>
                         <div className="detail-row">
@@ -1244,10 +1714,47 @@ export default function OrderDetailPage() {
                 </div>
             )}
 
+            {isHeaderOnlyOrder && !hasPlannedTrips && (
+                <div className="card mt-6">
+                    <div className="card-body" style={{ padding: '0.9rem 1rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <div>
+                            <div style={{ fontWeight: 700 }}>Belum ada rencana trip</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                Tambahkan trip dari detail order tanpa mengubah customer order.
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={openAddTripModal}>
+                                <Plus size={14} /> Tambah Trip
+                            </button>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => openTripPlanActionModal('edit')} disabled={editableOrderTripPlans.length === 0}>
+                                <Edit size={14} /> Edit Trip
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => openTripPlanActionModal('delete')} disabled={editableOrderTripPlans.length === 0} style={{ color: 'var(--color-danger)' }}>
+                                <Trash2 size={14} /> Hapus Trip
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {hasPlannedTrips && (
                 <div className="card mt-6">
                     <div className="card-header">
                         <span className="card-header-title">Rencana Trip ({orderTripPlans.length})</span>
+                        {isHeaderOnlyOrder && (
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={openAddTripModal}>
+                                    <Plus size={14} /> Tambah Trip
+                                </button>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => openTripPlanActionModal('edit')} disabled={editableOrderTripPlans.length === 0}>
+                                    <Edit size={14} /> Edit Trip
+                                </button>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => openTripPlanActionModal('delete')} disabled={editableOrderTripPlans.length === 0} style={{ color: 'var(--color-danger)' }}>
+                                    <Trash2 size={14} /> Hapus Trip
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
                         {canCreateContinuationDeliveryOrder && (
@@ -1554,6 +2061,7 @@ export default function OrderDetailPage() {
                                 const relatedDeliveryOrderItems = doItems.filter(item => item.deliveryOrderRef === d._id);
                                 const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d, relatedDeliveryOrderItems);
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, relatedDeliveryOrderItems, 3);
+                                const shipperReferenceLinks = buildDeliveryOrderShipperReferenceLinks(d, relatedDeliveryOrderItems);
                                 const doStatusMeta = getDeliveryOrderDisplayStatusMeta(d);
                                 const billableCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderBillableCargoSummary(d) : null;
                                 const holdCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderHoldCargoSummary(d) : null;
@@ -1584,9 +2092,19 @@ export default function OrderDetailPage() {
                                         {shipperReferenceNumbers.length > 0 ? (
                                             <div style={{ display: 'grid', gap: '0.2rem' }}>
                                                 <div className="font-medium">{formatNumber(shipperReferenceNumbers.length)} SJ pengirim</div>
-                                                <div className="text-muted text-sm font-mono" style={{ wordBreak: 'break-word' }}>
-                                                    {shipperReferencePreview}
-                                                </div>
+                                                {shipperReferenceLinks.length > 0 ? (
+                                                    <div className="text-sm font-mono" style={{ wordBreak: 'break-word', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        {shipperReferenceLinks.map(link => (
+                                                            <Link key={link.id} href={withReturnTo(`/surat-jalan/${encodeURIComponent(link.id)}`)} style={{ color: 'var(--color-primary)' }}>
+                                                                {link.label}
+                                                            </Link>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-muted text-sm font-mono" style={{ wordBreak: 'break-word' }}>
+                                                        {shipperReferencePreview}
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : (
                                             <span className="text-muted text-sm">Belum diinput</span>
@@ -1673,6 +2191,322 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
+            {showAddTripModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingTripPlan && !deletingTripPlanKey) closeTripPlanModal(); }}>
+                    <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">
+                                {tripPlanModalMode === 'edit' ? 'Edit Rencana Trip' : 'Tambah Rencana Trip'}
+                            </h3>
+                            <button className="modal-close" onClick={closeTripPlanModal} disabled={savingTripPlan || Boolean(deletingTripPlanKey)}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'grid', gap: '1rem' }}>
+                            <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
+                                <div className="text-muted text-sm">Customer order</div>
+                                <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{order?.customerName || '-'}</div>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                    Customer mengikuti order ini dan tidak bisa diubah dari form tambah trip.
+                                </div>
+                            </div>
+
+                            {tripPlanModalMode === 'edit' && (
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label">Pilih Trip yang Diedit <span className="required">*</span></label>
+                                    <select
+                                        className="form-select"
+                                        value={selectedTripPlanActionKey}
+                                        onChange={event => selectTripPlanForModalAction(event.target.value)}
+                                        disabled={savingTripPlan}
+                                    >
+                                        <option value="">Pilih rencana trip yang belum punya SJ</option>
+                                        {editableOrderTripPlans.map(tripPlan => (
+                                            <option key={tripPlan._key} value={tripPlan._key}>
+                                                Trip {tripPlan.sequence} - {tripPlan.vehiclePlate || 'Tanpa kendaraan'} / {tripPlan.driverName || 'Tanpa supir'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                        Ganti pilihan di sini untuk langsung memuat trip lain tanpa menutup form.
+                                    </div>
+                                </div>
+                            )}
+
+                            {tripPlanModalMode === 'edit' && !editingTripPlanKey ? (
+                                <div style={{ border: '1px dashed var(--color-gray-300)', borderRadius: '0.75rem', padding: '0.95rem 1rem', background: 'var(--color-gray-50)' }}>
+                                    <div className="font-semibold">Pilih trip dulu untuk diedit</div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                        Setelah dipilih, form edit akan muncul di bawah dropdown ini.
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Pickup untuk Trip Ini <span className="required">*</span></label>
+                                <div style={{ display: 'grid', gap: '0.6rem' }}>
+                                    {selectedTripDraftPickupStops.length === 0 ? (
+                                        <div style={{ border: '1px dashed var(--color-gray-300)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-gray-50)' }}>
+                                            <div className="text-muted text-sm">Belum ada pickup di rencana trip ini. Tambahkan pickup satu per satu agar form tetap ringkas.</div>
+                                        </div>
+                                    ) : (
+                                        selectedTripDraftPickupStops.map((pickupStop, index) => (
+                                            <div
+                                                key={pickupStop._key}
+                                                style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'flex-start',
+                                                    gap: '0.75rem',
+                                                    padding: '0.75rem 0.9rem',
+                                                    borderRadius: '0.75rem',
+                                                    border: '1px solid var(--color-primary)',
+                                                    background: 'var(--color-primary-50)',
+                                                }}
+                                            >
+                                                <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                                    <span style={{ fontWeight: 600 }}>
+                                                        Pickup {index + 1}{pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}{'fromMaster' in pickupStop && pickupStop.fromMaster ? ' (Master)' : ''}
+                                                    </span>
+                                                    <span className="text-muted text-sm">{pickupStop.pickupAddress || '-'}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-ghost btn-icon-only"
+                                                    onClick={() => toggleTripDraftPickupStop(pickupStop._key, false)}
+                                                    disabled={savingTripPlan}
+                                                    title="Hapus pickup dari rencana trip"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <select
+                                            className="form-select"
+                                            style={{ flex: '1 1 260px' }}
+                                            value={tripDraftPickupToAdd}
+                                            onChange={event => setTripDraftPickupToAdd(event.target.value)}
+                                            disabled={savingTripPlan || availableTripDraftPickupStops.length === 0}
+                                        >
+                                            <option value="">
+                                                {availableTripDraftPickupStops.length > 0 ? 'Pilih pickup untuk ditambahkan' : 'Semua pickup sudah ditambahkan'}
+                                            </option>
+                                            {availableTripDraftPickupStops.map((pickupStop, index) => (
+                                                <option key={pickupStop._key} value={pickupStop._key}>
+                                                    Pickup {index + 1}{pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}{pickupStop.pickupAddress ? ` | ${pickupStop.pickupAddress}` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={addTripDraftPickupStop}
+                                            disabled={savingTripPlan || !tripDraftPickupToAdd}
+                                        >
+                                            <Plus size={16} /> Tambah Pickup
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kendaraan <span className="required">*</span></label>
+                                    <select className="form-select" value={tripDraft.vehicleRef} onChange={event => updateTripDraftField('vehicleRef', event.target.value)} disabled={savingTripPlan}>
+                                        <option value="">Pilih kendaraan</option>
+                                        {availableTripDraftVehicles.map(vehicle => (
+                                            <option key={vehicle._id} value={vehicle._id}>
+                                                {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || vehicle._id}
+                                                {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatCapacityRangeLabel(vehicle)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Supir <span className="required">*</span></label>
+                                    <select className="form-select" value={tripDraft.driverRef} onChange={event => updateTripDraftField('driverRef', event.target.value)} disabled={savingTripPlan}>
+                                        <option value="">Pilih supir</option>
+                                        {availableTripDraftDrivers.map(driver => (
+                                            <option key={driver._id} value={driver._id}>
+                                                {driver.name}{driver.phone ? ` - ${driver.phone}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {requiresTripDraftOverrideReason && (
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label">Alasan Override Armada <span className="required">*</span></label>
+                                    <textarea
+                                        className="form-textarea"
+                                        rows={2}
+                                        value={tripDraft.vehicleOverrideReason}
+                                        onChange={event => updateTripDraftField('vehicleOverrideReason', event.target.value)}
+                                        placeholder="Mis. armada sesuai tidak tersedia atau load harus dipecah"
+                                        disabled={savingTripPlan}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Asal Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripDraft.tripOriginArea}
+                                        onChange={event => updateTripDraftRouteSelection(event.target.value, '')}
+                                        disabled={savingTripPlan}
+                                    >
+                                        <option value="">Pilih asal area</option>
+                                        {tripDraftOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripDraft.tripDestinationArea}
+                                        onChange={event => updateTripDraftRouteSelection(tripDraft.tripOriginArea, event.target.value)}
+                                        disabled={savingTripPlan || !tripDraft.tripOriginArea}
+                                    >
+                                        <option value="">Pilih tujuan area</option>
+                                        {tripDraftDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {matchedTripDraftRate && (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)', background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', padding: '0.75rem 0.9rem', borderRadius: '0.75rem' }}>
+                                    Tarif master: {formatTripRouteRateLabel(matchedTripDraftRate)} | {matchedTripDraftRate.rate.toLocaleString('id-ID')}
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Upah Trip <span className="required">*</span></label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        value={isTripDraftFeeLockedToMaster ? (matchedTripDraftRate?.rate || 0) : tripDraft.tripFee}
+                                        onValueChange={value => updateTripDraftField('tripFee', value)}
+                                        placeholder="Isi upah trip"
+                                        disabled={savingTripPlan || isTripDraftFeeLockedToMaster}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tanggal Trip</label>
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={tripDraft.date}
+                                        onChange={event => updateTripDraftField('date', event.target.value)}
+                                        disabled={savingTripPlan}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kas / Bank Uang Jalan <span className="required">*</span></label>
+                                    <select className="form-select" value={tripDraft.issueBankRef} onChange={event => updateTripDraftField('issueBankRef', event.target.value)} disabled={savingTripPlan}>
+                                        <option value="">Pilih sumber uang jalan</option>
+                                        {activeIssueBankAccounts.map(account => (
+                                            <option key={account._id} value={account._id}>
+                                                {account.bankName}{account.accountNumber ? ` - ${account.accountNumber}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        value={tripDraft.cashGiven}
+                                        onValueChange={value => updateTripDraftField('cashGiven', value)}
+                                        placeholder="Isi uang jalan awal"
+                                        disabled={savingTripPlan}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Catatan Trip</label>
+                                <input
+                                    className="form-input"
+                                    value={tripDraft.notes}
+                                    onChange={event => updateTripDraftField('notes', event.target.value)}
+                                    placeholder="Catatan opsional"
+                                    disabled={savingTripPlan}
+                                />
+                            </div>
+                                </>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeTripPlanModal} disabled={savingTripPlan || Boolean(deletingTripPlanKey)}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleAddTripPlan} disabled={savingTripPlan || (tripPlanModalMode === 'edit' && !editingTripPlanKey)}>
+                                <Plus size={16} /> {savingTripPlan ? 'Menyimpan Trip...' : (editingTripPlanKey ? 'Simpan Perubahan Trip' : 'Simpan Rencana Trip')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTripPlanActionModal && (
+                <div className="modal-overlay" onClick={() => { if (!deletingTripPlanKey) closeTripPlanActionModal(); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{tripPlanModalMode === 'delete' ? 'Pilih Trip untuk Dihapus' : 'Pilih Trip untuk Diedit'}</h3>
+                            <button className="modal-close" onClick={closeTripPlanActionModal} disabled={Boolean(deletingTripPlanKey)}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'grid', gap: '1rem' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Rencana Trip <span className="required">*</span></label>
+                                <select
+                                    className="form-select"
+                                    value={selectedTripPlanActionKey}
+                                    onChange={event => selectTripPlanForModalAction(event.target.value)}
+                                    disabled={Boolean(deletingTripPlanKey)}
+                                >
+                                    <option value="">Pilih rencana trip yang belum punya SJ</option>
+                                    {editableOrderTripPlans.map(tripPlan => (
+                                        <option key={tripPlan._key} value={tripPlan._key}>
+                                            Trip {tripPlan.sequence} - {tripPlan.vehiclePlate || 'Tanpa kendaraan'} / {tripPlan.driverName || 'Tanpa supir'}
+                                        </option>
+                                    ))}
+                                </select>
+                                {editableOrderTripPlans.length === 0 && (
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                        Tidak ada rencana trip yang bisa diedit atau dihapus karena semuanya sudah memiliki SJ.
+                                    </div>
+                                )}
+                            </div>
+
+                            {tripPlanModalMode === 'delete' && selectedTripPlanForAction && (
+                                <div style={{ padding: '0.8rem 0.9rem', borderRadius: '0.75rem', background: 'var(--color-danger-light)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}>
+                                    Trip {selectedTripPlanForAction.sequence} akan dihapus dari order ini.
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeTripPlanActionModal} disabled={Boolean(deletingTripPlanKey)}>Batal</button>
+                            {tripPlanModalMode === 'delete' ? (
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={continueSelectedTripPlanAction}
+                                    disabled={!selectedTripPlanForAction || Boolean(deletingTripPlanKey)}
+                                    style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+                                >
+                                    <Trash2 size={16} /> {deletingTripPlanKey ? 'Menghapus Trip...' : 'Hapus Trip Terpilih'}
+                                </button>
+                            ) : (
+                                <div className="text-muted text-sm">Pilih trip untuk langsung membuka form edit.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Create DO Modal */}
             {showDOModal && (
                 <div className="modal-overlay" onClick={() => { if (!creatingDO) { setShowDOModal(false); setSelectedOrderTripPlanKey(''); } }}>
@@ -1728,11 +2562,73 @@ export default function OrderDetailPage() {
                                     </div>
                                 </div>
                             )}
-                            {!selectedOrderTripPlan && resolvedOrderPickupStops.length > 0 && (
+                            {selectablePickupStops.length > 0 && (
                                 <div className="form-group">
                                     <label className="form-label">Titik Pickup untuk Trip Ini</label>
                                     <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                        {resolvedOrderPickupStops.map((pickupStop, index) => {
+                                        <select
+                                            className="form-select"
+                                            value=""
+                                            disabled={creatingDO || selectablePickupStops.every(pickupStop => selectedPickupStopKeys.includes(pickupStop._key))}
+                                            onChange={event => {
+                                                const nextKey = event.target.value;
+                                                if (!nextKey) {
+                                                    return;
+                                                }
+                                                setSelectedPickupStopKeys(previous => (
+                                                    previous.includes(nextKey) ? previous : [...previous, nextKey]
+                                                ));
+                                            }}
+                                        >
+                                            <option value="">Tambah titik pickup dari master...</option>
+                                            {selectablePickupStops
+                                                .filter(pickupStop => !selectedPickupStopKeys.includes(pickupStop._key))
+                                                .map((pickupStop, index) => (
+                                                    <option key={pickupStop._key} value={pickupStop._key}>
+                                                        {`Pickup ${index + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}${'fromMaster' in pickupStop && pickupStop.fromMaster ? ' (Master)' : ''} - ${pickupStop.pickupAddress}`}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                        {selectedTripPickupStops.length === 0 ? (
+                                            <div className="text-muted text-sm">Belum ada titik pickup dipilih.</div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                                {selectedTripPickupStops.map((pickupStop, index) => (
+                                                    <div
+                                                        key={pickupStop._key}
+                                                        style={{
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            gap: '0.75rem',
+                                                            padding: '0.85rem 1rem',
+                                                            borderRadius: '0.75rem',
+                                                            border: '1px solid var(--color-primary)',
+                                                            background: 'var(--color-primary-50)',
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
+                                                            <span style={{ fontWeight: 600 }}>
+                                                                Pickup {index + 1}{pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}
+                                                                {'fromMaster' in pickupStop && pickupStop.fromMaster ? ' (Master)' : ''}
+                                                            </span>
+                                                            <span className="text-muted text-sm">{pickupStop.pickupAddress}</span>
+                                                            {pickupStop.notes && <span className="text-muted text-sm">{pickupStop.notes}</span>}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-ghost btn-icon-only"
+                                                            onClick={() => setSelectedPickupStopKeys(previous => previous.filter(value => value !== pickupStop._key))}
+                                                            disabled={creatingDO}
+                                                            title="Hapus pickup dari trip ini"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {/*
                                             const checked = selectedPickupStopKeys.includes(pickupStop._key);
                                             return (
                                                 <label
@@ -1766,7 +2662,7 @@ export default function OrderDetailPage() {
                                                     {pickupStop.notes && <span className="text-muted text-sm">{pickupStop.notes}</span>}
                                                 </label>
                                             );
-                                        })}
+                                        */}
                                     </div>
                                 </div>
                             )}

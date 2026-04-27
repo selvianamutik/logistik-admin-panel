@@ -1,5 +1,5 @@
 import TripDetailPage from '../../_components/TripDetailPage';
 
-export default function LegacyDeliveryOrderDetailPage() {
+export default function TripDetailRoutePage() {
     return <TripDetailPage />;
 }

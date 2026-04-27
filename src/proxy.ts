@@ -13,6 +13,8 @@ import type { SessionUser } from '@/lib/types';
 const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/dashboard', module: 'dashboard' },
     { path: '/orders', module: 'orders' },
+    { path: '/trips', module: 'deliveryOrders' },
+    { path: '/surat-jalan', module: 'deliveryOrders' },
     { path: '/delivery-orders', module: 'deliveryOrders' },
     { path: '/invoices', module: 'freightNotas' },
     { path: '/customers', module: 'customers' },

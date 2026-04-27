@@ -1,0 +1,199 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { FileText, Search } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
+import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { formatCargoSummary } from '@/lib/measurement';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
+import type { SuratJalanDocument } from '@/lib/trip-document-types';
+import { hasPageAccess } from '@/lib/rbac';
+import { useApp, useToast } from '../layout';
+
+function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    return [
+        row.suratJalanNumber,
+        row.tripNumber,
+        row.masterResi,
+        row.customerName,
+        row.pickupAddress,
+        row.receiverName,
+        row.receiverCompany,
+        row.receiverAddress,
+        row.vehiclePlate,
+        row.driverName,
+    ].some(value => String(value || '').toLowerCase().includes(needle));
+}
+
+export default function SuratJalanPage() {
+    const { user } = useApp();
+    const { addToast } = useToast();
+    const [rows, setRows] = useState<SuratJalanDocument[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
+    const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
+
+    const loadSuratJalan = useCallback(async () => {
+        setLoading(true);
+        try {
+            const documents = await fetchAllAdminCollectionData<SuratJalanDocument>(
+                '/api/data?entity=surat-jalan&sortField=tripDate&sortDir=desc',
+                'Gagal memuat surat jalan'
+            );
+            setRows(documents || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat surat jalan');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast]);
+
+    useEffect(() => {
+        void loadSuratJalan();
+    }, [loadSuratJalan]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter]);
+    const filteredRows = useMemo(
+        () => rows.filter(row => (!statusFilter || row.tripStatus === statusFilter) && matchesSuratJalanSearch(row, search)),
+        [rows, search, statusFilter]
+    );
+    const pageRows = filteredRows.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
+    const multiSjTripCount = useMemo(() => {
+        const counts = rows.reduce<Map<string, number>>((acc, row) => {
+            acc.set(row.tripRef, (acc.get(row.tripRef) || 0) + 1);
+            return acc;
+        }, new Map());
+        return Array.from(counts.values()).filter(count => count > 1).length;
+    }, [rows]);
+    const holdRowCount = rows.filter(row => row.holdCargo.qtyKoli > 0 || row.holdCargo.weightKg > 0 || row.holdCargo.volumeM3 > 0).length;
+
+    return (
+        <div>
+            <div className="page-header">
+                <div className="page-header-left">
+                    <h1 className="page-title">Surat Jalan</h1>
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Dokumen SJ</div>
+                        <div className="kpi-value">{rows.length}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Trip Multi-SJ</div>
+                        <div className="kpi-value">{multiSjTripCount}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Ada Hold</div>
+                        <div className="kpi-value">{holdRowCount}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="table-container">
+                <div className="table-toolbar">
+                    <div className="table-toolbar-left">
+                        <div className="table-search">
+                            <Search size={16} className="table-search-icon" />
+                            <input placeholder="Cari no. SJ, trip, resi, customer, tujuan..." value={search} onChange={event => setSearch(event.target.value)} />
+                        </div>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 150 }} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                            <option value="">Semua Status Operasional</option>
+                            {Object.entries(DO_STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <div className="table-wrapper table-desktop-only">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>No. SJ</th>
+                                <th>Trip</th>
+                                <th>Order / Resi</th>
+                                <th>Customer</th>
+                                <th>Pickup</th>
+                                <th>Tujuan</th>
+                                <th>Muatan</th>
+                                <th>Invoice</th>
+                                <th>Hold</th>
+                                <th>Retur</th>
+                                <th>Status Operasional</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? [1, 2, 3].map(row => (
+                                <tr key={row}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>
+                            )) : pageRows.length === 0 ? (
+                                <tr>
+                                    <td colSpan={12}>
+                                        <div className="empty-state">
+                                            <FileText size={48} className="empty-state-icon" />
+                                            <div className="empty-state-title">Belum ada surat jalan</div>
+                                            <div className="empty-state-text">SJ akan muncul per nomor dokumen, termasuk saat satu trip membawa beberapa SJ.</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : pageRows.map(row => {
+                                const statusMeta = row.tripStatus ? DO_STATUS_MAP[row.tripStatus] : null;
+                                return (
+                                    <tr key={row._id}>
+                                        <td className="font-semibold"><Link href={`/surat-jalan/${encodeURIComponent(row._id)}`} style={{ color: 'var(--color-primary)' }}>{row.suratJalanNumber || '-'}</Link></td>
+                                        <td><Link href={`/trips/${row.tripRef}`} style={{ color: 'var(--color-primary)' }}>{row.tripNumber}</Link><div className="text-muted text-sm">{formatDate(row.tripDate)}</div></td>
+                                        <td>{canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}</td>
+                                        <td>{row.customerName || '-'}</td>
+                                        <td>{row.pickupAddress || '-'}</td>
+                                        <td>{row.receiverCompany || row.receiverName || row.receiverAddress || '-'}</td>
+                                        <td>{row.itemCount} item<div className="text-muted text-sm">{formatCargoSummary(row.cargoSummary)}</div></td>
+                                        <td>{formatCargoSummary(row.billableCargo)}</td>
+                                        <td>{formatCargoSummary(row.holdCargo)}</td>
+                                        <td>{formatCargoSummary(row.returnCargo)}</td>
+                                        <td>{statusMeta ? <span className={`badge badge-${statusMeta.color}`}><span className="badge-dot" /> {statusMeta.label}</span> : '-'}</td>
+                                        <td><Link className="table-action-btn" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link></td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mobile-card-list">
+                    {pageRows.map(row => {
+                        const statusMeta = row.tripStatus ? DO_STATUS_MAP[row.tripStatus] : null;
+                        return (
+                            <div className="mobile-data-card" key={row._id}>
+                                <div className="mobile-card-header">
+                                    <Link className="mobile-card-title" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>{row.suratJalanNumber || '-'}</Link>
+                                    {statusMeta && <span className={`badge badge-${statusMeta.color}`}><span className="badge-dot" /> {statusMeta.label}</span>}
+                                </div>
+                                <div className="mobile-card-body">
+                                    <div><strong>{row.tripNumber}</strong> | {row.masterResi || '-'}</div>
+                                    <div>{row.customerName || '-'}</div>
+                                    <div>{row.itemCount} item | Invoice {formatCargoSummary(row.billableCargo)} | Hold {formatCargoSummary(row.holdCargo)}</div>
+                                    <Link className="btn btn-secondary btn-sm" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <AppPagination page={page} totalItems={filteredRows.length} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} />
+            </div>
+        </div>
+    );
+}

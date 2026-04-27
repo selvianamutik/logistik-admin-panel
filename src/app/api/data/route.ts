@@ -11,6 +11,7 @@ import {
     getDocumentById,
     listDocuments,
     listDocumentsByFilter,
+    updateDocument,
 } from '@/lib/repositories/document-store';
 import {
     ensureCashAccount,
@@ -71,16 +72,21 @@ import {
     handleDeliveryOrderAppendCargoItems,
     handleDeliveryOrderCargoItemUpdate,
     handleDeliveryOrderCargoItemRemove,
+    handleDeliveryOrderContinueHeldCargo,
     handleDeliveryOrderCreate,
+    handleDeliveryOrderBatchSuratJalanStatusUpdate,
     handleDeliveryOrderShipperReferenceUpdate,
     handleDeliveryOrderTripResourceAssign,
     handleDeliveryOrderDriverStatusRequestReject,
     handleDeliveryOrderStatusUpdate,
+    handleDeliveryOrderTripClosureSet,
     handleOrderDelete,
     handleOrderItemHoldRelease,
     handleOrderItemHoldSet,
     handleOrderCreate,
     handleOrderHeaderBookingUpdate,
+    handleOrderTripPlanAppend,
+    handleOrderTripPlanUpdate,
     handleOrderTargetRevision,
     handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
@@ -126,11 +132,12 @@ import {
     deriveFreightNotaItemsForResponse,
     deriveOrdersForResponse,
 } from '@/lib/api/response-derivations';
+import { getProjectedDocumentRead } from '@/lib/api/projected-document-reads';
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
 import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { getDataServiceErrorInfo } from '@/lib/service-errors';
-import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, OrderTripPlan, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -138,6 +145,7 @@ export const revalidate = 0;
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
 const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
+const PROJECTED_READ_ENTITIES = new Set(['trips', 'surat-jalan', 'surat-jalan-items', 'trip-tracking', 'trip-detail', 'surat-jalan-detail', 'trip-detail-references']);
 type ReceiptResponseShape = Record<string, unknown> & {
     _id: string;
     totalAmount?: number | string | null;
@@ -172,6 +180,9 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'order-items': 'orders',
     'delivery-orders': 'deliveryOrders',
     'delivery-order-items': 'deliveryOrders',
+    'trip-records': 'deliveryOrders',
+    'surat-jalan-records': 'deliveryOrders',
+    'surat-jalan-record-items': 'deliveryOrders',
     'tracking-logs': 'deliveryOrders',
     payments: 'freightNotas',
     'customer-receipts': 'freightNotas',
@@ -226,13 +237,19 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'update-with-items' ||
         action === 'update-pph23' ||
         action === 'update-header-booking' ||
+        action === 'append-trip-plan' ||
+        action === 'delete-trip-plan' ||
+        action === 'update-trip-plan' ||
         action === 'revise-targets' ||
         action === 'set-status' ||
+        action === 'set-surat-jalan-status-batch' ||
         action === 'assign-trip-resources' ||
         action === 'append-cargo-items' ||
         action === 'update-cargo-item' ||
         action === 'remove-cargo-item' ||
         action === 'update-shipper-reference' ||
+        action === 'set-trip-closure' ||
+        action === 'continue-held-cargo' ||
         action === 'reject-driver-status-request' ||
         action === 'set-hold-quantity' ||
         action === 'release-hold' ||
@@ -270,6 +287,14 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
 
     if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
         return role === 'OWNER' || role === 'OPERASIONAL' || role === 'FINANCE';
+    }
+
+    if (entity === 'delivery-orders' && action === 'set-trip-closure') {
+        return role === 'OWNER' || role === 'OPERASIONAL';
+    }
+
+    if (entity === 'delivery-orders' && action === 'continue-held-cargo') {
+        return role === 'OWNER' || role === 'OPERASIONAL';
     }
 
     if (entity === 'driver-vouchers' && action === 'settle') {
@@ -347,6 +372,70 @@ function inferAuditActorEmailFromRef(actorUserRef: unknown, entityRef?: unknown)
     if (ref.includes('user-finance-')) return 'finance@company.local';
     if (ref.includes('user-armada-')) return 'armada@company.local';
     return undefined;
+}
+
+function normalizeRouteText(value: unknown) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+async function handleOrderTripPlanDeleteLocal(session: Session, data: Record<string, unknown>) {
+    const id = normalizeRouteText(data.id);
+    const tripPlanKey = normalizeRouteText(data.tripPlanKey);
+    if (!id || !tripPlanKey) {
+        return jsonNoStore({ error: 'Rencana trip tidak valid' }, { status: 400 });
+    }
+
+    const order = await getDocumentById<{
+        _id: string;
+        masterResi?: string;
+        tripPlans?: OrderTripPlan[];
+    }>(id, 'order');
+    if (!order) {
+        return jsonNoStore({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const tripPlan = currentTripPlans.find(plan => normalizeRouteText(plan._key) === tripPlanKey) || null;
+    if (!tripPlan) {
+        return jsonNoStore({ error: 'Rencana trip tidak ditemukan. Refresh lalu coba lagi.' }, { status: 404 });
+    }
+    if (tripPlan.linkedDeliveryOrderRef) {
+        return jsonNoStore(
+            { error: 'Rencana trip yang sudah punya SJ tidak bisa dihapus dari detail order.' },
+            { status: 409 }
+        );
+    }
+
+    const nextTripPlans = currentTripPlans
+        .filter(plan => normalizeRouteText(plan._key) !== tripPlanKey)
+        .map((plan, index) => ({
+            ...plan,
+            sequence: index + 1,
+        }));
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await updateDocument(id, {
+            tripPlans: nextTripPlans.length > 0 ? nextTripPlans : undefined,
+        }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return jsonNoStore(
+                { error: 'Rencana trip order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Hapus rencana trip ${tripPlan.sequence} pada ${order.masterResi || id}`
+    );
+    return jsonNoStore({ data: updatedOrder, id, deletedTripPlanKey: tripPlanKey });
 }
 
 function enforceExpensePrivacyFilter(
@@ -755,6 +844,53 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: options });
         } catch (err) {
             console.error('API GET Maintenance Material Options Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (PROJECTED_READ_ENTITIES.has(entity || '')) {
+        if (!hasPermission(session.role, 'deliveryOrders', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        try {
+            const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+            const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+            const searchFields = searchFieldsParam
+                ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                : [];
+            const projectedPermissions = {
+                canViewCustomerDetails: hasPermission(session.role, 'customers', 'view'),
+                canManageTripFee: hasPermission(session.role, 'deliveryOrders', 'update'),
+                canEditShipperReference: hasPermission(session.role, 'deliveryOrders', 'update'),
+                canEditDeliveryCargo: hasPermission(session.role, 'deliveryOrders', 'update'),
+                canEditDeliveryTarget: hasPermission(session.role, 'deliveryOrders', 'update'),
+            };
+            const result = await getProjectedDocumentRead({
+                entity: entity as 'trips' | 'surat-jalan' | 'surat-jalan-items' | 'trip-tracking' | 'trip-detail' | 'surat-jalan-detail' | 'trip-detail-references',
+                id,
+                filter,
+                searchQuery,
+                searchFields,
+                sortField,
+                sortDir,
+                page,
+                pageSize,
+                countOnly,
+                permissions: projectedPermissions,
+            });
+            if (id) {
+                if (!result.data) {
+                    return jsonNoStore({ error: 'Not found' }, { status: 404 });
+                }
+                return jsonNoStore({ data: result.data });
+            }
+            return jsonNoStore({
+                data: result.data,
+                meta: result.meta,
+            });
+        } catch (error) {
+            console.error('API GET Projected Read Error:', error);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
@@ -1353,6 +1489,18 @@ export async function POST(request: Request) {
             return await handleOrderHeaderBookingUpdate(session, data, addAuditLog);
         }
 
+        if (entity === 'orders' && action === 'append-trip-plan') {
+            return await handleOrderTripPlanAppend(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'update-trip-plan') {
+            return await handleOrderTripPlanUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'delete-trip-plan') {
+            return await handleOrderTripPlanDeleteLocal(session, data);
+        }
+
         if (entity === 'orders' && action === 'revise-targets') {
             return await handleOrderTargetRevision(session, data, addAuditLog);
         }
@@ -1405,6 +1553,10 @@ export async function POST(request: Request) {
             return await handleDeliveryOrderStatusUpdate(session, data, addAuditLog);
         }
 
+        if (entity === 'delivery-orders' && action === 'set-surat-jalan-status-batch') {
+            return await handleDeliveryOrderBatchSuratJalanStatusUpdate(session, data, addAuditLog);
+        }
+
         if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
             return await handleDeliveryOrderTripResourceAssign(session, data, addAuditLog);
         }
@@ -1423,6 +1575,14 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
             return await handleDeliveryOrderShipperReferenceUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'set-trip-closure') {
+            return await handleDeliveryOrderTripClosureSet(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'continue-held-cargo') {
+            return await handleDeliveryOrderContinueHeldCargo(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {

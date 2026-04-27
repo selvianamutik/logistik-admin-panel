@@ -588,14 +588,19 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
         CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
         HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
-        // Keep client options aligned with backend order workflow guards.
         ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
         ARRIVED: ['DELIVERED', 'CANCELLED'],
+        PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
+        DELIVERED: ['CANCELLED'],
     };
     return transitions[current] || [];
 }
 
-export function buildTripResourceBusyIds(activeDeliveryOrders: DeliveryOrder[], currentDeliveryOrderId: string) {
+export function buildTripResourceBusyIds<T extends {
+    _id: string;
+    vehicleRef?: string;
+    driverRef?: string;
+}>(activeDeliveryOrders: T[], currentDeliveryOrderId: string) {
     const busyVehicleIds = new Set<string>();
     const busyDriverIds = new Set<string>();
 
@@ -764,7 +769,7 @@ export function buildDeliveryOrderDetailState(params: {
 export function buildDeliveryOrderPrintHtml(
     doData: DeliveryOrder,
     doItems: DeliveryOrderItem[],
-    trackingLogs: TrackingLog[]
+    trackingLogs: Array<Pick<TrackingLog, 'status' | 'note' | 'locationText' | 'timestamp'>>
 ) {
     const receiverSummary = formatShipperReceiverSummary(doData, {
         mode: 'summary',
@@ -1004,7 +1009,7 @@ export function buildResolvedDeliveryOrder(deliveryOrder: DeliveryOrder | null, 
     };
 }
 
-export function sortTrackingLogs(logs: TrackingLog[]) {
+export function sortTrackingLogs<T extends { timestamp: string }>(logs: T[]) {
     return [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }
 

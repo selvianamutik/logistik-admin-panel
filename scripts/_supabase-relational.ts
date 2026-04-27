@@ -37,6 +37,9 @@ const RELATIONAL_SEED_ORDER = [
     'order_items',
     'delivery_orders',
     'delivery_order_items',
+    'trips',
+    'surat_jalan_documents',
+    'surat_jalan_items',
     'tracking_logs',
     'tire_events',
     'tire_history_logs',
@@ -108,6 +111,9 @@ export const RELATIONAL_SUPPORTED_DOC_TYPES = [
     'orderItem',
     'deliveryOrder',
     'deliveryOrderItem',
+    'trip',
+    'suratJalan',
+    'suratJalanItem',
     'trackingLog',
     'driverScore',
     'invoice',
@@ -1157,6 +1163,116 @@ function mapDeliveryOrderItems(docs: SeedDoc[]) {
         }));
 }
 
+function mapTrips(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'trip')
+        .map(doc => ({
+            ...mapCommon(doc),
+            delivery_order_ref: toText(doc.deliveryOrderRef),
+            order_ref: toText(doc.orderRef),
+            trip_number: toText(doc.tripNumber),
+            master_resi: toText(doc.masterResi),
+            customer_ref: toText(doc.customerRef),
+            customer_name: toText(doc.customerName),
+            vehicle_ref: toText(doc.vehicleRef),
+            vehicle_plate: toText(doc.vehiclePlate),
+            driver_ref: toText(doc.driverRef),
+            driver_name: toText(doc.driverName),
+            trip_date: toText(doc.tripDate),
+            status: toText(doc.status),
+            pickup_address: toText(doc.pickupAddress),
+            receiver_name: toText(doc.receiverName),
+            receiver_phone: toText(doc.receiverPhone),
+            receiver_address: toText(doc.receiverAddress),
+            receiver_company: toText(doc.receiverCompany),
+            service_ref: toText(doc.serviceRef),
+            service_name: toText(doc.serviceName),
+            vehicle_service_ref: toText(doc.vehicleServiceRef),
+            vehicle_service_name: toText(doc.vehicleServiceName),
+            vehicle_category_override_reason: toText(doc.vehicleCategoryOverrideReason),
+            trip_route_rate_ref: toText(doc.tripRouteRateRef),
+            trip_origin_area: toText(doc.tripOriginArea),
+            trip_destination_area: toText(doc.tripDestinationArea),
+            tracking_state: toText(doc.trackingState),
+            tracking_started_at: toTimestamp(doc.trackingStartedAt),
+            tracking_stopped_at: toTimestamp(doc.trackingStoppedAt),
+            tracking_last_seen_at: toTimestamp(doc.trackingLastSeenAt),
+            pending_driver_status: toText(doc.pendingDriverStatus),
+            cargo_finalized_at: toTimestamp(doc.cargoFinalizedAt),
+            tarip_borongan: toNumber(doc.taripBorongan),
+            notes: toText(doc.notes),
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'deliveryOrderRef', 'orderRef', 'tripNumber', 'masterResi',
+                'customerRef', 'customerName', 'vehicleRef', 'vehiclePlate',
+                'driverRef', 'driverName', 'tripDate', 'status',
+                'pickupAddress', 'receiverName', 'receiverPhone', 'receiverAddress',
+                'receiverCompany', 'serviceRef', 'serviceName', 'vehicleServiceRef',
+                'vehicleServiceName', 'vehicleCategoryOverrideReason', 'tripRouteRateRef',
+                'tripOriginArea', 'tripDestinationArea', 'trackingState',
+                'trackingStartedAt', 'trackingStoppedAt', 'trackingLastSeenAt',
+                'pendingDriverStatus', 'cargoFinalizedAt', 'taripBorongan', 'notes',
+            ]),
+        }));
+}
+
+function mapSuratJalanDocuments(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'suratJalan')
+        .map(doc => ({
+            ...mapCommon(doc),
+            trip_ref: toText(doc.tripRef),
+            delivery_order_ref: toText(doc.deliveryOrderRef),
+            order_ref: toText(doc.orderRef),
+            customer_ref: toText(doc.customerRef),
+            customer_name: toText(doc.customerName),
+            reference_key: toText(doc.referenceKey),
+            surat_jalan_number: toText(doc.suratJalanNumber),
+            pickup_address: toText(doc.pickupAddress),
+            receiver_name: toText(doc.receiverName),
+            receiver_company: toText(doc.receiverCompany),
+            receiver_address: toText(doc.receiverAddress),
+            trip_date: toText(doc.tripDate),
+            trip_status: toText(doc.tripStatus),
+            vehicle_plate: toText(doc.vehiclePlate),
+            driver_name: toText(doc.driverName),
+            item_count: toNumber(doc.itemCount),
+            cargo_summary: doc.cargoSummary ?? {},
+            billable_cargo: doc.billableCargo ?? {},
+            hold_cargo: doc.holdCargo ?? {},
+            return_cargo: doc.returnCargo ?? {},
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'tripRef', 'deliveryOrderRef', 'orderRef', 'customerRef',
+                'customerName', 'referenceKey', 'suratJalanNumber', 'pickupAddress',
+                'receiverName', 'receiverCompany', 'receiverAddress', 'tripDate',
+                'tripStatus', 'vehiclePlate', 'driverName', 'itemCount',
+                'cargoSummary', 'billableCargo', 'holdCargo', 'returnCargo',
+            ]),
+        }));
+}
+
+function mapSuratJalanItems(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'suratJalanItem')
+        .map(doc => ({
+            ...mapCommon(doc),
+            surat_jalan_ref: toText(doc.suratJalanRef),
+            trip_ref: toText(doc.tripRef),
+            delivery_order_item_ref: toText(doc.deliveryOrderItemRef),
+            reference_key: toText(doc.referenceKey),
+            surat_jalan_number: toText(doc.suratJalanNumber),
+            order_item_description: toText(doc.orderItemDescription),
+            planned_cargo: doc.plannedCargo ?? {},
+            actual_cargo: doc.actualCargo ?? {},
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'suratJalanRef', 'tripRef', 'deliveryOrderItemRef', 'referenceKey',
+                'suratJalanNumber', 'orderItemDescription', 'plannedCargo', 'actualCargo',
+            ]),
+        }));
+}
+
 function mapTrackingLogs(docs: SeedDoc[]) {
     return docs
         .filter(doc => doc._type === 'trackingLog')
@@ -1776,6 +1892,9 @@ function buildRelationalPayloads(docs: SeedDoc[]) {
         order_items: mapOrderItems(docs),
         delivery_orders: mapDeliveryOrders(docs),
         delivery_order_items: mapDeliveryOrderItems(docs),
+        trips: mapTrips(docs),
+        surat_jalan_documents: mapSuratJalanDocuments(docs),
+        surat_jalan_items: mapSuratJalanItems(docs),
         tracking_logs: mapTrackingLogs(docs),
         driver_scores: mapDriverScores(docs),
         invoices: mapInvoices(docs),

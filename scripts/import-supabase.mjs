@@ -3,10 +3,10 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { seedRelationalTables, summarizeUnsupportedSeedDocTypes } from './_supabase-relational.mjs';
 
-const inputFile = process.argv[2];
+const inputFile = getArgValue('--input') || process.argv[2];
 
 if (!inputFile) {
-    throw new Error('Usage: node scripts/import-supabase.mjs <path-to-export.json>');
+    throw new Error('Usage: node scripts/import-supabase.mjs <path-to-export.json> or --input=<path-to-export.json>');
 }
 
 const supabaseUrl = readAnyEnv(['SUPABASE_URL', 'SUPABASE_PROJECT_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PROJECT_URL']);
@@ -48,6 +48,11 @@ function cleanEnv(value) {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
     return trimmed.replace(/^['"]+|['"]+$/g, '');
+}
+
+function getArgValue(flag) {
+    const match = process.argv.find(arg => arg.startsWith(`${flag}=`));
+    return match ? match.slice(flag.length + 1) : '';
 }
 
 function readAnyEnv(names) {
