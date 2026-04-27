@@ -15,6 +15,7 @@ import {
     postExpenseJournal,
     postFreightNotaIssueJournal,
     postInvoiceAdjustmentJournal,
+    postLegacyInvoiceIssueJournal,
     postPaymentJournal,
     postPurchasePaymentJournal,
     postPurchaseReceiptJournal,
@@ -48,6 +49,7 @@ const BACKFILL_SESSION: Pick<ApiSession, '_id' | 'name'> = {
 
 type CounterKey =
     | 'freightNotas'
+    | 'legacyInvoices'
     | 'directPayments'
     | 'customerReceipts'
     | 'invoiceAdjustments'
@@ -163,6 +165,14 @@ async function main() {
     const warehouseItemsById = mapById(warehouseItems);
 
     for (const nota of freightNotas) {
+        if (nota.status === 'VOID') {
+            await Promise.all([
+                voidJournalEntryForSource(BACKFILL_SESSION, 'FREIGHT_NOTA', nota._id, 'ISSUE'),
+                voidJournalEntryForSource(BACKFILL_SESSION, 'FREIGHT_NOTA', nota._id, 'PPH23'),
+            ]);
+            inc('skipped');
+            continue;
+        }
         if (positiveNumber(nota.totalAmount) <= 0 && positiveNumber(nota.pph23Amount) <= 0) {
             inc('skipped');
             continue;
@@ -171,6 +181,17 @@ async function main() {
             postFreightNotaIssueJournal(BACKFILL_SESSION, nota)
         );
         inc('freightNotas');
+    }
+
+    for (const invoice of legacyInvoices) {
+        if (positiveNumber(invoice.totalAmount) <= 0 && positiveNumber(invoice.pph23Amount) <= 0) {
+            inc('skipped');
+            continue;
+        }
+        await postWithContext(`invoice legacy ${invoice.invoiceNumber || invoice._id}`, () =>
+            postLegacyInvoiceIssueJournal(BACKFILL_SESSION, invoice)
+        );
+        inc('legacyInvoices');
     }
 
     for (const payment of payments) {
@@ -358,6 +379,13 @@ async function main() {
 
     for (const disbursement of driverVoucherDisbursements) {
         if (disbursement.kind !== 'TOP_UP') continue;
+        if (disbursement.status === 'VOID') {
+            await postWithContext(`void top up bon ${disbursement._id}`, () =>
+                voidJournalEntryForSource(BACKFILL_SESSION, 'DRIVER_VOUCHER_DISBURSEMENT', disbursement._id, 'TOP_UP')
+            );
+            inc('skipped');
+            continue;
+        }
         if (positiveNumber(disbursement.amount) <= 0) {
             inc('skipped');
             continue;

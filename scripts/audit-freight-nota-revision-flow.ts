@@ -216,12 +216,28 @@ async function deleteBySourceId(table: string, id: string) {
     }).catch(() => undefined);
 }
 
+async function deleteJournalEntriesBySource(sourceType: string, sourceRef: string) {
+    if (!sourceType || !sourceRef) return;
+    const journalIds = await listSourceIds(
+        'journal_entries',
+        `source_type=eq.${encodeURIComponent(sourceType)}&source_ref=eq.${encodeURIComponent(sourceRef)}`
+    ).catch(() => []);
+    for (const journalId of journalIds) {
+        await supabaseRest(`journal_lines?journal_entry_ref=eq.${encodeURIComponent(journalId)}`, {
+            method: 'DELETE',
+            headers: { Prefer: 'return=minimal' },
+        }).catch(() => undefined);
+        await deleteBySourceId('journal_entries', journalId);
+    }
+}
+
 async function cleanupCreatedState(state: CreatedState) {
     if (state.notaId) {
         const notaItemIds = await listSourceIds('freight_nota_items', `nota_ref=eq.${encodeURIComponent(state.notaId)}`).catch(() => []);
         for (const itemId of notaItemIds) {
             await deleteBySourceId('freight_nota_items', itemId);
         }
+        await deleteJournalEntriesBySource('FREIGHT_NOTA', state.notaId);
         await deleteBySourceId('freight_notas', state.notaId);
     }
 
@@ -242,6 +258,7 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteBySourceId('tracking_logs', itemId);
         }
         for (const itemId of driverVoucherIds) {
+            await deleteJournalEntriesBySource('DRIVER_VOUCHER', itemId);
             await deleteBySourceId('driver_vouchers', itemId);
         }
         await deleteBySourceId('delivery_orders', deliveryOrderId);
@@ -711,7 +728,7 @@ async function main() {
             actualRows: createdRows,
         });
 
-        auditStep('revisi nota ke row manual dan pastikan row DO lama terhapus');
+        auditStep('revisi nota ke row manual dan pastikan row DO lama tidak muncul sebagai row aktif');
         await postData<FreightNotaMutationResponse>(cookieHeader, {
             entity: 'freight-notas',
             action: 'update-with-items',
@@ -788,7 +805,7 @@ async function main() {
             actualRows: relinkedRows,
         });
 
-        auditStep('hapus nota temporary dan pastikan row invoice terhapus');
+        auditStep('void nota temporary dan pastikan row invoice tidak muncul sebagai row aktif');
         const deletedNotaId = notaId;
         await postData<FreightNotaMutationResponse>(cookieHeader, {
             entity: 'freight-notas',
@@ -796,7 +813,6 @@ async function main() {
             data: { id: notaId },
         });
         notaId = '';
-        createdState.notaId = undefined;
 
         const releasedRowsResponse = await requestJson<{ data: FreightNotaItem[] }>(
             `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: deletedNotaId }))}`,
@@ -805,11 +821,11 @@ async function main() {
         const releasedRows = Array.isArray(releasedRowsResponse.data) ? releasedRowsResponse.data : [];
         assert(
             releasedRows.length === 0,
-            'Row invoice temporary masih tersisa setelah nota dihapus.'
+            'Row invoice temporary masih muncul sebagai row aktif setelah nota di-void.'
         );
 
         console.log(
-            `Freight nota revision audit OK: create, revise ke manual, relink row DO, replace rows, dan cleanup berhasil pada ${firstCandidate.deliveryOrder.doNumber}.`
+            `Freight nota revision audit OK: create, revise ke manual, relink row DO, replace active rows, dan cleanup/void berhasil pada ${firstCandidate.deliveryOrder.doNumber}.`
         );
     } finally {
         await cleanupCreatedState(createdState);

@@ -101,6 +101,7 @@ export default function NewNotaPage() {
                         notaRef?: string;
                         deliveryOrderItemRef?: string;
                         deliveryOrderItemRefs?: string[];
+                        status?: string;
                     }>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                     editNotaId
                         ? fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${editNotaId}`, 'Gagal memuat invoice yang akan direvisi')
@@ -118,7 +119,7 @@ export default function NewNotaPage() {
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
                 setCustomerBillingRates((billingRates || []).filter(rate => rate.active !== false));
-                const usableNotaItems = (notaItems || []).filter(item => !editNotaId || item.notaRef !== editNotaId);
+                const usableNotaItems = (notaItems || []).filter(item => item.status !== 'VOID' && (!editNotaId || item.notaRef !== editNotaId));
                 const deliveryOrderMap = new Map((dos || []).map(item => [item._id, item]));
                 setUsedNotaDoRowKeys(
                     usableNotaItems.flatMap(item => {

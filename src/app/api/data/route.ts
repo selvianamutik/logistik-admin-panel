@@ -1128,6 +1128,15 @@ export async function GET(request: Request) {
             items = applyDerivedBankAccountBalances(items as unknown as BankAccount[], txRows) as unknown as Record<string, unknown>[];
         }
 
+        if (entity === 'driver-voucher-disbursements' && items.length > 0) {
+            items = items.filter(item => item.status !== 'VOID');
+        }
+
+        if (entity === 'freight-nota-items' && items.length > 0) {
+            items = items.filter(item => item.status !== 'VOID');
+            totalItems = items.length;
+        }
+
         if (entity === 'driver-borongans' && items.length > 0) {
             const ids = items
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
@@ -1152,7 +1161,7 @@ export async function GET(request: Request) {
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
             const [disbursementRows, itemRows] = await Promise.all([
-                listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+                listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', {
                     voucherRef: ids,
                 }),
                 listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {

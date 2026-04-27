@@ -793,6 +793,7 @@ async function getDriverVoucherState(voucherId: string) {
         _id: string;
         _rev?: string;
         kind: 'INITIAL' | 'TOP_UP';
+        status?: 'ACTIVE' | 'VOID';
         date: string;
         amount: number;
         bankAccountRef?: string;
@@ -801,6 +802,7 @@ async function getDriverVoucherState(voucherId: string) {
         bankTransactionRef?: string;
         note?: string;
     }>[number]>('driverVoucherDisbursement', { voucherRef: voucherId }))
+        .filter(disbursement => disbursement.status !== 'VOID')
         .sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
 
     return { voucher, items, disbursements };
@@ -1045,6 +1047,7 @@ export async function handleDriverVoucherCreate(
         date: issueDate,
         amount: cashGiven,
         kind: 'INITIAL',
+        status: 'ACTIVE',
         bankAccountRef: issueBankRef,
         bankAccountName: issueBank.bankName,
         bankAccountNumber: issueBank.accountNumber,
@@ -1147,6 +1150,7 @@ export async function handleDriverVoucherTopUp(
         date: topUpDate,
         amount,
         kind: 'TOP_UP',
+        status: 'ACTIVE',
         bankAccountRef,
         bankAccountName: bank.bankName,
         bankAccountNumber: bank.accountNumber,
@@ -1200,6 +1204,7 @@ export async function handleDriverVoucherTopUp(
         date: topUpDate,
         amount,
         kind: 'TOP_UP' as const,
+        status: 'ACTIVE' as const,
         bankAccountRef,
         bankAccountName: bank.bankName,
         bankAccountNumber: bank.accountNumber,
@@ -1378,6 +1383,7 @@ export async function handleDriverVoucherDisbursementDelete(
         voucherRef?: string;
         amount?: number;
         kind?: 'INITIAL' | 'TOP_UP';
+        status?: 'ACTIVE' | 'VOID';
         bankAccountRef?: string;
         bankTransactionRef?: string;
         note?: string;
@@ -1387,6 +1393,9 @@ export async function handleDriverVoucherDisbursementDelete(
     }
     if (initialDisbursement.kind !== 'TOP_UP') {
         return NextResponse.json({ error: 'Bon awal tidak bisa dihapus dari riwayat pencairan' }, { status: 409 });
+    }
+    if (initialDisbursement.status === 'VOID') {
+        return NextResponse.json({ error: 'Tambahan bon sudah dibatalkan' }, { status: 404 });
     }
 
     const state = await getDriverVoucherState(initialDisbursement.voucherRef);
@@ -1416,22 +1425,54 @@ export async function handleDriverVoucherDisbursementDelete(
         }
     }
 
-    const nextIssuedAmount = Math.max(getDriverVoucherIssuedAmount(state.voucher) - amount, getDriverVoucherInitialCash(state.voucher));
-    const nextTopUpCount = Math.max((state.voucher.topUpCount || 0) - 1, 0);
+    const remainingDisbursements = state.disbursements.filter(existing => existing._id !== disbursementId);
+    const nextIssuedAmount = Math.max(
+        remainingDisbursements.reduce((sum, existing) => sum + normalizeNumber(existing.amount || 0, { maxFractionDigits: 0 }), 0),
+        getDriverVoucherInitialCash(state.voucher)
+    );
+    const nextTopUpCount = remainingDisbursements.filter(existing =>
+        existing.kind === 'TOP_UP' && normalizeNumber(existing.amount || 0, { maxFractionDigits: 0 }) > 0
+    ).length;
     const totals = computeDriverVoucherTotals(
         nextIssuedAmount,
         state.items.reduce((sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }), 0),
         normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
     );
 
-    await deleteDocument(disbursementId, 'driverVoucherDisbursement');
-    if (disbursement.bankTransactionRef) {
-        await deleteDocument(disbursement.bankTransactionRef, 'bankTransaction');
-    }
-    if (bank && disbursement.bankAccountRef) {
-        await updateDocument(disbursement.bankAccountRef, {
-            currentBalance: readLedgerBalance(bank.currentBalance) + amount,
-        }, 'bankAccount');
+    let reversalBankTransactionRef: string | undefined;
+    if (bank && disbursement.bankAccountRef && disbursement.bankTransactionRef) {
+        const reversalTransactionId = `driver-voucher-disbursement-void-${disbursementId}`;
+        const existingReversal = await getDocumentById<{ _id: string; balanceAfter?: number }>(
+            reversalTransactionId,
+            'bankTransaction'
+        );
+        const correctedBalance = existingReversal
+            ? readLedgerBalance(existingReversal.balanceAfter)
+            : readLedgerBalance(bank.currentBalance) + amount;
+
+        if (!existingReversal) {
+            await createDocument({
+                _id: reversalTransactionId,
+                _type: 'bankTransaction',
+                bankAccountRef: disbursement.bankAccountRef,
+                bankAccountName: bank.bankName,
+                bankAccountNumber: bank.accountNumber,
+                type: 'CREDIT',
+                amount,
+                date: getBusinessDateValue(),
+                description: `Pembatalan tambahan bon ${state.voucher.bonNumber}`,
+                balanceAfter: correctedBalance,
+                relatedVoucherRef: initialDisbursement.voucherRef,
+                reversesBankTransactionRef: disbursement.bankTransactionRef,
+            });
+        }
+
+        if (readLedgerBalance(bank.currentBalance) !== correctedBalance) {
+            await updateDocument(disbursement.bankAccountRef, {
+                currentBalance: correctedBalance,
+            }, 'bankAccount');
+        }
+        reversalBankTransactionRef = reversalTransactionId;
     }
     await updateDocument(initialDisbursement.voucherRef, {
         totalIssuedAmount: nextIssuedAmount,
@@ -1441,6 +1482,14 @@ export async function handleDriverVoucherDisbursementDelete(
         balance: totals.balance,
     }, 'driverVoucher');
     await voidJournalEntryForSource(session, 'DRIVER_VOUCHER_DISBURSEMENT', disbursementId, 'TOP_UP');
+    await updateDocument(disbursementId, {
+        status: 'VOID',
+        voidedAt: new Date().toISOString(),
+        voidedBy: session._id,
+        voidedByName: session.name,
+        voidReason: 'Tambahan bon dibatalkan sebelum settlement',
+        reversalBankTransactionRef,
+    }, 'driverVoucherDisbursement');
 
     const updatedVoucher = {
         ...state.voucher,
@@ -1759,6 +1808,7 @@ export async function handleDriverVoucherIssueRepair(
             date: voucher.issuedDate,
             amount: initialAmount,
             kind: 'INITIAL',
+            status: 'ACTIVE',
             bankAccountRef: issueBankRef,
             bankAccountName: bank.bankName,
             bankAccountNumber: bank.accountNumber,

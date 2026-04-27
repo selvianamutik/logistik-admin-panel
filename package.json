@@ -11,6 +11,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
     "audit:accounting-integrity": "npx tsx --conditions react-server scripts/audit-accounting-integrity.ts",
+    "audit:finance-integrity": "npx tsx --conditions react-server scripts/audit-finance-integrity.ts",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
     "audit:delivery-order-billing-eligibility": "npx tsx scripts/audit-delivery-order-billing-eligibility.ts",
     "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",
@@ -23,7 +24,7 @@
     "import:supabase": "node scripts/import-supabase.mjs",
     "reset:supabase": "npx tsx scripts/reset-supabase.ts",
     "seed:supabase": "npx tsx scripts/seed-supabase.ts",
-    "reseed:supabase": "npm run reset:supabase && npm run seed:supabase"
+    "reseed:supabase": "npm run reset:supabase && npm run seed:supabase && npm run backfill:accounting"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

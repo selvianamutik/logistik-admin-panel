@@ -14,7 +14,6 @@ import {
 } from '@/lib/delivery-order-completion';
 import {
     createDocument,
-    deleteDocument,
     getAllDocuments,
     getCompanyProfile,
     getDocumentById,
@@ -427,6 +426,14 @@ async function loadReceivableSnapshot(invoiceRef: string) {
             ),
         };
     }
+    if (doc.status === 'VOID') {
+        return {
+            error: NextResponse.json(
+                { error: 'Invoice yang sudah dibatalkan tidak bisa diproses lagi' },
+                { status: 409 }
+            ),
+        };
+    }
 
     const grossAmount = Math.max(normalizeNumber(doc.totalAmount || 0), 0);
     if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
@@ -738,22 +745,21 @@ export async function handleCustomerReceiptCreate(
     }
 
     const rawAllocations = Array.isArray(data.allocations) ? data.allocations : [];
-    const allocations = rawAllocations
-        .filter(isPlainObject)
-        .map<CustomerReceiptAllocationInput>((row) => {
-            const invoiceRef = normalizeText(row.invoiceRef);
-            const amount = normalizeCurrencyNumber(row.amount);
-            const note = normalizeOptionalText(row.note);
+    const allocations: CustomerReceiptAllocationInput[] = [];
+    for (const row of rawAllocations.filter(isPlainObject)) {
+        const invoiceRef = normalizeText(row.invoiceRef);
+        const amount = normalizeCurrencyNumber(row.amount);
+        const note = normalizeOptionalText(row.note);
 
-            if (!invoiceRef) {
-        throw new Error('Semua alokasi penerimaan wajib memilih invoice');
-            }
-            if (!Number.isFinite(amount) || amount <= 0) {
-                throw new Error('Nominal alokasi penerimaan tidak valid');
-            }
+        if (!invoiceRef) {
+            return NextResponse.json({ error: 'Semua alokasi penerimaan wajib memilih invoice' }, { status: 400 });
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return NextResponse.json({ error: 'Nominal alokasi penerimaan tidak valid' }, { status: 400 });
+        }
 
-            return { invoiceRef, amount, note };
-        });
+        allocations.push({ invoiceRef, amount, note });
+    }
 
     const uniqueInvoiceRefs = [...new Set(allocations.map(item => item.invoiceRef))];
     if (uniqueInvoiceRefs.length !== allocations.length) {
@@ -2412,10 +2418,11 @@ export async function handleFreightNotaCreate(
             noSJ?: string;
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
+            status?: string;
         }>[number]>('freightNotaItem', { doRef: uniqueDoRefs });
         const existingItemUsage = new Map<string, { doRef?: string; doNumber?: string; noSJ?: string }>();
         const existingRowKeys = new Set<string>();
-        for (const item of existingNotaItems) {
+        for (const item of existingNotaItems.filter(item => item.status !== 'VOID')) {
             const existingDoRef = normalizeOptionalText(item.doRef);
             const existingNoSJ = normalizeOptionalText(item.noSJ);
             const existingItemRefs = Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
@@ -2743,6 +2750,7 @@ export async function handleFreightNotaCreate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
+            status: 'ACTIVE',
         })));
     await syncFreightNotaDeliveryOrderLinks({
         notaId,
@@ -2875,21 +2883,40 @@ export async function handleFreightNotaUpdate(
         ? await listDocumentsByFilter<Array<{
             _id: string;
             status?: string;
+            orderRef?: unknown;
             doNumber?: string;
             customerDoNumber?: string;
             customerRef?: unknown;
             customerName?: string;
+            vehiclePlate?: string;
+            serviceRef?: string;
+            vehicleServiceRef?: string;
+            pickupAddress?: string;
+            receiverAddress?: string;
             shipperReferences?: Array<{
                 referenceNumber?: string;
+                pickupAddress?: string;
                 billingCustomerRef?: unknown;
                 billingCustomerName?: string;
+                receiverAddress?: string;
             }>;
+            actualDropPoints?: DeliveryOrder['actualDropPoints'];
+            date?: string;
         }>[number]>('deliveryOrder', { _id: uniqueDoRefs })
         : [];
     if (deliveryOrders.length !== uniqueDoRefs.length) {
         return NextResponse.json({ error: 'Sebagian DO invoice tidak ditemukan' }, { status: 404 });
     }
+    const orderRefs = [...new Set(
+        deliveryOrders
+            .map(item => extractRefId(item.orderRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    const sourceOrders = orderRefs.length > 0
+        ? await listDocumentsByFilter<FreightNotaOrderSource>('order', { _id: orderRefs })
+        : [];
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
+    const orderMap = new Map(sourceOrders.map(order => [order._id, order]));
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
@@ -2939,7 +2966,33 @@ export async function handleFreightNotaUpdate(
             .map(item => [normalizeOptionalText(item._id), item] as const)
             .filter((entry): entry is [string, FreightNotaDeliveryOrderItemSource] => Boolean(entry[0]))
     );
+    const doItemMap = new Map<string, FreightNotaDeliveryOrderItemSource[]>();
+    for (const item of deliveryOrderItems) {
+        const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
+        if (!deliveryOrderRef) continue;
+        const current = doItemMap.get(deliveryOrderRef) || [];
+        current.push(item);
+        doItemMap.set(deliveryOrderRef, current);
+    }
+    const builtNotaRowsByDoRef = new Map<string, ReturnType<typeof buildNotaRowsFromDeliveryOrder>>();
+    for (const deliveryOrder of deliveryOrders) {
+        const linkedOrderRef = extractRefId(deliveryOrder.orderRef);
+        const linkedOrder = linkedOrderRef ? orderMap.get(linkedOrderRef) : undefined;
+        builtNotaRowsByDoRef.set(
+            deliveryOrder._id,
+            buildNotaRowsFromDeliveryOrder({
+                deliveryOrder: deliveryOrder as DeliveryOrder,
+                orders: linkedOrder ? [linkedOrder as Order] : [],
+                deliveryOrderItems: (doItemMap.get(deliveryOrder._id) || []) as DeliveryOrderItem[],
+            })
+        );
+    }
     for (const row of rows) {
+        if (!row.doRef) continue;
+        const deliveryOrder = deliveryOrderMap.get(row.doRef);
+        if (!deliveryOrder) {
+            return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
+        }
         const rowItemRefs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
             ? row.deliveryOrderItemRefs
             : row.deliveryOrderItemRef
@@ -2957,6 +3010,35 @@ export async function handleFreightNotaUpdate(
                 );
             }
         }
+        const resolvedNoSj =
+            normalizeOptionalText(row.noSJ) ||
+            normalizeOptionalText(deliveryOrder.customerDoNumber) ||
+            '';
+        const hasActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
+        const matchedBuiltRow = findBuiltNotaRowMatch({
+            row: {
+                ...row,
+                noSJ: resolvedNoSj || row.noSJ,
+            },
+            deliveryOrder: deliveryOrder as DeliveryOrder,
+            builtRows: builtNotaRowsByDoRef.get(row.doRef) || [],
+        });
+        if (hasActualDropPoints && !hasDeliveryOrderBillableCargo(deliveryOrder as DeliveryOrder, resolvedNoSj)) {
+            return NextResponse.json(
+                {
+                    error: `SJ ${resolvedNoSj || deliveryOrder.doNumber || row.doRef} belum punya realisasi drop yang bisa ditagihkan`,
+                },
+                { status: 409 }
+            );
+        }
+        if (hasActualDropPoints && rowItemRefs.length > 0 && !matchedBuiltRow) {
+            return NextResponse.json(
+                {
+                    error: `Item pada SJ ${resolvedNoSj || deliveryOrder.doNumber || row.doRef} belum punya realisasi drop yang bisa ditagihkan. Jangan tagihkan barang yang masih hold/return.`,
+                },
+                { status: 409 }
+            );
+        }
     }
 
     const payloadCoverageByDoRef = new Map<string, { deliveryOrderItemRefs: Set<string>; rowKeys: Set<string> }>();
@@ -2967,9 +3049,15 @@ export async function handleFreightNotaUpdate(
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
-        const rowKeys = rowItemRefs.length > 0
-            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
-            : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
+        const rowDeliveryOrder = deliveryOrderMap.get(row.doRef);
+        if (!rowDeliveryOrder) {
+            return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
+        }
+        const rowKeys = buildFreightNotaCoverageRowKeys({
+            deliveryOrder: rowDeliveryOrder,
+            noSJ: row.noSJ,
+            deliveryOrderItemRefs: rowItemRefs,
+        });
         const coverage = payloadCoverageByDoRef.get(row.doRef) || {
             deliveryOrderItemRefs: new Set<string>(),
             rowKeys: new Set<string>(),
@@ -2998,10 +3086,11 @@ export async function handleFreightNotaUpdate(
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
             notaRef?: string;
+            status?: string;
         }>('freightNotaItem')).filter(item => {
             const itemDoRef = normalizeOptionalText(item.doRef);
             const itemNotaRef = normalizeOptionalText(item.notaRef);
-            return Boolean(itemDoRef && uniqueDoRefs.includes(itemDoRef) && itemNotaRef !== notaId);
+            return Boolean(item.status !== 'VOID' && itemDoRef && uniqueDoRefs.includes(itemDoRef) && itemNotaRef !== notaId);
         });
         const existingItemUsage = new Map<string, { doRef?: string; doNumber?: string; noSJ?: string }>();
         const existingRowKeys = new Set<string>();
@@ -3044,9 +3133,15 @@ export async function handleFreightNotaUpdate(
                 : row.deliveryOrderItemRef
                     ? [row.deliveryOrderItemRef]
                     : [];
-            const rowCoverageKeys = rowItemRefs.length > 0
-                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
-                : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
+            const rowDeliveryOrder = deliveryOrderMap.get(row.doRef);
+            if (!rowDeliveryOrder) {
+                return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
+            }
+            const rowCoverageKeys = buildFreightNotaCoverageRowKeys({
+                deliveryOrder: rowDeliveryOrder,
+                noSJ: row.noSJ,
+                deliveryOrderItemRefs: rowItemRefs,
+            });
             if (rowCoverageKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
                     { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah masuk invoice lain` },
@@ -3242,10 +3337,11 @@ export async function handleFreightNotaUpdate(
     const notaNumber = normalizeText(snapshot.doc.notaNumber) || notaId;
     const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(notaNumber, issueDate, notaSeriesCode);
 
-    const existingNotaItems = await listDocumentsByFilter<Array<{ _id: string }>[number]>(
+    const existingNotaItems = await listDocumentsByFilter<Array<{ _id: string; status?: string }>[number]>(
         'freightNotaItem',
         { notaRef: notaId }
     );
+    const nowIso = new Date().toISOString();
 
     if (linkedCustomer) {
         await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() }, 'customer');
@@ -3284,7 +3380,16 @@ export async function handleFreightNotaUpdate(
         footerNote,
         notes: normalizedNotes,
     }), 'freightNota');
-    await Promise.all(existingNotaItems.map(item => deleteDocument(item._id, 'freightNotaItem')));
+    await Promise.all(existingNotaItems
+        .filter(item => item.status !== 'VOID')
+        .map(item => updateDocument(item._id, {
+            status: 'VOID',
+            voidedAt: nowIso,
+            voidedBy: session._id,
+            voidedByName: session.name,
+            voidReason: 'Revisi invoice',
+            _updatedAt: nowIso,
+        }, 'freightNotaItem')));
     await Promise.all(rows.map(row => createDocument({
             _id: crypto.randomUUID(),
             _type: 'freightNotaItem',
@@ -3307,6 +3412,7 @@ export async function handleFreightNotaUpdate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
+            status: 'ACTIVE',
         })));
     await syncFreightNotaDeliveryOrderLinks({
         notaId,
@@ -3418,9 +3524,12 @@ export async function handleFreightNotaDelete(
         return NextResponse.json({ error: 'Invoice tidak valid' }, { status: 400 });
     }
 
-    const nota = await getDocumentById<{ _id: string; _updatedAt?: string; notaNumber?: string }>(id, 'freightNota');
+    const nota = await getDocumentById<{ _id: string; _updatedAt?: string; notaNumber?: string; status?: string }>(id, 'freightNota');
     if (!nota) {
         return NextResponse.json({ error: 'Invoice tidak ditemukan' }, { status: 404 });
+    }
+    if (nota.status === 'VOID') {
+        return NextResponse.json({ success: true });
     }
 
     const existingPayments = await listDocumentsByFilter<Array<{ _id: string }>[number]>('payment', { invoiceRef: id });
@@ -3453,7 +3562,7 @@ export async function handleFreightNotaDelete(
         );
     }
 
-    const notaItems = await listDocumentsByFilter<Array<{ _id: string; _updatedAt?: string }>[number]>(
+    const notaItems = await listDocumentsByFilter<Array<{ _id: string; _updatedAt?: string; status?: string }>[number]>(
         'freightNotaItem',
         { notaRef: id }
     );
@@ -3461,8 +3570,18 @@ export async function handleFreightNotaDelete(
         'deliveryOrder',
         { freightNotaRef: id }
     );
+    const nowIso = new Date().toISOString();
     try {
-        await Promise.all(notaItems.map(item => deleteDocument(item._id, 'freightNotaItem')));
+        await Promise.all(notaItems
+            .filter(item => item.status !== 'VOID')
+            .map(item => updateDocument(item._id, {
+                status: 'VOID',
+                voidedAt: nowIso,
+                voidedBy: session._id,
+                voidedByName: session.name,
+                voidReason: 'Invoice dibatalkan',
+                _updatedAt: nowIso,
+            }, 'freightNotaItem')));
 
         await Promise.all(relatedDeliveryOrders.map(deliveryOrder =>
             updateDocument(
@@ -3474,7 +3593,14 @@ export async function handleFreightNotaDelete(
             , 'deliveryOrder')
         ));
 
-        await deleteDocument(id, 'freightNota');
+        await updateDocument(id, {
+            status: 'VOID',
+            voidedAt: nowIso,
+            voidedBy: session._id,
+            voidedByName: session.name,
+            voidReason: 'Invoice dibatalkan',
+            _updatedAt: nowIso,
+        }, 'freightNota');
         await voidJournalEntryForSource(session, 'FREIGHT_NOTA', id, 'ISSUE');
         await voidJournalEntryForSource(session, 'FREIGHT_NOTA', id, 'PPH23');
     } catch (error) {
@@ -3488,6 +3614,6 @@ export async function handleFreightNotaDelete(
         throw error;
     }
 
-    await addAuditLog(session, 'DELETE', 'freight-notas', id, `Deleted freight-notas ${nota.notaNumber || id}`);
+    await addAuditLog(session, 'DELETE', 'freight-notas', id, `Voided invoice ${nota.notaNumber || id}`);
     return NextResponse.json({ success: true });
 }

@@ -82,6 +82,16 @@ export function applyDerivedFreightNotaReceivableState<
     invoiceRefundsByRef: Record<string, number> = {}
 ) {
     return notas.map(nota => {
+        if (nota.status === 'VOID') {
+            return {
+                ...nota,
+                status: 'VOID',
+                totalPaidEffective: 0,
+                refundedOverpaymentAmount: 0,
+                openOverpaymentAmount: 0,
+                remainingAmount: 0,
+            };
+        }
         const rawPaidAmount = paymentTotalsByInvoice[nota._id] || 0;
         const refundedOverpaymentAmount = Math.min(invoiceRefundsByRef[nota._id] || 0, rawPaidAmount);
         const effectivePaidAmount = Math.max(rawPaidAmount - refundedOverpaymentAmount, 0);

@@ -18,6 +18,10 @@ function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
+function isInvoiceOverpaymentRefund(item: Pick<CustomerOverpaymentRefund, 'sourceType'>) {
+    return item.sourceType === 'INVOICE_OVERPAID';
+}
+
 function getDateSortTime(value?: string) {
     if (!value) return 0;
 
@@ -123,7 +127,9 @@ export function buildReportsSnapshot(params: {
 
     const inPeriod = createPeriodMatcher(periodMode, month, year);
     const filteredPayments = payments.filter(item => inPeriod(item.date));
-    const filteredOverpaymentRefunds = overpaymentRefunds.filter(item => inPeriod(item.date));
+    const filteredOverpaymentRefunds = overpaymentRefunds.filter(
+        item => isInvoiceOverpaymentRefund(item) && inPeriod(item.date)
+    );
     const filteredExpenses = expenses.filter(item => inPeriod(item.date));
     const filteredBankTx = bankTransactions.filter(item => inPeriod(item.date));
     const sortedFilteredBankTx = [...filteredBankTx].sort(
@@ -146,10 +152,11 @@ export function buildReportsSnapshot(params: {
         acc[refund.sourceInvoiceRef] = (acc[refund.sourceInvoiceRef] || 0) + parseWholeMoneyLike(refund.amount);
         return acc;
     }, {});
-    const totalNotaIssued = freightNotas
+    const activeFreightNotas = freightNotas.filter(item => item.status !== 'VOID');
+    const totalNotaIssued = activeFreightNotas
         .filter(item => inPeriod(item.issueDate))
         .reduce((sum, item) => sum + parseWholeMoneyLike(item.totalAmount), 0);
-    const totalNotaOutstanding = freightNotas
+    const totalNotaOutstanding = activeFreightNotas
         .filter(item => item.status !== 'PAID' && inPeriod(item.issueDate))
         .reduce(
             (sum, item) =>
@@ -261,6 +268,7 @@ export function buildProfitLossExportRows(
     filteredExpenses: Expense[],
     filteredOverpaymentRefunds: CustomerOverpaymentRefund[] = []
 ) {
+    const revenueRefundRows = filteredOverpaymentRefunds.filter(isInvoiceOverpaymentRefund);
     return [
         ...filteredPayments.map(item => ({
             tipe: 'Pendapatan',
@@ -268,13 +276,10 @@ export function buildProfitLossExportRows(
             deskripsi: item.note || 'Pembayaran customer',
             jumlah: parseWholeMoneyLike(item.amount),
         })),
-        ...filteredOverpaymentRefunds.map(item => ({
+        ...revenueRefundRows.map(item => ({
             tipe: 'Refund Kelebihan Bayar',
             tanggal: item.date,
-            deskripsi:
-                item.sourceType === 'INVOICE_OVERPAID'
-                    ? `Refund kelebihan bayar invoice ${item.sourceInvoiceNumber || item.sourceInvoiceRef || '-'}`
-                    : `Refund kelebihan bayar receipt ${item.sourceReceiptNumber || item.sourceReceiptRef || '-'}`,
+            deskripsi: `Refund kelebihan bayar invoice ${item.sourceInvoiceNumber || item.sourceInvoiceRef || '-'}`,
             jumlah: -parseWholeMoneyLike(item.amount),
         })),
         ...filteredExpenses.map(item => ({

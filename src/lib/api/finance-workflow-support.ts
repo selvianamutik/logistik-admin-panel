@@ -66,6 +66,7 @@ export type ReceivableDoc = Record<string, unknown> & {
     customerName?: string;
     notaNumber?: string;
     invoiceNumber?: string;
+    status?: string;
 };
 
 export type InvoiceAdjustmentDoc = {

@@ -566,8 +566,9 @@ export default function CustomerDetailPage() {
     if (!customer) return <div className="empty-state"><div className="empty-state-title">Customer tidak ditemukan</div></div>;
 
     const activeOrderCount = orders.filter(order => !['COMPLETE', 'CANCELLED'].includes(order.status)).length;
-    const activeNotaCount = notas.filter(nota => nota.status !== 'PAID').length;
-    const totalNotaNetAmount = notas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
+    const activeNotas = notas.filter(nota => nota.status !== 'VOID');
+    const activeNotaCount = activeNotas.filter(nota => nota.status !== 'PAID').length;
+    const totalNotaNetAmount = activeNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
     const sortedRecipients = [...customerRecipients].sort((a, b) => {
         if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
             return a.isDefault ? -1 : 1;

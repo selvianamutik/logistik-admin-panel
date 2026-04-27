@@ -1777,6 +1777,39 @@ export async function relationalCountByPrefix(
     }
 }
 
+export async function relationalMaxNumericSuffixByPrefix(
+    docType: SupportedDocType,
+    field: string,
+    prefix: string,
+): Promise<number | null> {
+    const config = RELATIONAL_CONFIG[docType];
+    const column = getColumnName(config, field);
+    if (!column || !prefix) {
+        return null;
+    }
+
+    try {
+        const params = new URLSearchParams();
+        params.set('select', column);
+        params.set(column, `like.${prefix}*`);
+        const { rows } = await fetchAllRows(config.table, params);
+
+        return rows.reduce((max, row) => {
+            const value = row[column];
+            if (typeof value !== 'string' || !value.startsWith(prefix)) return max;
+            const suffix = value.slice(prefix.length);
+            if (!/^\d+$/.test(suffix)) return max;
+            const sequence = Number.parseInt(suffix, 10);
+            return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+        }, 0);
+    } catch (error) {
+        if (isMissingRelationalTableError(error)) {
+            return null;
+        }
+        throw error;
+    }
+}
+
 export async function relationalUpsertDocument<T = Record<string, unknown>>(
     doc: { _id?: string; _type: string; [key: string]: unknown }
 ): Promise<T | null> {

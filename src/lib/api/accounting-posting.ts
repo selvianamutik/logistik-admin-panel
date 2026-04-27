@@ -20,6 +20,7 @@ import type {
     CustomerReceipt,
     Expense,
     FreightNota,
+    Invoice,
     InvoiceAdjustment,
     JournalEntry,
     JournalLine,
@@ -159,8 +160,13 @@ async function buildJournalNumber(entryDate: string, existing?: JournalEntry | n
     if (existing?.entryNumber) return existing.entryNumber;
     const monthPrefix = entryDate.replace(/-/g, '').slice(0, 6);
     const existingEntries = await getAllDocuments<JournalEntry>('journalEntry');
-    const periodCount = existingEntries.filter(entry => entry.entryNumber?.startsWith(`JRN-${monthPrefix}-`)).length;
-    return formatJournalNumber(entryDate, periodCount + 1);
+    const maxSequence = existingEntries.reduce((max, entry) => {
+        const entryNumber = typeof entry.entryNumber === 'string' ? entry.entryNumber : '';
+        if (!entryNumber.startsWith(`JRN-${monthPrefix}-`)) return max;
+        const sequence = Number.parseInt(entryNumber.slice(`JRN-${monthPrefix}-`.length), 10);
+        return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+    }, 0);
+    return formatJournalNumber(entryDate, maxSequence + 1);
 }
 
 function sameOptionalText(left: unknown, right: unknown) {
@@ -377,6 +383,41 @@ export async function postFreightNotaIssueJournal(session: Pick<ApiSession, '_id
     }
 }
 
+export async function postLegacyInvoiceIssueJournal(session: Pick<ApiSession, '_id' | 'name'>, invoice: Invoice) {
+    const grossAmount = cleanLineAmount(invoice.totalAmount);
+    await postJournalEntry(session, {
+        entryDate: invoice.issueDate,
+        memo: `Invoice legacy ${invoice.invoiceNumber}`,
+        sourceType: 'INVOICE',
+        sourceRef: invoice._id,
+        sourceEvent: 'ISSUE',
+        sourceNumber: invoice.invoiceNumber,
+        sourceLabel: invoice.customerName,
+        lines: [
+            { account: 'accounts_receivable', debit: grossAmount, entityRef: invoice.customerRef, entityType: 'customer' },
+            { account: 'freight_revenue', credit: grossAmount, entityRef: invoice._id, entityType: 'invoice' },
+        ],
+    });
+    const pph23Amount = cleanLineAmount(invoice.pph23Amount);
+    if (pph23Amount > 0) {
+        await postJournalEntry(session, {
+            entryDate: invoice.issueDate,
+            memo: `PPh 23 dipotong invoice legacy ${invoice.invoiceNumber}`,
+            sourceType: 'INVOICE',
+            sourceRef: invoice._id,
+            sourceEvent: 'PPH23',
+            sourceNumber: invoice.invoiceNumber,
+            sourceLabel: invoice.customerName,
+            lines: [
+                { account: 'prepaid_pph23', debit: pph23Amount, entityRef: invoice._id, entityType: 'invoice' },
+                { account: 'accounts_receivable', credit: pph23Amount, entityRef: invoice.customerRef, entityType: 'customer' },
+            ],
+        });
+    } else {
+        await voidJournalEntryForSource(session, 'INVOICE', invoice._id, 'PPH23');
+    }
+}
+
 export async function postPaymentJournal(
     session: Pick<ApiSession, '_id' | 'name'>,
     payment: Payment,
@@ -584,11 +625,21 @@ export async function postStockMovementJournal(
     movement: StockMovement,
     unitValue: number,
 ) {
+    const stockMovementEvents = ['MANUAL_IN', 'MANUAL_OUT', 'MAINTENANCE_USAGE'];
+    await Promise.all(
+        stockMovementEvents
+            .filter(event => event !== movement.sourceType)
+            .map(event => voidJournalEntryForSource(session, 'STOCK_MOVEMENT', movement._id, event))
+    );
+
     const shouldPostInventoryUsage =
         movement.sourceType === 'MANUAL_IN' ||
         movement.sourceType === 'MANUAL_OUT' ||
         movement.sourceType === 'MAINTENANCE_USAGE';
-    if (!shouldPostInventoryUsage) return;
+    if (!shouldPostInventoryUsage) {
+        await voidJournalEntryForSource(session, 'STOCK_MOVEMENT', movement._id, movement.sourceType);
+        return;
+    }
     const amount = cleanLineAmount(unitValue * cleanLineAmount(movement.quantity));
     if (amount <= 0) return;
 

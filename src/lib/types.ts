@@ -533,6 +533,7 @@ export interface DriverVoucher {
 }
 
 export type DriverVoucherDisbursementKind = 'INITIAL' | 'TOP_UP';
+export type DriverVoucherDisbursementStatus = 'ACTIVE' | 'VOID';
 
 export interface DriverVoucherDisbursement {
   _id: string;
@@ -546,6 +547,12 @@ export interface DriverVoucherDisbursement {
   bankAccountNumber?: string;
   bankTransactionRef?: string;
   note?: string;
+  status?: DriverVoucherDisbursementStatus;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
+  voidReason?: string;
+  reversalBankTransactionRef?: string;
   createdBy?: string;
   createdByName?: string;
 }
@@ -796,7 +803,7 @@ export interface TrackingLog {
 }
 
 // ── Freight Invoice (Invoice Ongkos Angkut) ──
-export type NotaStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
+export type NotaStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'VOID';
 
 export interface FreightNotaInstructionAccount {
   bankAccountRef?: string;
@@ -848,6 +855,10 @@ export interface FreightNota {
   instructionAccounts?: FreightNotaInstructionAccount[];
   footerNote?: string;
   notes?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
+  voidReason?: string;
 }
 
 export interface FreightNotaItem {
@@ -872,6 +883,11 @@ export interface FreightNotaItem {
   tarip: number;
   uangRp: number;
   ket?: string;
+  status?: 'ACTIVE' | 'VOID';
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
+  voidReason?: string;
 }
 
 // ── Driver Borongan (Slip Upah Supir) ──
@@ -1484,6 +1500,7 @@ export interface BankTransaction {
   relatedOverpaymentRefundRef?: string;
   relatedPurchasePaymentRef?: string;
   relatedPurchaseRef?: string;
+  reversesBankTransactionRef?: string;
   _createdAt?: string;
 }
 

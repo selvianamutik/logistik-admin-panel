@@ -7,6 +7,7 @@ export const INVOICE_DETAIL_STATUS_MAP: Record<string, { label: string; color: s
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
     PARTIAL: { label: 'Sebagian', color: 'warning' },
     PAID: { label: 'Lunas', color: 'success' },
+    VOID: { label: 'Dibatalkan', color: 'secondary' },
 };
 
 export function sortInvoiceAdjustments(adjustments: InvoiceAdjustment[]) {

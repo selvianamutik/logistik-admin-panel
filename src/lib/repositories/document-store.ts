@@ -3,13 +3,13 @@ import {
 } from '@/lib/supabase';
 import { getBusinessDateValue, parseBusinessDateValue } from '@/lib/business-date';
 import {
-    relationalCountByPrefix,
     relationalDeleteDocument,
     relationalFindDocumentByIdAcrossTypes,
     relationalGetAll,
     relationalGetByFilter,
     relationalGetById,
     relationalList,
+    relationalMaxNumericSuffixByPrefix,
     relationalPatchDocument,
     relationalUpsertDocument,
     supportsRelationalDocType,
@@ -88,16 +88,20 @@ async function getRelationalNextNumber(prefix: string, dateValue?: string) {
             typeof settings[config.periodField] === 'string' ? settings[config.periodField] : '';
         const currentCounter = currentPeriod === period ? numberFromUnknown(settings[config.counterField]) : 0;
 
-        const existingCount =
-            await relationalCountByPrefix(config.docType, config.docField, `${normalizedPrefix}${period}-`)
+        const prefixWithPeriod = `${normalizedPrefix}${period}-`;
+        const maxExistingSuffix =
+            await relationalMaxNumericSuffixByPrefix(config.docType, config.docField, prefixWithPeriod)
             ?? 0;
 
-        const nextCounter = Math.max(currentCounter, existingCount) + 1;
+        const nextCounter = Math.max(currentCounter, maxExistingSuffix) + 1;
         const nextNumber = `${normalizedPrefix}${period}-${String(nextCounter).padStart(4, '0')}`;
         const nextSyncedAt = new Date().toISOString();
+        const syncedAtFilter = company.synced_at
+            ? `eq.${encodeURIComponent(company.synced_at)}`
+            : 'is.null';
 
         const response = await getSupabaseClient().fetch(
-            `company_profiles?source_document_id=eq.${encodeURIComponent(company.source_document_id)}&synced_at=eq.${encodeURIComponent(company.synced_at || '')}`,
+            `company_profiles?source_document_id=eq.${encodeURIComponent(company.source_document_id)}&synced_at=${syncedAtFilter}`,
             {
                 method: 'PATCH',
                 headers: {

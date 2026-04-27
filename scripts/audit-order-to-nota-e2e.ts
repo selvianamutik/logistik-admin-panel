@@ -131,6 +131,21 @@ async function deleteBySourceId(table: string, id: string) {
     }).catch(() => undefined);
 }
 
+async function deleteJournalEntriesBySource(sourceType: string, sourceRef: string) {
+    if (!sourceType || !sourceRef) return;
+    const journalIds = await listSourceIds(
+        'journal_entries',
+        `source_type=eq.${encodeURIComponent(sourceType)}&source_ref=eq.${encodeURIComponent(sourceRef)}`
+    ).catch(() => []);
+    for (const journalId of journalIds) {
+        await supabaseRest(`journal_lines?journal_entry_ref=eq.${encodeURIComponent(journalId)}`, {
+            method: 'DELETE',
+            headers: { Prefer: 'return=minimal' },
+        }).catch(() => undefined);
+        await deleteBySourceId('journal_entries', journalId);
+    }
+}
+
 async function loginAndGetCookieHeader() {
     const response = await fetchWithTimeout(`${getBaseUrl()}/api/auth/login`, {
         method: 'POST',
@@ -213,6 +228,7 @@ async function cleanupCreatedState(state: CreatedState) {
         for (const itemId of notaItemIds) {
             await deleteBySourceId('freight_nota_items', itemId);
         }
+        await deleteJournalEntriesBySource('FREIGHT_NOTA', state.notaId);
         await deleteBySourceId('freight_notas', state.notaId);
     }
 
@@ -229,6 +245,7 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteBySourceId('freight_nota_items', itemId);
         }
         for (const notaId of notaIds) {
+            await deleteJournalEntriesBySource('FREIGHT_NOTA', notaId);
             await deleteBySourceId('freight_notas', notaId);
         }
 
@@ -244,6 +261,7 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteBySourceId('tracking_logs', itemId);
         }
         for (const itemId of driverVoucherIds) {
+            await deleteJournalEntriesBySource('DRIVER_VOUCHER', itemId);
             await deleteBySourceId('driver_vouchers', itemId);
         }
         await deleteBySourceId('delivery_orders', deliveryOrderId);
@@ -1025,7 +1043,7 @@ async function main() {
             },
         }, { expectStatus: 409 });
 
-        auditStep('hapus nota dan verifikasi item nota ikut terhapus');
+        auditStep('hapus nota dan verifikasi item nota tidak muncul sebagai tagihan aktif');
         await postData(cookieHeader, {
             entity: 'freight-notas',
             action: 'delete',
@@ -1037,10 +1055,9 @@ async function main() {
             `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: createdState.notaId }))}`,
             cookieHeader
         );
-        assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menghapus row freightNotaItem.');
-        createdState.notaId = undefined;
+        assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menyembunyikan row freightNotaItem VOID dari tagihan aktif.');
 
-        console.log('Order to nota E2E audit OK: create/delete order, cancel DO, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/delete verified.');
+        console.log('Order to nota E2E audit OK: create/delete order, cancel DO, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/void verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);

@@ -49,8 +49,12 @@ function getDisbursementKindSortValue(kind: DriverVoucherDisbursement['kind']) {
     return kind === 'INITIAL' ? 0 : 1;
 }
 
+export function isActiveDriverVoucherDisbursement(disbursement: Pick<DriverVoucherDisbursement, 'status'>) {
+    return disbursement.status !== 'VOID';
+}
+
 export function sortDriverVoucherDisbursementsChronologically(disbursements: DriverVoucherDisbursement[]) {
-    return [...disbursements].sort((a, b) => {
+    return disbursements.filter(isActiveDriverVoucherDisbursement).sort((a, b) => {
         const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
         if (dateCompare !== 0) return dateCompare;
 

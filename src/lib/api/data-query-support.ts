@@ -47,6 +47,10 @@ function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
+function isActiveDriverVoucherDisbursement(row: Pick<DriverVoucherDisbursement, 'status'>) {
+    return row.status !== 'VOID';
+}
+
 async function getDocumentCount(docType: string, filterObj: Record<string, unknown> = {}) {
     const result = await listDocuments(docType, {
         filterObj,
@@ -504,6 +508,10 @@ export function applyDerivedFreightNotaStatus<T extends {
     return applyDerivedFreightNotaReceivableState(notas, paymentTotalsByInvoice, invoiceRefundsByRef);
 }
 
+function isActiveFreightNota(nota: { status?: string | null }) {
+    return nota.status !== 'VOID';
+}
+
 export function applyDerivedDriverVoucherFinancials<T extends {
     initialCashGiven?: number | string | null;
     topUpCount?: number | string | null;
@@ -563,10 +571,10 @@ export function applyDerivedDriverVoucherLedger<
     }
 >(
     vouchers: T[],
-    disbursementRows: Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>,
+    disbursementRows: Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>,
     itemRows: Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>
 ) {
-    const disbursementTotalsByVoucher = disbursementRows.reduce<Record<string, { initialCashGiven: number; totalIssuedAmount: number; topUpCount: number }>>(
+    const disbursementTotalsByVoucher = disbursementRows.filter(isActiveDriverVoucherDisbursement).reduce<Record<string, { initialCashGiven: number; totalIssuedAmount: number; topUpCount: number }>>(
         (acc, row) => {
             if (!row.voucherRef) return acc;
             const current = acc[row.voucherRef] || { initialCashGiven: 0, totalIssuedAmount: 0, topUpCount: 0 };
@@ -846,7 +854,8 @@ export async function getFreightNotaList(params: {
     countOnly?: boolean;
 }) {
     const notaRows = await listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {});
-    const notaIds = notaRows
+    const activeNotaRows = notaRows.filter(isActiveFreightNota);
+    const notaIds = activeNotaRows
         .map(nota => nota._id)
         .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
     const [paymentRows, refundRows] = await Promise.all([
@@ -870,7 +879,7 @@ export async function getFreightNotaList(params: {
     const orFilters = params.orFilters ?? [];
     const definedFields = params.definedFields ?? [];
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
-    const withDerivedStatus = applyDerivedFreightNotaStatus(notaRows, paymentTotalsByInvoice, invoiceRefundsByRef);
+    const withDerivedStatus = applyDerivedFreightNotaStatus(activeNotaRows, paymentTotalsByInvoice, invoiceRefundsByRef);
 
     let filtered = withDerivedStatus.filter(nota =>
             matchesFreightNotaFilter(
@@ -938,7 +947,7 @@ export async function getFreightNotaById(id: string) {
 export async function getDriverVoucherById(id: string) {
     const [voucher, disbursements, items] = await Promise.all([
         getDocumentById<DriverVoucher>(id, 'driverVoucher'),
-        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', { voucherRef: id }),
+        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', { voucherRef: id }),
         listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', { voucherRef: id }),
     ]);
     if (!voucher) return null;
@@ -954,7 +963,7 @@ export async function getDeliveryOrderTripCashLink(deliveryOrderRef: string) {
     if (!voucher) return null;
 
     const [disbursements, items] = await Promise.all([
-        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', { voucherRef: voucher._id }),
+        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', { voucherRef: voucher._id }),
         listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', { voucherRef: voucher._id }),
     ]);
 
@@ -1036,7 +1045,7 @@ export async function getDriverVoucherList(params: {
     const voucherIds = voucherRows.map(voucher => voucher._id).filter(Boolean);
     const [disbursementRows, itemRows] = await Promise.all([
         voucherIds.length > 0
-            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', {
                 voucherRef: voucherIds,
             })
             : Promise.resolve([]),
@@ -1571,9 +1580,11 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             : Promise.resolve([]),
     ]);
 
+    const activeUnpaidNotas = unpaidNotas.filter(isActiveFreightNota);
+    const activeRecentNotas = recentNotas.filter(isActiveFreightNota);
     const invoiceIdsForDashboard = Array.from(
         new Set(
-            [...unpaidNotas, ...recentNotas]
+            [...activeUnpaidNotas, ...activeRecentNotas]
                 .map(nota => nota._id)
                 .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
         )
@@ -1608,7 +1619,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             })
             : Promise.resolve([]),
         canViewTripCash && voucherIds.length > 0
-            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', {
                 voucherRef: voucherIds,
             })
             : Promise.resolve([]),
@@ -1621,8 +1632,8 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
 
     const notaPaymentTotals = getFreightNotaPaymentTotals(notaPayments);
     const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(notaRefunds);
-    const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals, invoiceRefundsByRef).filter(nota => nota.status !== 'PAID');
-    const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals, invoiceRefundsByRef);
+    const derivedUnpaidNotas = applyDerivedFreightNotaStatus(activeUnpaidNotas, notaPaymentTotals, invoiceRefundsByRef).filter(nota => nota.status !== 'PAID');
+    const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(activeRecentNotas, notaPaymentTotals, invoiceRefundsByRef);
     const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(borongans, boronganItems)
         .filter(borongan => borongan.status !== 'PAID');
     const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(vouchers, voucherDisbursements, voucherItems)

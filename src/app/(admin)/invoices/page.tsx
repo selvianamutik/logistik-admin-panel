@@ -24,9 +24,13 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
     PARTIAL: { label: 'Sebagian', color: 'warning' },
     PAID: { label: 'Lunas', color: 'success' },
+    VOID: { label: 'Dibatalkan', color: 'secondary' },
 };
 
-const getNextInvoiceAction = (status: 'UNPAID' | 'PARTIAL' | 'PAID', nota: FreightNota, remainingAmount: number) => {
+const getNextInvoiceAction = (status: string, nota: FreightNota, remainingAmount: number) => {
+    if (status === 'VOID') {
+        return 'Arsip pembatalan';
+    }
     if (status === 'UNPAID') {
         return 'Tagih atau catat penerimaan';
     }

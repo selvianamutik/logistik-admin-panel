@@ -20,6 +20,7 @@ const genericWorkflowFile = 'src/lib/api/generic-workflows.ts';
 const supportWorkflowFile = 'src/lib/api/support-workflows.ts';
 const dataRouteFile = 'src/app/api/data/route.ts';
 const relationalFile = 'src/lib/supabase-relational.ts';
+const documentStoreFile = 'src/lib/repositories/document-store.ts';
 const resetSupabaseFile = 'scripts/reset-supabase.ts';
 const migrationHotspots = [
   'src/lib/auth.ts',
@@ -220,7 +221,7 @@ const dataRouteChecks = [
       "await createDocument({",
       "const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {",
       "const boronganItems = await listDocumentsByFilter<{",
-      "listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {",
+      "listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind' | 'status'>>('driverVoucherDisbursement', {",
       "listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {",
       'sortPreset,',
     ],
@@ -242,6 +243,15 @@ const relationalAdapterChecks = [
       '? [...filtered].sort(presetComparator)',
     ],
     mustNotInclude: ['sortClause'],
+  },
+  {
+    name: 'numbering-max-suffix',
+    mode: 'file',
+    mustInclude: [
+      'export async function relationalMaxNumericSuffixByPrefix',
+      "params.set(column, `like.${prefix}*`)",
+      'Math.max(max, sequence)',
+    ],
   },
 ];
 
@@ -464,9 +474,27 @@ for (const check of relationalAdapterChecks) {
 
   console.log(`- OK   ${check.name}`);
 }
+const documentStoreSource = readFileSync(path.join(repoRoot, documentStoreFile), 'utf8');
+if (
+  !documentStoreSource.includes('relationalMaxNumericSuffixByPrefix') ||
+  !documentStoreSource.includes('const maxExistingSuffix') ||
+  !documentStoreSource.includes('Math.max(currentCounter, maxExistingSuffix) + 1') ||
+  documentStoreSource.includes('relationalCountByPrefix') ||
+  !documentStoreSource.includes("'is.null'")
+) {
+  fail('Document numbering harus memakai suffix maksimum existing dan lock synced_at null-safe, bukan count row.');
+} else {
+  console.log('- OK   document numbering max suffix and null-safe lock');
+}
 
 console.log('');
 console.log('Seed data checks');
+const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+if (!String(packageJson.scripts?.['reseed:supabase'] || '').includes('backfill:accounting')) {
+  fail('reseed:supabase harus menjalankan backfill:accounting agar jurnal finance tidak stale setelah reset/seed.');
+} else {
+  console.log('- OK   reseed:supabase runs accounting backfill');
+}
 const resetSupabaseSource = readFileSync(path.join(repoRoot, resetSupabaseFile), 'utf8');
 if (
   !resetSupabaseSource.includes("PRESERVED_RESEED_TABLES = new Set(['trip_route_rates'])") ||

@@ -141,9 +141,10 @@ export default function NotaDetailPage() {
     const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
     const canManageOverpaymentRefund = canManageInvoice;
     const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
-    const canEditPph23 = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
-    const canReviseInvoice = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
-    const canDeleteInvoiceSafely = canDeleteInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
+    const isVoidedInvoice = nota?.status === 'VOID';
+    const canEditPph23 = canManageInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
+    const canReviseInvoice = canManageInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
+    const canDeleteInvoiceSafely = canDeleteInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
     const draftPph23Summary = calculatePph23Summary({
         grossAmount,
         claimAmount: totalAdjustmentAmount,
@@ -485,7 +486,7 @@ export default function NotaDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Invoice tidak ditemukan</div></div>;
 
-    const displayStatus = deriveReceivableStatus(nota, totalPaid);
+    const displayStatus = isVoidedInvoice ? 'VOID' : deriveReceivableStatus(nota, totalPaid);
     const statusConf = INVOICE_DETAIL_STATUS_MAP[displayStatus] || { label: displayStatus, color: 'secondary' };
     const displayNotaNumber = formatFreightNotaDisplayNumber(nota, company);
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
@@ -531,8 +532,8 @@ export default function NotaDetailPage() {
                             <Pencil size={14} /> Revisi Invoice
                         </button>
                     )}
-                    {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
-                    {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
+                    {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
+                    {canManageInvoice && !isVoidedInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
                     {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
                     {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
@@ -610,7 +611,7 @@ export default function NotaDetailPage() {
                                     <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                                {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
+                                {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
                             </div>
                         </div>
 
