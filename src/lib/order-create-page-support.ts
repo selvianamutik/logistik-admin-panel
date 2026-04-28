@@ -129,6 +129,38 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
     };
 }
 
+export function applyOrderItemAutoWeightFromQty(
+    item: OrderItemForm,
+    nextQtyKoli: number | string
+): OrderItemForm {
+    const normalizedNextQtyKoli = parseFormattedNumberish(nextQtyKoli ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedCurrentQtyKoli = parseFormattedNumberish(item.qtyKoli ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedCurrentWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
+        maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+    });
+
+    if (normalizedCurrentQtyKoli <= 0 || normalizedCurrentWeightInputValue <= 0) {
+        return {
+            ...item,
+            qtyKoli: normalizedNextQtyKoli,
+        };
+    }
+
+    const unitWeightInputValue = normalizedCurrentWeightInputValue / normalizedCurrentQtyKoli;
+    const maxFractionDigits = item.weightInputUnit === 'TON' ? 3 : 2;
+    const nextWeightInputValue = Number((normalizedNextQtyKoli * unitWeightInputValue).toFixed(maxFractionDigits));
+
+    return {
+        ...item,
+        qtyKoli: normalizedNextQtyKoli,
+        weightInputValue: normalizedNextQtyKoli > 0 ? nextWeightInputValue : 0,
+    };
+}
+
 export function updateOrderItemWeightUnit(item: OrderItemForm, nextUnit: WeightInputUnit): OrderItemForm {
     if (item.weightInputUnit === nextUnit) {
         return item;

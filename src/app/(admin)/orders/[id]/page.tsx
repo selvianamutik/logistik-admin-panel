@@ -46,6 +46,7 @@ import {
 } from '@/lib/order-detail-support';
 import {
     applyCustomerProductToOrderItem,
+    applyOrderItemAutoWeightFromQty,
     createDefaultOrderItemForm,
     getDraftOrderItems,
     summarizeDraftOrderCargo,
@@ -591,7 +592,15 @@ export default function OrderDetailPage() {
                         ...group,
                         items: group.items.map((item, index) => (
                             index === itemIndex
-                                ? { ...item, [field]: value }
+                                ? (
+                                    field === 'qtyKoli'
+                                        ? toDirectCargoGroupItem(applyOrderItemAutoWeightFromQty({
+                                            ...item,
+                                            pickupStopKey: group.pickupStopKey,
+                                            shipperReferenceNumber: group.shipperReferenceNumber,
+                                        }, value as number))
+                                        : { ...item, [field]: value }
+                                )
                                 : item
                         )),
                     }

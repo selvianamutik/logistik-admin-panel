@@ -76,7 +76,7 @@ import {
     type DeliveryOrderCargoDraftGroup,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
-import { applyCustomerProductToOrderItem, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
+import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
@@ -903,7 +903,15 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? { ...item, [field]: value }
+                    ? (
+                        field === 'qtyKoli'
+                            ? toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                                ...item,
+                                pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
+                                shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
+                            }, value as number))
+                            : { ...item, [field]: value }
+                    )
                     : item
             )),
         }));
@@ -919,7 +927,18 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? { ...item, [field]: value }
+                    ? (
+                        field === 'qtyKoli'
+                            ? {
+                                ...item,
+                                ...toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                                    ...item,
+                                    pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
+                                    shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
+                                }, value as number)),
+                            }
+                            : { ...item, [field]: value }
+                    )
                     : item
             )),
         }));
@@ -1203,7 +1222,15 @@ export default function TripDetailPage() {
                     ...group,
                     items: group.items.map((item, currentIndex) => (
                         currentIndex === itemIndex
-                            ? { ...item, [field]: value }
+                            ? (
+                                field === 'qtyKoli'
+                                    ? toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                                        ...item,
+                                        pickupStopKey: group.pickupStopKey,
+                                        shipperReferenceNumber: group.shipperReferenceNumber,
+                                    }, value as number))
+                                    : { ...item, [field]: value }
+                            )
                             : item
                     )),
                 }
