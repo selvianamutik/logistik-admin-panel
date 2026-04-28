@@ -49,6 +49,7 @@ import {
     applyOrderItemAutoWeightFromQty,
     createDefaultOrderItemForm,
     getDraftOrderItems,
+    shouldLockOrderItemWeight,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
@@ -599,6 +600,8 @@ export default function OrderDetailPage() {
                                             pickupStopKey: group.pickupStopKey,
                                             shipperReferenceNumber: group.shipperReferenceNumber,
                                         }, value as number))
+                                        : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                            ? item
                                         : { ...item, [field]: value }
                                 )
                                 : item
@@ -2909,7 +2912,7 @@ export default function OrderDetailPage() {
                                                                             maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                             value={item.weightInputValue}
                                                                             onValueChange={value => updateDirectCargoGroupItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                            disabled={creatingDO}
+                                                                            disabled={creatingDO || shouldLockOrderItemWeight(item)}
                                                                         />
                                                                         <select
                                                                             className="form-select"
@@ -2920,14 +2923,16 @@ export default function OrderDetailPage() {
                                                                                         ...entry,
                                                                                         items: entry.items.map((groupItem, currentItemIndex) => (
                                                                                             currentItemIndex === itemIndex
-                                                                                                ? updateOrderItemWeightUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as WeightInputUnit)
+                                                                                                ? shouldLockOrderItemWeight(groupItem)
+                                                                                                    ? { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
+                                                                                                    : updateOrderItemWeightUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as WeightInputUnit)
                                                                                                 : { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
                                                                                         )).map(groupItem => toDirectCargoGroupItem(groupItem)),
                                                                                     }
                                                                                     : entry
                                                                             )))}
                                                                             style={{ width: 92 }}
-                                                                            disabled={creatingDO}
+                                                                            disabled={creatingDO || shouldLockOrderItemWeight(item)}
                                                                         >
                                                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                         </select>

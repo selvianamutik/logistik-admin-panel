@@ -161,6 +161,14 @@ export function applyOrderItemAutoWeightFromQty(
     };
 }
 
+export function shouldLockOrderItemWeight(
+    item: Pick<OrderItemForm, 'customerProductRef' | 'qtyKoli' | 'weightInputValue'>
+) {
+    const qtyKoli = parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 });
+    const weightInputValue = parseFormattedNumberish(item.weightInputValue || 0);
+    return Boolean(item.customerProductRef && qtyKoli > 0 && weightInputValue > 0);
+}
+
 export function updateOrderItemWeightUnit(item: OrderItemForm, nextUnit: WeightInputUnit): OrderItemForm {
     if (item.weightInputUnit === nextUnit) {
         return item;

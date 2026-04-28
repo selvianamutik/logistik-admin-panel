@@ -18,12 +18,14 @@ import {
 import {
     applyCustomerPickupToStop,
     applyCustomerProductToOrderItem,
+    applyOrderItemAutoWeightFromQty,
     createDefaultOrderItemForm,
     createDefaultPickupStopForm,
     findDefaultCustomerPickup,
     getDraftPickupStops,
     sortCustomerPickups,
     summarizePickupStopList,
+    shouldLockOrderItemWeight,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
     type OrderItemForm,
@@ -175,7 +177,18 @@ export default function OrderEditPage() {
     }, [customerPickups, customerScopedMastersLoaded, form.customerRef, form.pickupStops, shouldAutoApplyDefaultPickup]);
 
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
-        setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+        setItems(prev => prev.map((item, i) => {
+            if (i !== idx) {
+                return item;
+            }
+            if (field === 'qtyKoli') {
+                return applyOrderItemAutoWeightFromQty(item, value as number | string);
+            }
+            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)) {
+                return item;
+            }
+            return { ...item, [field]: value };
+        }));
     };
 
     const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
@@ -739,7 +752,7 @@ export default function OrderEditPage() {
                                     <div style={{ flex: '1 1 180px' }}>
                                         <label className="form-label">{isRevisionMode ? 'Target Berat' : 'Berat'}</label>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                            <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={false} />
+                                            <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={shouldLockOrderItemWeight(item)} />
                                             <select
                                                 className="form-select"
                                                 value={item.weightInputUnit}
@@ -747,7 +760,7 @@ export default function OrderEditPage() {
                                                     i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
                                                 )))}
                                                 style={{ width: 92 }}
-                                                disabled={false}
+                                                disabled={shouldLockOrderItemWeight(item)}
                                             >
                                                 {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                             </select>

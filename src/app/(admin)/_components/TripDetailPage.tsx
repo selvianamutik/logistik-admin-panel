@@ -21,6 +21,8 @@ import {
     buildResolvedDeliveryOrder,
     buildDefaultActualDropDrafts,
     createEmptyActualDropDraft,
+    applyActualCargoAutoWeightFromQty,
+    applyActualDropAutoWeightFromQty,
     getActualCargoDraftsForDrop,
     getAssignableTripDrivers,
     getAssignableTripVehicles,
@@ -30,6 +32,8 @@ import {
     summarizeDeliveryOrderItemDescriptionsForDrop,
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
+    shouldLockActualDropWeight,
+    shouldLockActualCargoWeight,
     sortTrackingLogs,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
@@ -76,7 +80,7 @@ import {
     type DeliveryOrderCargoDraftGroup,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
-import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
+import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
@@ -910,6 +914,8 @@ export default function TripDetailPage() {
                                 pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
                                 shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
                             }, value as number))
+                            : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                ? item
                             : { ...item, [field]: value }
                     )
                     : item
@@ -937,6 +943,8 @@ export default function TripDetailPage() {
                                     shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
                                 }, value as number)),
                             }
+                            : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                ? item
                             : { ...item, [field]: value }
                     )
                     : item
@@ -1007,7 +1015,9 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                    ? shouldLockOrderItemWeight(item)
+                        ? item
+                        : toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
                         ...item,
                         pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
                         shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
@@ -1023,7 +1033,9 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? {
+                    ? shouldLockOrderItemWeight(item)
+                        ? item
+                        : {
                         ...item,
                         ...toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
                             ...item,
@@ -1229,6 +1241,8 @@ export default function TripDetailPage() {
                                         pickupStopKey: group.pickupStopKey,
                                         shipperReferenceNumber: group.shipperReferenceNumber,
                                     }, value as number))
+                                    : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                        ? item
                                     : { ...item, [field]: value }
                             )
                             : item
@@ -1872,7 +1886,20 @@ export default function TripDetailPage() {
         value: string
     ) => {
         const currentItem = actualCargoItems.find(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
+        const buildNextItem = (item: ActualCargoDraft) => {
+            if (field === 'actualQtyKoli') {
+                return applyActualCargoAutoWeightFromQty(item, value);
+            }
+            if ((field === 'actualWeightInputValue' || field === 'actualWeightInputUnit') && shouldLockActualCargoWeight(item)) {
+                const nextUnit = field === 'actualWeightInputUnit'
+                    ? value as ActualCargoDraft['actualWeightInputUnit']
+                    : item.actualWeightInputUnit;
+                return applyActualCargoAutoWeightFromQty(item, item.actualQtyKoli, nextUnit);
+            }
+            return { ...item, [field]: value };
+        };
         if (currentItem) {
+            const nextItem = buildNextItem(currentItem);
             setActualCargoItemValueMap(previous => {
                 const nextManualValues = Object.assign({
                     actualQtyKoli: currentItem.actualQtyKoli,
@@ -1885,7 +1912,11 @@ export default function TripDetailPage() {
                     ...previous,
                     [deliveryOrderItemRef]: {
                         ...nextManualValues,
-                        [field]: value,
+                        actualQtyKoli: nextItem.actualQtyKoli,
+                        actualWeightInputValue: nextItem.actualWeightInputValue,
+                        actualWeightInputUnit: nextItem.actualWeightInputUnit,
+                        actualVolumeInputValue: nextItem.actualVolumeInputValue,
+                        actualVolumeInputUnit: nextItem.actualVolumeInputUnit,
                     },
                 };
             });
@@ -1893,7 +1924,7 @@ export default function TripDetailPage() {
         setActualCargoItems(previous =>
             previous.map(item =>
                 item.deliveryOrderItemRef === deliveryOrderItemRef
-                    ? { ...item, [field]: value }
+                    ? buildNextItem(item)
                     : item
             )
         );
@@ -1948,21 +1979,34 @@ export default function TripDetailPage() {
         field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
         value: string
     ) => {
+        const buildNextDrop = (drop: ActualDropDraft) => {
+            const selectedCargoItem = drop.deliveryOrderItemRef
+                ? actualCargoItems.find(item => item.deliveryOrderItemRef === drop.deliveryOrderItemRef)
+                : undefined;
+            if (field === 'qtyKoli') {
+                return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, value);
+            }
+            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockActualDropWeight(selectedCargoItem)) {
+                const nextUnit = field === 'weightInputUnit'
+                    ? value as ActualDropDraft['weightInputUnit']
+                    : drop.weightInputUnit;
+                return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, drop.qtyKoli, nextUnit);
+            }
+            return { ...drop, [field]: value };
+        };
         if (field === 'qtyKoli' || field === 'weightInputValue' || field === 'weightInputUnit' || field === 'volumeInputValue' || field === 'volumeInputUnit') {
             const currentDrop = actualDropPoints.find(item => item.draftKey === draftKey);
             if (currentDrop?.deliveryOrderItemRef) {
+                const nextDrop = buildNextDrop(currentDrop);
                 const valueKey = buildActualDropItemValueKey(draftKey, currentDrop.deliveryOrderItemRef);
                 setActualDropItemValueMap(previous => ({
                     ...previous,
-                    [valueKey]: {
-                        ...(previous[valueKey] || pickActualDropItemValues(currentDrop)),
-                        [field]: value,
-                    },
+                    [valueKey]: pickActualDropItemValues(nextDrop),
                 }));
             }
         }
         setActualDropPoints(previous =>
-            previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
+            previous.map(item => (item.draftKey === draftKey ? buildNextDrop(item) : item))
         );
     };
 
@@ -4789,13 +4833,13 @@ export default function TripDetailPage() {
                                                                                     maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
                                                                                 })}
                                                                                 onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
-                                                                                disabled={updatingStatus}
+                                                                                disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef))}
                                                                             />
                                                                             <select
                                                                                 className="form-select"
                                                                                 value={item.weightInputUnit}
                                                                                 onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
-                                                                                disabled={updatingStatus}
+                                                                                disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef))}
                                                                             >
                                                                                 {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
                                                                                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -4906,13 +4950,13 @@ export default function TripDetailPage() {
                                                                                     maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
                                                                                 })}
                                                                                 onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                                                disabled={updatingStatus}
+                                                                                disabled={updatingStatus || shouldLockActualCargoWeight(item)}
                                                                             />
                                                                             <select
                                                                                 className="form-select"
                                                                                 value={item.actualWeightInputUnit}
                                                                                 onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
-                                                                                disabled={updatingStatus}
+                                                                                disabled={updatingStatus || shouldLockActualCargoWeight(item)}
                                                                             >
                                                                                 {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
                                                                                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -5335,14 +5379,14 @@ export default function TripDetailPage() {
                                                                         maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                         value={item.weightInputValue}
                                                                         onValueChange={value => updateSelectedExistingShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                                        disabled={savingShipperReference}
+                                                                        disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
                                                                     />
                                                                     <select
                                                                         className="form-select"
                                                                         value={item.weightInputUnit}
                                                                         onChange={e => updateSelectedExistingShipperReferenceItemWeightUnit(itemIndex, e.target.value as DeliveryOrderCargoDraftItem['weightInputUnit'])}
                                                                         style={{ width: 92 }}
-                                                                        disabled={savingShipperReference}
+                                                                        disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
                                                                     >
                                                                         {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                     </select>
@@ -5449,14 +5493,14 @@ export default function TripDetailPage() {
                                                             maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                             value={item.weightInputValue}
                                                             onValueChange={value => updateSelectedShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                            disabled={savingShipperReference}
+                                                            disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
                                                         />
                                                         <select
                                                             className="form-select"
                                                             value={item.weightInputUnit}
                                                             onChange={e => updateSelectedShipperReferenceItemWeightUnit(itemIndex, e.target.value as DeliveryOrderCargoDraftItem['weightInputUnit'])}
                                                             style={{ width: 92 }}
-                                                            disabled={savingShipperReference}
+                                                            disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
                                                         >
                                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                         </select>
@@ -5724,7 +5768,7 @@ export default function TripDetailPage() {
                                                                     maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                    disabled={savingCargo}
+                                                                    disabled={savingCargo || shouldLockOrderItemWeight(item)}
                                                                 />
                                                                 <select
                                                                     className="form-select"
@@ -5746,7 +5790,7 @@ export default function TripDetailPage() {
                                                                             : entry
                                                                     )))}
                                                                     style={{ width: 92 }}
-                                                                    disabled={savingCargo}
+                                                                    disabled={savingCargo || shouldLockOrderItemWeight(item)}
                                                                 >
                                                                     {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                 </select>

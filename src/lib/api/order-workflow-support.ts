@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+    calculateWeightPortion,
     roundQuantity,
 } from '@/lib/order-item-progress';
 import {
@@ -495,16 +496,26 @@ export async function normalizeOrderItemsInput(
             if (item.qtyKoli <= 0) {
                 item.qtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 0);
             }
-            if (!item.weightInputValue || item.weightInputValue <= 0) {
-                const productWeightUnit = readWeightInputUnit(customerProduct.defaultWeightInputUnit, 'KG');
-                const productWeightInputValue =
-                    normalizeNumber(customerProduct.defaultWeightInputValue, {
+            const productWeightUnit = readWeightInputUnit(customerProduct.defaultWeightInputUnit, 'KG');
+            const productWeightInputValue =
+                normalizeNumber(customerProduct.defaultWeightInputValue, {
+                    maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
+                }) > 0
+                    ? normalizeNumber(customerProduct.defaultWeightInputValue, {
                         maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
-                    }) > 0
-                        ? normalizeNumber(customerProduct.defaultWeightInputValue, {
-                            maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
-                        })
-                        : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
+                    })
+                    : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
+            const productQtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 0);
+            const productWeightKg = productWeightInputValue > 0
+                ? convertWeightToKg(productWeightInputValue, productWeightUnit)
+                : normalizeNumber(customerProduct.defaultWeight ?? 0);
+            if (productQtyKoli > 0 && productWeightKg > 0 && item.qtyKoli > 0) {
+                const lockedWeightKg = calculateWeightPortion(productWeightKg, productQtyKoli, item.qtyKoli);
+                item.weightInputValue = lockedWeightKg > 0
+                    ? roundQuantity(convertKgToWeightInputValue(lockedWeightKg, productWeightUnit), productWeightUnit === 'TON' ? 3 : 2)
+                    : undefined;
+                item.weightInputUnit = lockedWeightKg > 0 ? productWeightUnit : undefined;
+            } else if (!item.weightInputValue || item.weightInputValue <= 0) {
                 item.weightInputValue = productWeightInputValue > 0 ? productWeightInputValue : undefined;
                 item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
             }
@@ -573,17 +584,30 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
         const selections = rawSelections
             .filter(isPlainObject)
             .map<DeliveryOrderItemSelection>(item => {
-                const weightInputUnit = resolvePayloadWeightInputUnit(item.weightInputUnit, 'Satuan berat kirim');
+                const orderItemRef = normalizeText(item.orderItemRef);
+                const sourceOrderItem = orderItems.find(orderItem => orderItem._id === orderItemRef);
+                const requestedQtyKoli = normalizeNumber(item.qtyKoli);
+                const sourceQtyKoli = normalizeNumber(sourceOrderItem?.qtyKoli ?? 0);
+                const sourceWeightKg = normalizeNumber(sourceOrderItem?.weight ?? 0);
+                const sourceWeightInputUnit = readWeightInputUnit(sourceOrderItem?.weightInputUnit, 'KG');
+                const weightInputUnit = sourceQtyKoli > 0 && sourceWeightKg > 0
+                    ? sourceWeightInputUnit
+                    : resolvePayloadWeightInputUnit(item.weightInputUnit, 'Satuan berat kirim');
                 const volumeInputUnit = resolvePayloadVolumeInputUnit(item.volumeInputUnit, 'Satuan volume kirim');
-                const weightInputValue = roundQuantity(normalizeNumber(item.weightInputValue, {
-                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
-                }), weightInputUnit === 'TON' ? 3 : 2);
+                const lockedWeightKg = sourceQtyKoli > 0 && sourceWeightKg > 0 && requestedQtyKoli > 0
+                    ? calculateWeightPortion(sourceWeightKg, sourceQtyKoli, requestedQtyKoli)
+                    : 0;
+                const weightInputValue = lockedWeightKg > 0
+                    ? roundQuantity(convertKgToWeightInputValue(lockedWeightKg, weightInputUnit), weightInputUnit === 'TON' ? 3 : 2)
+                    : roundQuantity(normalizeNumber(item.weightInputValue, {
+                        maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                    }), weightInputUnit === 'TON' ? 3 : 2);
                 const volumeInputValue = roundQuantity(normalizeNumber(item.volumeInputValue, {
                     maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
                 }), volumeInputUnit === 'LITER' ? 0 : 3);
                 return {
-                    orderItemRef: normalizeText(item.orderItemRef),
-                    qtyKoli: normalizeNumber(item.qtyKoli),
+                    orderItemRef,
+                    qtyKoli: requestedQtyKoli,
                     weightInputValue: weightInputValue > 0 ? weightInputValue : undefined,
                     weightInputUnit: weightInputValue > 0 ? weightInputUnit : undefined,
                     volumeInputValue: volumeInputValue > 0 ? volumeInputValue : undefined,
@@ -697,7 +721,8 @@ export function normalizeDeliveryOrderActualCargoInputs(
         const actualQtyKoli = roundQuantity(
             normalizeNumber(rawItem?.actualQtyKoli ?? item.actualQtyKoli ?? plannedQtyKoli)
         );
-        const rawWeightInputValue = roundQuantity(normalizeNumber(
+        const isWeightLockedFromQty = plannedQtyKoli > 0 && plannedWeightKg > 0;
+        const parsedWeightInputValue = roundQuantity(normalizeNumber(
             rawItem?.actualWeightInputValue ??
             item.actualWeightInputValue ??
             (item.actualWeightKg !== undefined
@@ -715,7 +740,16 @@ export function normalizeDeliveryOrderActualCargoInputs(
         , {
             maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
         }), volumeInputUnit === 'LITER' ? 0 : 3);
-        const actualWeightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
+        const actualWeightKg = isWeightLockedFromQty
+            ? calculateWeightPortion(plannedWeightKg, plannedQtyKoli, actualQtyKoli)
+            : roundQuantity(convertWeightToKg(parsedWeightInputValue, weightInputUnit));
+        const rawWeightInputValue = isWeightLockedFromQty
+            ? actualWeightKg > 0
+                ? roundQuantity(convertKgToWeightInputValue(actualWeightKg, weightInputUnit), weightInputUnit === 'TON' ? 3 : 2)
+                : 0
+            : actualWeightKg > 0
+                ? roundQuantity(convertKgToWeightInputValue(actualWeightKg, weightInputUnit), weightInputUnit === 'TON' ? 3 : 2)
+                : parsedWeightInputValue;
         const actualVolumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
         normalized.set(item._id, {
@@ -860,13 +894,25 @@ export function normalizeDeliveryActualDropPoints(
                 );
             });
         const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
-        const weightInputUnit = resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
-        const rawWeightInputValue = roundQuantity(
-            normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0, {
-                maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
-            }),
-            weightInputUnit === 'TON' ? 3 : 2
-        );
+        const itemSpecificActualCargo = normalizedDeliveryOrderItemRefs.length === 1
+            ? actualCargoByDoItemId.get(normalizedDeliveryOrderItemRefs[0])
+            : undefined;
+        const weightInputUnit = itemSpecificActualCargo?.actualWeightInputUnit
+            || resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
+        const itemSpecificWeightKg = itemSpecificActualCargo &&
+            itemSpecificActualCargo.actualQtyKoli > 0 &&
+            itemSpecificActualCargo.actualWeightKg > 0 &&
+            qtyKoli > 0
+            ? calculateWeightPortion(itemSpecificActualCargo.actualWeightKg, itemSpecificActualCargo.actualQtyKoli, qtyKoli)
+            : 0;
+        const rawWeightInputValue = itemSpecificWeightKg > 0
+            ? roundQuantity(convertKgToWeightInputValue(itemSpecificWeightKg, weightInputUnit), weightInputUnit === 'TON' ? 3 : 2)
+            : roundQuantity(
+                normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0, {
+                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                }),
+                weightInputUnit === 'TON' ? 3 : 2
+            );
         const volumeInputUnit = resolvePayloadVolumeInputUnit(rawPoint.volumeInputUnit, `Satuan volume titik drop #${index + 1}`);
         const rawVolumeInputValue = roundQuantity(
             normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0, {
@@ -874,7 +920,9 @@ export function normalizeDeliveryActualDropPoints(
             }),
             volumeInputUnit === 'LITER' ? 0 : 3
         );
-        const weightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
+        const weightKg = itemSpecificWeightKg > 0
+            ? itemSpecificWeightKg
+            : roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
         const volumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
         if (!locationName && !locationAddress) {

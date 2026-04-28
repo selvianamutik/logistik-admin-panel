@@ -9,6 +9,10 @@ import type {
 } from '@/lib/types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
+    calculateWeightPortion,
+    roundQuantity,
+} from '@/lib/order-item-progress';
+import {
     convertWeightToKg,
     convertKgToWeightInputValue,
     convertVolumeToM3,
@@ -140,7 +144,7 @@ export function buildActualCargoDraft(
             : plannedVolumeM3 > 0
                 ? String(convertM3ToVolumeInputValue(parseFormattedNumberish(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), actualVolumeInputUnit))
                 : '';
-    return {
+    const initialDraft: ActualCargoDraft = {
         deliveryOrderItemRef: item._id,
         description: item.orderItemDescription || '-',
         shipperReferenceKey: item.shipperReferenceKey || '',
@@ -164,6 +168,8 @@ export function buildActualCargoDraft(
         requireWeight: plannedWeightKg > 0,
         requireVolume: plannedVolumeM3 > 0,
     };
+
+    return applyActualCargoAutoWeightFromQty(initialDraft, initialDraft.actualQtyKoli);
 }
 
 export function buildActualCargoDrafts(
@@ -184,6 +190,10 @@ export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUni
         return item;
     }
 
+    if (shouldLockActualCargoWeight(item)) {
+        return applyActualCargoAutoWeightFromQty(item, item.actualQtyKoli, nextUnit);
+    }
+
     const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
         maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
     });
@@ -196,6 +206,84 @@ export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUni
         ...item,
         actualWeightInputUnit: nextUnit,
         actualWeightInputValue: currentWeightKg > 0 ? String(convertKgToWeightInputValue(currentWeightKg, nextUnit)) : '',
+    };
+}
+
+export function shouldLockActualCargoWeight(
+    item: Pick<ActualCargoDraft, 'plannedQtyKoli' | 'plannedWeightKg'>
+) {
+    const plannedQtyKoli = parseFormattedNumberish(item.plannedQtyKoli || 0, { maxFractionDigits: 2 });
+    const plannedWeightKg = parseFormattedNumberish(item.plannedWeightKg || 0, { maxFractionDigits: 2 });
+    return plannedQtyKoli > 0 && plannedWeightKg > 0;
+}
+
+export function applyActualCargoAutoWeightFromQty(
+    item: ActualCargoDraft,
+    nextQtyKoli: string | number,
+    nextUnit: WeightInputUnit = item.actualWeightInputUnit || item.plannedWeightInputUnit || 'KG'
+): ActualCargoDraft {
+    if (!shouldLockActualCargoWeight(item)) {
+        return {
+            ...item,
+            actualQtyKoli: String(nextQtyKoli),
+            actualWeightInputUnit: nextUnit,
+        };
+    }
+
+    const qtyKoli = parseFormattedNumberish(nextQtyKoli || 0, { maxFractionDigits: 2 });
+    const weightKg = calculateWeightPortion(item.plannedWeightKg, item.plannedQtyKoli, qtyKoli);
+    const actualWeightInputValue =
+        weightKg > 0
+            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
+            : '';
+
+    return {
+        ...item,
+        actualQtyKoli: String(nextQtyKoli),
+        actualWeightInputValue,
+        actualWeightInputUnit: nextUnit,
+    };
+}
+
+export function shouldLockActualDropWeight(cargoItem?: ActualCargoDraft | null) {
+    return Boolean(cargoItem && shouldLockActualCargoWeight(cargoItem));
+}
+
+export function applyActualDropAutoWeightFromQty(
+    drop: ActualDropDraft,
+    cargoItem: ActualCargoDraft | undefined,
+    nextQtyKoli: string | number,
+    nextUnit: WeightInputUnit = drop.weightInputUnit
+): ActualDropDraft {
+    if (!shouldLockActualDropWeight(cargoItem)) {
+        return {
+            ...drop,
+            qtyKoli: String(nextQtyKoli),
+            weightInputUnit: nextUnit,
+        };
+    }
+
+    const qtyKoli = parseFormattedNumberish(nextQtyKoli || 0, { maxFractionDigits: 2 });
+    const actualQtyKoli = parseFormattedNumberish(cargoItem?.actualQtyKoli || 0, { maxFractionDigits: 2 });
+    const actualWeightKg = cargoItem
+        ? convertWeightToKg(
+            parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
+                maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+            }),
+            cargoItem.actualWeightInputUnit
+        )
+        : 0;
+    const basisQtyKoli = actualQtyKoli > 0 ? actualQtyKoli : cargoItem?.plannedQtyKoli || 0;
+    const basisWeightKg = actualWeightKg > 0 ? actualWeightKg : cargoItem?.plannedWeightKg || 0;
+    const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
+
+    return {
+        ...drop,
+        qtyKoli: String(nextQtyKoli),
+        weightInputValue: weightKg > 0
+            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
+            : '',
+        weightInputUnit: nextUnit,
     };
 }
 

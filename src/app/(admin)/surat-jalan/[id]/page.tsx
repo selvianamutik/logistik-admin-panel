@@ -11,12 +11,16 @@ import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client
 import { getBusinessDateValue } from '@/lib/business-date';
 import { getDeliveryOrderDisplayStatusMeta, isDeliveryOrderBillableDropType, isDeliveryOrderHoldDropType, isDeliveryOrderReturnDropType } from '@/lib/delivery-order-completion';
 import {
+    applyActualCargoAutoWeightFromQty,
+    applyActualDropAutoWeightFromQty,
     buildActualCargoDrafts,
     buildDefaultActualDropDrafts,
     buildDeliveryOrderDetailState,
     createEmptyActualDropDraft,
     getActualCargoDraftsForDrop,
     getNextDeliveryOrderStatuses,
+    shouldLockActualDropWeight,
+    shouldLockActualCargoWeight,
     shouldOpenAdvancedDropEditor,
     summarizeActualCargoDraftDescriptions,
     type ActualCargoDraft,
@@ -463,7 +467,21 @@ export default function SuratJalanDetailPage() {
         value: string
     ) => {
         setActualCargoItems(previous =>
-            previous.map(item => item.deliveryOrderItemRef === deliveryOrderItemRef ? { ...item, [field]: value } : item)
+            previous.map(item => {
+                if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                    return item;
+                }
+                if (field === 'actualQtyKoli') {
+                    return applyActualCargoAutoWeightFromQty(item, value);
+                }
+                if ((field === 'actualWeightInputValue' || field === 'actualWeightInputUnit') && shouldLockActualCargoWeight(item)) {
+                    const nextUnit = field === 'actualWeightInputUnit'
+                        ? value as ActualCargoDraft['actualWeightInputUnit']
+                        : item.actualWeightInputUnit;
+                    return applyActualCargoAutoWeightFromQty(item, item.actualQtyKoli, nextUnit);
+                }
+                return { ...item, [field]: value };
+            })
         );
     };
 
@@ -562,20 +580,33 @@ export default function SuratJalanDetailPage() {
         field: keyof Pick<ActualDropDraft, 'stopType' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
         value: string
     ) => {
+        const buildNextDrop = (drop: ActualDropDraft) => {
+            const selectedCargoItem = drop.deliveryOrderItemRef
+                ? actualCargoItems.find(item => item.deliveryOrderItemRef === drop.deliveryOrderItemRef)
+                : undefined;
+            if (field === 'qtyKoli') {
+                return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, value);
+            }
+            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockActualDropWeight(selectedCargoItem)) {
+                const nextUnit = field === 'weightInputUnit'
+                    ? value as ActualDropDraft['weightInputUnit']
+                    : drop.weightInputUnit;
+                return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, drop.qtyKoli, nextUnit);
+            }
+            return { ...drop, [field]: value };
+        };
         if (field === 'qtyKoli' || field === 'weightInputValue' || field === 'weightInputUnit' || field === 'volumeInputValue' || field === 'volumeInputUnit') {
             const currentDrop = actualDropPoints.find(item => item.draftKey === draftKey);
             if (currentDrop?.deliveryOrderItemRef) {
+                const nextDrop = buildNextDrop(currentDrop);
                 const valueKey = buildActualDropItemValueKey(draftKey, currentDrop.deliveryOrderItemRef);
                 setActualDropItemValueMap(previous => ({
                     ...previous,
-                    [valueKey]: {
-                        ...(previous[valueKey] || pickActualDropItemValues(currentDrop)),
-                        [field]: value,
-                    },
+                    [valueKey]: pickActualDropItemValues(nextDrop),
                 }));
             }
         }
-        setActualDropPoints(previous => previous.map(item => item.draftKey === draftKey ? { ...item, [field]: value } : item));
+        setActualDropPoints(previous => previous.map(item => item.draftKey === draftKey ? buildNextDrop(item) : item));
     };
 
     const applyActualDropItem = (draftKey: string, deliveryOrderItemRef: string) => {
@@ -1079,8 +1110,8 @@ export default function SuratJalanDetailPage() {
                                                                     <div className="form-group">
                                                                         <label className="form-label">Berat Drop</label>
                                                                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                            <FormattedNumberInput min={0} maxFractionDigits={drop.weightInputUnit === 'TON' ? 3 : 2} value={parseFormattedNumberish(drop.weightInputValue || 0, { maxFractionDigits: drop.weightInputUnit === 'TON' ? 3 : 2 })} onValueChange={value => updateActualDropDraft(drop.draftKey, 'weightInputValue', String(value))} disabled={updatingStatus} />
-                                                                            <select className="form-select" value={drop.weightInputUnit} onChange={event => updateActualDropDraft(drop.draftKey, 'weightInputUnit', event.target.value)} disabled={updatingStatus}>
+                                                                        <FormattedNumberInput min={0} maxFractionDigits={drop.weightInputUnit === 'TON' ? 3 : 2} value={parseFormattedNumberish(drop.weightInputValue || 0, { maxFractionDigits: drop.weightInputUnit === 'TON' ? 3 : 2 })} onValueChange={value => updateActualDropDraft(drop.draftKey, 'weightInputValue', String(value))} disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(item => item.deliveryOrderItemRef === drop.deliveryOrderItemRef))} />
+                                                                        <select className="form-select" value={drop.weightInputUnit} onChange={event => updateActualDropDraft(drop.draftKey, 'weightInputUnit', event.target.value)} disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(item => item.deliveryOrderItemRef === drop.deliveryOrderItemRef))}>
                                                                                 {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                             </select>
                                                                         </div>
@@ -1146,8 +1177,8 @@ export default function SuratJalanDetailPage() {
                                                             <div className="form-group">
                                                                 <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
                                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                    <FormattedNumberInput min={0} maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2} value={parseFormattedNumberish(item.actualWeightInputValue || 0, { maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2 })} onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))} disabled={updatingStatus} />
-                                                                    <select className="form-select" value={item.actualWeightInputUnit} onChange={event => updateActualCargoWeightUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualWeightInputUnit'])} disabled={updatingStatus}>
+                                                                    <FormattedNumberInput min={0} maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2} value={parseFormattedNumberish(item.actualWeightInputValue || 0, { maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2 })} onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))} disabled={updatingStatus || shouldLockActualCargoWeight(item)} />
+                                                                    <select className="form-select" value={item.actualWeightInputUnit} onChange={event => updateActualCargoWeightUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualWeightInputUnit'])} disabled={updatingStatus || shouldLockActualCargoWeight(item)}>
                                                                         {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                     </select>
                                                                 </div>
