@@ -36,7 +36,6 @@ import {
     shouldLockActualCargoWeight,
     sortTrackingLogs,
     updateActualCargoDraftVolumeUnit,
-    updateActualCargoDraftWeightUnit,
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
@@ -1891,12 +1890,6 @@ export default function TripDetailPage() {
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
             }
-            if ((field === 'actualWeightInputValue' || field === 'actualWeightInputUnit') && shouldLockActualCargoWeight(item)) {
-                const nextUnit = field === 'actualWeightInputUnit'
-                    ? value as ActualCargoDraft['actualWeightInputUnit']
-                    : item.actualWeightInputUnit;
-                return applyActualCargoAutoWeightFromQty(item, item.actualQtyKoli, nextUnit);
-            }
             return { ...item, [field]: value };
         };
         if (currentItem) {
@@ -1937,7 +1930,19 @@ export default function TripDetailPage() {
                 if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
                     return item;
                 }
-                const nextItem = updateActualCargoDraftWeightUnit(item, nextUnit);
+                const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                });
+                const currentWeightKg = currentWeightInputValue > 0
+                    ? convertWeightToKg(currentWeightInputValue, item.actualWeightInputUnit)
+                    : 0;
+                const nextItem = {
+                    ...item,
+                    actualWeightInputUnit: nextUnit,
+                    actualWeightInputValue: currentWeightKg > 0
+                        ? String(convertKgToWeightInputValue(currentWeightKg, nextUnit))
+                        : '',
+                };
                 setActualCargoItemValueMap(current => ({
                     ...current,
                     [deliveryOrderItemRef]: {
@@ -4954,36 +4959,27 @@ export default function TripDetailPage() {
                                                                     </div>
                                                                     <div className="form-group">
                                                                         <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
-                                                                        {shouldLockActualCargoWeight(item) ? (
-                                                                            <div className="form-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--color-gray-100)', color: 'var(--color-gray-900)' }}>
-                                                                                {formatWeightDisplay({
-                                                                                    weightInputValue: item.actualWeightInputValue,
-                                                                                    weightInputUnit: item.actualWeightInputUnit,
+                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                            <FormattedNumberInput
+                                                                                min={0}
+                                                                                maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
+                                                                                value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                                                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
                                                                                 })}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                                <FormattedNumberInput
-                                                                                    min={0}
-                                                                                    maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
-                                                                                    value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                                                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
-                                                                                    })}
-                                                                                    onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                                                    disabled={updatingStatus}
-                                                                                />
-                                                                                <select
-                                                                                    className="form-select"
-                                                                                    value={item.actualWeightInputUnit}
-                                                                                    onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
-                                                                                    disabled={updatingStatus}
-                                                                                >
-                                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
-                                                                        )}
+                                                                                onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
+                                                                                disabled={updatingStatus}
+                                                                            />
+                                                                            <select
+                                                                                className="form-select"
+                                                                                value={item.actualWeightInputUnit}
+                                                                                onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
+                                                                                disabled={updatingStatus}
+                                                                            >
+                                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                                 <div className="form-row">
