@@ -67,6 +67,7 @@ import {
     convertVolumeToM3,
     convertWeightToKg,
     formatCargoSummary,
+    formatWeightDisplay,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
@@ -4720,6 +4721,8 @@ export default function TripDetailPage() {
                                                                 const selectedReferenceValue = resolveActualDropShipperReferenceValue(item);
                                                                 const itemOptions = selectedReferenceValue ? getActualDropItemOptions(item).filter(cargoItem => selectedActualCargoItemRefs.has(cargoItem.deliveryOrderItemRef)) : [];
                                                                 const selectedItemRef = resolveActualDropItemValue(item);
+                                                                const selectedCargoItem = actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef);
+                                                                const lockedDropWeight = shouldLockActualDropWeight(selectedCargoItem);
                                                                 return (
                                                             <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
@@ -4825,27 +4828,36 @@ export default function TripDetailPage() {
                                                                     </div>
                                                                     <div className="form-group">
                                                                         <label className="form-label">Berat Drop</label>
-                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                            <FormattedNumberInput
-                                                                                min={0}
-                                                                                maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                                                value={parseFormattedNumberish(item.weightInputValue || 0, {
-                                                                                    maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                                                                        {lockedDropWeight ? (
+                                                                            <div className="form-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--color-gray-100)', color: 'var(--color-gray-900)' }}>
+                                                                                {formatWeightDisplay({
+                                                                                    weightInputValue: item.weightInputValue,
+                                                                                    weightInputUnit: item.weightInputUnit,
                                                                                 })}
-                                                                                onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
-                                                                                disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef))}
-                                                                            />
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={item.weightInputUnit}
-                                                                                onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
-                                                                                disabled={updatingStatus || shouldLockActualDropWeight(actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef))}
-                                                                            >
-                                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                                <FormattedNumberInput
+                                                                                    min={0}
+                                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                                    value={parseFormattedNumberish(item.weightInputValue || 0, {
+                                                                                        maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                                                                                    })}
+                                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
+                                                                                    disabled={updatingStatus}
+                                                                                />
+                                                                                <select
+                                                                                    className="form-select"
+                                                                                    value={item.weightInputUnit}
+                                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
+                                                                                    disabled={updatingStatus}
+                                                                                >
+                                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 <div className="form-row">
@@ -4942,27 +4954,36 @@ export default function TripDetailPage() {
                                                                     </div>
                                                                     <div className="form-group">
                                                                         <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
-                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                            <FormattedNumberInput
-                                                                                min={0}
-                                                                                maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
-                                                                                value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                                                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                        {shouldLockActualCargoWeight(item) ? (
+                                                                            <div className="form-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--color-gray-100)', color: 'var(--color-gray-900)' }}>
+                                                                                {formatWeightDisplay({
+                                                                                    weightInputValue: item.actualWeightInputValue,
+                                                                                    weightInputUnit: item.actualWeightInputUnit,
                                                                                 })}
-                                                                                onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                                                disabled={updatingStatus || shouldLockActualCargoWeight(item)}
-                                                                            />
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={item.actualWeightInputUnit}
-                                                                                onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
-                                                                                disabled={updatingStatus || shouldLockActualCargoWeight(item)}
-                                                                            >
-                                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                                <FormattedNumberInput
+                                                                                    min={0}
+                                                                                    maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
+                                                                                    value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                                                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                                    })}
+                                                                                    onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
+                                                                                    disabled={updatingStatus}
+                                                                                />
+                                                                                <select
+                                                                                    className="form-select"
+                                                                                    value={item.actualWeightInputUnit}
+                                                                                    onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
+                                                                                    disabled={updatingStatus}
+                                                                                >
+                                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 <div className="form-row">

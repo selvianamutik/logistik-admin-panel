@@ -12,7 +12,7 @@ import { hasPermission } from '@/lib/rbac';
 import { formatCurrency } from '@/lib/utils';
 import type { Service, TripRouteRate } from '@/lib/types';
 
-type TripRouteRateSortField = 'originArea' | 'serviceName' | 'rate' | 'active';
+type TripRouteRateSortField = 'originArea' | 'destinationArea' | 'serviceName' | 'rate' | 'active';
 
 function getNextSortDirection(currentField: TripRouteRateSortField, nextField: TripRouteRateSortField, currentDirection: SortDirection) {
     if (currentField !== nextField) {
@@ -33,8 +33,11 @@ export default function TripRouteRatesPage() {
     const [sortDir, setSortDir] = useState<SortDirection>('asc');
     const [search, setSearch] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
+    const [originFilter, setOriginFilter] = useState('');
+    const [destinationFilter, setDestinationFilter] = useState('');
     const [totalItems, setTotalItems] = useState(0);
     const [inactiveCount, setInactiveCount] = useState(0);
+    const [allTripRouteRates, setAllTripRouteRates] = useState<TripRouteRate[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<TripRouteRate | null>(null);
     const [saving, setSaving] = useState(false);
@@ -53,9 +56,34 @@ export default function TripRouteRatesPage() {
     const canUpdateTripRate = user ? hasPermission(user.role, 'tripRouteRates', 'update') : false;
     const canDeleteTripRate = user ? hasPermission(user.role, 'tripRouteRates', 'delete') : false;
 
+    const loadReferenceData = useCallback(async () => {
+        try {
+            const [serviceRows, routeRows] = await Promise.all([
+                fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat kategori armada'),
+                fetchAdminCollectionData<TripRouteRate[]>('/api/data?entity=trip-route-rates&pageSize=1000&sortField=originArea&sortDir=asc', 'Gagal memuat filter biaya rute trip'),
+            ]);
+
+            setServices((serviceRows || []).filter(service => service.active !== false));
+            setAllTripRouteRates(routeRows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat filter biaya rute trip');
+        }
+    }, [addToast]);
+
     const loadTripRouteRates = useCallback(async () => {
         setLoading(true);
         try {
+            const listFilter: Record<string, unknown> = {};
+            if (serviceFilter) {
+                listFilter.serviceRef = serviceFilter;
+            }
+            if (originFilter) {
+                listFilter.originArea = originFilter;
+            }
+            if (destinationFilter) {
+                listFilter.destinationArea = destinationFilter;
+            }
+
             const listParams = new URLSearchParams({
                 entity: 'trip-route-rates',
                 page: String(page),
@@ -63,21 +91,26 @@ export default function TripRouteRatesPage() {
                 sortField,
                 sortDir,
             });
-            if (serviceFilter) {
-                listParams.set('filter', JSON.stringify({ serviceRef: serviceFilter }));
+            if (Object.keys(listFilter).length > 0) {
+                listParams.set('filter', JSON.stringify(listFilter));
             }
             if (search.trim()) {
                 listParams.set('search', search.trim());
                 listParams.set('searchFields', 'originArea,destinationArea,serviceName,notes');
             }
-            const inactiveFilter: Record<string, unknown> = { active: false };
-            if (serviceFilter) {
-                inactiveFilter.serviceRef = serviceFilter;
+            const inactiveFilter: Record<string, unknown> = { ...listFilter, active: false };
+            const inactiveParams = new URLSearchParams({
+                entity: 'trip-route-rates',
+                countOnly: '1',
+                filter: JSON.stringify(inactiveFilter),
+            });
+            if (search.trim()) {
+                inactiveParams.set('search', search.trim());
+                inactiveParams.set('searchFields', 'originArea,destinationArea,serviceName,notes');
             }
-            const [listRes, inactiveRes, serviceRows] = await Promise.all([
+            const [listRes, inactiveRes] = await Promise.all([
                 fetch(`/api/data?${listParams.toString()}`),
-                fetch(`/api/data?entity=trip-route-rates&countOnly=1&filter=${encodeURIComponent(JSON.stringify(inactiveFilter))}`),
-                fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat biaya rute trip'),
+                fetch(`/api/data?${inactiveParams.toString()}`),
             ]);
 
             const [listPayload, inactivePayload] = await Promise.all([listRes.json(), inactiveRes.json()]);
@@ -91,23 +124,45 @@ export default function TripRouteRatesPage() {
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);
             setInactiveCount(inactivePayload.meta?.total || 0);
-            setServices((serviceRows || []).filter(service => service.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat biaya rute trip');
         } finally {
             setLoading(false);
         }
-    }, [addToast, page, search, serviceFilter, sortDir, sortField]);
+    }, [addToast, destinationFilter, originFilter, page, search, serviceFilter, sortDir, sortField]);
 
     useEffect(() => {
         void loadTripRouteRates();
     }, [loadTripRouteRates]);
+
+    useEffect(() => {
+        void loadReferenceData();
+    }, [loadReferenceData]);
 
     const activeCount = totalItems - inactiveCount;
     const selectedService = useMemo(
         () => services.find(service => service._id === form.serviceRef) || null,
         [form.serviceRef, services]
     );
+    const originOptions = useMemo(() => {
+        const values = allTripRouteRates
+            .filter(rate => !serviceFilter || rate.serviceRef === serviceFilter)
+            .map(rate => rate.originArea?.trim())
+            .filter((value): value is string => Boolean(value));
+
+        return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, 'id'));
+    }, [allTripRouteRates, serviceFilter]);
+
+    const destinationOptions = useMemo(() => {
+        const values = allTripRouteRates
+            .filter(rate => !serviceFilter || rate.serviceRef === serviceFilter)
+            .filter(rate => !originFilter || rate.originArea === originFilter)
+            .map(rate => rate.destinationArea?.trim())
+            .filter((value): value is string => Boolean(value));
+
+        return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, 'id'));
+    }, [allTripRouteRates, originFilter, serviceFilter]);
+
     const handleSort = (field: TripRouteRateSortField) => {
         setSortDir(currentDirection => getNextSortDirection(sortField, field, currentDirection));
         setSortField(field);
@@ -116,7 +171,7 @@ export default function TripRouteRatesPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [search, serviceFilter]);
+    }, [destinationFilter, originFilter, search, serviceFilter]);
 
     const openNew = () => {
         setEditItem(null);
@@ -179,6 +234,7 @@ export default function TripRouteRatesPage() {
             } else {
                 await loadTripRouteRates();
             }
+            await loadReferenceData();
 
             setShowModal(false);
             addToast('success', editItem ? 'Biaya rute trip diperbarui' : 'Biaya rute trip ditambahkan');
@@ -212,6 +268,7 @@ export default function TripRouteRatesPage() {
             } else {
                 await loadTripRouteRates();
             }
+            await loadReferenceData();
             setDeleteId(null);
             addToast('success', 'Biaya rute trip dihapus');
         } catch {
@@ -272,13 +329,40 @@ export default function TripRouteRatesPage() {
                         <select
                             className="filter-select"
                             value={serviceFilter}
-                            onChange={event => setServiceFilter(event.target.value)}
+                            onChange={event => {
+                                setServiceFilter(event.target.value);
+                                setOriginFilter('');
+                                setDestinationFilter('');
+                            }}
                         >
-                            <option value="">Semua kategori armada</option>
+                            <option value="">Semua layanan armada</option>
                             {services.map(service => (
                                 <option key={service._id} value={service._id}>
                                     {service.code} - {service.name}
                                 </option>
+                            ))}
+                        </select>
+                        <select
+                            className="filter-select"
+                            value={originFilter}
+                            onChange={event => {
+                                setOriginFilter(event.target.value);
+                                setDestinationFilter('');
+                            }}
+                        >
+                            <option value="">Semua asal area</option>
+                            {originOptions.map(origin => (
+                                <option key={origin} value={origin}>{origin}</option>
+                            ))}
+                        </select>
+                        <select
+                            className="filter-select"
+                            value={destinationFilter}
+                            onChange={event => setDestinationFilter(event.target.value)}
+                        >
+                            <option value="">Semua tujuan</option>
+                            {destinationOptions.map(destination => (
+                                <option key={destination} value={destination}>{destination}</option>
                             ))}
                         </select>
                     </div>
@@ -289,14 +373,21 @@ export default function TripRouteRatesPage() {
                             <tr>
                                 <th>
                                     <SortableTableHeader
-                                        label="Rute Trip"
+                                        label="Asal Area"
                                         direction={sortField === 'originArea' ? sortDir : null}
                                         onToggle={() => handleSort('originArea')}
                                     />
                                 </th>
                                 <th>
                                     <SortableTableHeader
-                                        label="Kategori Armada"
+                                        label="Tujuan"
+                                        direction={sortField === 'destinationArea' ? sortDir : null}
+                                        onToggle={() => handleSort('destinationArea')}
+                                    />
+                                </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Layanan Armada"
                                         direction={sortField === 'serviceName' ? sortDir : null}
                                         onToggle={() => handleSort('serviceName')}
                                     />
@@ -323,14 +414,14 @@ export default function TripRouteRatesPage() {
                             {loading ? (
                                 [1, 2].map(row => (
                                     <tr key={row}>
-                                        {[1, 2, 3, 4, 5, 6].map(cell => (
+                                        {[1, 2, 3, 4, 5, 6, 7].map(cell => (
                                             <td key={cell}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalItems === 0 ? (
                                 <tr>
-                                    <td colSpan={6}>
+                                    <td colSpan={7}>
                                         <div className="empty-state">
                                             <MapPin size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada biaya rute trip</div>
@@ -340,8 +431,9 @@ export default function TripRouteRatesPage() {
                             ) : (
                                 items.map(item => (
                                     <tr key={item._id}>
-                                        <td className="font-semibold">{item.originArea} -&gt; {item.destinationArea}</td>
-                                        <td>{item.serviceName || <span className="text-muted">Semua kategori</span>}</td>
+                                        <td className="font-semibold">{item.originArea || '-'}</td>
+                                        <td className="font-semibold">{item.destinationArea || '-'}</td>
+                                        <td>{item.serviceName || <span className="text-muted">Semua layanan</span>}</td>
                                         <td className="font-semibold">{formatCurrency(item.rate || 0)}</td>
                                         <td className="text-muted">{item.notes || '-'}</td>
                                         <td>
@@ -418,13 +510,13 @@ export default function TripRouteRatesPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Kategori Armada</label>
+                                    <label className="form-label">Layanan Armada</label>
                                     <select
                                         className="form-select"
                                         value={form.serviceRef}
                                         onChange={event => setForm(previous => ({ ...previous, serviceRef: event.target.value }))}
                                     >
-                                        <option value="">Semua kategori armada</option>
+                                        <option value="">Semua layanan armada</option>
                                         {services.map(service => (
                                             <option key={service._id} value={service._id}>
                                                 {service.code} - {service.name}
