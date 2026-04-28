@@ -81,6 +81,11 @@ type DriverVoucherPosting = {
     settlementBankName?: string;
 };
 
+type BankAccountOpeningPosting = Pick<
+    BankAccount,
+    '_id' | 'bankName' | 'accountNumber' | 'accountType' | 'systemKey' | 'initialBalance'
+>;
+
 let defaultAccountsEnsured = false;
 let accountCacheBySystemKey: Map<AccountingSystemKey, ChartOfAccount> | null = null;
 
@@ -571,6 +576,43 @@ export async function postBankTransferJournal(
         lines: [
             { account: resolveCashBankAccount(input.toAccount), debit: amount, entityRef: input.toAccount._id, entityType: 'bankAccount' },
             { account: resolveCashBankAccount(input.fromAccount), credit: amount, entityRef: input.fromAccount._id, entityType: 'bankAccount' },
+        ],
+    });
+}
+
+export async function postBankAccountOpeningBalanceJournal(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    bankAccount: BankAccountOpeningPosting,
+    entryDate = getBusinessDateValue(),
+) {
+    const amount = cleanLineAmount(bankAccount.initialBalance);
+    if (amount <= 0) {
+        await voidJournalEntryForSource(session, 'BANK_ACCOUNT', bankAccount._id, 'OPENING_BALANCE');
+        return;
+    }
+
+    const accountLabel = [bankAccount.bankName, bankAccount.accountNumber].filter(Boolean).join(' - ');
+    await postJournalEntry(session, {
+        entryDate,
+        memo: `Saldo awal ${accountLabel || bankAccount._id}`,
+        sourceType: 'BANK_ACCOUNT',
+        sourceRef: bankAccount._id,
+        sourceEvent: 'OPENING_BALANCE',
+        sourceNumber: bankAccount.accountNumber,
+        sourceLabel: bankAccount.bankName,
+        lines: [
+            {
+                account: resolveCashBankAccount(bankAccount),
+                debit: amount,
+                entityRef: bankAccount._id,
+                entityType: 'bankAccount',
+            },
+            {
+                account: 'equity_capital',
+                credit: amount,
+                entityRef: bankAccount._id,
+                entityType: 'bankAccount',
+            },
         ],
     });
 }

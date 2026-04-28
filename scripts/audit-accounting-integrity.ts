@@ -4,7 +4,7 @@ loadScriptEnv();
 
 import { getAllDocuments } from '../src/lib/repositories/document-store';
 import { buildBalanceSheetFromLedger, buildLedgerSummary, getJournalLinesUntil } from '../src/lib/accounting-reports';
-import type { ChartOfAccount, JournalEntry, JournalLine } from '../src/lib/types';
+import type { BankAccount, ChartOfAccount, JournalEntry, JournalLine } from '../src/lib/types';
 
 function normalizeAmount(value: unknown) {
     const numeric = typeof value === 'number' ? value : Number(value);
@@ -25,11 +25,29 @@ function journalSourceKey(entry: JournalEntry) {
     ].join('::');
 }
 
+function journalBalance(
+    summaries: ReturnType<typeof buildLedgerSummary>,
+    systemKeys: string[],
+    normalSide: 'debit' | 'credit',
+) {
+    const totals = summaries
+        .filter(summary => summary.account.systemKey && systemKeys.includes(summary.account.systemKey))
+        .reduce(
+            (acc, summary) => ({
+                debit: acc.debit + normalizeAmount(summary.debit),
+                credit: acc.credit + normalizeAmount(summary.credit),
+            }),
+            { debit: 0, credit: 0 },
+        );
+    return normalSide === 'debit' ? totals.debit - totals.credit : totals.credit - totals.debit;
+}
+
 async function main() {
-    const [accounts, entries, lines] = await Promise.all([
+    const [accounts, entries, lines, bankAccounts] = await Promise.all([
         getAllDocuments<ChartOfAccount>('chartOfAccount'),
         getAllDocuments<JournalEntry>('journalEntry'),
         getAllDocuments<JournalLine>('journalLine'),
+        getAllDocuments<BankAccount>('bankAccount'),
     ]);
 
     const accountById = new Map(accounts.map(account => [account._id, account]));
@@ -89,16 +107,35 @@ async function main() {
     assert(postedDebit === postedCredit, `Total jurnal POSTED tidak balance: debit ${postedDebit}, kredit ${postedCredit}.`);
 
     const balanceSheetLines = getJournalLinesUntil(entries, lines, '9999-12-31');
-    const balanceSheet = buildBalanceSheetFromLedger(buildLedgerSummary(accounts, balanceSheetLines));
+    const balanceSheetSummary = buildLedgerSummary(accounts, balanceSheetLines);
+    const balanceSheet = buildBalanceSheetFromLedger(balanceSheetSummary);
     assert(
         Math.abs(balanceSheet.balanceGap) <= 0.01,
         `Neraca tidak balance: aktiva ${balanceSheet.assets}, pasiva ${balanceSheet.liabilitiesAndEquity}, selisih ${balanceSheet.balanceGap}.`
+    );
+
+    const expectedCashOnHand = bankAccounts
+        .filter(account => account.accountType === 'CASH' || account.systemKey === 'cash-on-hand')
+        .reduce((sum, account) => sum + normalizeAmount(account.currentBalance), 0);
+    const expectedBank = bankAccounts
+        .filter(account => account.accountType !== 'CASH' && account.systemKey !== 'cash-on-hand')
+        .reduce((sum, account) => sum + normalizeAmount(account.currentBalance), 0);
+    const actualCashOnHand = journalBalance(balanceSheetSummary, ['cash_on_hand'], 'debit');
+    const actualBank = journalBalance(balanceSheetSummary, ['bank'], 'debit');
+    assert(
+        actualCashOnHand === expectedCashOnHand,
+        `Saldo buku besar kas tunai tidak sinkron dengan rekening kas: ledger ${actualCashOnHand}, expected ${expectedCashOnHand}.`
+    );
+    assert(
+        actualBank === expectedBank,
+        `Saldo buku besar bank tidak sinkron dengan rekening bank: ledger ${actualBank}, expected ${expectedBank}.`
     );
 
     console.log(JSON.stringify({
         ok: true,
         summary: {
             accounts: accounts.length,
+            bankAccounts: bankAccounts.length,
             entries: entries.length,
             postedEntries: postedCount,
             voidEntries: voidCount,

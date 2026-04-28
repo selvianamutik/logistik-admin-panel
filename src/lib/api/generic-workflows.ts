@@ -74,6 +74,7 @@ import {
     normalizeEmployeePayload,
 } from './employee-workflows';
 import { handleFreightNotaDelete } from './finance-workflows';
+import { postBankAccountOpeningBalanceJournal } from './accounting-posting';
 import {
     handleDriverUpdate,
     handleDriverDelete,
@@ -2355,6 +2356,21 @@ export async function handleGenericCreate(
                 { status: 409 }
             );
         }
+    }
+
+    if (entity === 'bank-accounts') {
+        await postBankAccountOpeningBalanceJournal(
+            session,
+            created as unknown as {
+                _id: string;
+                bankName: string;
+                accountNumber: string;
+                accountType?: 'BANK' | 'CASH';
+                systemKey?: string;
+                initialBalance: number;
+            },
+            getBusinessDateValue(),
+        );
     }
 
     await addAuditLog(

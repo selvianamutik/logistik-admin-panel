@@ -5,8 +5,10 @@ loadScriptEnv();
 import {
     getAllDocuments,
 } from '../src/lib/repositories/document-store';
+import { getBusinessDateValue } from '../src/lib/business-date';
 import {
     postBankTransferJournal,
+    postBankAccountOpeningBalanceJournal,
     postCustomerOverpaymentRefundJournal,
     postCustomerReceiptJournal,
     postDriverVoucherIssueJournal,
@@ -62,6 +64,7 @@ type CounterKey =
     | 'driverVoucherTopUps'
     | 'driverVoucherSettlements'
     | 'bankTransfers'
+    | 'bankOpeningBalances'
     | 'voidedStaleEntries'
     | 'skipped';
 
@@ -110,6 +113,14 @@ function invoiceLabel(invoice?: Pick<FreightNota, 'notaDisplayNumber' | 'notaNum
 
 function purchaseReceiptKey(movement: StockMovement) {
     return `${movement.sourceRef || ''}::${movement.movementDate || ''}`;
+}
+
+function resolveOpeningBalanceDate(bankAccount: BankAccount, bankTransactions: BankTransaction[]) {
+    const transactionDates = bankTransactions
+        .filter(transaction => transaction.bankAccountRef === bankAccount._id && normalizeText(transaction.date))
+        .map(transaction => normalizeText(transaction.date))
+        .sort();
+    return transactionDates[0] || getBusinessDateValue();
 }
 
 async function postWithContext(label: string, action: () => Promise<unknown>) {
@@ -163,6 +174,23 @@ async function main() {
     const legacyInvoiceById = mapById(legacyInvoices);
     const purchasesById = mapById(purchases);
     const warehouseItemsById = mapById(warehouseItems);
+
+    for (const bankAccount of bankAccounts) {
+        const openingBalance = positiveNumber(bankAccount.initialBalance);
+        if (openingBalance <= 0) {
+            await voidJournalEntryForSource(BACKFILL_SESSION, 'BANK_ACCOUNT', bankAccount._id, 'OPENING_BALANCE');
+            inc('skipped');
+            continue;
+        }
+        await postWithContext(`saldo awal rekening ${bankAccount.bankName || bankAccount._id}`, () =>
+            postBankAccountOpeningBalanceJournal(
+                BACKFILL_SESSION,
+                bankAccount,
+                resolveOpeningBalanceDate(bankAccount, bankTransactions),
+            )
+        );
+        inc('bankOpeningBalances');
+    }
 
     for (const nota of freightNotas) {
         if (nota.status === 'VOID') {

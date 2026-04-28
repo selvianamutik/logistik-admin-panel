@@ -133,7 +133,10 @@ export function buildReportsSnapshot(params: {
     const filteredExpenses = expenses.filter(item => inPeriod(item.date));
     const filteredBankTx = bankTransactions.filter(item => inPeriod(item.date));
     const sortedFilteredBankTx = [...filteredBankTx].sort(
-        (a, b) => getDateSortTime(b.date) - getDateSortTime(a.date)
+        (a, b) =>
+            getDateSortTime(b.date) - getDateSortTime(a.date) ||
+            String(b._createdAt || '').localeCompare(String(a._createdAt || '')) ||
+            String(b._id).localeCompare(String(a._id))
     );
     const totalRevenue =
         filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0)

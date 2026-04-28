@@ -86,7 +86,13 @@ export default function LedgerPage() {
   const pnl = useMemo(() => buildProfitLossFromLedger(periodSummaries), [periodSummaries]);
   const balanceSheet = useMemo(() => buildBalanceSheetFromLedger(balanceSummaries), [balanceSummaries]);
   const recentLedgerLines = useMemo(
-    () => buildJournalLineLookup(entries, periodLines).slice(-40).reverse(),
+    () => buildJournalLineLookup(entries, periodLines)
+      .sort((left, right) =>
+        String(right.entryDate || "").localeCompare(String(left.entryDate || "")) ||
+        String(right.entryNumber || "").localeCompare(String(left.entryNumber || "")) ||
+        Number(left.lineNumber || 0) - Number(right.lineNumber || 0),
+      )
+      .slice(0, 40),
     [entries, periodLines],
   );
 

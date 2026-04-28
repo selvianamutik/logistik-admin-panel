@@ -11,6 +11,8 @@ const accountingLedgerPath = path.join(process.cwd(), 'src/app/(admin)/accountin
 const accountingLedgerSource = fs.readFileSync(accountingLedgerPath, 'utf8');
 const accountingPostingPath = path.join(process.cwd(), 'src/lib/api/accounting-posting.ts');
 const accountingPostingSource = fs.readFileSync(accountingPostingPath, 'utf8');
+const backfillAccountingPath = path.join(process.cwd(), 'scripts/backfill-accounting-journals.ts');
+const backfillAccountingSource = fs.readFileSync(backfillAccountingPath, 'utf8');
 const driverWorkflowPath = path.join(process.cwd(), 'src/lib/api/driver-workflows.ts');
 const driverWorkflowSource = fs.readFileSync(driverWorkflowPath, 'utf8');
 const documentStorePath = path.join(process.cwd(), 'src/lib/repositories/document-store.ts');
@@ -362,6 +364,12 @@ assert(
         reportsSupportSource.includes("const revenueRefundRows = filteredOverpaymentRefunds.filter(isInvoiceOverpaymentRefund)"),
     'Laba/rugi hanya boleh mengurangi pendapatan dari refund overpaid invoice; refund sisa receipt belum teralokasi adalah arus kas, bukan koreksi pendapatan.'
 );
+assert(
+    reportsSupportSource.includes("getDateSortTime(b.date) - getDateSortTime(a.date)") &&
+        reportsSupportSource.includes("String(b._createdAt || '').localeCompare(String(a._createdAt || ''))") &&
+        reportsSupportSource.includes("String(b._id).localeCompare(String(a._id))"),
+    'Laporan arus kas harus mengurutkan mutasi secara stabil berdasarkan tanggal, waktu dibuat, lalu id agar saldo berjalan tidak terlihat acak pada tanggal yang sama.'
+);
 for (const [label, migrationSource] of [
     ['schema awal accounting ledger', accountingLedgerMigrationSource],
     ['migration revisi accounting journal unique index', accountingRevisionMigrationSource],
@@ -385,6 +393,24 @@ assert(
         accountingLedgerSource.includes('buildProfitLossFromLedger(periodSummaries)') &&
         accountingLedgerSource.includes('buildBalanceSheetFromLedger(balanceSummaries)'),
     'Buku besar harus memisahkan mutasi periode untuk laba/rugi dan saldo kumulatif untuk neraca.'
+);
+assert(
+    accountingLedgerSource.includes('String(right.entryDate || "").localeCompare(String(left.entryDate || ""))') &&
+        accountingLedgerSource.includes('.slice(0, 40)'),
+    'Mutasi terakhir buku besar harus disort kronologis desc secara stabil, bukan mengambil urutan fetch detail jurnal.'
+);
+assert(
+    accountingPostingSource.includes('postBankAccountOpeningBalanceJournal') &&
+        accountingPostingSource.includes("sourceType: 'BANK_ACCOUNT'") &&
+        accountingPostingSource.includes("sourceEvent: 'OPENING_BALANCE'") &&
+        accountingPostingSource.includes("account: 'equity_capital'"),
+    'Saldo awal rekening/kas harus diposting sebagai jurnal opening balance ke modal agar neraca mengikuti saldo kas-bank aktual.'
+);
+assert(
+    backfillAccountingSource.includes('postBankAccountOpeningBalanceJournal') &&
+        backfillAccountingSource.includes("voidJournalEntryForSource(BACKFILL_SESSION, 'BANK_ACCOUNT'") &&
+        backfillAccountingSource.includes('resolveOpeningBalanceDate(bankAccount, bankTransactions)'),
+    'Backfill accounting harus membangun ulang jurnal saldo awal rekening dan membatalkan jurnal saldo awal yang sudah nol.'
 );
 const genericWorkflowPath = path.join(process.cwd(), 'src/lib/api/generic-workflows.ts');
 const genericWorkflowSource = fs.readFileSync(genericWorkflowPath, 'utf8');

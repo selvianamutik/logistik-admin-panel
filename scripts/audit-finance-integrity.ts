@@ -51,6 +51,10 @@ function bankDelta(transaction: BankTransaction) {
     return transaction.type === 'DEBIT' || transaction.type === 'TRANSFER_OUT' ? -amount : amount;
 }
 
+function bankTransactionOrderKey(transaction: BankTransaction) {
+    return `${transaction.date || ''} ${transaction._createdAt || ''} ${transaction._id}`;
+}
+
 function groupBy<T>(rows: T[], selector: (row: T) => string | undefined | null) {
     const grouped = new Map<string, T[]>();
     for (const row of rows) {
@@ -201,11 +205,31 @@ async function main() {
 
     const bankTransactionsByBank = groupBy(bankTransactions, row => row.bankAccountRef);
     for (const account of bankAccounts) {
-        const expectedBalance = money(account.initialBalance) + sumBy(bankTransactionsByBank.get(account._id) || [], bankDelta);
+        let runningBalance = money(account.initialBalance);
+        const accountTransactions = [...(bankTransactionsByBank.get(account._id) || [])]
+            .sort((left, right) => bankTransactionOrderKey(left).localeCompare(bankTransactionOrderKey(right)));
+        for (const transaction of accountTransactions) {
+            runningBalance += bankDelta(transaction);
+            assert(
+                money(transaction.balanceAfter) === runningBalance,
+                `Saldo berjalan mutasi bank ${transaction._id} tidak sinkron: stored ${money(transaction.balanceAfter)}, expected ${runningBalance}.`
+            );
+        }
         assert(
-            money(account.currentBalance) === expectedBalance,
-            `Saldo rekening ${account.bankName} tidak sesuai transaksi: stored ${money(account.currentBalance)}, expected ${expectedBalance}.`
+            money(account.currentBalance) === runningBalance,
+            `Saldo rekening ${account.bankName} tidak sesuai transaksi: stored ${money(account.currentBalance)}, expected ${runningBalance}.`
         );
+
+        if (money(account.initialBalance) > 0) {
+            const openingLines = getPostedJournalLines('BANK_ACCOUNT', account._id, 'OPENING_BALANCE', `saldo awal ${account.bankName}`);
+            const cashBankAccount = account.accountType === 'CASH' || account.systemKey === 'cash-on-hand'
+                ? 'cash_on_hand'
+                : 'bank';
+            assertJournalSide(openingLines, cashBankAccount, 'debit', account.initialBalance, `saldo awal ${account.bankName}`);
+            assertJournalSide(openingLines, 'equity_capital', 'credit', account.initialBalance, `saldo awal ${account.bankName}`);
+        } else {
+            assertNoPostedJournal('BANK_ACCOUNT', account._id, 'OPENING_BALANCE', `saldo awal ${account.bankName}`);
+        }
     }
 
     for (const transaction of bankTransactions) {
@@ -702,11 +726,11 @@ async function main() {
         `Saldo buku besar inventory tidak sinkron: ledger ${actualInventoryBalance}, expected ${expectedInventoryBalance}.`
     );
 
-    const expectedBankMovement = sumBy(bankTransactions, bankDelta);
+    const expectedBankMovement = sumBy(bankAccounts, row => row.currentBalance);
     const actualBankMovement = journalBalance(postedJournalLines, accountById, ['cash_on_hand', 'bank'], 'debit');
     assert(
         actualBankMovement === expectedBankMovement,
-        `Mutasi buku besar kas/bank tidak sinkron: ledger ${actualBankMovement}, expected ${expectedBankMovement}.`
+        `Saldo buku besar kas/bank tidak sinkron: ledger ${actualBankMovement}, expected ${expectedBankMovement}.`
     );
 
     const expectedDriverAdvance = sumBy(driverVouchers.filter(row => row.status !== 'SETTLED'), row => row.totalIssuedAmount);
@@ -729,6 +753,7 @@ async function main() {
         if (journal.sourceType === 'DRIVER_VOUCHER_DISBURSEMENT') assert(disbursementById.has(sourceRef), `Jurnal top up bon ${journal.entryNumber} orphan.`);
         if (journal.sourceType === 'FREIGHT_NOTA') assert(getFreightNota(sourceRef, freightNotaById, legacyInvoiceById), `Jurnal invoice ${journal.entryNumber} orphan.`);
         if (journal.sourceType === 'INVOICE') assert(legacyInvoiceById.has(sourceRef), `Jurnal invoice legacy ${journal.entryNumber} orphan.`);
+        if (journal.sourceType === 'BANK_ACCOUNT') assert(bankById.has(sourceRef), `Jurnal saldo awal rekening ${journal.entryNumber} orphan.`);
     }
 
     console.log(JSON.stringify({
