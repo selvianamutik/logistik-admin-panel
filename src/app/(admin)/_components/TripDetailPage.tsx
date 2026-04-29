@@ -80,12 +80,17 @@ import {
     type DeliveryOrderCargoDraftGroup,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
+import {
+    createDefaultDriverVoucherItemForm,
+    createDefaultDriverVoucherTopUpForm,
+    DRIVER_VOUCHER_EXPENSE_CATEGORIES,
+} from '@/lib/driver-voucher-detail-support';
 import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
 
@@ -132,10 +137,42 @@ type ResolvedShipperReferenceEntry = {
     receiverCompany: string;
 };
 
+type TripCashIssueFormState = {
+    vehicleRef: string;
+    driverRef: string;
+    vehicleCategoryOverrideReason: string;
+    tripOriginArea: string;
+    tripDestinationArea: string;
+    tripRouteRateRef: string;
+    taripBorongan: number;
+    keteranganBorongan: string;
+    issueBankRef: string;
+    cashGiven: number;
+    issuedDate: string;
+    notes: string;
+};
+
 const ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR = '::item::';
 
 function buildActualDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
     return `${draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${deliveryOrderItemRef}`;
+}
+
+function createDefaultTripCashIssueForm(): TripCashIssueFormState {
+    return {
+        vehicleRef: '',
+        driverRef: '',
+        vehicleCategoryOverrideReason: '',
+        tripOriginArea: '',
+        tripDestinationArea: '',
+        tripRouteRateRef: '',
+        taripBorongan: 0,
+        keteranganBorongan: '',
+        issueBankRef: '',
+        cashGiven: 0,
+        issuedDate: getBusinessDateValue(),
+        notes: '',
+    };
 }
 
 function parseActualDropItemValueKey(valueKey: string) {
@@ -324,6 +361,9 @@ export default function TripDetailPage() {
     const [showShipperReferenceModal, setShowShipperReferenceModal] = useState(false);
     const [showTargetModal, setShowTargetModal] = useState(false);
     const [showCargoModal, setShowCargoModal] = useState(false);
+    const [showTripCashIssueModal, setShowTripCashIssueModal] = useState(false);
+    const [showTripCashTopUpModal, setShowTripCashTopUpModal] = useState(false);
+    const [showTripCashExpenseModal, setShowTripCashExpenseModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [selectedStatusSuratJalanRefs, setSelectedStatusSuratJalanRefs] = useState<string[]>([]);
     const [statusNote, setStatusNote] = useState('');
@@ -349,9 +389,14 @@ export default function TripDetailPage() {
     const [linkedVoucher, setLinkedVoucher] = useState<DriverVoucher | null>(null);
     const [linkedTripCashLink, setLinkedTripCashLink] = useState<TripCashLinkSummary | null>(null);
     const [linkedVoucherBonNumber, setLinkedVoucherBonNumber] = useState('');
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
+    const [loadingTripCashOptions, setLoadingTripCashOptions] = useState(false);
+    const [issuingTripCash, setIssuingTripCash] = useState(false);
+    const [toppingUpTripCash, setToppingUpTripCash] = useState(false);
+    const [savingTripCashExpense, setSavingTripCashExpense] = useState(false);
     const [rejectingRequest, setRejectingRequest] = useState(false);
     const [loadingTripResources, setLoadingTripResources] = useState(false);
     const [savingTripResources, setSavingTripResources] = useState(false);
@@ -396,6 +441,9 @@ export default function TripDetailPage() {
     const [targetReceiverAddress, setTargetReceiverAddress] = useState('');
     const [targetReceiverCompany, setTargetReceiverCompany] = useState('');
     const [selectedTargetRecipientId, setSelectedTargetRecipientId] = useState('');
+    const [tripCashIssueForm, setTripCashIssueForm] = useState<TripCashIssueFormState>(createDefaultTripCashIssueForm);
+    const [tripCashTopUpForm, setTripCashTopUpForm] = useState(createDefaultDriverVoucherTopUpForm);
+    const [tripCashExpenseForm, setTripCashExpenseForm] = useState(createDefaultDriverVoucherItemForm);
     const editingTaripRef = useRef(false);
     const loadedReferenceCustomerRef = useRef<string>('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
@@ -415,6 +463,7 @@ export default function TripDetailPage() {
     const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
+    const canManageTripCashCosts = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
     const currentPath = pathname || `/delivery-orders/${doId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
     const getDefaultPodName = useCallback(() => {
@@ -435,7 +484,10 @@ export default function TripDetailPage() {
         showTripResourcesModal ||
         showShipperReferenceModal ||
         showTargetModal ||
-        showCargoModal;
+        showCargoModal ||
+        showTripCashIssueModal ||
+        showTripCashTopUpModal ||
+        showTripCashExpenseModal;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
         serviceRef: doData?.serviceRef,
     });
@@ -717,6 +769,39 @@ export default function TripDetailPage() {
         }
     }, [addToast, doData?.driverRef, doData?.vehicleRef]);
 
+    const loadTripCashBankAccounts = useCallback(async () => {
+        setLoadingTripCashOptions(true);
+        try {
+            const accountRows = await fetchAdminCollectionData<BankAccount[]>(
+                '/api/data?entity=bank-accounts',
+                'Gagal memuat rekening uang jalan trip'
+            );
+            const activeAccounts = (accountRows || []).filter(account => account.active !== false);
+            setBankAccounts(activeAccounts);
+            setTripCashIssueForm(previous =>
+                previous.issueBankRef && !activeAccounts.some(account => account._id === previous.issueBankRef)
+                    ? { ...previous, issueBankRef: '' }
+                    : previous
+            );
+            setTripCashTopUpForm(previous =>
+                previous.bankAccountRef && !activeAccounts.some(account => account._id === previous.bankAccountRef)
+                    ? { ...previous, bankAccountRef: '' }
+                    : previous
+            );
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat rekening uang jalan trip');
+        } finally {
+            setLoadingTripCashOptions(false);
+        }
+    }, [addToast]);
+
+    const loadTripCashModalReferences = useCallback(async () => {
+        await Promise.all([
+            loadTripResources(),
+            loadTripCashBankAccounts(),
+        ]);
+    }, [loadTripCashBankAccounts, loadTripResources]);
+
     const openTripResourcesModal = async () => {
         if (!canAssignTripResources) return;
         setTripVehicleRef(doData?.vehicleRef || '');
@@ -724,6 +809,58 @@ export default function TripDetailPage() {
         setTripVehicleOverrideReason(doData?.vehicleCategoryOverrideReason || '');
         setShowTripResourcesModal(true);
         await loadTripResources();
+    };
+
+    const openTripCashIssueModal = async () => {
+        if (!canCreateTripCash || !doData || linkedVoucher || linkedTripCashLink) return;
+        const plannedIssueBankRef = doData.plannedTripIssueBankRef || '';
+        setTripCashIssueForm({
+            vehicleRef: doData.vehicleRef || '',
+            driverRef: doData.driverRef || '',
+            vehicleCategoryOverrideReason: doData.vehicleCategoryOverrideReason || '',
+            tripOriginArea: doData.tripOriginArea || '',
+            tripDestinationArea: doData.tripDestinationArea || '',
+            tripRouteRateRef: doData.tripRouteRateRef || '',
+            taripBorongan: (doData.baseTaripBorongan ?? doData.taripBorongan) || 0,
+            keteranganBorongan: doData.keteranganBorongan || '',
+            issueBankRef: plannedIssueBankRef,
+            cashGiven: parseFormattedNumberish(doData.plannedTripCashGiven ?? 0, { allowDecimal: false, maxFractionDigits: 0 }),
+            issuedDate: getBusinessDateValue(),
+            notes: '',
+        });
+        setShowTripCashIssueModal(true);
+        await loadTripCashModalReferences();
+    };
+
+    const applyTripCashIssueRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
+        const nextMatchedRate = findMatchingTripRouteRate(tripRouteRates, {
+            originArea: nextOriginArea,
+            destinationArea: nextDestinationArea,
+            serviceRef: doData?.serviceRef,
+        });
+        setTripCashIssueForm(previous => ({
+            ...previous,
+            tripOriginArea: nextOriginArea,
+            tripDestinationArea: nextDestinationArea,
+            tripRouteRateRef: nextMatchedRate?._id || '',
+            taripBorongan: nextMatchedRate?.rate ?? previous.taripBorongan,
+        }));
+    };
+
+    const handleTripCashIssueOriginChange = (nextOriginArea: string) => {
+        const nextDestinationOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+            originArea: nextOriginArea,
+            serviceRef: doData?.serviceRef,
+        });
+        const preservedDestination =
+            nextOriginArea && nextDestinationOptions.includes(tripCashIssueForm.tripDestinationArea)
+                ? tripCashIssueForm.tripDestinationArea
+                : '';
+        applyTripCashIssueRouteSelection(nextOriginArea, preservedDestination);
+    };
+
+    const handleTripCashIssueDestinationChange = (nextDestinationArea: string) => {
+        applyTripCashIssueRouteSelection(tripCashIssueForm.tripOriginArea, nextDestinationArea);
     };
 
     const openShipperReferenceModal = (mode: 'edit' | 'create' = 'edit') => {
@@ -2537,6 +2674,240 @@ export default function TripDetailPage() {
         }
     };
 
+    const handleIssueTripCash = async () => {
+        if (!doData || !canCreateTripCash || linkedVoucher || linkedTripCashLink) return;
+        if (!tripCashIssueForm.vehicleRef) {
+            addToast('error', 'Pilih kendaraan trip');
+            return;
+        }
+        if (!tripCashIssueForm.driverRef) {
+            addToast('error', 'Pilih supir trip');
+            return;
+        }
+        if (!tripCashIssueForm.issueBankRef) {
+            addToast('error', 'Pilih kas / bank uang jalan');
+            return;
+        }
+        if (!tripCashIssueForm.cashGiven || tripCashIssueForm.cashGiven <= 0) {
+            addToast('error', 'Uang jalan awal wajib diisi');
+            return;
+        }
+
+        const selectedVehicle = vehicles.find(vehicle => vehicle._id === tripCashIssueForm.vehicleRef) || null;
+        const requiresOverride = shouldRequireTripVehicleOverrideReason(doData, selectedVehicle);
+        if (requiresOverride && !tripCashIssueForm.vehicleCategoryOverrideReason.trim()) {
+            addToast('error', 'Alasan override armada wajib diisi');
+            return;
+        }
+
+        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
+            originArea: tripCashIssueForm.tripOriginArea,
+            destinationArea: tripCashIssueForm.tripDestinationArea,
+            serviceRef: doData.serviceRef,
+        });
+        const nextTripFee = matchedRate?.rate ?? tripCashIssueForm.taripBorongan;
+        if (!Number.isFinite(nextTripFee) || nextTripFee <= 0) {
+            addToast('error', 'Upah borongan wajib diisi');
+            return;
+        }
+
+        setIssuingTripCash(true);
+        try {
+            const nextOverrideReason = requiresOverride
+                ? tripCashIssueForm.vehicleCategoryOverrideReason.trim()
+                : '';
+            const resourceChanged =
+                tripCashIssueForm.vehicleRef !== (doData.vehicleRef || '') ||
+                tripCashIssueForm.driverRef !== (doData.driverRef || '') ||
+                nextOverrideReason !== (doData.vehicleCategoryOverrideReason || '');
+
+            if (resourceChanged) {
+                const resourceRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'delivery-orders',
+                        action: 'assign-trip-resources',
+                        data: {
+                            id: doData._id,
+                            vehicleRef: tripCashIssueForm.vehicleRef,
+                            driverRef: tripCashIssueForm.driverRef,
+                            vehicleCategoryOverrideReason: requiresOverride
+                                ? nextOverrideReason
+                                : undefined,
+                        },
+                    }),
+                });
+                const resourceResult = await resourceRes.json();
+                if (!resourceRes.ok) {
+                    addToast('error', resourceResult.error || 'Gagal menyimpan armada trip');
+                    return;
+                }
+            }
+
+            const nextTripRouteRateRef = matchedRate?._id || tripCashIssueForm.tripRouteRateRef || '';
+            const currentBaseTripFee = (doData.baseTaripBorongan ?? doData.taripBorongan) || 0;
+            const feeChanged =
+                (tripCashIssueForm.tripOriginArea || '') !== (doData.tripOriginArea || '') ||
+                (tripCashIssueForm.tripDestinationArea || '') !== (doData.tripDestinationArea || '') ||
+                nextTripRouteRateRef !== (doData.tripRouteRateRef || '') ||
+                Math.abs(nextTripFee - currentBaseTripFee) > 0.01 ||
+                (tripCashIssueForm.keteranganBorongan || '') !== (doData.keteranganBorongan || '');
+
+            if (feeChanged) {
+                const feeRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'delivery-orders',
+                        action: 'update',
+                        data: buildDeliveryOrderTripFeeUpdateData({
+                            id: doData._id,
+                            tripRouteRateRef: nextTripRouteRateRef,
+                            tripOriginArea: tripCashIssueForm.tripOriginArea,
+                            tripDestinationArea: tripCashIssueForm.tripDestinationArea,
+                            taripBorongan: nextTripFee,
+                            keteranganBorongan: tripCashIssueForm.keteranganBorongan,
+                        }),
+                    }),
+                });
+                const feeResult = await feeRes.json();
+                if (!feeRes.ok) {
+                    addToast('error', feeResult.error || 'Gagal menyimpan upah borongan');
+                    return;
+                }
+            }
+
+            const voucherRes = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-vouchers',
+                    data: {
+                        deliveryOrderRef: doData._id,
+                        issuedDate: tripCashIssueForm.issuedDate,
+                        cashGiven: tripCashIssueForm.cashGiven,
+                        issueBankRef: tripCashIssueForm.issueBankRef,
+                        notes: tripCashIssueForm.notes || undefined,
+                    },
+                }),
+            });
+            const voucherResult = await voucherRes.json();
+            if (!voucherRes.ok) {
+                addToast('error', voucherResult.error || 'Gagal menerbitkan uang jalan trip');
+                return;
+            }
+
+            setShowTripCashIssueModal(false);
+            setTripCashIssueForm(createDefaultTripCashIssueForm());
+            await refreshTripDetail();
+            addToast('success', `Bon ${voucherResult.data?.bonNumber || ''} berhasil diterbitkan`);
+        } catch {
+            addToast('error', 'Gagal menerbitkan uang jalan trip');
+        } finally {
+            setIssuingTripCash(false);
+        }
+    };
+
+    const openTripCashTopUpModal = async () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canManageTripCashCosts) return;
+        const defaultBankRef = linkedVoucher.issueBankRef || '';
+        setTripCashTopUpForm(createDefaultDriverVoucherTopUpForm(defaultBankRef));
+        setShowTripCashTopUpModal(true);
+        await loadTripCashBankAccounts();
+    };
+
+    const handleTripCashTopUp = async () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canManageTripCashCosts) return;
+        if (!tripCashTopUpForm.bankAccountRef) {
+            addToast('error', 'Pilih rekening sumber tambahan bon');
+            return;
+        }
+        if (!tripCashTopUpForm.amount || tripCashTopUpForm.amount <= 0) {
+            addToast('error', 'Jumlah tambahan bon wajib diisi');
+            return;
+        }
+
+        setToppingUpTripCash(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-vouchers',
+                    action: 'top-up',
+                    data: {
+                        id: linkedVoucher._id,
+                        date: tripCashTopUpForm.date,
+                        amount: tripCashTopUpForm.amount,
+                        bankAccountRef: tripCashTopUpForm.bankAccountRef,
+                        note: tripCashTopUpForm.note || undefined,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menambah uang jalan');
+                return;
+            }
+
+            setShowTripCashTopUpModal(false);
+            setTripCashTopUpForm(createDefaultDriverVoucherTopUpForm(linkedVoucher.issueBankRef || ''));
+            await refreshTripDetail();
+            addToast('success', 'Tambahan uang jalan berhasil dicatat');
+        } catch {
+            addToast('error', 'Gagal menambah uang jalan');
+        } finally {
+            setToppingUpTripCash(false);
+        }
+    };
+
+    const openTripCashExpenseModal = () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canManageTripCashCosts) return;
+        setTripCashExpenseForm(createDefaultDriverVoucherItemForm());
+        setShowTripCashExpenseModal(true);
+    };
+
+    const handleTripCashExpenseCreate = async () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canManageTripCashCosts) return;
+        if (!tripCashExpenseForm.amount || tripCashExpenseForm.amount <= 0) {
+            addToast('error', 'Nominal biaya lain-lain wajib diisi');
+            return;
+        }
+
+        setSavingTripCashExpense(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-voucher-items',
+                    data: {
+                        voucherRef: linkedVoucher._id,
+                        expenseDate: tripCashExpenseForm.expenseDate,
+                        category: tripCashExpenseForm.category,
+                        description: tripCashExpenseForm.description,
+                        amount: tripCashExpenseForm.amount,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menambah biaya lain-lain');
+                return;
+            }
+
+            setShowTripCashExpenseModal(false);
+            setTripCashExpenseForm(createDefaultDriverVoucherItemForm());
+            await refreshTripDetail();
+            addToast('success', 'Biaya lain-lain berhasil dicatat');
+        } catch {
+            addToast('error', 'Gagal menambah biaya lain-lain');
+        } finally {
+            setSavingTripCashExpense(false);
+        }
+    };
+
     const saveShipperReference = async () => {
         const normalizeDraftValue = (value: unknown) => String(value ?? '').trim();
         const normalizedReferences = shipperReferenceDrafts
@@ -2771,6 +3142,21 @@ export default function TripDetailPage() {
     const resolvedShipperReferenceEntries = buildResolvedShipperReferenceEntries(doData, doItems);
     const selectedTripVehicle = assignableVehicles.find(vehicle => vehicle._id === tripVehicleRef) || null;
     const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
+    const selectedTripCashIssueVehicle = assignableVehicles.find(vehicle => vehicle._id === tripCashIssueForm.vehicleRef) || null;
+    const requiresTripCashIssueVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripCashIssueVehicle);
+    const tripCashIssueOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
+        serviceRef: doData.serviceRef,
+    });
+    const tripCashIssueDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+        originArea: tripCashIssueForm.tripOriginArea,
+        serviceRef: doData.serviceRef,
+    });
+    const tripCashIssueMatchedRate = findMatchingTripRouteRate(tripRouteRates, {
+        originArea: tripCashIssueForm.tripOriginArea,
+        destinationArea: tripCashIssueForm.tripDestinationArea,
+        serviceRef: doData.serviceRef,
+    });
+    const tripCashIssueFeeValue = tripCashIssueMatchedRate?.rate ?? tripCashIssueForm.taripBorongan;
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
     const shipperReferenceList = Array.from(new Set(resolvedShipperReferenceEntries.map(reference => reference.referenceNumber)));
@@ -2970,6 +3356,8 @@ export default function TripDetailPage() {
     const linkedTripCashIssuedDate = linkedVoucher?.issuedDate || linkedTripCashLink?.issuedDate || '';
     const linkedTripCashStatus = linkedVoucher?.status || linkedTripCashLink?.status || null;
     const hasLinkedTripCash = Boolean(linkedTripCashVoucherId || linkedTripCashBonNumber);
+    const canTopUpLinkedTripCash = Boolean(linkedVoucher && linkedVoucher.status !== 'SETTLED' && canManageTripCashCosts);
+    const canAddLinkedTripCashExpense = canTopUpLinkedTripCash;
     const linkedVoucherStatusMeta = linkedTripCashStatus
         ? ({
             DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -2991,12 +3379,14 @@ export default function TripDetailPage() {
         Math.abs((linkedVoucher.driverFeeAmount || 0) - totalTripFee) > 0.01
     );
     const voucherIssueBlockingReasons = [
-        !doData.driverRef ? 'supir trip belum diisi' : null,
-        !doData.vehicleRef && !doData.vehiclePlate ? 'kendaraan trip belum diisi' : null,
-        !doData.taripBorongan || doData.taripBorongan <= 0 ? 'upah trip belum diisi di Trip' : null,
         !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(doData.status)
             ? 'status Trip tidak bisa diterbitkan ke uang jalan trip'
             : null,
+    ].filter((value): value is string => Boolean(value));
+    const voucherIssueDraftNotes = [
+        !doData.driverRef ? 'supir trip bisa dipilih saat terbit bon' : null,
+        !doData.vehicleRef && !doData.vehiclePlate ? 'kendaraan trip bisa dipilih saat terbit bon' : null,
+        !doData.taripBorongan || doData.taripBorongan <= 0 ? 'upah borongan bisa diisi saat terbit bon' : null,
     ].filter((value): value is string => Boolean(value));
     const canIssueVoucherFromDo =
         canCreateTripCash &&
@@ -3610,16 +4000,28 @@ export default function TripDetailPage() {
                 <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Uang Jalan Trip</span>
-                        {linkedTripCashVoucherId && canOpenTripCashPage && (
-                            <Link className="btn btn-secondary btn-sm" href={withReturnTo(`/driver-vouchers/${linkedTripCashVoucherId}`)}>
-                                <Wallet size={14} /> Buka Detail Bon
-                            </Link>
-                        )}
-                        {!hasLinkedTripCash && canIssueVoucherFromDo && (
-                            <Link className="btn btn-primary btn-sm" href={withReturnTo(`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`)}>
-                                <Wallet size={14} /> Terbitkan Uang Jalan
-                            </Link>
-                        )}
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {canAddLinkedTripCashExpense && (
+                                <button className="btn btn-secondary btn-sm" onClick={openTripCashExpenseModal}>
+                                    <Plus size={14} /> Biaya Lain-lain
+                                </button>
+                            )}
+                            {canTopUpLinkedTripCash && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => void openTripCashTopUpModal()}>
+                                    <Plus size={14} /> Tambah Uang Jalan
+                                </button>
+                            )}
+                            {linkedTripCashVoucherId && canOpenTripCashPage && (
+                                <Link className="btn btn-secondary btn-sm" href={withReturnTo(`/driver-vouchers/${linkedTripCashVoucherId}`)}>
+                                    <Wallet size={14} /> Buka Detail Bon
+                                </Link>
+                            )}
+                            {!hasLinkedTripCash && canIssueVoucherFromDo && (
+                                <button className="btn btn-primary btn-sm" onClick={() => void openTripCashIssueModal()}>
+                                    <Wallet size={14} /> Terbitkan Uang Jalan
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div className="card-body">
                         {linkedVoucher && linkedVoucherSummary ? (
@@ -3657,11 +4059,11 @@ export default function TripDetailPage() {
                                 </div>
                                 <div className="detail-row">
                                     <div className="detail-item">
-                                        <div className="detail-label">Biaya Perjalanan</div>
+                                        <div className="detail-label">Biaya Lain-lain</div>
                                         <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalSpent)}</div>
                                     </div>
                                     <div className="detail-item">
-                                        <div className="detail-label">Upah Trip Snapshot DO</div>
+                                        <div className="detail-label">Upah Borongan</div>
                                         <div className="detail-value">{formatCurrency(linkedVoucherSummary.driverFeeAmount)}</div>
                                     </div>
                                 </div>
@@ -3686,7 +4088,7 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="text-muted text-sm">
-                                    Bon ini melekat ke trip ini. Detail biaya perjalanan, top up, dan settlement akhir dibuka dari modul Uang Jalan Trip.
+                                    Bon ini melekat ke trip ini. Tambahan uang jalan dan biaya lain-lain bisa dicatat dari halaman ini.
                                 </div>
                             </div>
                         ) : hasLinkedTripCash ? (
@@ -3711,7 +4113,7 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="text-muted text-sm">
-                                    Trip ini sudah punya uang jalan trip. Detail nominal, biaya perjalanan, top up, dan settlement akhir hanya dibuka dari modul Uang Jalan Trip oleh role yang memang berwenang.
+                                    Trip ini sudah punya uang jalan trip. Armada dan upah borongan dikunci agar settlement tidak berubah diam-diam.
                                 </div>
                             </div>
                         ) : (
@@ -3720,6 +4122,11 @@ export default function TripDetailPage() {
                                 <div className="text-muted text-sm">
                                     Terbitkan uang jalan dari trip ini setelah trip siap jalan.
                                 </div>
+                                {canCreateTripCash && voucherIssueDraftNotes.length > 0 && voucherIssueBlockingReasons.length === 0 && (
+                                    <div className="text-muted text-sm">
+                                        Bisa dilengkapi saat terbit bon: {voucherIssueDraftNotes.join('; ')}.
+                                    </div>
+                                )}
                                 {canCreateTripCash && voucherIssueBlockingReasons.length > 0 && (
                                     <div className="text-muted text-sm">
                                         Yang masih perlu dilengkapi: {voucherIssueBlockingReasons.join('; ')}.
@@ -4453,6 +4860,328 @@ export default function TripDetailPage() {
                     )}
             </CollapsibleCard>
             </div>
+
+            {showTripCashIssueModal && (
+                <div className="modal-overlay" onClick={() => { if (!issuingTripCash) setShowTripCashIssueModal(false); }}>
+                    <div className="modal" style={{ maxWidth: 920 }} onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Terbitkan Uang Jalan Trip</h3>
+                            <button className="modal-close" onClick={() => setShowTripCashIssueModal(false)} disabled={issuingTripCash}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kendaraan <span className="required">*</span></label>
+                                    <select
+                                        className="form-select"
+                                        value={tripCashIssueForm.vehicleRef}
+                                        onChange={event => setTripCashIssueForm(previous => ({ ...previous, vehicleRef: event.target.value }))}
+                                        disabled={loadingTripResources || issuingTripCash}
+                                    >
+                                        <option value="">{loadingTripResources ? 'Memuat kendaraan...' : 'Pilih kendaraan'}</option>
+                                        {assignableVehicles.map(vehicle => (
+                                            <option key={vehicle._id} value={vehicle._id}>
+                                                {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || '-'}{vehicle.serviceName ? ` (${vehicle.serviceName})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Supir <span className="required">*</span></label>
+                                    <select
+                                        className="form-select"
+                                        value={tripCashIssueForm.driverRef}
+                                        onChange={event => setTripCashIssueForm(previous => ({ ...previous, driverRef: event.target.value }))}
+                                        disabled={loadingTripResources || issuingTripCash}
+                                    >
+                                        <option value="">{loadingTripResources ? 'Memuat supir...' : 'Pilih supir'}</option>
+                                        {assignableDrivers.map(driver => (
+                                            <option key={driver._id} value={driver._id}>
+                                                {driver.name}{driver.phone ? ` | ${driver.phone}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {requiresTripCashIssueVehicleOverrideReason && (
+                                <div className="form-group">
+                                    <label className="form-label">Alasan Override Armada <span className="required">*</span></label>
+                                    <textarea
+                                        className="form-textarea"
+                                        rows={2}
+                                        value={tripCashIssueForm.vehicleCategoryOverrideReason}
+                                        onChange={event => setTripCashIssueForm(previous => ({ ...previous, vehicleCategoryOverrideReason: event.target.value }))}
+                                        disabled={issuingTripCash}
+                                        placeholder="Armada sesuai layanan tidak tersedia atau load harus dipecah"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Asal Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripCashIssueForm.tripOriginArea}
+                                        onChange={event => handleTripCashIssueOriginChange(event.target.value)}
+                                        disabled={issuingTripCash}
+                                    >
+                                        <option value="">Pilih asal area</option>
+                                        {tripCashIssueOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripCashIssueForm.tripDestinationArea}
+                                        onChange={event => handleTripCashIssueDestinationChange(event.target.value)}
+                                        disabled={issuingTripCash || !tripCashIssueForm.tripOriginArea}
+                                    >
+                                        <option value="">Pilih tujuan area</option>
+                                        {tripCashIssueDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Upah Borongan <span className="required">*</span></label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        value={tripCashIssueFeeValue}
+                                        onValueChange={value => setTripCashIssueForm(previous => ({ ...previous, taripBorongan: value }))}
+                                        placeholder="Isi upah borongan"
+                                        disabled={issuingTripCash || Boolean(tripCashIssueMatchedRate)}
+                                    />
+                                    {tripCashIssueMatchedRate && (
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                            {formatTripRouteRateLabel(tripCashIssueMatchedRate)} | {formatCurrency(tripCashIssueMatchedRate.rate)}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tanggal Bon</label>
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={tripCashIssueForm.issuedDate}
+                                        onChange={event => setTripCashIssueForm(previous => ({ ...previous, issuedDate: event.target.value }))}
+                                        disabled={issuingTripCash}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kas / Bank Uang Jalan <span className="required">*</span></label>
+                                    <select
+                                        className="form-select"
+                                        value={tripCashIssueForm.issueBankRef}
+                                        onChange={event => setTripCashIssueForm(previous => ({ ...previous, issueBankRef: event.target.value }))}
+                                        disabled={loadingTripCashOptions || issuingTripCash}
+                                    >
+                                        <option value="">{loadingTripCashOptions ? 'Memuat kas / bank...' : 'Pilih sumber uang jalan'}</option>
+                                        {bankAccounts.map(account => (
+                                            <option key={account._id} value={account._id}>
+                                                {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        value={tripCashIssueForm.cashGiven}
+                                        onValueChange={value => setTripCashIssueForm(previous => ({ ...previous, cashGiven: value }))}
+                                        placeholder="Isi uang jalan awal"
+                                        disabled={issuingTripCash}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Keterangan Upah / Bon</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={tripCashIssueForm.keteranganBorongan}
+                                    onChange={event => setTripCashIssueForm(previous => ({ ...previous, keteranganBorongan: event.target.value }))}
+                                    disabled={issuingTripCash}
+                                    placeholder="Catatan upah borongan"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan Bon</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={tripCashIssueForm.notes}
+                                    onChange={event => setTripCashIssueForm(previous => ({ ...previous, notes: event.target.value }))}
+                                    disabled={issuingTripCash}
+                                    placeholder="Catatan opsional"
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTripCashIssueModal(false)} disabled={issuingTripCash}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleIssueTripCash}
+                                disabled={
+                                    issuingTripCash ||
+                                    loadingTripResources ||
+                                    loadingTripCashOptions ||
+                                    !tripCashIssueForm.vehicleRef ||
+                                    !tripCashIssueForm.driverRef ||
+                                    !tripCashIssueForm.issueBankRef ||
+                                    !tripCashIssueForm.cashGiven ||
+                                    tripCashIssueFeeValue <= 0 ||
+                                    (requiresTripCashIssueVehicleOverrideReason && !tripCashIssueForm.vehicleCategoryOverrideReason.trim())
+                                }
+                            >
+                                <Wallet size={16} /> {issuingTripCash ? 'Menerbitkan...' : 'Terbitkan Bon'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTripCashTopUpModal && linkedVoucher && (
+                <div className="modal-overlay" onClick={() => { if (!toppingUpTripCash) setShowTripCashTopUpModal(false); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Tambah Uang Jalan</h3>
+                            <button className="modal-close" onClick={() => setShowTripCashTopUpModal(false)} disabled={toppingUpTripCash}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Tambahan</label>
+                                <input
+                                    type="date"
+                                    className="form-input"
+                                    value={tripCashTopUpForm.date}
+                                    onChange={event => setTripCashTopUpForm(previous => ({ ...previous, date: event.target.value }))}
+                                    disabled={toppingUpTripCash}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Kas / Bank Sumber <span className="required">*</span></label>
+                                <select
+                                    className="form-select"
+                                    value={tripCashTopUpForm.bankAccountRef}
+                                    onChange={event => setTripCashTopUpForm(previous => ({ ...previous, bankAccountRef: event.target.value }))}
+                                    disabled={loadingTripCashOptions || toppingUpTripCash}
+                                >
+                                    <option value="">{loadingTripCashOptions ? 'Memuat kas / bank...' : 'Pilih kas / bank'}</option>
+                                    {bankAccounts.map(account => (
+                                        <option key={account._id} value={account._id}>
+                                            {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Jumlah Tambahan <span className="required">*</span></label>
+                                <FormattedNumberInput
+                                    allowDecimal={false}
+                                    value={tripCashTopUpForm.amount}
+                                    onValueChange={value => setTripCashTopUpForm(previous => ({ ...previous, amount: value }))}
+                                    placeholder="Ketik nominal tambahan bon"
+                                    disabled={toppingUpTripCash}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={tripCashTopUpForm.note}
+                                    onChange={event => setTripCashTopUpForm(previous => ({ ...previous, note: event.target.value }))}
+                                    placeholder="Alasan tambahan bon"
+                                    disabled={toppingUpTripCash}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTripCashTopUpModal(false)} disabled={toppingUpTripCash}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleTripCashTopUp}
+                                disabled={toppingUpTripCash || loadingTripCashOptions || !tripCashTopUpForm.bankAccountRef || !tripCashTopUpForm.amount}
+                            >
+                                <Plus size={16} /> {toppingUpTripCash ? 'Memproses...' : 'Tambah Uang Jalan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTripCashExpenseModal && linkedVoucher && (
+                <div className="modal-overlay" onClick={() => { if (!savingTripCashExpense) setShowTripCashExpenseModal(false); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Tambah Biaya Lain-lain</h3>
+                            <button className="modal-close" onClick={() => setShowTripCashExpenseModal(false)} disabled={savingTripCashExpense}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Biaya</label>
+                                <input
+                                    type="date"
+                                    className="form-input"
+                                    value={tripCashExpenseForm.expenseDate}
+                                    onChange={event => setTripCashExpenseForm(previous => ({ ...previous, expenseDate: event.target.value }))}
+                                    disabled={savingTripCashExpense}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Kategori</label>
+                                <select
+                                    className="form-select"
+                                    value={tripCashExpenseForm.category}
+                                    onChange={event => setTripCashExpenseForm(previous => ({ ...previous, category: event.target.value }))}
+                                    disabled={savingTripCashExpense}
+                                >
+                                    {DRIVER_VOUCHER_EXPENSE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Deskripsi</label>
+                                <input
+                                    className="form-input"
+                                    value={tripCashExpenseForm.description}
+                                    onChange={event => setTripCashExpenseForm(previous => ({ ...previous, description: event.target.value }))}
+                                    placeholder="Keterangan pengeluaran"
+                                    disabled={savingTripCashExpense}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Jumlah <span className="required">*</span></label>
+                                <FormattedNumberInput
+                                    allowDecimal={false}
+                                    value={tripCashExpenseForm.amount}
+                                    onValueChange={value => setTripCashExpenseForm(previous => ({ ...previous, amount: value }))}
+                                    placeholder="Ketik nominal biaya"
+                                    disabled={savingTripCashExpense}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTripCashExpenseModal(false)} disabled={savingTripCashExpense}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleTripCashExpenseCreate}
+                                disabled={savingTripCashExpense || !tripCashExpenseForm.amount}
+                            >
+                                <Save size={16} /> {savingTripCashExpense ? 'Menyimpan...' : 'Simpan Biaya'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showTripResourcesModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingTripResources) setShowTripResourcesModal(false); }}>
