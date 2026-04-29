@@ -696,12 +696,12 @@ export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropD
 
 export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
-        CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
-        HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
-        ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
-        ARRIVED: ['DELIVERED', 'CANCELLED'],
-        PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
-        DELIVERED: ['CANCELLED'],
+        CREATED: ['HEADING_TO_PICKUP'],
+        HEADING_TO_PICKUP: ['ON_DELIVERY'],
+        ON_DELIVERY: ['ARRIVED'],
+        ARRIVED: ['DELIVERED'],
+        PARTIAL_HOLD: ['DELIVERED'],
+        DELIVERED: [],
     };
     return transitions[current] || [];
 }

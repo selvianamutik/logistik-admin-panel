@@ -839,9 +839,6 @@ export default function OrderDetailPage() {
             addToast('error', 'Rencana trip yang sudah punya SJ tidak bisa dihapus dari sini.');
             return;
         }
-        if (typeof window !== 'undefined' && !window.confirm(`Hapus rencana Trip ${tripPlan.sequence}?`)) {
-            return;
-        }
 
         setDeletingTripPlanKey(tripPlan._key);
         try {

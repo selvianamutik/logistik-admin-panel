@@ -92,7 +92,7 @@ import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRat
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
 import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
-const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
+const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
 type ShipperReferenceDraft = {
     draftKey: string;
@@ -364,9 +364,11 @@ export default function TripDetailPage() {
     const [showTripCashIssueModal, setShowTripCashIssueModal] = useState(false);
     const [showTripCashTopUpModal, setShowTripCashTopUpModal] = useState(false);
     const [showTripCashExpenseModal, setShowTripCashExpenseModal] = useState(false);
+    const [showCancelTripModal, setShowCancelTripModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [selectedStatusSuratJalanRefs, setSelectedStatusSuratJalanRefs] = useState<string[]>([]);
     const [statusNote, setStatusNote] = useState('');
+    const [cancelTripNote, setCancelTripNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
     const [rejectRequestNote, setRejectRequestNote] = useState('');
     const [podName, setPodName] = useState('');
@@ -397,6 +399,7 @@ export default function TripDetailPage() {
     const [issuingTripCash, setIssuingTripCash] = useState(false);
     const [toppingUpTripCash, setToppingUpTripCash] = useState(false);
     const [savingTripCashExpense, setSavingTripCashExpense] = useState(false);
+    const [cancellingTrip, setCancellingTrip] = useState(false);
     const [rejectingRequest, setRejectingRequest] = useState(false);
     const [loadingTripResources, setLoadingTripResources] = useState(false);
     const [savingTripResources, setSavingTripResources] = useState(false);
@@ -487,7 +490,8 @@ export default function TripDetailPage() {
         showCargoModal ||
         showTripCashIssueModal ||
         showTripCashTopUpModal ||
-        showTripCashExpenseModal;
+        showTripCashExpenseModal ||
+        showCancelTripModal;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
         serviceRef: doData?.serviceRef,
     });
@@ -2529,6 +2533,39 @@ export default function TripDetailPage() {
         }
     };
 
+    const cancelTrip = async () => {
+        if (!doData?._id || !canManageDeliveryStatus) return;
+        setCancellingTrip(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'cancel-trip',
+                    data: {
+                        id: doData._id,
+                        note: cancelTripNote,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal membatalkan trip');
+                return;
+            }
+            setShowCancelTripModal(false);
+            setCancelTripNote('');
+            await refreshTripDetail();
+            const cancelledCount = Number(result.data?.cancelledSuratJalanCount || 0);
+            addToast('success', `Trip dibatalkan${cancelledCount > 0 ? `, ${cancelledCount} SJ ikut batal` : ''}`);
+        } catch {
+            addToast('error', 'Gagal membatalkan trip');
+        } finally {
+            setCancellingTrip(false);
+        }
+    };
+
     const savePOD = async () => {
         setSavingPOD(true);
         try {
@@ -3429,6 +3466,21 @@ export default function TripDetailPage() {
     const availableBatchStatuses = BATCH_SURAT_JALAN_STATUS_OPTIONS.filter(status =>
         suratJalanStatusOptions.some(document => getEligibleStatusesForSuratJalan(document).includes(status))
     );
+    const cancelableSuratJalanDocuments = suratJalanDocuments.filter(document => {
+        const currentStatus = document.tripStatus || displayTripStatus;
+        return currentStatus !== 'CANCELLED' && currentStatus !== 'DELIVERED' && currentStatus !== 'PARTIAL_HOLD';
+    });
+    const hasFinalizedCargoOutcome =
+        Boolean(doData.cargoFinalizedAt) ||
+        (Array.isArray(doData.actualDropPoints) && doData.actualDropPoints.length > 0);
+    const canCancelTripFromDetail =
+        canManageDeliveryStatus &&
+        !doData.pendingDriverStatus &&
+        !hasFinalizedCargoOutcome &&
+        displayTripStatus !== 'CANCELLED' &&
+        displayTripStatus !== 'DELIVERED' &&
+        displayTripStatus !== 'PARTIAL_HOLD' &&
+        (suratJalanDocuments.length === 0 || cancelableSuratJalanDocuments.length > 0);
     const eligibleStatusSuratJalanDocuments = newStatus
         ? suratJalanStatusOptions.filter(document => getEligibleStatusesForSuratJalan(document).includes(newStatus))
         : [];
@@ -3976,9 +4028,9 @@ export default function TripDetailPage() {
                                     <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah Trip' : 'Isi Upah Trip'}
                                 </button>
                             )}
-                            {canManageDeliveryStatus && availableBatchStatuses.includes('CANCELLED') && (
-                                <button className="btn btn-secondary btn-sm" onClick={() => openStatusModal('CANCELLED')}>
-                                    Batalkan Batch SJ
+                            {canCancelTripFromDetail && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => { setCancelTripNote(''); setShowCancelTripModal(true); }}>
+                                    Batalkan Trip
                                 </button>
                             )}
                         </div>
@@ -5264,6 +5316,39 @@ export default function TripDetailPage() {
                                 }
                             >
                                 <Save size={16} /> {savingTripResources ? 'Menyimpan...' : 'Simpan Armada Trip'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCancelTripModal && (
+                <div className="modal-overlay" onClick={() => { if (!cancellingTrip) setShowCancelTripModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Batalkan Trip</h3>
+                            <button className="modal-close" onClick={() => setShowCancelTripModal(false)} disabled={cancellingTrip}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-danger-light)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)', marginBottom: '1rem' }}>
+                                Trip {displayTripNumber} akan dibatalkan. {cancelableSuratJalanDocuments.length} SJ tertaut ikut batal. Order/resi tetap aktif.
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan Pembatalan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={cancelTripNote}
+                                    onChange={event => setCancelTripNote(event.target.value)}
+                                    placeholder="Mis. trip batal karena armada diganti"
+                                    disabled={cancellingTrip}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowCancelTripModal(false)} disabled={cancellingTrip}>Batal</button>
+                            <button className="btn btn-primary" onClick={cancelTrip} disabled={cancellingTrip} style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>
+                                {cancellingTrip ? 'Membatalkan...' : 'Batalkan Trip'}
                             </button>
                         </div>
                     </div>

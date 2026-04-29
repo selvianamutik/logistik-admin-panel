@@ -2944,6 +2944,177 @@ export async function handleDeliveryOrderContinueHeldCargo(
     });
 }
 
+export async function handleDeliveryOrderCancelTrip(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const note = normalizeOptionalText(data.note);
+    if (!id) {
+        return NextResponse.json({ error: 'Trip tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Trip tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.status === 'CANCELLED') {
+        return NextResponse.json({ error: 'Trip sudah dibatalkan.' }, { status: 409 });
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `Trip ${deliveryOrder.doNumber || id} masih punya permintaan driver ${deliveryOrder.pendingDriverStatus} yang belum diputuskan.` },
+            { status: 409 }
+        );
+    }
+
+    const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const hasFinalizedCargo =
+        deliveryOrder.status === 'DELIVERED' ||
+        deliveryOrder.status === 'PARTIAL_HOLD' ||
+        Boolean(deliveryOrder.cargoFinalizedAt) ||
+        (Array.isArray(deliveryOrder.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0) ||
+        doItems.some(item =>
+            normalizeNumber(item.actualQtyKoli ?? 0) > 0 ||
+            normalizeNumber(item.actualWeightKg ?? 0) > 0 ||
+            normalizeNumber(item.actualVolumeM3 ?? 0) > 0
+        );
+    if (hasFinalizedCargo) {
+        return NextResponse.json(
+            { error: 'Trip yang sudah punya finalisasi/drop aktual tidak bisa dibatalkan. Revisi data finalisasi atau lanjutkan sisa hold dari alur status.' },
+            { status: 409 }
+        );
+    }
+
+    let suratJalanRecords = await listDocumentsByFilter<{
+        _id: string;
+        _rev?: string;
+        tripRef: string;
+        tripStatus?: DOStatus;
+        suratJalanNumber?: string;
+    }>('suratJalan', { tripRef: id });
+
+    if (suratJalanRecords.length === 0 && doItems.length > 0) {
+        const derivedSuratJalanRecords = mapDeliveryOrderToSuratJalanRecords(deliveryOrder, doItems as DeliveryOrderItem[]);
+        for (const record of derivedSuratJalanRecords) {
+            await createDocument({ ...record });
+        }
+        suratJalanRecords = await listDocumentsByFilter<{
+            _id: string;
+            _rev?: string;
+            tripRef: string;
+            tripStatus?: DOStatus;
+            suratJalanNumber?: string;
+        }>('suratJalan', { tripRef: id });
+    }
+
+    const finalizedRecords = suratJalanRecords.filter(record =>
+        record.tripStatus === 'DELIVERED' || record.tripStatus === 'PARTIAL_HOLD'
+    );
+    if (finalizedRecords.length > 0) {
+        return NextResponse.json(
+            { error: `Ada SJ yang sudah final/partial hold dan tidak bisa dibatalkan: ${finalizedRecords.map(record => record.suratJalanNumber || record._id).join(', ')}` },
+            { status: 409 }
+        );
+    }
+
+    const timestamp = new Date().toISOString();
+    try {
+        for (const record of suratJalanRecords) {
+            await updateDocument(record._id, {
+                tripStatus: 'CANCELLED',
+                syncedAt: timestamp,
+            }, 'suratJalan');
+        }
+
+        await updateDocument(id, {
+            status: 'CANCELLED',
+            pendingDriverStatus: null,
+            pendingDriverStatusRequestedAt: null,
+            pendingDriverStatusRequestedBy: null,
+            pendingDriverStatusRequestedByName: null,
+            pendingDriverStatusNote: null,
+            pendingDriverActualCargoItems: null,
+            pendingDriverActualDropPoints: null,
+            trackingState: 'STOPPED',
+            trackingStoppedAt: timestamp,
+        }, 'deliveryOrder');
+
+        for (const item of doItems) {
+            const orderItemRef = extractRefId(item.orderItemRef);
+            if (!orderItemRef) {
+                continue;
+            }
+            const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef, 'orderItem');
+            if (!orderItem) {
+                continue;
+            }
+            if (!orderItem._rev && !isSupabaseBackendEnabled()) {
+                return NextResponse.json(
+                    { error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+
+            const progress = getOrderItemProgress(orderItem);
+            const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+            const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
+            const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
+            const nextProgress = {
+                ...progress,
+                assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
+                assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
+                assignedVolume: roundQuantity(Math.max(progress.assignedVolume - plannedVolume, 0), 3),
+            };
+
+            await updateDocument(orderItemRef, {
+                assignedQtyKoli: nextProgress.assignedQtyKoli,
+                assignedWeight: nextProgress.assignedWeight,
+                assignedVolume: nextProgress.assignedVolume,
+                status: deriveOrderItemStatusFromProgress(nextProgress),
+            }, 'orderItem');
+        }
+
+        const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
+        if (tripRecord) {
+            await updateDocument(id, { status: 'CANCELLED' }, 'trip');
+        }
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json({ error: 'Data trip / surat jalan berubah karena update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        throw error;
+    }
+
+    try {
+        await releaseDriverTrackingLockIfOwned(deliveryOrder.driverRef, id, timestamp);
+    } catch (error) {
+        console.warn('Failed to release driver tracking lock from trip cancellation', error);
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Trip dibatalkan: ${deliveryOrder.doNumber || id}. ${suratJalanRecords.length} SJ ikut batal.${note ? ` | ${note}` : ''}`
+    );
+
+    return NextResponse.json({
+        data: {
+            tripRef: id,
+            status: 'CANCELLED',
+            cancelledSuratJalanCount: suratJalanRecords.length,
+        },
+    });
+}
+
 export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -3017,12 +3188,12 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     }
 
     const allowedStatusesByCurrent: Record<DOStatus, DOStatus[]> = {
-        CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
-        HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
-        ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
-        ARRIVED: ['DELIVERED', 'CANCELLED'],
-        PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
-        DELIVERED: ['CANCELLED'],
+        CREATED: ['HEADING_TO_PICKUP'],
+        HEADING_TO_PICKUP: ['ON_DELIVERY'],
+        ON_DELIVERY: ['ARRIVED'],
+        ARRIVED: ['DELIVERED'],
+        PARTIAL_HOLD: ['DELIVERED'],
+        DELIVERED: [],
         CANCELLED: [],
     };
 

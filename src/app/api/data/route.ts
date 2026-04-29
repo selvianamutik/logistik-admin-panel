@@ -76,6 +76,7 @@ import {
     handleDeliveryOrderAppendCargoItems,
     handleDeliveryOrderCargoItemUpdate,
     handleDeliveryOrderCargoItemRemove,
+    handleDeliveryOrderCancelTrip,
     handleDeliveryOrderContinueHeldCargo,
     handleDeliveryOrderCreate,
     handleDeliveryOrderBatchSuratJalanStatusUpdate,
@@ -248,6 +249,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'revise-targets' ||
         action === 'set-status' ||
         action === 'set-surat-jalan-status-batch' ||
+        action === 'cancel-trip' ||
         action === 'assign-trip-resources' ||
         action === 'append-cargo-items' ||
         action === 'update-cargo-item' ||
@@ -1621,6 +1623,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'set-surat-jalan-status-batch') {
             return await handleDeliveryOrderBatchSuratJalanStatusUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'cancel-trip') {
+            return await handleDeliveryOrderCancelTrip(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
