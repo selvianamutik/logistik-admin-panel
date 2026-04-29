@@ -171,6 +171,8 @@ function toDirectCargoGroupItem(item: OrderItemForm): DirectCargoGroupItem {
         qtyKoli: item.qtyKoli,
         weightInputValue: item.weightInputValue,
         weightInputUnit: item.weightInputUnit,
+        autoWeightBasisQtyKoli: item.autoWeightBasisQtyKoli,
+        autoWeightBasisWeightKg: item.autoWeightBasisWeightKg,
         volumeInputValue: item.volumeInputValue,
         volumeInputUnit: item.volumeInputUnit,
         value: item.value,

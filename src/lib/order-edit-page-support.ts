@@ -2,6 +2,7 @@ import type { Customer, Order, OrderItem, OrderPickupStop } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 import {
     convertKgToWeightInputValue,
+    convertWeightToKg,
     convertM3ToVolumeInputValue,
     type WeightInputUnit,
     type VolumeInputUnit,
@@ -156,6 +157,12 @@ export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
                     ? convertKgToWeightInputValue(normalizedWeightKg, nextWeightUnit)
                     : 0,
         weightInputUnit: nextWeightUnit,
+        autoWeightBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
+        autoWeightBasisWeightKg: normalizedWeightKg > 0
+            ? normalizedWeightKg
+            : normalizedWeightInputValue > 0
+                ? convertWeightToKg(normalizedWeightInputValue, nextWeightUnit)
+                : undefined,
         volumeInputValue:
             normalizedVolumeInputValue > 0
                 ? normalizedVolumeInputValue

@@ -56,7 +56,13 @@ export function roundQuantity(value: number, fractionDigits: number = 2) {
 }
 
 export function calculateWeightPortion(totalWeight: number, totalQtyKoli: number, qtyKoli: number) {
-  if (!Number.isFinite(totalQtyKoli) || totalQtyKoli <= 0) {
+  if (
+    !Number.isFinite(totalWeight) ||
+    !Number.isFinite(totalQtyKoli) ||
+    !Number.isFinite(qtyKoli) ||
+    totalQtyKoli <= 0 ||
+    qtyKoli <= 0
+  ) {
     return 0;
   }
   return roundQuantity((totalWeight / totalQtyKoli) * qtyKoli, 2);

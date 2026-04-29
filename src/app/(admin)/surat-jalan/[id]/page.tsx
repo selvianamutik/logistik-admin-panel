@@ -3,12 +3,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { Eye, FileText, MapPin, Plus, Save, Truck, X } from 'lucide-react';
+import { Edit, FileText, MapPin, Plus, Save, Truck, X } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import {
+    createDefaultDeliveryOrderCargoDraftItem,
+    toDeliveryOrderCargoDraftItem,
+    type DeliveryOrderCargoDraftItem,
+} from '@/lib/delivery-order-cargo-draft-support';
 import { getDeliveryOrderDisplayStatusMeta, isDeliveryOrderBillableDropType, isDeliveryOrderHoldDropType, isDeliveryOrderReturnDropType } from '@/lib/delivery-order-completion';
 import {
     applyActualCargoAutoWeightFromQty,
@@ -20,7 +25,6 @@ import {
     getActualCargoDraftsForDrop,
     getNextDeliveryOrderStatuses,
     shouldLockActualDropWeight,
-    shouldLockActualCargoWeight,
     shouldOpenAdvancedDropEditor,
     summarizeActualCargoDraftDescriptions,
     type ActualCargoDraft,
@@ -29,7 +33,14 @@ import {
 import { deriveSuratJalanDocumentStatus } from '@/lib/trip-document-mappers';
 import { convertKgToWeightInputValue, convertM3ToVolumeInputValue, convertVolumeToM3, convertWeightToKg, formatCargoSummary, formatWeightDisplay, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS } from '@/lib/measurement';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
-import type { DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
+import {
+    applyCustomerProductToOrderItem,
+    applyOrderItemAutoWeightFromQty,
+    shouldLockOrderItemWeight,
+    updateOrderItemVolumeUnit,
+    updateOrderItemWeightUnit,
+} from '@/lib/order-create-page-support';
+import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, Order } from '@/lib/types';
 import type { SuratJalanDetailSnapshot, SuratJalanDocument, SuratJalanDocumentItem } from '@/lib/trip-document-types';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -39,6 +50,21 @@ type ActualDropItemValueDraft = Pick<
     ActualDropDraft,
     'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit'
 >;
+
+type EditSuratJalanForm = {
+    referenceNumber: string;
+    pickupStopKey: string;
+    billingCustomerRef: string;
+    billingCustomerName: string;
+    receiverName: string;
+    receiverPhone: string;
+    receiverCompany: string;
+    receiverAddress: string;
+};
+
+type EditExistingCargoItem = DeliveryOrderCargoDraftItem & {
+    deliveryOrderItemId: string;
+};
 
 const ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR = '::item::';
 
@@ -78,8 +104,10 @@ export default function SuratJalanDetailPage() {
     const [sourceOrder, setSourceOrder] = useState<Order | null>(null);
     const [documentItems, setDocumentItems] = useState<SuratJalanDocumentItem[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [podName, setPodName] = useState('');
@@ -91,10 +119,25 @@ export default function SuratJalanDetailPage() {
     const [showAdvancedDropEditor, setShowAdvancedDropEditor] = useState(false);
     const [continuingHeldCargo, setContinuingHeldCargo] = useState(false);
     const [updatingStatus, setUpdatingStatus] = useState(false);
+    const [savingEdit, setSavingEdit] = useState(false);
+    const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<EditSuratJalanForm>({
+        referenceNumber: '',
+        pickupStopKey: '',
+        billingCustomerRef: '',
+        billingCustomerName: '',
+        receiverName: '',
+        receiverPhone: '',
+        receiverCompany: '',
+        receiverAddress: '',
+    });
+    const [editExistingItems, setEditExistingItems] = useState<EditExistingCargoItem[]>([]);
+    const [editNewItems, setEditNewItems] = useState<DeliveryOrderCargoDraftItem[]>([]);
     const canOpenTripPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canOpenOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
+    const canEditSuratJalan = canManageDeliveryStatus;
     const currentPath = pathname || `/surat-jalan/${encodeURIComponent(id)}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
     const resolveDocumentItemDeliveryOrderItemRef = (item: SuratJalanDocumentItem) => {
@@ -107,6 +150,353 @@ export default function SuratJalanDetailPage() {
             return rawId.slice(separatorIndex + 1).trim();
         }
         return '';
+    };
+    const updateEditForm = (patch: Partial<EditSuratJalanForm>) => {
+        setEditForm(current => ({ ...current, ...patch }));
+    };
+    const getFallbackShipperReference = (): DeliveryOrderShipperReference => ({
+        _key: suratJalanDocument?.referenceKey && suratJalanDocument.referenceKey !== 'primary'
+            ? suratJalanDocument.referenceKey
+            : undefined,
+        sequence: 1,
+        referenceNumber: suratJalanDocument?.suratJalanNumber || deliveryOrder?.customerDoNumber || '',
+        pickupStopKey: deliveryOrder?.pickupStops?.length === 1 ? deliveryOrder.pickupStops[0]._key : undefined,
+        pickupAddress: suratJalanDocument?.pickupAddress || deliveryOrder?.pickupAddress,
+        billingCustomerRef: suratJalanDocument?.customerRef || deliveryOrder?.customerRef,
+        billingCustomerName: suratJalanDocument?.customerName || deliveryOrder?.customerName,
+        receiverName: suratJalanDocument?.receiverName || deliveryOrder?.receiverName,
+        receiverPhone: deliveryOrder?.receiverPhone,
+        receiverAddress: suratJalanDocument?.receiverAddress || deliveryOrder?.receiverAddress,
+        receiverCompany: suratJalanDocument?.receiverCompany || deliveryOrder?.receiverCompany,
+    });
+    const findCurrentReferenceIndex = (references: DeliveryOrderShipperReference[]) => {
+        if (!suratJalanDocument) {
+            return -1;
+        }
+        const referenceKey = (suratJalanDocument.referenceKey || '').trim();
+        const referenceNumber = (suratJalanDocument.suratJalanNumber || '').trim().toUpperCase();
+        return references.findIndex(reference =>
+            (referenceKey && reference._key === referenceKey) ||
+            (referenceNumber && reference.referenceNumber?.trim().toUpperCase() === referenceNumber)
+        );
+    };
+    const getEditableShipperReferences = () => {
+        const references = deliveryOrder?.shipperReferences?.length
+            ? deliveryOrder.shipperReferences
+            : [getFallbackShipperReference()];
+        return references.map((reference, index) => ({
+            ...reference,
+            sequence: reference.sequence || index + 1,
+        }));
+    };
+    const getSelectedDeliveryOrderItemIds = () => new Set(
+        documentItems
+            .map(item => resolveDocumentItemDeliveryOrderItemRef(item))
+            .filter(Boolean)
+    );
+    const getEditItemDrafts = () => {
+        const selectedItemIds = getSelectedDeliveryOrderItemIds();
+        return deliveryOrderItems
+            .filter(item => selectedItemIds.has(item._id))
+            .map(item => {
+                const weightInputUnit = item.orderItemWeightInputUnit || 'KG';
+                const volumeInputUnit = item.orderItemVolumeInputUnit || 'M3';
+                return {
+                    deliveryOrderItemId: item._id,
+                    customerProductRef: '',
+                    description: item.orderItemDescription || '',
+                    qtyKoli: parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
+                    weightInputValue: parseFormattedNumberish(
+                        item.orderItemWeightInputValue ?? item.orderItemWeight ?? item.shippedWeight ?? 0,
+                        { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                    ),
+                    weightInputUnit,
+                    volumeInputValue: parseFormattedNumberish(
+                        item.orderItemVolumeInputValue ?? item.orderItemVolumeM3 ?? 0,
+                        { maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3 }
+                    ),
+                    volumeInputUnit,
+                    value: 0,
+                    id: item.orderItemRef,
+                } satisfies EditExistingCargoItem;
+            });
+    };
+    const openEditModal = () => {
+        if (!deliveryOrder || !suratJalanDocument) return;
+        const references = getEditableShipperReferences();
+        const currentReference = references[findCurrentReferenceIndex(references)] || references[0] || getFallbackShipperReference();
+        setEditForm({
+            referenceNumber: currentReference.referenceNumber || suratJalanDocument.suratJalanNumber || '',
+            pickupStopKey: currentReference.pickupStopKey || '',
+            billingCustomerRef: currentReference.billingCustomerRef || suratJalanDocument.customerRef || deliveryOrder.customerRef || '',
+            billingCustomerName: currentReference.billingCustomerName || suratJalanDocument.customerName || deliveryOrder.customerName || '',
+            receiverName: currentReference.receiverName || suratJalanDocument.receiverName || deliveryOrder.receiverName || '',
+            receiverPhone: currentReference.receiverPhone || deliveryOrder.receiverPhone || '',
+            receiverCompany: currentReference.receiverCompany || suratJalanDocument.receiverCompany || deliveryOrder.receiverCompany || '',
+            receiverAddress: currentReference.receiverAddress || suratJalanDocument.receiverAddress || deliveryOrder.receiverAddress || '',
+        });
+        setEditExistingItems(getEditItemDrafts());
+        setEditNewItems([]);
+        setShowEditModal(true);
+    };
+    const updateExistingItem = <K extends keyof DeliveryOrderCargoDraftItem>(itemIndex: number, field: K, value: DeliveryOrderCargoDraftItem[K]) => {
+        setEditExistingItems(previous => previous.map((item, index) => {
+            if (index !== itemIndex) return item;
+            if (field === 'qtyKoli') {
+                return {
+                    ...item,
+                    ...toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                        ...item,
+                        pickupStopKey: editForm.pickupStopKey,
+                        shipperReferenceNumber: editForm.referenceNumber,
+                    }, value as number)),
+                };
+            }
+            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)) {
+                return item;
+            }
+            return { ...item, [field]: value };
+        }));
+    };
+    const updateNewItem = <K extends keyof DeliveryOrderCargoDraftItem>(itemIndex: number, field: K, value: DeliveryOrderCargoDraftItem[K]) => {
+        setEditNewItems(previous => previous.map((item, index) => {
+            if (index !== itemIndex) return item;
+            if (field === 'qtyKoli') {
+                return toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                    ...item,
+                    pickupStopKey: editForm.pickupStopKey,
+                    shipperReferenceNumber: editForm.referenceNumber,
+                }, value as number));
+            }
+            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)) {
+                return item;
+            }
+            return { ...item, [field]: value };
+        }));
+    };
+    const applyExistingItemProduct = (itemIndex: number, productRef: string) => {
+        const selectedProduct = customerProducts.find(product => product._id === productRef);
+        setEditExistingItems(previous => previous.map((item, index) => (
+            index === itemIndex
+                ? {
+                    ...item,
+                    ...toDeliveryOrderCargoDraftItem(applyCustomerProductToOrderItem({
+                        ...item,
+                        pickupStopKey: editForm.pickupStopKey,
+                        shipperReferenceNumber: editForm.referenceNumber,
+                    }, selectedProduct)),
+                    deliveryOrderItemId: item.deliveryOrderItemId,
+                }
+                : item
+        )));
+    };
+    const applyNewItemProduct = (itemIndex: number, productRef: string) => {
+        const selectedProduct = customerProducts.find(product => product._id === productRef);
+        setEditNewItems(previous => previous.map((item, index) => (
+            index === itemIndex
+                ? toDeliveryOrderCargoDraftItem(applyCustomerProductToOrderItem({
+                    ...item,
+                    pickupStopKey: editForm.pickupStopKey,
+                    shipperReferenceNumber: editForm.referenceNumber,
+                }, selectedProduct))
+                : item
+        )));
+    };
+    const addNewItem = () => setEditNewItems(previous => [...previous, createDefaultDeliveryOrderCargoDraftItem()]);
+    const removeNewItem = (itemIndex: number) => setEditNewItems(previous => previous.filter((_, index) => index !== itemIndex));
+    const removeExistingItem = async (item: EditExistingCargoItem) => {
+        if (!deliveryOrder || !canEditSuratJalan) return;
+        const confirmed = window.confirm(`Hapus barang ${item.description || 'ini'} dari Surat Jalan?`);
+        if (!confirmed) return;
+        setRemovingCargoItemId(item.deliveryOrderItemId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'remove-cargo-item',
+                    data: {
+                        id: deliveryOrder._id,
+                        deliveryOrderItemId: item.deliveryOrderItemId,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus barang dari Surat Jalan');
+                return;
+            }
+            setEditExistingItems(previous => previous.filter(entry => entry.deliveryOrderItemId !== item.deliveryOrderItemId));
+            await loadDocument();
+            addToast('success', 'Barang Surat Jalan berhasil dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus barang dari Surat Jalan');
+        } finally {
+            setRemovingCargoItemId(null);
+        }
+    };
+    const saveEdit = async () => {
+        if (!deliveryOrder || !suratJalanDocument || !canEditSuratJalan) return;
+        const nextReferenceNumber = editForm.referenceNumber.trim().toUpperCase();
+        if (!nextReferenceNumber) {
+            addToast('error', 'No. Surat Jalan wajib diisi');
+            return;
+        }
+
+        const references = getEditableShipperReferences();
+        const currentIndex = findCurrentReferenceIndex(references);
+        const targetIndex = currentIndex >= 0 ? currentIndex : 0;
+        const nextReferences = references.map((reference, index) => (
+            index === targetIndex
+                ? {
+                    ...reference,
+                    referenceNumber: nextReferenceNumber,
+                    pickupStopKey: editForm.pickupStopKey.trim() || undefined,
+                    billingCustomerRef: editForm.billingCustomerRef.trim() || undefined,
+                    billingCustomerName: editForm.billingCustomerName.trim() || undefined,
+                    receiverName: editForm.receiverName.trim() || undefined,
+                    receiverPhone: editForm.receiverPhone.trim() || undefined,
+                    receiverCompany: editForm.receiverCompany.trim() || undefined,
+                    receiverAddress: editForm.receiverAddress.trim() || undefined,
+                }
+                : reference
+        ));
+        const normalizeDraftValue = (value: unknown) => String(value ?? '').trim();
+        const normalizedExistingItems = editExistingItems.map(item => ({
+            deliveryOrderItemId: item.deliveryOrderItemId,
+            customerProductRef: normalizeDraftValue(item.customerProductRef),
+            description: normalizeDraftValue(item.description),
+            qtyKoli: normalizeDraftValue(item.qtyKoli),
+            weightInputValue: normalizeDraftValue(item.weightInputValue),
+            weightInputUnit: item.weightInputUnit,
+            volumeInputValue: normalizeDraftValue(item.volumeInputValue),
+            volumeInputUnit: item.volumeInputUnit,
+        }));
+        const normalizedNewItems = editNewItems
+            .map(item => ({
+                customerProductRef: normalizeDraftValue(item.customerProductRef),
+                description: normalizeDraftValue(item.description),
+                qtyKoli: normalizeDraftValue(item.qtyKoli),
+                weightInputValue: normalizeDraftValue(item.weightInputValue),
+                weightInputUnit: item.weightInputUnit,
+                volumeInputValue: normalizeDraftValue(item.volumeInputValue),
+                volumeInputUnit: item.volumeInputUnit,
+            }))
+            .filter(item => Boolean(item.customerProductRef || item.description || item.qtyKoli || item.weightInputValue || item.volumeInputValue));
+        const invalidExistingItemIndex = normalizedExistingItems.findIndex(item => !item.description && !item.customerProductRef);
+        if (invalidExistingItemIndex >= 0) {
+            addToast('error', `Barang tersimpan baris ${invalidExistingItemIndex + 1} perlu deskripsi atau master barang.`);
+            return;
+        }
+        const invalidExistingCargoIndex = normalizedExistingItems.findIndex(item => !item.qtyKoli && !item.weightInputValue && !item.volumeInputValue);
+        if (invalidExistingCargoIndex >= 0) {
+            addToast('error', `Barang tersimpan baris ${invalidExistingCargoIndex + 1} perlu isi koli, berat, atau volume.`);
+            return;
+        }
+        const invalidNewItemIndex = normalizedNewItems.findIndex(item => !item.description && !item.customerProductRef);
+        if (invalidNewItemIndex >= 0) {
+            addToast('error', `Barang baru baris ${invalidNewItemIndex + 1} perlu deskripsi atau master barang.`);
+            return;
+        }
+        const invalidNewCargoIndex = normalizedNewItems.findIndex(item => !item.qtyKoli && !item.weightInputValue && !item.volumeInputValue);
+        if (invalidNewCargoIndex >= 0) {
+            addToast('error', `Barang baru baris ${invalidNewCargoIndex + 1} perlu isi koli, berat, atau volume.`);
+            return;
+        }
+
+        setSavingEdit(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-shipper-reference',
+                    data: {
+                        id: deliveryOrder._id,
+                        customerDoNumber: nextReferences[0]?.referenceNumber,
+                        shipperReferences: nextReferences.map(reference => ({
+                            _key: reference._key,
+                            referenceNumber: reference.referenceNumber,
+                            pickupStopKey: reference.pickupStopKey,
+                            billingCustomerRef: reference.billingCustomerRef,
+                            billingCustomerName: reference.billingCustomerName,
+                            receiverName: reference.receiverName,
+                            receiverPhone: reference.receiverPhone,
+                            receiverCompany: reference.receiverCompany,
+                            receiverAddress: reference.receiverAddress,
+                        })),
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan Surat Jalan');
+                return;
+            }
+            for (const item of normalizedExistingItems) {
+                const cargoUpdateRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'delivery-orders',
+                        action: 'update-cargo-item',
+                        data: {
+                            id: deliveryOrder._id,
+                            deliveryOrderItemId: item.deliveryOrderItemId,
+                            cargoItem: {
+                                customerProductRef: item.customerProductRef || undefined,
+                                description: item.description,
+                                qtyKoli: item.qtyKoli,
+                                weightInputValue: item.weightInputValue,
+                                weightInputUnit: item.weightInputUnit,
+                                volumeInputValue: item.volumeInputValue,
+                                volumeInputUnit: item.volumeInputUnit,
+                                shipperReferenceNumber: nextReferenceNumber,
+                                pickupStopKey: editForm.pickupStopKey.trim() || undefined,
+                            },
+                        },
+                    }),
+                });
+                const cargoUpdateResult = await cargoUpdateRes.json();
+                if (!cargoUpdateRes.ok) {
+                    addToast('error', cargoUpdateResult.error || 'SJ tersimpan, tapi gagal memperbarui barang terdaftar.');
+                    return;
+                }
+            }
+            if (normalizedNewItems.length > 0) {
+                const cargoRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'delivery-orders',
+                        action: 'append-cargo-items',
+                        data: {
+                            id: deliveryOrder._id,
+                            cargoItems: normalizedNewItems.map(item => ({
+                                ...item,
+                                shipperReferenceNumber: nextReferenceNumber,
+                                pickupStopKey: editForm.pickupStopKey.trim() || undefined,
+                            })),
+                        },
+                    }),
+                });
+                const cargoResult = await cargoRes.json();
+                if (!cargoRes.ok) {
+                    addToast('error', cargoResult.error || 'SJ tersimpan, tapi gagal menambah barang baru.');
+                    return;
+                }
+            }
+            setShowEditModal(false);
+            setEditNewItems([]);
+            await loadDocument();
+            addToast('success', 'Surat Jalan berhasil diperbarui');
+        } catch {
+            addToast('error', 'Gagal menyimpan Surat Jalan');
+        } finally {
+            setSavingEdit(false);
+        }
     };
 
     const loadDocument = useCallback(async () => {
@@ -128,11 +518,18 @@ export default function SuratJalanDetailPage() {
                 `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: detail.deliveryOrder._id }))}`,
                 'Gagal memuat detail surat jalan'
             );
+            const productRows = detail.deliveryOrder.customerRef
+                ? await fetchAdminCollectionData<CustomerProduct[]>(
+                    `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: detail.deliveryOrder.customerRef, active: true }))}`,
+                    'Gagal memuat master barang customer'
+                )
+                : [];
             setSuratJalanDocument(detail.suratJalanDocument);
             setDeliveryOrder(detail.deliveryOrder);
             setSourceOrder(detail.sourceOrder);
             setDocumentItems(detail.documentItems || []);
             setDeliveryOrderItems(loadedDeliveryOrderItems || []);
+            setCustomerProducts(productRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
         } finally {
@@ -195,7 +592,7 @@ export default function SuratJalanDetailPage() {
         receiverCompany: suratJalanDocument.receiverCompany || deliveryOrder.receiverCompany || '',
         receiverAddress: suratJalanDocument.receiverAddress || deliveryOrder.receiverAddress || '',
     };
-    const getActualDropItemOptions = (_drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
+    const getActualDropItemOptions = () =>
         actualCargoItems.filter(item => matchesSelectedSuratJalan(item.shipperReferenceKey, item.shipperReferenceNumber));
     const getActualCargoItemWeightKg = (item: ActualCargoDraft) => convertWeightToKg(
         parseFormattedNumberish(item.actualWeightInputValue || 0, {
@@ -814,8 +1211,13 @@ export default function SuratJalanDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
+                    {canEditSuratJalan && (
+                        <button className="btn btn-primary" onClick={openEditModal}>
+                            <Edit size={16} /> Edit SJ
+                        </button>
+                    )}
                     {canManageDeliveryStatus && availableStatuses.length > 0 && (
-                        <button className="btn btn-primary" onClick={() => openStatusModal()}>
+                        <button className="btn btn-secondary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> Update SJ Ini
                         </button>
                     )}
@@ -823,11 +1225,6 @@ export default function SuratJalanDetailPage() {
                         <button className="btn btn-secondary" onClick={() => openStatusModal('DELIVERED', true)}>
                             <Truck size={16} /> Finalisasi Sisa Hold
                         </button>
-                    )}
-                    {canOpenTripPage && (
-                        <Link className="btn btn-secondary" href={withReturnTo(`/trips/${deliveryOrder._id}`)}>
-                            <Eye size={16} /> Lihat Trip
-                        </Link>
                     )}
                 </div>
             </div>
@@ -919,6 +1316,257 @@ export default function SuratJalanDetailPage() {
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. Trip Internal</div><div className="detail-value">{canOpenTripPage ? <Link href={withReturnTo(`/trips/${deliveryOrder._id}`)}>{formatInternalDeliveryOrderNumber(deliveryOrder)}</Link> : formatInternalDeliveryOrderNumber(deliveryOrder)}</div></div>
                             <div className="detail-item"><div className="detail-label">Status Order</div><div className="detail-value">{sourceOrder.status || '-'}</div></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showEditModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingEdit) setShowEditModal(false); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Surat Jalan</h3>
+                            <button className="modal-close" onClick={() => setShowEditModal(false)} disabled={savingEdit}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">No. Surat Jalan <span className="required">*</span></label>
+                                <input
+                                    className="form-input"
+                                    value={editForm.referenceNumber}
+                                    onChange={event => updateEditForm({ referenceNumber: event.target.value.toUpperCase() })}
+                                    disabled={savingEdit}
+                                />
+                            </div>
+                            {(deliveryOrder.pickupStops?.length || 0) > 1 && (
+                                <div className="form-group">
+                                    <label className="form-label">Titik Pickup</label>
+                                    <select
+                                        className="form-select"
+                                        value={editForm.pickupStopKey}
+                                        onChange={event => updateEditForm({ pickupStopKey: event.target.value })}
+                                        disabled={savingEdit}
+                                    >
+                                        <option value="">Pilih pickup</option>
+                                        {(deliveryOrder.pickupStops || []).map((stop, index) => (
+                                            <option key={stop._key || `pickup-${index + 1}`} value={stop._key || ''}>
+                                                {`Pickup ${stop.sequence || index + 1}${stop.pickupLabel ? ` - ${stop.pickupLabel}` : ''}`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Customer Invoice</label>
+                                    <input className="form-input" value={editForm.billingCustomerName} onChange={event => updateEditForm({ billingCustomerName: event.target.value })} disabled={savingEdit} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Nama Penerima / PIC</label>
+                                    <input className="form-input" value={editForm.receiverName} onChange={event => updateEditForm({ receiverName: event.target.value })} disabled={savingEdit} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Telepon Penerima</label>
+                                    <input className="form-input" value={editForm.receiverPhone} onChange={event => updateEditForm({ receiverPhone: event.target.value })} disabled={savingEdit} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Perusahaan / Tujuan</label>
+                                    <input className="form-input" value={editForm.receiverCompany} onChange={event => updateEditForm({ receiverCompany: event.target.value })} disabled={savingEdit} />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Tujuan SJ</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={editForm.receiverAddress}
+                                    onChange={event => updateEditForm({ receiverAddress: event.target.value })}
+                                    disabled={savingEdit}
+                                />
+                            </div>
+                            <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div className="form-label" style={{ marginBottom: 0 }}>Item Surat Jalan</div>
+                                        <div className="text-muted text-sm">Barang tersimpan tampil di bawah. Tambahkan item baru langsung dari form ini.</div>
+                                    </div>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={addNewItem} disabled={savingEdit}>
+                                        <Plus size={14} /> Tambah Item
+                                    </button>
+                                </div>
+                                {editExistingItems.length > 0 && (
+                                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                        {editExistingItems.map((item, itemIndex) => (
+                                            <div key={item.deliveryOrderItemId} style={{ display: 'grid', gap: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Barang Tersimpan {itemIndex + 1}</div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost btn-sm"
+                                                        onClick={() => void removeExistingItem(item)}
+                                                        disabled={savingEdit || removingCargoItemId === item.deliveryOrderItemId}
+                                                        style={{ color: 'var(--color-danger-700)' }}
+                                                    >
+                                                        {removingCargoItemId === item.deliveryOrderItemId ? 'Menghapus...' : 'Hapus'}
+                                                    </button>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Barang Customer</label>
+                                                        <select className="form-select" value={item.customerProductRef} onChange={event => applyExistingItemProduct(itemIndex, event.target.value)} disabled={savingEdit || !deliveryOrder.customerRef}>
+                                                            <option value="">{customerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
+                                                            {customerProducts.map(product => <option key={product._id} value={product._id}>{product.code ? `${product.code} - ` : ''}{product.name}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Deskripsi Barang</label>
+                                                        <input className="form-input" value={item.description} onChange={event => updateExistingItem(itemIndex, 'description', event.target.value)} disabled={savingEdit} />
+                                                    </div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Koli</label>
+                                                        <FormattedNumberInput min={0} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateExistingItem(itemIndex, 'qtyKoli', value)} disabled={savingEdit} />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Berat</label>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                            <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateExistingItem(itemIndex, 'weightInputValue', value)} disabled={savingEdit || shouldLockOrderItemWeight(item)} />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.weightInputUnit}
+                                                                onChange={event => setEditExistingItems(previous => previous.map((entry, index) => (
+                                                                    index === itemIndex
+                                                                        ? {
+                                                                            ...entry,
+                                                                            ...toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                                                                                ...entry,
+                                                                                pickupStopKey: editForm.pickupStopKey,
+                                                                                shipperReferenceNumber: editForm.referenceNumber,
+                                                                            }, event.target.value as DeliveryOrderCargoDraftItem['weightInputUnit'])),
+                                                                            deliveryOrderItemId: entry.deliveryOrderItemId,
+                                                                        }
+                                                                        : entry
+                                                                )))}
+                                                                disabled={savingEdit || shouldLockOrderItemWeight(item)}
+                                                            >
+                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Volume</label>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                            <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateExistingItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit} />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.volumeInputUnit}
+                                                                onChange={event => setEditExistingItems(previous => previous.map((entry, index) => (
+                                                                    index === itemIndex
+                                                                        ? {
+                                                                            ...entry,
+                                                                            ...toDeliveryOrderCargoDraftItem(updateOrderItemVolumeUnit({
+                                                                                ...entry,
+                                                                                pickupStopKey: editForm.pickupStopKey,
+                                                                                shipperReferenceNumber: editForm.referenceNumber,
+                                                                            }, event.target.value as DeliveryOrderCargoDraftItem['volumeInputUnit'])),
+                                                                            deliveryOrderItemId: entry.deliveryOrderItemId,
+                                                                        }
+                                                                        : entry
+                                                                )))}
+                                                                disabled={savingEdit}
+                                                            >
+                                                                {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {editNewItems.map((item, itemIndex) => (
+                                    <div key={`new-${itemIndex}`} style={{ display: 'grid', gap: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Barang Baru {itemIndex + 1}</div>
+                                            <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeNewItem(itemIndex)} disabled={savingEdit}>
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Barang Customer</label>
+                                                <select className="form-select" value={item.customerProductRef} onChange={event => applyNewItemProduct(itemIndex, event.target.value)} disabled={savingEdit || !deliveryOrder.customerRef}>
+                                                    <option value="">{customerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
+                                                    {customerProducts.map(product => <option key={product._id} value={product._id}>{product.code ? `${product.code} - ` : ''}{product.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Deskripsi Barang</label>
+                                                <input className="form-input" value={item.description} onChange={event => updateNewItem(itemIndex, 'description', event.target.value)} disabled={savingEdit} />
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Koli</label>
+                                                <FormattedNumberInput min={0} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateNewItem(itemIndex, 'qtyKoli', value)} disabled={savingEdit} />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Berat</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                    <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateNewItem(itemIndex, 'weightInputValue', value)} disabled={savingEdit || shouldLockOrderItemWeight(item)} />
+                                                    <select
+                                                        className="form-select"
+                                                        value={item.weightInputUnit}
+                                                        onChange={event => setEditNewItems(previous => previous.map((entry, index) => (
+                                                            index === itemIndex
+                                                                ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                                                                    ...entry,
+                                                                    pickupStopKey: editForm.pickupStopKey,
+                                                                    shipperReferenceNumber: editForm.referenceNumber,
+                                                                }, event.target.value as DeliveryOrderCargoDraftItem['weightInputUnit']))
+                                                                : entry
+                                                        )))}
+                                                        disabled={savingEdit || shouldLockOrderItemWeight(item)}
+                                                    >
+                                                        {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Volume</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                    <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateNewItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit} />
+                                                    <select
+                                                        className="form-select"
+                                                        value={item.volumeInputUnit}
+                                                        onChange={event => setEditNewItems(previous => previous.map((entry, index) => (
+                                                            index === itemIndex
+                                                                ? toDeliveryOrderCargoDraftItem(updateOrderItemVolumeUnit({
+                                                                    ...entry,
+                                                                    pickupStopKey: editForm.pickupStopKey,
+                                                                    shipperReferenceNumber: editForm.referenceNumber,
+                                                                }, event.target.value as DeliveryOrderCargoDraftItem['volumeInputUnit']))
+                                                                : entry
+                                                        )))}
+                                                        disabled={savingEdit}
+                                                    >
+                                                        {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowEditModal(false)} disabled={savingEdit}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveEdit} disabled={savingEdit || !editForm.referenceNumber.trim()}>
+                                <Save size={16} /> {savingEdit ? 'Menyimpan...' : 'Simpan Edit'}
+                            </button>
                         </div>
                     </div>
                 </div>

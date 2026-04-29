@@ -32,6 +32,8 @@ export interface ActualCargoDraft {
     plannedWeightKg: number;
     plannedWeightInputValue?: number;
     plannedWeightInputUnit?: WeightInputUnit;
+    autoWeightBasisQtyKoli?: number;
+    autoWeightBasisWeightKg?: number;
     plannedVolumeM3?: number;
     plannedVolumeInputValue?: number;
     plannedVolumeInputUnit?: VolumeInputUnit;
@@ -56,6 +58,8 @@ export interface ActualDropDraft {
     qtyKoli: string;
     weightInputValue: string;
     weightInputUnit: WeightInputUnit;
+    autoWeightBasisQtyKoli?: number;
+    autoWeightBasisWeightKg?: number;
     volumeInputValue: string;
     volumeInputUnit: VolumeInputUnit;
     note: string;
@@ -153,6 +157,8 @@ export function buildActualCargoDraft(
         plannedWeightKg,
         plannedWeightInputValue,
         plannedWeightInputUnit,
+        autoWeightBasisQtyKoli: plannedQtyKoli > 0 ? plannedQtyKoli : undefined,
+        autoWeightBasisWeightKg: plannedWeightKg > 0 ? plannedWeightKg : undefined,
         plannedVolumeM3,
         plannedVolumeInputValue,
         plannedVolumeInputUnit,
@@ -231,7 +237,15 @@ export function applyActualCargoAutoWeightFromQty(
     }
 
     const qtyKoli = parseFormattedNumberish(nextQtyKoli || 0, { maxFractionDigits: 2 });
-    const weightKg = calculateWeightPortion(item.plannedWeightKg, item.plannedQtyKoli, qtyKoli);
+    const basisQtyKoli =
+        item.plannedQtyKoli > 0
+            ? item.plannedQtyKoli
+            : parseFormattedNumberish(item.autoWeightBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const basisWeightKg =
+        item.plannedWeightKg > 0
+            ? item.plannedWeightKg
+            : parseFormattedNumberish(item.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
+    const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
     const actualWeightInputValue =
         weightKg > 0
             ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
@@ -242,6 +256,8 @@ export function applyActualCargoAutoWeightFromQty(
         actualQtyKoli: String(nextQtyKoli),
         actualWeightInputValue,
         actualWeightInputUnit: nextUnit,
+        autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
+        autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
     };
 }
 
@@ -273,8 +289,12 @@ export function applyActualDropAutoWeightFromQty(
             cargoItem.actualWeightInputUnit
         )
         : 0;
-    const basisQtyKoli = actualQtyKoli > 0 ? actualQtyKoli : cargoItem?.plannedQtyKoli || 0;
-    const basisWeightKg = actualWeightKg > 0 ? actualWeightKg : cargoItem?.plannedWeightKg || 0;
+    const basisQtyKoli = actualQtyKoli > 0
+        ? actualQtyKoli
+        : cargoItem?.plannedQtyKoli || parseFormattedNumberish(drop.autoWeightBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const basisWeightKg = actualWeightKg > 0
+        ? actualWeightKg
+        : cargoItem?.plannedWeightKg || parseFormattedNumberish(drop.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
     const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
 
     return {
@@ -284,6 +304,8 @@ export function applyActualDropAutoWeightFromQty(
             ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
             : '',
         weightInputUnit: nextUnit,
+        autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
+        autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
     };
 }
 

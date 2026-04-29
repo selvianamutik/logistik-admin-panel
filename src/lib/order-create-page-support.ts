@@ -16,6 +16,8 @@ export type OrderItemForm = {
     qtyKoli: number;
     weightInputValue: number;
     weightInputUnit: WeightInputUnit;
+    autoWeightBasisQtyKoli?: number;
+    autoWeightBasisWeightKg?: number;
     volumeInputValue: number;
     volumeInputUnit: VolumeInputUnit;
     pickupStopKey: string;
@@ -124,6 +126,8 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
         qtyKoli: normalizedQtyKoli,
         weightInputValue: nextWeightValue,
         weightInputUnit: nextWeightUnit,
+        autoWeightBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
+        autoWeightBasisWeightKg: nextWeightValue > 0 ? convertWeightToKg(nextWeightValue, nextWeightUnit) : undefined,
         volumeInputValue: nextVolumeValue,
         volumeInputUnit: nextVolumeUnit,
     };
@@ -142,23 +146,46 @@ export function applyOrderItemAutoWeightFromQty(
     const normalizedCurrentWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
         maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
     });
+    const currentWeightKg = normalizedCurrentWeightInputValue > 0
+        ? convertWeightToKg(normalizedCurrentWeightInputValue, item.weightInputUnit)
+        : 0;
+    const basisQtyKoli = normalizedCurrentQtyKoli > 0
+        ? normalizedCurrentQtyKoli
+        : parseFormattedNumberish(item.autoWeightBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const basisWeightKg = currentWeightKg > 0
+        ? currentWeightKg
+        : parseFormattedNumberish(item.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
+    const nextBasis = {
+        autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
+        autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
+    };
 
-    if (normalizedCurrentQtyKoli <= 0 || normalizedCurrentWeightInputValue <= 0) {
+    if (basisQtyKoli <= 0 || basisWeightKg <= 0) {
         return {
             ...item,
             qtyKoli: normalizedNextQtyKoli,
+            ...nextBasis,
         };
     }
 
-    const unitWeightInputValue = normalizedCurrentWeightInputValue / normalizedCurrentQtyKoli;
     const maxFractionDigits = item.weightInputUnit === 'TON' ? 3 : 2;
-    const nextWeightInputValue = Number((normalizedNextQtyKoli * unitWeightInputValue).toFixed(maxFractionDigits));
+    const nextWeightKg = (basisWeightKg / basisQtyKoli) * normalizedNextQtyKoli;
+    const nextWeightInputValue = roundToFractionDigits(
+        convertKgToWeightInputValue(nextWeightKg, item.weightInputUnit),
+        maxFractionDigits
+    );
 
     return {
         ...item,
         qtyKoli: normalizedNextQtyKoli,
         weightInputValue: normalizedNextQtyKoli > 0 ? nextWeightInputValue : 0,
+        ...nextBasis,
     };
+}
+
+function roundToFractionDigits(value: number, fractionDigits: number) {
+    const factor = 10 ** fractionDigits;
+    return Math.round(value * factor) / factor;
 }
 
 export function shouldLockOrderItemWeight(
@@ -183,6 +210,7 @@ export function updateOrderItemWeightUnit(item: OrderItemForm, nextUnit: WeightI
         ...item,
         weightInputUnit: nextUnit,
         weightInputValue: currentWeightKg > 0 ? convertKgToWeightInputValue(currentWeightKg, nextUnit) : 0,
+        autoWeightBasisWeightKg: currentWeightKg > 0 ? currentWeightKg : item.autoWeightBasisWeightKg,
     };
 }
 
