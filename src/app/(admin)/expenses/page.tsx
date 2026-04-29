@@ -10,6 +10,14 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
+import {
+    buildInventoryReportPeriodLabel,
+    getDefaultInventoryReportPeriod,
+    getInventoryReportDateRange,
+    getInventoryReportYearOptions,
+    INVENTORY_REPORT_MONTH_NAMES,
+    type InventoryReportPeriodMode,
+} from '@/lib/inventory-report-period';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -22,9 +30,22 @@ type ExpenseCategoryTotal = {
     total: number;
 };
 
+const DEFAULT_EXPENSE_FORM = () => ({
+    categoryRef: '',
+    date: getBusinessDateValue(),
+    amount: 0,
+    note: '',
+    description: '',
+    privacyLevel: 'internal' as 'internal' | 'ownerOnly',
+    relatedVehicleRef: '',
+    bankAccountRef: '',
+    bankAccountName: '',
+});
+
 export default function ExpensesPage() {
     const { addToast } = useToast();
     const { user } = useApp();
+    const defaultPeriod = getDefaultInventoryReportPeriod();
     const [items, setItems] = useState<Expense[]>([]);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -39,30 +60,65 @@ export default function ExpensesPage() {
     const [categoryTotals, setCategoryTotals] = useState<ExpenseCategoryTotal[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
-    const [form, setForm] = useState({
-        categoryRef: '',
-        date: getBusinessDateValue(),
-        amount: 0,
-        note: '',
-        description: '',
-        privacyLevel: 'internal' as 'internal' | 'ownerOnly',
-        relatedVehicleRef: '',
-        bankAccountRef: '',
-        bankAccountName: '',
-    });
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>('desc');
+    const [categoryFilter, setCategoryFilter] = useState('');
+    const [bankAccountFilter, setBankAccountFilter] = useState('');
+    const [privacyFilter, setPrivacyFilter] = useState('');
+    const [periodMode, setPeriodMode] = useState<InventoryReportPeriodMode>('month');
+    const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+    const [year, setYear] = useState(defaultPeriod.year);
+    const [dateFrom, setDateFrom] = useState(`${defaultPeriod.year}-${String(defaultPeriod.monthIndex + 1).padStart(2, '0')}-01`);
+    const [dateTo, setDateTo] = useState(getBusinessDateValue());
+    const [form, setForm] = useState(DEFAULT_EXPENSE_FORM);
 
     const isOwner = user?.role === 'OWNER';
+    const canCreateExpenses = user ? hasPermission(user.role, 'expenses', 'create') : false;
     const canExportExpenses = user ? hasPermission(user.role, 'expenses', 'export') : false;
     const canPrintExpenses = user ? hasPermission(user.role, 'expenses', 'print') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenBankAccountPage = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
+    const yearOptions = useMemo(() => getInventoryReportYearOptions(year), [year]);
+    const dateRange = useMemo(
+        () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+        [dateFrom, dateTo, monthIndex, periodMode, year]
+    );
+    const isValidDateRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
+    const periodLabel = buildInventoryReportPeriodLabel({
+        mode: periodMode,
+        monthIndex,
+        year,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+    });
+    const categoryFilterLabel = categoryFilter
+        ? categories.find(category => category._id === categoryFilter)?.name || 'Kategori terpilih'
+        : 'Semua kategori';
+    const bankAccountFilterLabel = bankAccountFilter
+        ? (() => {
+            const account = accountMap.get(bankAccountFilter);
+            return account ? `${account.bankName} - ${account.accountNumber}` : 'Rekening terpilih';
+        })()
+        : 'Semua rekening/kas';
+    const privacyFilterLabel = !isOwner
+        ? 'Internal'
+        : privacyFilter === 'ownerOnly'
+            ? 'Owner Only'
+            : privacyFilter === 'internal'
+                ? 'Internal'
+                : 'Semua privasi';
+    const isFormValid = Boolean(
+        form.categoryRef
+        && form.date
+        && /^\d{4}-\d{2}-\d{2}$/.test(form.date)
+        && Number(form.amount) > 0
+        && (!form.bankAccountRef || accountMap.has(form.bankAccountRef))
+    );
 
     useEffect(() => {
         setPage(1);
-    }, [search]);
+    }, [bankAccountFilter, categoryFilter, dateFrom, dateTo, monthIndex, periodMode, privacyFilter, search, year]);
 
     const buildExpensesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -81,12 +137,53 @@ export default function ExpensesPage() {
             params.set('searchFields', 'note,description,categoryName,relatedVehiclePlate');
         }
 
+        const filter: Record<string, string> = {};
+        if (categoryFilter) filter.categoryRef = categoryFilter;
+        if (bankAccountFilter) filter.bankAccountRef = bankAccountFilter;
+        if (isOwner && privacyFilter) {
+            filter.privacyLevel = privacyFilter;
+        }
         if (!isOwner) {
-            params.set('filter', JSON.stringify({ privacyLevel: 'internal' }));
+            filter.privacyLevel = 'internal';
+        }
+        if (Object.keys(filter).length > 0) {
+            params.set('filter', JSON.stringify(filter));
+        }
+
+        if (isValidDateRange) {
+            params.set('dateFrom', dateRange.startDate);
+            params.set('dateTo', dateRange.endDate);
         }
 
         return params.toString();
-    }, [dateSortDir, isOwner, page, search]);
+    }, [bankAccountFilter, categoryFilter, dateRange.endDate, dateRange.startDate, dateSortDir, isOwner, isValidDateRange, page, privacyFilter, search]);
+
+    const buildExpensesSummaryQuery = useCallback(() => {
+        const params = new URLSearchParams({ entity: 'expenses-summary' });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'note,description,categoryName,relatedVehiclePlate');
+        }
+
+        const filter: Record<string, string> = {};
+        if (categoryFilter) filter.categoryRef = categoryFilter;
+        if (bankAccountFilter) filter.bankAccountRef = bankAccountFilter;
+        if (isOwner && privacyFilter) {
+            filter.privacyLevel = privacyFilter;
+        }
+        if (!isOwner) {
+            filter.privacyLevel = 'internal';
+        }
+        if (Object.keys(filter).length > 0) {
+            params.set('filter', JSON.stringify(filter));
+        }
+        if (isValidDateRange) {
+            params.set('dateFrom', dateRange.startDate);
+            params.set('dateTo', dateRange.endDate);
+        }
+
+        return params.toString();
+    }, [bankAccountFilter, categoryFilter, dateRange.endDate, dateRange.startDate, isOwner, isValidDateRange, privacyFilter, search]);
 
     const fetchAllMatchingExpenses = useCallback(async () => {
         const pageSize = 200;
@@ -113,6 +210,16 @@ export default function ExpensesPage() {
 
     const loadExpenses = useCallback(async () => {
         if (!user) return;
+        if (periodMode === 'custom' && !isValidDateRange) {
+            setItems([]);
+            setFilteredTotalExpenses(0);
+            setGrandTotal(0);
+            setTransactionCount(0);
+            setAvgAmount(0);
+            setCategoryTotals([]);
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         try {
@@ -129,7 +236,7 @@ export default function ExpensesPage() {
 
             const [listRes, summaryRes, categoryRows, accountRows, vehicleRows] = await Promise.all([
                 fetch(`/api/data?${buildExpensesQuery()}`),
-                fetch(`/api/data?entity=expenses-summary${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}`),
+                fetch(`/api/data?${buildExpensesSummaryQuery()}`),
                 fetchOptionalCollection<ExpenseCategory[]>('/api/data?entity=expense-categories', []),
                 fetchOptionalCollection<BankAccount[]>('/api/data?entity=bank-accounts', []),
                 user.role === 'FINANCE'
@@ -159,18 +266,39 @@ export default function ExpensesPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildExpensesQuery, search, user]);
+    }, [addToast, buildExpensesQuery, buildExpensesSummaryQuery, isValidDateRange, periodMode, user]);
 
     useEffect(() => {
         void loadExpenses();
     }, [loadExpenses]);
 
+    const openCreateModal = () => {
+        setForm(DEFAULT_EXPENSE_FORM());
+        setShowModal(true);
+    };
+
     const handleSave = async () => {
+        if (!canCreateExpenses) {
+            addToast('error', 'Tidak punya akses mencatat pengeluaran');
+            return;
+        }
         if (!form.categoryRef || !form.amount) {
             addToast('error', 'Kategori dan nominal wajib');
             return;
         }
+        if (!form.date || !/^\d{4}-\d{2}-\d{2}$/.test(form.date)) {
+            addToast('error', 'Tanggal pengeluaran wajib valid');
+            return;
+        }
         const category = categories.find(item => item._id === form.categoryRef);
+        if (!category) {
+            addToast('error', 'Kategori pengeluaran tidak valid');
+            return;
+        }
+        if (form.bankAccountRef && !accountMap.has(form.bankAccountRef)) {
+            addToast('error', 'Rekening/kas tidak valid');
+            return;
+        }
         setSaving(true);
         try {
             const res = await fetch('/api/data', {
@@ -185,17 +313,7 @@ export default function ExpensesPage() {
             }
             addToast('success', 'Pengeluaran dicatat');
             setShowModal(false);
-            setForm({
-                categoryRef: '',
-                date: getBusinessDateValue(),
-                amount: 0,
-                note: '',
-                description: '',
-                privacyLevel: 'internal',
-                relatedVehicleRef: '',
-                bankAccountRef: '',
-                bankAccountName: '',
-            });
+            setForm(DEFAULT_EXPENSE_FORM());
             if (page !== 1) {
                 setPage(1);
             } else {
@@ -213,6 +331,10 @@ export default function ExpensesPage() {
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1></div>
                 <div className="page-actions">
                     {canExportExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        if (periodMode === 'custom' && !isValidDateRange) {
+                            addToast('error', 'Rentang tanggal tidak valid');
+                            return;
+                        }
                         try {
                             await exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[]);
                             addToast('success', 'Excel pengeluaran berhasil di-download');
@@ -221,6 +343,10 @@ export default function ExpensesPage() {
                         }
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        if (periodMode === 'custom' && !isValidDateRange) {
+                            addToast('error', 'Rentang tanggal tidak valid');
+                            return;
+                        }
                         const printWindow = openPrintWindow('Menyiapkan print pengeluaran...');
                         if (!printWindow) {
                             addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
@@ -253,6 +379,7 @@ export default function ExpensesPage() {
                             };
                             openBrandedPrint({
                                 title: 'Daftar Pengeluaran', company, targetWindow: printWindow, bodyHtml: `
+                                <div style="margin-bottom:12px;font-size:12px;color:#475569">Periode: <strong>${periodLabel}</strong> | Kategori: <strong>${categoryFilterLabel}</strong> | Rekening/Kas: <strong>${bankAccountFilterLabel}</strong> | Privasi: <strong>${privacyFilterLabel}</strong></div>
                                 <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
                                 <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
                                 <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(printableGrandTotal)}</td></tr></tbody></table>`
@@ -264,7 +391,7 @@ export default function ExpensesPage() {
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print pengeluaran');
                         }
                     }}><Printer size={15} /> Print</button>}
-                    <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
+                    {canCreateExpenses && <button className="btn btn-primary" onClick={openCreateModal}><Plus size={18} /> Tambah Pengeluaran</button>}
                 </div></div>
 
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
@@ -307,12 +434,73 @@ export default function ExpensesPage() {
             )}
 
             <div className="table-container">
-                <div className="table-toolbar"><div className="table-toolbar-left finance-filter-toolbar"><div className="table-search finance-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={event => setSearch(event.target.value)} /></div></div></div>
+                <div className="table-toolbar">
+                    <div className="table-toolbar-left finance-filter-toolbar">
+                        <div className="table-search finance-search">
+                            <Search size={16} className="table-search-icon" />
+                            <input placeholder="Cari catatan, kategori, kendaraan..." value={search} onChange={event => setSearch(event.target.value)} />
+                        </div>
+                        <select className="form-select finance-filter" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+                            <option value="">Semua Kategori</option>
+                            {categories.map(category => <option key={category._id} value={category._id}>{category.name}</option>)}
+                        </select>
+                        <select className="form-select finance-filter" value={bankAccountFilter} onChange={event => setBankAccountFilter(event.target.value)}>
+                            <option value="">Semua Rekening/Kas</option>
+                            {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                        </select>
+                        {isOwner && (
+                            <select className="form-select finance-filter" value={privacyFilter} onChange={event => setPrivacyFilter(event.target.value)}>
+                                <option value="">Semua Privasi</option>
+                                <option value="internal">Internal</option>
+                                <option value="ownerOnly">Owner Only</option>
+                            </select>
+                        )}
+                        <select className="form-select finance-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as InventoryReportPeriodMode)}>
+                            <option value="month">Bulanan</option>
+                            <option value="year">Tahunan</option>
+                            <option value="custom">Rentang Tanggal</option>
+                        </select>
+                        {periodMode === 'month' && (
+                            <select className="form-select finance-filter" value={monthIndex} onChange={event => setMonthIndex(Number(event.target.value))}>
+                                {INVENTORY_REPORT_MONTH_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                            </select>
+                        )}
+                        {periodMode !== 'custom' && (
+                            <select className="form-select finance-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+                                {yearOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        )}
+                        {periodMode === 'custom' && (
+                            <>
+                                <input className="form-input finance-filter" type="date" value={dateFrom} onChange={event => setDateFrom(event.target.value)} />
+                                <input className="form-input finance-filter" type="date" value={dateTo} onChange={event => setDateTo(event.target.value)} />
+                            </>
+                        )}
+                        {(search || categoryFilter || bankAccountFilter || privacyFilter || periodMode !== 'month' || monthIndex !== defaultPeriod.monthIndex || year !== defaultPeriod.year) && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    setSearch('');
+                                    setCategoryFilter('');
+                                    setBankAccountFilter('');
+                                    setPrivacyFilter('');
+                                    setPeriodMode('month');
+                                    setMonthIndex(defaultPeriod.monthIndex);
+                                    setYear(defaultPeriod.year);
+                                    setDateFrom(`${defaultPeriod.year}-${String(defaultPeriod.monthIndex + 1).padStart(2, '0')}-01`);
+                                    setDateTo(getBusinessDateValue());
+                                }}
+                            >
+                                Reset
+                            </button>
+                        )}
+                    </div>
+                </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{Array.from({ length: isOwner ? 5 : 4 }, (_, j) => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalExpenses === 0 ? <tr><td colSpan={isOwner ? 5 : 4}><div className="empty-state"><Wallet size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada pengeluaran</div></div></td></tr> :
                                     items.map(expense => (
                                         <tr key={expense._id}>
@@ -486,7 +674,7 @@ export default function ExpensesPage() {
                                 </select>
                             </div>}
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving || !isFormValid}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

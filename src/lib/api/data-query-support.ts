@@ -1769,36 +1769,107 @@ export async function getVehiclesSummary(ids: string[] = []) {
     };
 }
 
-export async function getExpensesSummary(session: ApiSession, search = '') {
-    const expenseRows = await listDocumentsByFilter<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>('expense', {});
-    const visibleExpenses = filterExpensesByRole(expenseRows as Expense[], session.role);
-    const relatedVehicleRefs = Array.from(
-        new Set(
-            visibleExpenses
-                .map(expense => expense.relatedVehicleRef)
-                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        )
-    );
-    const vehicleRows = relatedVehicleRefs.length > 0
-        ? await listDocumentsByFilter<Pick<Vehicle, '_id' | 'plateNumber'>>('vehicle', { _id: relatedVehicleRefs })
-        : [];
-    const vehicleMap = new Map(vehicleRows.map(vehicle => [vehicle._id, vehicle.plateNumber || '']));
-    const query = search.trim().toLowerCase();
-    const filteredExpenses = !query
-        ? visibleExpenses
-        : visibleExpenses.filter(expense => {
-            const vehicleLabel =
-                expense.relatedVehiclePlate ||
-                (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef) : '') ||
-                '';
-            return (
-                expense.note?.toLowerCase().includes(query) ||
-                expense.description?.toLowerCase().includes(query) ||
-                expense.categoryName?.toLowerCase().includes(query) ||
-                vehicleLabel.toLowerCase().includes(query)
-            );
-        });
+type ExpenseListParams = {
+    search?: string;
+    searchFields?: string[];
+    filterObj?: Record<string, unknown>;
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    countOnly?: boolean;
+};
 
+const DEFAULT_EXPENSE_SEARCH_FIELDS = [
+    'note',
+    'description',
+    'categoryName',
+    'relatedVehiclePlate',
+    'bankAccountName',
+    'bankAccountNumber',
+];
+
+function normalizeExpenseDateFilter(value?: string | null) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(0, 10) : '';
+}
+
+function compareExpenseValues(left: unknown, right: unknown, direction: 'asc' | 'desc') {
+    const multiplier = direction === 'asc' ? 1 : -1;
+    if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * multiplier;
+    }
+    return String(left ?? '').localeCompare(String(right ?? ''), 'id-ID', { numeric: true, sensitivity: 'base' }) * multiplier;
+}
+
+function sortExpenses(rows: Expense[], sortField?: string, sortDir?: 'asc' | 'desc') {
+    const field = sortField?.trim() || 'date';
+    const direction = sortDir === 'asc' ? 'asc' : 'desc';
+    return [...rows].sort((left, right) => {
+        const leftRecord = left as unknown as Record<string, unknown>;
+        const rightRecord = right as unknown as Record<string, unknown>;
+        const primary = compareExpenseValues(leftRecord[field], rightRecord[field], direction);
+        if (primary !== 0) return primary;
+        return compareExpenseValues(leftRecord._createdAt, rightRecord._createdAt, 'desc');
+    });
+}
+
+function filterExpenseRows(rows: Expense[], params: ExpenseListParams, role: UserRole) {
+    const visibleExpenses = filterExpensesByRole(rows, role);
+    const query = params.search?.trim().toLowerCase() || '';
+    const searchFields = params.searchFields && params.searchFields.length > 0
+        ? params.searchFields
+        : DEFAULT_EXPENSE_SEARCH_FIELDS;
+    const filterObj = params.filterObj || {};
+    const dateFrom = normalizeExpenseDateFilter(params.dateFrom);
+    const dateTo = normalizeExpenseDateFilter(params.dateTo);
+
+    return visibleExpenses.filter(expense => {
+        const expenseDate = normalizeExpenseDateFilter(expense.date);
+        if (dateFrom && (!expenseDate || expenseDate < dateFrom)) return false;
+        if (dateTo && (!expenseDate || expenseDate > dateTo)) return false;
+
+        const matchesFilter = Object.entries(filterObj).every(([key, expectedValue]) =>
+            matchesScalarFilter((expense as unknown as Record<string, unknown>)[key], expectedValue)
+        );
+        if (!matchesFilter) return false;
+
+        if (!query) return true;
+        return searchFields.some(field => {
+            const value = (expense as unknown as Record<string, unknown>)[field];
+            return typeof value === 'string' && value.toLowerCase().includes(query);
+        });
+    });
+}
+
+export async function getExpenseList(session: ApiSession, params: ExpenseListParams = {}) {
+    const expenseRows = await listDocumentsByFilter<Expense>('expense', {});
+    const filteredExpenses = filterExpenseRows(expenseRows, params, session.role);
+    const sortedExpenses = sortExpenses(filteredExpenses, params.sortField, params.sortDir);
+    const total = sortedExpenses.length;
+
+    if (params.countOnly) {
+        return { items: [] as Expense[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: sortedExpenses, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: sortedExpenses.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
+export async function getExpensesSummary(session: ApiSession, paramsOrSearch: string | ExpenseListParams = '') {
+    const params: ExpenseListParams = typeof paramsOrSearch === 'string'
+        ? { search: paramsOrSearch }
+        : paramsOrSearch;
+    const expenseRows = await listDocumentsByFilter<Expense>('expense', {});
+    const filteredExpenses = filterExpenseRows(expenseRows, params, session.role);
     const grandTotal = filteredExpenses.reduce((sum, expense) => sum + parseWholeMoneyLike(expense.amount), 0);
     const categoryTotals = Object.entries(
         filteredExpenses.reduce<Record<string, number>>((acc, expense) => {
