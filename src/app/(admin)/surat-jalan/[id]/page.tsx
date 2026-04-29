@@ -592,8 +592,30 @@ export default function SuratJalanDetailPage() {
         receiverCompany: suratJalanDocument.receiverCompany || deliveryOrder.receiverCompany || '',
         receiverAddress: suratJalanDocument.receiverAddress || deliveryOrder.receiverAddress || '',
     };
-    const getActualDropItemOptions = () =>
-        actualCargoItems.filter(item => matchesSelectedSuratJalan(item.shipperReferenceKey, item.shipperReferenceNumber));
+    const getActualDropItemOptions = (
+        drop?: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+    ) => {
+        const baseItems = actualCargoItems.filter(item => matchesSelectedSuratJalan(item.shipperReferenceKey, item.shipperReferenceNumber));
+        if (!drop) {
+            return baseItems;
+        }
+
+        const deliveryOrderItemRef = drop.deliveryOrderItemRef.trim();
+        if (deliveryOrderItemRef) {
+            return baseItems.filter(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
+        }
+
+        const shipperReferenceKey = drop.shipperReferenceKey.trim();
+        const shipperReferenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
+        if (!shipperReferenceKey && !shipperReferenceNumber) {
+            return baseItems;
+        }
+
+        return baseItems.filter(item => (
+            (shipperReferenceKey && item.shipperReferenceKey === shipperReferenceKey) ||
+            (shipperReferenceNumber && item.shipperReferenceNumber.trim().toUpperCase() === shipperReferenceNumber)
+        ));
+    };
     const getActualCargoItemWeightKg = (item: ActualCargoDraft) => convertWeightToKg(
         parseFormattedNumberish(item.actualWeightInputValue || 0, {
             maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
