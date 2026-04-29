@@ -11,6 +11,8 @@ const accountingLedgerPath = path.join(process.cwd(), 'src/app/(admin)/accountin
 const accountingLedgerSource = fs.readFileSync(accountingLedgerPath, 'utf8');
 const accountingPostingPath = path.join(process.cwd(), 'src/lib/api/accounting-posting.ts');
 const accountingPostingSource = fs.readFileSync(accountingPostingPath, 'utf8');
+const accountingWorkflowsPath = path.join(process.cwd(), 'src/lib/api/accounting-workflows.ts');
+const accountingWorkflowsSource = fs.readFileSync(accountingWorkflowsPath, 'utf8');
 const backfillAccountingPath = path.join(process.cwd(), 'scripts/backfill-accounting-journals.ts');
 const backfillAccountingSource = fs.readFileSync(backfillAccountingPath, 'utf8');
 const driverWorkflowPath = path.join(process.cwd(), 'src/lib/api/driver-workflows.ts');
@@ -74,8 +76,8 @@ function assertDispatch(block, entity, action, handler) {
     );
 }
 
-function extractSpecialPermissionBlock(block, action) {
-    const marker = `entity === 'delivery-orders' && action === '${action}'`;
+function extractSpecialPermissionBlock(block, action, entity = 'delivery-orders') {
+    const marker = `entity === '${entity}' && action === '${action}'`;
     const markerIndex = block.indexOf(marker);
     if (markerIndex < 0) return null;
 
@@ -97,8 +99,8 @@ function extractSpecialPermissionBlock(block, action) {
     throw new Error(`Special permission ${action} tidak tertutup.`);
 }
 
-function assertSpecialRoles(block, action, expectedRoles) {
-    const permissionBlock = extractSpecialPermissionBlock(block, action);
+function assertSpecialRoles(block, action, expectedRoles, entity = 'delivery-orders') {
+    const permissionBlock = extractSpecialPermissionBlock(block, action, entity);
     assert(permissionBlock, `Special permission ${action} tidak ditemukan.`);
 
     for (const role of expectedRoles) {
@@ -203,6 +205,49 @@ for (const item of freightNotaUpdateActions) {
         `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
     );
 }
+
+const manualJournalActions = [
+    {
+        action: 'create-manual',
+        handler: 'handleManualJournalCreate',
+        specialRoles: ['OWNER', 'FINANCE'],
+    },
+    {
+        action: 'void-manual',
+        handler: 'handleManualJournalVoid',
+        specialRoles: ['OWNER', 'FINANCE'],
+    },
+];
+
+for (const item of manualJournalActions) {
+    assertDispatch(postBlock, 'journal-entries', item.action, item.handler);
+    assert(
+        source.includes(item.handler),
+        `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
+    );
+    assertSpecialRoles(specialPermissionBlock, item.action, item.specialRoles, 'journal-entries');
+}
+
+for (const controlAccountSystemKey of [
+    'cash_on_hand',
+    'bank',
+    'accounts_receivable',
+    'accounts_payable',
+    'inventory',
+    'driver_advance',
+    'customer_deposit',
+]) {
+    assert(
+        accountingWorkflowsSource.includes(`'${controlAccountSystemKey}'`),
+        `Jurnal manual harus mengunci akun kontrol workflow ${controlAccountSystemKey} agar sub-ledger tidak mismatch.`
+    );
+}
+assert(
+    accountingWorkflowsSource.includes('WORKFLOW_CONTROL_ACCOUNT_SYSTEM_KEYS') &&
+        accountingWorkflowsSource.includes('Akun kontrol') &&
+        accountingWorkflowsSource.includes('saldo rincian dan buku besar tetap sinkron'),
+    'Workflow jurnal manual harus menjelaskan kenapa akun kontrol workflow ditolak.'
+);
 
 assert(
     postBlock.includes("session.role === 'DRIVER'") &&
@@ -440,6 +485,10 @@ for (const accountingEntity of ['chart-of-accounts', 'journal-entries', 'journal
         protectedLedgerBlock.includes(`entity === '${accountingEntity}'`),
         `Entity akuntansi ${accountingEntity} harus dilindungi dari mutation API umum.`
     );
+    assert(
+        workflowCreateBlock.includes(`entity === '${accountingEntity}'`),
+        `Entity akuntansi ${accountingEntity} tidak boleh dibuat lewat generic create walaupun role finance punya izin create laporan.`
+    );
 }
 
 for (const ledgerEntity of [
@@ -521,4 +570,4 @@ for (const routeGuard of [
     assert(postBlock.includes(handler), `Route ${entity} tidak mengarah ke ${handler}.`);
 }
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, receivable document-type guard, accounting date/ledger guards, accounting revision history, accounting mutation guards, and ledger workflow route guards verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, ${manualJournalActions.length} manual-journal actions, receivable document-type guard, accounting date/ledger guards, accounting revision history, accounting mutation guards, manual journal control-account guards, and ledger workflow route guards verified.`);

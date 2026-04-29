@@ -23,6 +23,10 @@ import {
 } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import {
+    handleManualJournalCreate,
+    handleManualJournalVoid,
+} from '@/lib/api/accounting-workflows';
+import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
     handleDriverVoucherIssueRepair,
@@ -319,6 +323,14 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
 
     if (entity === 'stock-movements') {
         return role === 'OWNER' || role === 'OPERASIONAL';
+    }
+
+    if (entity === 'journal-entries' && action === 'create-manual') {
+        return role === 'OWNER' || role === 'FINANCE';
+    }
+
+    if (entity === 'journal-entries' && action === 'void-manual') {
+        return role === 'OWNER' || role === 'FINANCE';
     }
 
     return null;
@@ -1459,6 +1471,14 @@ export async function POST(request: Request) {
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
             return await handleBoronganPayment(session, data, addAuditLog);
+        }
+
+        if (entity === 'journal-entries' && action === 'create-manual') {
+            return await handleManualJournalCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'journal-entries' && action === 'void-manual') {
+            return await handleManualJournalVoid(session, data, addAuditLog);
         }
 
         if (entity === 'incidents' && action === 'set-status') {

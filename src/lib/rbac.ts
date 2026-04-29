@@ -151,8 +151,8 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
         FINANCE: OWNER_FULL,
     },
     reports: {
-        OWNER: { ...DENY_ALL, view: true, export: true, print: true },
-        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
+        OWNER: { ...DENY_ALL, view: true, create: true, update: true, export: true, print: true },
+        FINANCE: { ...DENY_ALL, view: true, create: true, update: true, export: true, print: true },
     },
     vehicles: {
         OWNER: OWNER_FULL,
