@@ -59,7 +59,7 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -251,7 +251,6 @@ export default function OrderDetailPage() {
     const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
     const [creatingDO, setCreatingDO] = useState(false);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
-    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     // DO form
     const [doDate, setDoDate] = useState(getBusinessDateValue());
@@ -259,10 +258,6 @@ export default function OrderDetailPage() {
     const [doVehicle, setDoVehicle] = useState('');
     const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
-    const [doReceiverName, setDoReceiverName] = useState('');
-    const [doReceiverPhone, setDoReceiverPhone] = useState('');
-    const [doReceiverAddress, setDoReceiverAddress] = useState('');
-    const [doReceiverCompany, setDoReceiverCompany] = useState('');
     const [selectedPickupStopKeys, setSelectedPickupStopKeys] = useState<string[]>([]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
@@ -319,7 +314,7 @@ export default function OrderDetailPage() {
     }, [hasOpenModal]);
 
     const loadOrderReferenceData = useCallback(async (orderData: Order | null) => {
-        const [customerData, customerProductData, customerRecipientData, customerPickupData] = await Promise.all([
+        const [customerData, customerProductData, customerPickupData] = await Promise.all([
             orderData?.customerRef
                 ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
                 : Promise.resolve(null),
@@ -330,12 +325,6 @@ export default function OrderDetailPage() {
                 )
                 : Promise.resolve([] as CustomerProduct[]),
             orderData?.customerRef
-                ? fetchAdminCollectionData<CustomerRecipient[]>(
-                    `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
-                    'Gagal memuat master tujuan customer'
-                )
-                : Promise.resolve([] as CustomerRecipient[]),
-            orderData?.customerRef
                 ? fetchAdminCollectionData<CustomerPickupLocation[]>(
                     `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
                     'Gagal memuat master pickup customer'
@@ -345,7 +334,6 @@ export default function OrderDetailPage() {
 
         setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
         setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
-        setCustomerRecipients((customerRecipientData || []).filter(recipient => recipient.active !== false));
         setCustomerPickups((customerPickupData || []).filter(pickup => pickup.active !== false));
         loadedReferenceCustomerRef.current = orderData?.customerRef || '';
     }, []);
@@ -673,20 +661,6 @@ export default function OrderDetailPage() {
         );
     };
 
-    const formatCustomerRecipientLabel = (recipient: CustomerRecipient) => {
-        const targetName = recipient.receiverCompany || recipient.receiverName || recipient.label;
-        return `${recipient.label}${targetName && targetName !== recipient.label ? ` - ${targetName}` : ''}`;
-    };
-
-    const applyDoRecipient = (recipientId: string) => {
-        const recipient = customerRecipients.find(item => item._id === recipientId);
-        if (!recipient) return;
-        setDoReceiverName(recipient.receiverName || '');
-        setDoReceiverPhone(recipient.receiverPhone || '');
-        setDoReceiverCompany(recipient.receiverCompany || '');
-        setDoReceiverAddress(recipient.receiverAddress || '');
-    };
-
     const updateTripDraftField = <K extends keyof TripDraftForm>(field: K, value: TripDraftForm[K]) => {
         setTripDraft(current => ({ ...current, [field]: value }));
     };
@@ -879,10 +853,6 @@ export default function OrderDetailPage() {
                 ? tripPlan.pickupStopKeys
                 : resolvedOrderPickupStops.map(stop => stop._key)
         );
-        setDoReceiverName(order?.receiverName || '');
-        setDoReceiverPhone(order?.receiverPhone || '');
-        setDoReceiverAddress(order?.receiverAddress || '');
-        setDoReceiverCompany(order?.receiverCompany || '');
         setDoDate(tripPlan?.date || getBusinessDateValue());
         setDoVehicle(tripPlan?.vehicleRef || '');
         setDoVehicleOverrideReason(tripPlan?.vehicleCategoryOverrideReason || '');
@@ -1301,10 +1271,6 @@ export default function OrderDetailPage() {
                 shipperReferences: normalizedDirectCargoGroups.map(group => ({
                     referenceNumber: group.resolvedShipperReferenceNumber,
                     pickupStopKey: group.resolvedPickupStopKey,
-                    receiverName: doReceiverName.trim() || undefined,
-                    receiverPhone: doReceiverPhone.trim() || undefined,
-                    receiverAddress: doReceiverAddress.trim() || undefined,
-                    receiverCompany: doReceiverCompany.trim() || undefined,
                 })),
                 vehicleRef: effectiveDoVehicleRef || undefined,
                 vehiclePlate: selVeh?.plateNumber || '',
@@ -1319,10 +1285,6 @@ export default function OrderDetailPage() {
                 date: doDate,
                 notes: doNotes,
                 customerName: order?.customerName,
-                receiverName: doReceiverName.trim() || undefined,
-                receiverPhone: doReceiverPhone.trim() || undefined,
-                receiverAddress: doReceiverAddress.trim() || undefined,
-                receiverCompany: doReceiverCompany.trim() || undefined,
                 cargoItems: normalizedDirectCargoGroups.flatMap(group =>
                     group.draftItems.map(item => ({
                         ...item,
@@ -1342,10 +1304,6 @@ export default function OrderDetailPage() {
                 notes: doNotes,
                 requiresVehicleOverrideReason,
                 vehicleOverrideReason: doVehicleOverrideReason,
-                receiverName: doReceiverName,
-                receiverPhone: doReceiverPhone,
-                receiverAddress: doReceiverAddress,
-                receiverCompany: doReceiverCompany,
             })) as Record<string, unknown>;
         if (extraPickupRefs.length > 0) {
             deliveryOrderPayload.extraPickupRefs = extraPickupRefs;
@@ -1391,10 +1349,6 @@ export default function OrderDetailPage() {
             setDoVehicle('');
             setDoVehicleOverrideReason('');
             setDoNotes('');
-            setDoReceiverName('');
-            setDoReceiverPhone('');
-            setDoReceiverAddress('');
-            setDoReceiverCompany('');
             setDoDate(getBusinessDateValue());
             setSelectedOrderTripPlanKey('');
             await refreshOrderDeliveryState('Gagal memuat ulang trip order setelah surat jalan dibuat');
@@ -1683,26 +1637,6 @@ export default function OrderDetailPage() {
                             )}
                         </div>
                         {order.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{order.notes}</div></div>}
-                    </div>
-                </div>
-
-                <div className="card">
-                    <div className="card-header"><span className="card-header-title">Tujuan Surat Jalan</span></div>
-                    <div className="card-body">
-                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                            Tujuan sekarang diisi langsung di Surat Jalan. Snapshot lama di bawah hanya referensi.
-                        </div>
-                        {(order.receiverName || order.receiverAddress || order.receiverCompany) && (
-                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-gray-200)' }}>
-                                <div className="detail-label" style={{ marginBottom: '0.5rem' }}>Snapshot lama pada order</div>
-                                <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{order.receiverName || '-'}</div></div>
-                                    <div className="detail-item"><div className="detail-label">Telepon</div><div className="detail-value">{order.receiverPhone || '-'}</div></div>
-                                </div>
-                                <div><div className="detail-label">Alamat</div><div className="detail-value">{order.receiverAddress || '-'}</div></div>
-                                {order.receiverCompany && <div className="mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{order.receiverCompany}</div></div>}
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
@@ -2735,68 +2669,6 @@ export default function OrderDetailPage() {
                                     </div>
                                 </div>
                             )}
-                            <div className="form-section-title">Tujuan / Penerima Surat Jalan</div>
-                            {customerRecipients.length > 0 && (
-                                <div className="form-group">
-                                    <label className="form-label">Ambil dari Master Tujuan</label>
-                                    <select
-                                        className="form-select"
-                                        value=""
-                                        onChange={event => applyDoRecipient(event.target.value)}
-                                        disabled={creatingDO}
-                                    >
-                                        <option value="">Pilih tujuan customer...</option>
-                                        {customerRecipients.map(recipient => (
-                                            <option key={recipient._id} value={recipient._id}>
-                                                {formatCustomerRecipientLabel(recipient)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Nama Penerima / PIC</label>
-                                    <input
-                                        className="form-input"
-                                        value={doReceiverName}
-                                        onChange={e => setDoReceiverName(e.target.value)}
-                                        placeholder="Opsional, isi jika sudah diketahui"
-                                        disabled={creatingDO}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Telepon</label>
-                                    <input
-                                        className="form-input"
-                                        value={doReceiverPhone}
-                                        onChange={e => setDoReceiverPhone(e.target.value)}
-                                        placeholder="Opsional"
-                                        disabled={creatingDO}
-                                    />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Perusahaan Penerima</label>
-                                <input
-                                    className="form-input"
-                                    value={doReceiverCompany}
-                                    onChange={e => setDoReceiverCompany(e.target.value)}
-                                    placeholder="Opsional"
-                                    disabled={creatingDO}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Alamat Tujuan</label>
-                                <textarea
-                                    className="form-textarea"
-                                    rows={2}
-                                    value={doReceiverAddress}
-                                    onChange={e => setDoReceiverAddress(e.target.value)}
-                                    placeholder="Opsional, boleh dilengkapi setelah Surat Jalan terbit"
-                                    disabled={creatingDO}
-                                />
-                            </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />

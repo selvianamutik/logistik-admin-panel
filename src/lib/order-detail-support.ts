@@ -475,10 +475,6 @@ export function buildCreateDeliveryOrderRequestData(params: {
     taripBorongan?: number;
     requiresVehicleOverrideReason: boolean;
     vehicleOverrideReason: string;
-    receiverName?: string;
-    receiverPhone?: string;
-    receiverAddress?: string;
-    receiverCompany?: string;
 }) {
     return {
         orderRef: params.order?._id,
@@ -498,9 +494,5 @@ export function buildCreateDeliveryOrderRequestData(params: {
         date: params.date,
         notes: params.notes,
         customerName: params.order?.customerName,
-        receiverName: params.receiverName?.trim() || undefined,
-        receiverPhone: params.receiverPhone?.trim() || undefined,
-        receiverAddress: params.receiverAddress?.trim() || undefined,
-        receiverCompany: params.receiverCompany?.trim() || undefined,
     };
 }

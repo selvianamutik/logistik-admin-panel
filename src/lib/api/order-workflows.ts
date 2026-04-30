@@ -4203,10 +4203,6 @@ export async function handleDeliveryOrderCreate(
                 pickupAddress: pickupStop?.pickupAddress,
                 billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef),
                 billingCustomerName: normalizeOptionalText(reference.billingCustomerName),
-                receiverName: normalizeOptionalText(reference.receiverName),
-                receiverPhone: normalizeOptionalText(reference.receiverPhone),
-                receiverAddress: normalizeOptionalText(reference.receiverAddress),
-                receiverCompany: normalizeOptionalText(reference.receiverCompany),
                 notes: normalizeOptionalText(reference.notes),
             };
         })
@@ -4681,10 +4677,10 @@ export async function handleDeliveryOrderCreate(
     const doId = crypto.randomUUID();
     const doNumber = await getNextNumber('do', doDate);
     const companyProfile = await getCompanyProfile<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'>>();
-    const receiverName = normalizeOptionalText(data.receiverName) || order.receiverName;
-    const receiverPhone = normalizeOptionalText(data.receiverPhone) || order.receiverPhone;
-    const receiverAddress = normalizeOptionalText(data.receiverAddress) || order.receiverAddress;
-    const receiverCompany = normalizeOptionalText(data.receiverCompany) || order.receiverCompany;
+    const receiverName = '';
+    const receiverPhone = '';
+    const receiverAddress = '';
+    const receiverCompany = '';
     const pickupAddress = normalizeOptionalText(deliveryOrderPickupStops[0]?.pickupAddress) || order.pickupAddress;
     const doDoc = {
         _id: doId,
