@@ -1483,6 +1483,13 @@ function mapDocumentToRow(docType: SupportedDocType, doc: { _id?: string; _type?
     const config = RELATIONAL_CONFIG[docType];
     const usedKeys = new Set<string>([...META_FIELDS, ...Object.keys(config.fieldMap)]);
     const extraData: Record<string, unknown> = {};
+    const nowIso = new Date().toISOString();
+    const createdAt = typeof doc._createdAt === 'string' && doc._createdAt.trim()
+        ? doc._createdAt
+        : nowIso;
+    const updatedAt = typeof doc._updatedAt === 'string' && doc._updatedAt.trim()
+        ? doc._updatedAt
+        : createdAt;
 
     for (const [key, value] of Object.entries(doc)) {
         if (!usedKeys.has(key)) {
@@ -1492,8 +1499,8 @@ function mapDocumentToRow(docType: SupportedDocType, doc: { _id?: string; _type?
 
     const row: Record<string, unknown> = {
         source_document_id: typeof doc._id === 'string' && doc._id.trim() ? doc._id.trim() : randomUUID(),
-        document_created_at: doc._createdAt ?? null,
-        document_updated_at: doc._updatedAt ?? null,
+        document_created_at: createdAt,
+        document_updated_at: updatedAt,
         extra_data: extraData,
     };
 
