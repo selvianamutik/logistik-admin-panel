@@ -1,4 +1,5 @@
 import {
+    getDriverCustomerRecipients,
     getDriverCustomerProducts,
     getDriverAssignedDeliveryOrders,
     getDriverAssignedTripPlans,
@@ -32,9 +33,13 @@ export async function GET(request: Request) {
             ...deliveryOrders.map(item => typeof item.orderRef === 'string' ? item.orderRef : ''),
             ...plannedTrips.map(item => item.orderRef || ''),
         ]);
-        const customerProducts = await getDriverCustomerProducts([
+        const customerRefs = [
             ...deliveryOrders.map(item => item.customerRef || ''),
             ...plannedTrips.map(item => item.customerRef || ''),
+        ];
+        const [customerProducts, customerRecipients] = await Promise.all([
+            getDriverCustomerProducts(customerRefs),
+            getDriverCustomerRecipients(customerRefs),
         ]);
         return jsonNoStore({
             data: deliveryOrders.map(item => ({
@@ -46,6 +51,7 @@ export async function GET(request: Request) {
                 allowsDirectCargoInput: cargoCapabilities.get(item.orderRef || '') ?? true,
             })),
             customerProducts,
+            customerRecipients,
         });
     } catch (error) {
         const serviceError = getDataServiceErrorInfo(

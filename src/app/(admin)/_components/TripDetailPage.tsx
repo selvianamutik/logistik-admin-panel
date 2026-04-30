@@ -65,7 +65,6 @@ import {
     convertVolumeToM3,
     convertWeightToKg,
     formatCargoSummary,
-    formatWeightDisplay,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
@@ -612,6 +611,9 @@ export default function TripDetailPage() {
             return nextSyncedDropDrafts;
         });
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
+        // expandActualDropDraftsBySelectedItems is declared below with the same render-scope helpers used by the manual editor.
+        // Including it here would require moving a large finalization block and would not change runtime behavior.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         actualCargoItems,
         doData,
@@ -1796,7 +1798,7 @@ export default function TripDetailPage() {
         }
     };
 
-    const removeCargoItemNow = async (deliveryOrderItemId: string, itemLabel: string) => {
+    const removeCargoItemNow = async (deliveryOrderItemId: string) => {
         if (!canEditDeliveryCargo || !doData?._id) return;
         setRemovingCargoItemId(deliveryOrderItemId);
         try {
@@ -1936,7 +1938,7 @@ export default function TripDetailPage() {
         const action = pendingDeleteAction;
         setPendingDeleteAction(null);
         if (action.type === 'cargo-item') {
-            await removeCargoItemNow(action.deliveryOrderItemId, action.itemLabel);
+            await removeCargoItemNow(action.deliveryOrderItemId);
             return;
         }
         await deleteShipperReferenceNow(action.reference);
@@ -2222,30 +2224,6 @@ export default function TripDetailPage() {
         ) || cargoItems[0]
     )?.deliveryOrderItemRef || '';
 
-    const toggleActualDropItemSelection = (drop: ActualDropDraft, cargoItem: ActualCargoDraft, checked: boolean) => {
-        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
-        setActualDropItemValueMap(previous => {
-            const next = { ...previous };
-            if (!checked) {
-                delete next[valueKey];
-                return next;
-            }
-            next[valueKey] = {
-                qtyKoli: '',
-                weightInputValue: '',
-                weightInputUnit: cargoItem.actualWeightInputUnit,
-                volumeInputValue: '',
-                volumeInputUnit: cargoItem.actualVolumeInputUnit,
-            };
-            return next;
-        });
-    };
-
-    const isActualDropItemSelected = (drop: ActualDropDraft, cargoItem: ActualCargoDraft) => {
-        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
-        return Boolean(actualDropItemValueMap[valueKey]) || drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef;
-    };
-
     const applyActualDropShipperReference = (draftKey: string, optionValue: string) => {
         const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === optionValue);
         setActualDropPoints(previous => previous.map(item => {
@@ -2305,38 +2283,6 @@ export default function TripDetailPage() {
             (shipperReferenceKey && item.shipperReferenceKey.trim() === shipperReferenceKey) ||
             (shipperReferenceNumber && item.shipperReferenceNumber.trim().toUpperCase() === shipperReferenceNumber)
         ));
-    };
-
-    const applyActualDropItem = (draftKey: string, deliveryOrderItemRef: string) => {
-        const selectedCargoItem = actualCargoItems.find(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
-        const currentDrop = actualDropPoints.find(item => item.draftKey === draftKey);
-        if (currentDrop?.deliveryOrderItemRef) {
-            const currentValueKey = buildActualDropItemValueKey(draftKey, currentDrop.deliveryOrderItemRef);
-            setActualDropItemValueMap(previous => ({
-                ...previous,
-                [currentValueKey]: pickActualDropItemValues(currentDrop),
-            }));
-        }
-
-        setActualDropPoints(previous => previous.map(item => {
-            if (item.draftKey !== draftKey) {
-                return item;
-            }
-            if (!selectedCargoItem) {
-                return {
-                    ...item,
-                    deliveryOrderItemRef: '',
-                };
-            }
-            const selectedValueKey = buildActualDropItemValueKey(draftKey, selectedCargoItem.deliveryOrderItemRef);
-            return {
-                ...item,
-                deliveryOrderItemRef: selectedCargoItem.deliveryOrderItemRef,
-                shipperReferenceKey: selectedCargoItem.shipperReferenceKey || item.shipperReferenceKey,
-                shipperReferenceNumber: selectedCargoItem.shipperReferenceNumber || item.shipperReferenceNumber,
-                ...(actualDropItemValueMap[selectedValueKey] || getRemainingActualDropValuesForCargoItem(selectedCargoItem, item, draftKey)),
-            };
-        }));
     };
 
     const getActualDropValuesFromCargoItem = (
@@ -3378,30 +3324,6 @@ export default function TripDetailPage() {
         const referenceValue = matchedReference?.referenceKey || matchedReference?.draftKey || matchedReference?.referenceNumber;
         return referenceValue ? `sj:${referenceValue}` : '';
     };
-    const getActualDropItemOptions = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
-    ) => {
-        const selectedReferenceValue = resolveActualDropShipperReferenceValue(drop);
-        const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
-        if (!selectedReference) {
-            return actualCargoItems;
-        }
-        return actualCargoItems.filter(item => {
-            const sourceDoItem = doItems.find(row => row._id === item.deliveryOrderItemRef);
-            const itemReferenceKey = (item.shipperReferenceKey || sourceDoItem?.shipperReferenceKey || '').trim();
-            const itemReferenceNumber = (
-                item.shipperReferenceNumber ||
-                sourceDoItem?.shipperReferenceNumber ||
-                doData.customerDoNumber ||
-                doData.doNumber ||
-                ''
-            ).trim().toUpperCase();
-            return (
-                (selectedReference.referenceKey && itemReferenceKey === selectedReference.referenceKey) ||
-                (selectedReference.referenceNumber && itemReferenceNumber === selectedReference.referenceNumber.trim().toUpperCase())
-            );
-        });
-    };
     const getActualDropRecipientOptions = (
         drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
     ) => {
@@ -3443,13 +3365,6 @@ export default function TripDetailPage() {
                 : item
         )));
     };
-    const resolveActualDropItemValue = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef'>
-    ) => drop.deliveryOrderItemRef ? drop.deliveryOrderItemRef : '';
-    const getActualDropCargoSummary = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
-    ) =>
-        summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, actualCargoItems));
     const cargoGroups = (() => {
         const groups = new Map<string, {
             key: string;
@@ -3556,8 +3471,6 @@ export default function TripDetailPage() {
     const {
         autoActualDropDraft,
         actualDropSummary,
-        actualDropMismatchMessage,
-        actualDropAmbiguityMessage,
         hasLiveCoordinates,
         trackingMapUrl,
         mapEmbedUrl,
@@ -3771,7 +3684,7 @@ export default function TripDetailPage() {
             item.actualVolumeInputUnit
         ),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-    const selectedActualDropTotals = selectedBillableEffectiveActualDropPoints.reduce((sum, point) => ({
+    const selectedActualDropTotals = selectedEffectiveActualDropPoints.reduce((sum, point) => ({
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
             parseFormattedNumberish(point.weightInputValue || 0, {
@@ -3800,18 +3713,15 @@ export default function TripDetailPage() {
     });
     const selectedActualDropMismatchMessage =
         selectedActualCargoTotals.qtyKoli > 0 && Math.abs(selectedActualDropTotals.qtyKoli - selectedActualCargoTotals.qtyKoli) > 0.01
-            ? 'Total qty titik drop harus sama dengan qty aktual muatan terkirim.'
+            ? 'Total qty titik realisasi harus sama dengan qty aktual muatan.'
             : selectedActualCargoTotals.weightKg > 0 && Math.abs(selectedActualDropTotals.weightKg - selectedActualCargoTotals.weightKg) > 0.01
-                ? 'Total berat titik drop harus sama dengan berat aktual muatan terkirim.'
+                ? 'Total berat titik realisasi harus sama dengan berat aktual muatan.'
                 : selectedActualCargoTotals.volumeM3 > 0 && Math.abs(selectedActualDropTotals.volumeM3 - selectedActualCargoTotals.volumeM3) > 0.001
-                    ? 'Total volume titik drop harus sama dengan volume aktual muatan terkirim.'
+                    ? 'Total volume titik realisasi harus sama dengan volume aktual muatan.'
                     : null;
     const selectedBillableDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
     const selectedHoldDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
     const selectedReturnDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
-    const selectedActualDropLocationMissing = selectedEffectiveActualDropPoints.some(point =>
-        !point.locationName.trim() && !point.locationAddress.trim()
-    );
     const selectedDropModeLabel = showAdvancedDropEditor ? `${selectedEffectiveActualDropPoints.length} titik aktual` : 'Trip normal / 1 tujuan';
     const selectedSuratJalanLabelMap = new Map(
         selectedStatusSuratJalanDocuments.flatMap(document => {
@@ -5666,11 +5576,6 @@ export default function TripDetailPage() {
                                                     <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                         {selectedActualDropPoints.map((item, index) => (
                                                             (() => {
-                                                                const selectedReferenceValue = resolveActualDropShipperReferenceValue(item);
-                                                                const itemOptions = selectedReferenceValue ? getActualDropItemOptions(item).filter(cargoItem => selectedActualCargoItemRefs.has(cargoItem.deliveryOrderItemRef)) : [];
-                                                                const selectedItemRef = resolveActualDropItemValue(item);
-                                                                const selectedCargoItem = actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef);
-                                                                const lockedDropWeight = shouldLockActualDropWeight(selectedCargoItem);
                                                                 const allocationSummaryRows = getActualDropAllocationSummaryRows(item);
                                                                 const recipientOptions = getActualDropRecipientOptions(item);
                                                                 const selectedRecipientId = resolveActualDropRecipientValue(item);

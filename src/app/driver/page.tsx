@@ -49,8 +49,8 @@ import {
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
 import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
-import { formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
-import type { CustomerProduct, Driver, SessionUser } from '@/lib/types';
+import { formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
+import type { CustomerProduct, CustomerRecipient, Driver, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan } from '@/lib/api/driver-portal';
 
 type DriverSessionResponse = {
@@ -63,6 +63,7 @@ type DriverDeliveryOrdersResponse = {
     data?: DriverAssignedDeliveryOrder[];
     plannedTrips?: DriverAssignedTripPlan[];
     customerProducts?: CustomerProduct[];
+    customerRecipients?: CustomerRecipient[];
     error?: string;
 };
 
@@ -186,6 +187,28 @@ function summarizeDriverOrderCargo(order: DriverAssignedDeliveryOrder) {
     });
 }
 
+function formatDriverTripRoute(origin?: string, destination?: string) {
+    const normalizedOrigin = (origin || '').trim();
+    const normalizedDestination = (destination || '').trim();
+    if (normalizedOrigin && normalizedDestination) {
+        return `${normalizedOrigin} -> ${normalizedDestination}`;
+    }
+    return normalizedDestination || normalizedOrigin || '-';
+}
+
+function formatCustomerRecipientOptionLabel(recipient: CustomerRecipient) {
+    const label = recipient.label?.trim();
+    const target = (recipient.receiverCompany || recipient.receiverName || recipient.receiverAddress || '').trim();
+    if (label && target && label.toLowerCase() !== target.toLowerCase()) {
+        return `${label} - ${target}`;
+    }
+    return label || target || 'Tujuan customer';
+}
+
+function getCustomerRecipientDropName(recipient: CustomerRecipient) {
+    return (recipient.receiverCompany || recipient.receiverName || recipient.label || '').trim();
+}
+
 export default function DriverPortalPage() {
     const router = useRouter();
     const intervalRef = useRef<number | null>(null);
@@ -197,6 +220,7 @@ export default function DriverPortalPage() {
     const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
     const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [loading, setLoading] = useState(true);
     const [portalLoadError, setPortalLoadError] = useState<string | null>(null);
     const [loggingOut, setLoggingOut] = useState(false);
@@ -338,24 +362,22 @@ export default function DriverPortalPage() {
         () => completionOrder?.shipperReferences || [],
         [completionOrder?.shipperReferences]
     );
+    const completionCustomerRecipients = useMemo(
+        () => customerRecipients.filter(recipient => recipient.customerRef === completionOrder?.customerRef),
+        [completionOrder?.customerRef, customerRecipients]
+    );
     const completionDropTargetOptions = useMemo(() => [
         ...completionShipperReferences.map(reference => ({
             optionValue: `sj:${reference._key || reference.referenceNumber || ''}`,
             referenceKey: reference._key || '',
             referenceNumber: reference.referenceNumber || '',
-            receiverCompany: reference.receiverCompany || '',
-            receiverName: reference.receiverName || '',
-            receiverAddress: reference.receiverAddress || '',
             deliveryOrderItemRef: '',
-            label: `${reference.referenceNumber || '-'}${reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''} (semua barang)`,
+            label: `${reference.referenceNumber || '-'} (semua barang)`,
         })),
         ...completionCargoItems.map(item => ({
             optionValue: `item:${item.deliveryOrderItemRef}`,
             referenceKey: item.shipperReferenceKey || '',
             referenceNumber: item.shipperReferenceNumber || completionOrder?.customerDoNumber || completionOrder?.doNumber || '',
-            receiverCompany: '',
-            receiverName: '',
-            receiverAddress: '',
             deliveryOrderItemRef: item.deliveryOrderItemRef,
             label: `${item.shipperReferenceNumber || completionOrder?.customerDoNumber || 'Tanpa SJ'} - ${item.description || 'Barang'}`,
         })),
@@ -397,6 +419,7 @@ export default function DriverPortalPage() {
             setOrders(payload.data || []);
             setPlannedTrips(payload.plannedTrips || []);
             setCustomerProducts((payload.customerProducts || []).filter(product => product.active !== false));
+            setCustomerRecipients((payload.customerRecipients || []).filter(recipient => recipient.active !== false));
         } catch (error) {
             if (isDriverUnauthorizedError(error)) {
                 handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
@@ -1004,15 +1027,43 @@ export default function DriverPortalPage() {
                 deliveryOrderItemRef: selectedTarget.deliveryOrderItemRef || '',
                 shipperReferenceKey: selectedTarget.referenceKey || '',
                 shipperReferenceNumber: selectedTarget.referenceNumber || '',
-                locationName:
-                    selectedTarget.receiverCompany?.trim()
-                    || selectedTarget.receiverName?.trim()
-                    || selectedTarget.receiverAddress?.trim()
-                    || item.locationName,
-                locationAddress: selectedTarget.receiverAddress || item.locationAddress,
             };
         }));
     }, [completionDropTargetOptions]);
+
+    const resolveCompletionDropRecipientValue = useCallback((drop: Pick<ActualDropDraft, 'locationName' | 'locationAddress'>) => {
+        const dropLocationName = drop.locationName.trim().toLowerCase();
+        const dropLocationAddress = drop.locationAddress.trim().toLowerCase();
+        if (!dropLocationName && !dropLocationAddress) {
+            return '';
+        }
+        const matchedRecipient = completionCustomerRecipients.find(recipient => {
+            const recipientName = getCustomerRecipientDropName(recipient).toLowerCase();
+            const recipientAddress = (recipient.receiverAddress || '').trim().toLowerCase();
+            return (
+                (dropLocationAddress && recipientAddress === dropLocationAddress) ||
+                (dropLocationName && recipientName === dropLocationName)
+            );
+        });
+        return matchedRecipient?._id || '';
+    }, [completionCustomerRecipients]);
+
+    const applyCompletionDropRecipient = useCallback((draftKey: string, recipientId: string) => {
+        const selectedRecipient = completionCustomerRecipients.find(recipient => recipient._id === recipientId);
+        setCompletionDropPoints(previous => previous.map(item => {
+            if (item.draftKey !== draftKey) {
+                return item;
+            }
+            if (!selectedRecipient) {
+                return item;
+            }
+            return {
+                ...item,
+                locationName: getCustomerRecipientDropName(selectedRecipient),
+                locationAddress: selectedRecipient.receiverAddress || '',
+            };
+        }));
+    }, [completionCustomerRecipients]);
 
     const addCompletionDropDraft = useCallback(() => {
         setCompletionDropPoints(previous => [...previous, createEmptyActualDropDraft()]);
@@ -1459,7 +1510,7 @@ export default function DriverPortalPage() {
                                 <div className="card-body">
                                     <div className="driver-do-meta"><span>Customer</span><strong>{item.customerName || '-'}</strong></div>
                                     <div className="driver-do-meta"><span>SJ Pengirim</span><strong>{getShipperReferenceCount(item) > 0 ? formatShipperDeliveryOrderNumber(item) : '-'}</strong></div>
-                                    <div className="driver-do-meta"><span>Tujuan</span><strong>{formatShipperReceiverSummary(item, { fallback: item.receiverAddress || '-' })}</strong></div>
+                                    <div className="driver-do-meta"><span>Rute Trip</span><strong>{formatDriverTripRoute(item.tripOriginArea, item.tripDestinationArea)}</strong></div>
                                     <div className="driver-do-meta"><span>Kendaraan</span><strong>{item.vehiclePlate || '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Muatan</span><strong>{cargoItemCount > 0 ? summarizeDriverOrderCargo(item) : 'Belum diisi'}</strong></div>
                                     <div className="driver-do-meta"><span>Posisi terakhir</span><strong>{item.trackingLastSeenAt ? formatDateTime(item.trackingLastSeenAt) : '-'}</strong></div>
@@ -1831,8 +1882,8 @@ export default function DriverPortalPage() {
                                     <strong>{getShipperReferenceCount(cargoInputOrder) > 0 ? formatShipperDeliveryOrderNumber(cargoInputOrder) : '-'}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Tujuan</span>
-                                    <strong>{formatShipperReceiverSummary(cargoInputOrder, { fallback: cargoInputOrder.receiverName || cargoInputOrder.receiverAddress || '-' })}</strong>
+                                    <span>Rute Trip</span>
+                                    <strong>{formatDriverTripRoute(cargoInputOrder.tripOriginArea, cargoInputOrder.tripDestinationArea)}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
                                     <span>Pickup</span>
@@ -2146,8 +2197,8 @@ export default function DriverPortalPage() {
                                     <strong>{getShipperReferenceCount(completionOrder) > 0 ? formatShipperDeliveryOrderNumber(completionOrder) : '-'}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Tujuan</span>
-                                    <strong>{formatShipperReceiverSummary(completionOrder, { fallback: completionOrder.receiverName || completionOrder.receiverAddress || '-' })}</strong>
+                                    <span>Rute Trip</span>
+                                    <strong>{formatDriverTripRoute(completionOrder.tripOriginArea, completionOrder.tripDestinationArea)}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
                                     <span>Ringkasan Aktual</span>
@@ -2269,9 +2320,6 @@ export default function DriverPortalPage() {
                                         {showCompletionAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
                                     </button>
                                 </div>
-                                <div className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
-                                            Untuk trip normal, semua muatan aktual turun di {completionDetailState.autoActualDropDraft.locationName || 'tujuan invoice'}.
-                                </div>
                                 {completionDetailState.actualDropMismatchMessage && (
                                     <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
                                         {completionDetailState.actualDropMismatchMessage} Muatan aktual {formatCargoSummary(completionDetailState.actualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(completionDetailState.actualDropTotals)}.
@@ -2287,10 +2335,46 @@ export default function DriverPortalPage() {
                                         <div className="driver-completion-item-header">
                                             <div>
                                                 <div className="driver-completion-item-title">Realisasi Default</div>
-                                                <div className="text-muted text-sm">
-                                            {completionDetailState.autoActualDropDraft.locationName || 'Tujuan Invoice'}
-                                                    {completionDetailState.autoActualDropDraft.locationAddress ? ` • ${completionDetailState.autoActualDropDraft.locationAddress}` : ''}
+                                            </div>
+                                        </div>
+                                        <div className="driver-completion-metrics">
+                                            {completionCustomerRecipients.length > 0 && (
+                                                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                                    <label className="form-label">Master Tujuan Customer</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={resolveCompletionDropRecipientValue(completionDetailState.autoActualDropDraft)}
+                                                        onChange={event => applyCompletionDropRecipient(completionDetailState.autoActualDropDraft.draftKey, event.target.value)}
+                                                        disabled={isActionInFlight}
+                                                    >
+                                                        <option value="">Pilih tujuan customer atau isi manual</option>
+                                                        {completionCustomerRecipients.map(recipient => (
+                                                            <option key={recipient._id} value={recipient._id}>
+                                                                {formatCustomerRecipientOptionLabel(recipient)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 </div>
+                                            )}
+                                            <div className="form-group">
+                                                <label className="form-label">Nama Lokasi</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={completionDetailState.autoActualDropDraft.locationName}
+                                                    onChange={event => updateCompletionDropDraft(completionDetailState.autoActualDropDraft.draftKey, 'locationName', event.target.value)}
+                                                    disabled={isActionInFlight}
+                                                    placeholder="Nama tujuan aktual"
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Alamat</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={completionDetailState.autoActualDropDraft.locationAddress}
+                                                    onChange={event => updateCompletionDropDraft(completionDetailState.autoActualDropDraft.draftKey, 'locationAddress', event.target.value)}
+                                                    disabled={isActionInFlight}
+                                                    placeholder="Alamat aktual titik drop"
+                                                />
                                             </div>
                                         </div>
                                         <div className="text-muted text-sm">
@@ -2348,6 +2432,24 @@ export default function DriverPortalPage() {
                                                             <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                                                 Barang: {getCompletionDropCargoSummary(item)}
                                                             </div>
+                                                        </div>
+                                                    )}
+                                                    {completionCustomerRecipients.length > 0 && (
+                                                        <div className="form-group">
+                                                            <label className="form-label">Master Tujuan Customer</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={resolveCompletionDropRecipientValue(item)}
+                                                                onChange={event => applyCompletionDropRecipient(item.draftKey, event.target.value)}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                <option value="">Pilih tujuan customer atau isi manual</option>
+                                                                {completionCustomerRecipients.map(recipient => (
+                                                                    <option key={recipient._id} value={recipient._id}>
+                                                                        {formatCustomerRecipientOptionLabel(recipient)}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
                                                         </div>
                                                     )}
                                                     <div className="form-group">

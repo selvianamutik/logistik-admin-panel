@@ -4,9 +4,14 @@ import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 
 class DeliveryCompletionPage extends StatefulWidget {
-  const DeliveryCompletionPage({super.key, required this.trip});
+  const DeliveryCompletionPage({
+    super.key,
+    required this.trip,
+    required this.customerRecipients,
+  });
 
   final DeliveryTrip trip;
+  final List<CustomerRecipientOption> customerRecipients;
 
   @override
   State<DeliveryCompletionPage> createState() => _DeliveryCompletionPageState();
@@ -123,21 +128,36 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
               );
             }
 
-            final targetLabel = reference.targetLabel == '-'
-                ? ''
-                : reference.targetLabel;
-            final targetAddress = (reference.receiverAddress ?? '').trim();
             return draft.copyWith(
               shipperReferenceNumber: reference.referenceNumber,
               shipperReferenceKey: reference.key ?? '',
-              locationName: targetLabel.isNotEmpty
-                  ? targetLabel
-                  : draft.locationName,
-              locationAddress: targetAddress.isNotEmpty
-                  ? targetAddress
-                  : draft.locationAddress,
             );
           })
+          .toList(growable: false);
+    });
+  }
+
+  void _selectRecipient(String draftId, String recipientId) {
+    CustomerRecipientOption? recipient;
+    for (final item in widget.customerRecipients) {
+      if (item.id == recipientId) {
+        recipient = item;
+        break;
+      }
+    }
+    final selectedRecipient = recipient;
+    if (selectedRecipient == null) return;
+
+    setState(() {
+      _dropDrafts = _dropDrafts
+          .map(
+            (draft) => draft.id == draftId
+                ? draft.copyWith(
+                    locationName: selectedRecipient.locationName,
+                    locationAddress: selectedRecipient.receiverAddress,
+                  )
+                : draft,
+          )
           .toList(growable: false);
     });
   }
@@ -166,7 +186,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
         .map(
           (draft) => DriverActualDropPointInput(
             stopType: draft.stopType,
-            shipperReferenceNumber: draft.shipperReferenceNumber.trim().isNotEmpty
+            shipperReferenceNumber:
+                draft.shipperReferenceNumber.trim().isNotEmpty
                 ? draft.shipperReferenceNumber.trim()
                 : null,
             shipperReferenceKey: draft.shipperReferenceKey.trim().isNotEmpty
@@ -267,8 +288,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
     final scheme = Theme.of(context).colorScheme;
     final cargoTotals = _summarizeCargoDrafts(_cargoDrafts);
     final dropTotals = _summarizeDropDrafts(_dropDrafts);
-    final hasMultiTargetDefault =
-        _resolveDistinctTargets(widget.trip).length > 1;
+    final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Ajukan Selesai')),
@@ -321,10 +341,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                         index: entry.key + 1,
                         draft: entry.value,
                         shipperReferences: widget.trip.shipperReferences,
+                        customerRecipients: widget.customerRecipients,
                         cargoDrafts: _cargoDrafts,
                         showRemove: _dropDrafts.length > 1,
                         onChanged: _updateDrop,
                         onReferenceChanged: _selectDropReference,
+                        onRecipientChanged: _selectRecipient,
                         onRemove: _removeDropPoint,
                       ),
                     ),
@@ -642,116 +664,14 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         .toList(growable: false);
   }
 
-  final targets = _resolveDistinctTargets(trip);
   final totals = _summarizeCargoDrafts(cargoDrafts);
-  if (targets.length <= 1) {
-    final target = targets.isNotEmpty
-        ? targets.first
-        : (
-            locationName: (trip.receiverName ?? trip.destinationLabel).trim(),
-            locationAddress: (trip.receiverAddress ?? '').trim(),
-            shipperReferenceNumber: '',
-            shipperReferenceKey: '',
-          );
-    return [
-      _ActualDropDraft.create(
-        locationName: target.locationName,
-        locationAddress: target.locationAddress,
-        shipperReferenceNumber: target.shipperReferenceNumber,
-        shipperReferenceKey: target.shipperReferenceKey,
-        qtyKoli: _formatMetric(totals.qtyKoli),
-        weightInputValue: _formatMetric(totals.weightKg),
-        volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
-      ),
-    ];
-  }
-
-  return targets
-      .map((target) {
-        final targetTotals = _summarizeCargoDrafts(
-          _cargoDraftsForDropReference(target, cargoDrafts),
-        );
-        return _ActualDropDraft.create(
-          locationName: target.locationName,
-          locationAddress: target.locationAddress,
-          shipperReferenceNumber: target.shipperReferenceNumber,
-          shipperReferenceKey: target.shipperReferenceKey,
-          qtyKoli: _formatMetric(targetTotals.qtyKoli),
-          weightInputValue: _formatMetric(targetTotals.weightKg),
-          volumeInputValue: _formatMetric(
-            targetTotals.volumeM3,
-            fractionDigits: 3,
-          ),
-        );
-      })
-      .toList(growable: false);
-}
-
-List<
-  ({
-    String locationName,
-    String locationAddress,
-    String shipperReferenceNumber,
-    String shipperReferenceKey,
-  })
->
-_resolveDistinctTargets(
-  DeliveryTrip trip,
-) {
-  final results =
-      <({
-        String locationName,
-        String locationAddress,
-        String shipperReferenceNumber,
-        String shipperReferenceKey,
-      })>[];
-  final seen = <String>{};
-  for (final reference in trip.shipperReferences) {
-    final locationName = reference.targetLabel.trim();
-    final locationAddress = (reference.receiverAddress ?? '').trim();
-    final referenceNumber = reference.referenceNumber.trim();
-    final key = referenceNumber.isNotEmpty
-        ? 'sj:${referenceNumber.toUpperCase()}'
-        : '$locationName::$locationAddress';
-    if ((locationName.isEmpty && locationAddress.isEmpty) ||
-        seen.contains(key)) {
-      continue;
-    }
-    seen.add(key);
-    results.add((
-      locationName: locationName,
-      locationAddress: locationAddress,
-      shipperReferenceNumber: reference.referenceNumber,
-      shipperReferenceKey: reference.key ?? '',
-    ));
-  }
-  return results;
-}
-
-List<_ActualCargoDraft> _cargoDraftsForDropReference(
-  ({
-    String locationName,
-    String locationAddress,
-    String shipperReferenceNumber,
-    String shipperReferenceKey,
-  })
-  reference,
-  List<_ActualCargoDraft> drafts,
-) {
-  final referenceKey = reference.shipperReferenceKey.trim();
-  final referenceNumber = reference.shipperReferenceNumber.trim().toUpperCase();
-  if (referenceKey.isEmpty && referenceNumber.isEmpty) return drafts;
-
-  return drafts
-      .where(
-        (draft) =>
-            (referenceKey.isNotEmpty &&
-                draft.shipperReferenceKey.trim() == referenceKey) ||
-            (referenceNumber.isNotEmpty &&
-                draft.shipperReferenceNumber.trim().toUpperCase() ==
-                    referenceNumber),
-      )
-      .toList(growable: false);
+  return [
+    _ActualDropDraft.create(
+      qtyKoli: _formatMetric(totals.qtyKoli),
+      weightInputValue: _formatMetric(totals.weightKg),
+      volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+    ),
+  ];
 }
 
 _ActualCargoTotals _summarizeCargoDrafts(List<_ActualCargoDraft> drafts) {
@@ -867,6 +787,25 @@ String _resolveDropReferenceOptionValue(
         (dropReferenceNumber.isNotEmpty &&
             referenceNumber == dropReferenceNumber)) {
       return _shipperReferenceOptionValue(reference);
+    }
+  }
+  return '';
+}
+
+String _resolveRecipientOptionValue(
+  _ActualDropDraft drop,
+  List<CustomerRecipientOption> recipients,
+) {
+  final locationName = drop.locationName.trim().toLowerCase();
+  final locationAddress = drop.locationAddress.trim().toLowerCase();
+  if (locationName.isEmpty && locationAddress.isEmpty) return '';
+
+  for (final recipient in recipients) {
+    final recipientName = recipient.locationName.trim().toLowerCase();
+    final recipientAddress = recipient.receiverAddress.trim().toLowerCase();
+    if ((locationAddress.isNotEmpty && locationAddress == recipientAddress) ||
+        (locationName.isNotEmpty && locationName == recipientName)) {
+      return recipient.id;
     }
   }
   return '';
@@ -1137,16 +1076,19 @@ class _ActualDropCard extends StatelessWidget {
     required this.index,
     required this.draft,
     required this.shipperReferences,
+    required this.customerRecipients,
     required this.cargoDrafts,
     required this.showRemove,
     required this.onChanged,
     required this.onReferenceChanged,
+    required this.onRecipientChanged,
     required this.onRemove,
   });
 
   final int index;
   final _ActualDropDraft draft;
   final List<DeliveryShipperReference> shipperReferences;
+  final List<CustomerRecipientOption> customerRecipients;
   final List<_ActualCargoDraft> cargoDrafts;
   final bool showRemove;
   final void Function(
@@ -1163,6 +1105,7 @@ class _ActualDropCard extends StatelessWidget {
   })
   onChanged;
   final void Function(String draftId, String optionValue) onReferenceChanged;
+  final void Function(String draftId, String recipientId) onRecipientChanged;
   final void Function(String draftId) onRemove;
 
   @override
@@ -1170,6 +1113,10 @@ class _ActualDropCard extends StatelessWidget {
     final selectedReferenceValue = _resolveDropReferenceOptionValue(
       draft,
       shipperReferences,
+    );
+    final selectedRecipientValue = _resolveRecipientOptionValue(
+      draft,
+      customerRecipients,
     );
     final cargoSummary = _summarizeCargoDescriptions(
       _cargoDraftsForDrop(draft, cargoDrafts),
@@ -1230,31 +1177,25 @@ class _ActualDropCard extends StatelessWidget {
                     value: '',
                     child: Text('Semua / manual'),
                   ),
-                  ...shipperReferences.map(
-                    (reference) {
-                      final targetLabel = reference.targetLabel == '-'
-                          ? ''
-                          : ' - ${reference.targetLabel}';
-                      return DropdownMenuItem(
-                        value: _shipperReferenceOptionValue(reference),
-                        child: Text(
-                          '${reference.referenceNumber}$targetLabel',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    },
-                  ),
+                  ...shipperReferences.map((reference) {
+                    return DropdownMenuItem(
+                      value: _shipperReferenceOptionValue(reference),
+                      child: Text(
+                        reference.referenceNumber,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
                 ],
-                onChanged: (value) =>
-                    onReferenceChanged(draft.id, value ?? ''),
+                onChanged: (value) => onReferenceChanged(draft.id, value ?? ''),
               ),
               const SizedBox(height: 8),
               Text(
                 'Barang: $cargoSummary',
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(
-                    alpha: 0.65,
-                  ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.65),
                   fontSize: 12,
                   height: 1.35,
                 ),
@@ -1264,12 +1205,38 @@ class _ActualDropCard extends StatelessWidget {
               Text(
                 'Barang: $cargoSummary',
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(
-                    alpha: 0.65,
-                  ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.65),
                   fontSize: 12,
                   height: 1.35,
                 ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (customerRecipients.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'drop-recipient-${draft.id}-$selectedRecipientValue',
+                ),
+                initialValue: selectedRecipientValue,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Master Tujuan Customer',
+                ),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('Isi manual')),
+                  ...customerRecipients.map(
+                    (recipient) => DropdownMenuItem(
+                      value: recipient.id,
+                      child: Text(
+                        recipient.displayLabel,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (value) => onRecipientChanged(draft.id, value ?? ''),
               ),
               const SizedBox(height: 12),
             ],

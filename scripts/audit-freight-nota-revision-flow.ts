@@ -449,6 +449,7 @@ function buildCandidateRows(params: {
             uangRp: Math.round((row.beratKg || 0) * 1000),
         }))
         .filter(row => !Number.isNaN(row.uangRp));
+    const rowCustomerRefs = [...new Set(rows.map(row => normalizeText(row.customerRef)).filter(Boolean))];
 
     const valid = rows.length > 0 && rows.every(row =>
         normalizeText(row.doRef) === normalizeText(params.deliveryOrder._id) &&
@@ -459,12 +460,12 @@ function buildCandidateRows(params: {
         Number.isFinite(row.tarip) &&
         row.tarip > 0 &&
         row.uangRp > 0
-    );
+    ) && rowCustomerRefs.length <= 1;
 
     return {
         rows,
         valid,
-        customerRef: normalizeText(rows[0]?.customerRef) || normalizeText(params.deliveryOrder.customerRef),
+        customerRef: rowCustomerRefs[0] || normalizeText(params.deliveryOrder.customerRef),
         customerName: normalizeText(rows[0]?.customerName) || normalizeText(params.deliveryOrder.customerName),
     };
 }

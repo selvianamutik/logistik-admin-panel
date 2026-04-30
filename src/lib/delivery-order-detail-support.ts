@@ -467,13 +467,13 @@ function getActualDropMismatchMessage(
     actualDropTotals: DeliveryOrderDetailState['actualDropTotals']
 ) {
     if (actualCargoTotals.qtyKoli > 0 && Math.abs(actualDropTotals.qtyKoli - actualCargoTotals.qtyKoli) > 0.01) {
-        return 'Total qty titik drop harus sama dengan qty aktual muatan.';
+        return 'Total qty titik realisasi harus sama dengan qty aktual muatan.';
     }
     if (actualCargoTotals.weightKg > 0 && Math.abs(actualDropTotals.weightKg - actualCargoTotals.weightKg) > 0.01) {
-        return 'Total berat titik drop harus sama dengan berat aktual muatan.';
+        return 'Total berat titik realisasi harus sama dengan berat aktual muatan.';
     }
     if (actualCargoTotals.volumeM3 > 0 && Math.abs(actualDropTotals.volumeM3 - actualCargoTotals.volumeM3) > 0.001) {
-        return 'Total volume titik drop harus sama dengan volume aktual muatan.';
+        return 'Total volume titik realisasi harus sama dengan volume aktual muatan.';
     }
     return null;
 }

@@ -214,6 +214,32 @@
     "_updatedAt": "2026-04-19T15:24:41.709+00:00"
   },
   {
+    "name": "Audit Driver Satu",
+    "phone": "081298760901",
+    "active": true,
+    "address": "Pool GMS Tulangan",
+    "ktpNumber": "3515010101010901",
+    "simExpiry": "2029-12-31",
+    "licenseNumber": "SIM-B2-AUDIT-901",
+    "_id": "drv-audit-001",
+    "_type": "driver",
+    "_createdAt": "2026-04-30T00:00:00.000+00:00",
+    "_updatedAt": "2026-04-30T00:00:00.000+00:00"
+  },
+  {
+    "name": "Audit Driver Dua",
+    "phone": "081298760902",
+    "active": true,
+    "address": "Pool GMS Tulangan",
+    "ktpNumber": "3515010101010902",
+    "simExpiry": "2029-12-31",
+    "licenseNumber": "SIM-B2-AUDIT-902",
+    "_id": "drv-audit-002",
+    "_type": "driver",
+    "_createdAt": "2026-04-30T00:00:00.000+00:00",
+    "_updatedAt": "2026-04-30T00:00:00.000+00:00"
+  },
+  {
     "date": "2026-04-20",
     "note": "Pelunasan sparepart armada CDD bulan April.",
     "amount": 2160000,

@@ -34,6 +34,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   List<DeliveryTrip> _trips = const [];
   List<DriverAssignedTripPlan> _plannedTrips = const [];
   List<CustomerProductOption> _customerProducts = const [];
+  List<CustomerRecipientOption> _customerRecipients = const [];
   DeliveryTrip? _selectedTrip;
   DeliveryTrip? _activeTrip;
   LocationSnapshot? _latestLocation;
@@ -236,6 +237,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         _trips = trips;
         _plannedTrips = portalData.plannedTrips;
         _customerProducts = portalData.customerProducts;
+        _customerRecipients = portalData.customerRecipients;
         // DO NOT clear _accessNotice here. It should only be cleared by
         // explicit server response (notice = null) or after acknowledgement.
         // The previous code was wiping warnings incorrectly.
@@ -324,6 +326,16 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     return _customerProducts
         .where((product) => product.customerRef == normalizedCustomerRef)
+        .toList(growable: false);
+  }
+
+  List<CustomerRecipientOption> _recipientsForCustomer(String? customerRef) {
+    final normalizedCustomerRef = customerRef?.trim() ?? '';
+    if (normalizedCustomerRef.isEmpty) {
+      return _customerRecipients;
+    }
+    return _customerRecipients
+        .where((recipient) => recipient.customerRef == normalizedCustomerRef)
         .toList(growable: false);
   }
 
@@ -719,7 +731,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
     final result = await Navigator.of(context)
         .push<DeliveryCompletionSubmitResult>(
-          MaterialPageRoute(builder: (_) => DeliveryCompletionPage(trip: trip)),
+          MaterialPageRoute(
+            builder: (_) => DeliveryCompletionPage(
+              trip: trip,
+              customerRecipients: _recipientsForCustomer(trip.customerRef),
+            ),
+          ),
         );
 
     if (result == null) {

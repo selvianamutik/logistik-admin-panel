@@ -31,7 +31,7 @@ import {
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
 import { deriveSuratJalanDocumentStatus } from '@/lib/trip-document-mappers';
-import { convertKgToWeightInputValue, convertM3ToVolumeInputValue, convertVolumeToM3, convertWeightToKg, formatCargoSummary, formatWeightDisplay, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS } from '@/lib/measurement';
+import { convertKgToWeightInputValue, convertM3ToVolumeInputValue, convertVolumeToM3, convertWeightToKg, formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS } from '@/lib/measurement';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     applyCustomerProductToOrderItem,
@@ -776,7 +776,7 @@ export default function SuratJalanDetailPage() {
         showAdvancedDropEditor,
     });
     const selectedActualCargoTotals = selectedDetailState.actualCargoTotals;
-    const selectedActualDropTotals = selectedBillableEffectiveActualDropPoints.reduce((sum, point) => ({
+    const selectedActualDropTotals = selectedEffectiveActualDropPoints.reduce((sum, point) => ({
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
             parseFormattedNumberish(point.weightInputValue || 0, {
@@ -793,11 +793,11 @@ export default function SuratJalanDetailPage() {
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
     const selectedActualDropMismatchMessage =
         selectedActualCargoTotals.qtyKoli > 0 && Math.abs(selectedActualDropTotals.qtyKoli - selectedActualCargoTotals.qtyKoli) > 0.01
-            ? 'Total qty titik drop harus sama dengan qty aktual muatan terkirim.'
+            ? 'Total qty titik realisasi harus sama dengan qty aktual muatan.'
             : selectedActualCargoTotals.weightKg > 0 && Math.abs(selectedActualDropTotals.weightKg - selectedActualCargoTotals.weightKg) > 0.01
-                ? 'Total berat titik drop harus sama dengan berat aktual muatan terkirim.'
+                ? 'Total berat titik realisasi harus sama dengan berat aktual muatan.'
                 : selectedActualCargoTotals.volumeM3 > 0 && Math.abs(selectedActualDropTotals.volumeM3 - selectedActualCargoTotals.volumeM3) > 0.001
-                    ? 'Total volume titik drop harus sama dengan volume aktual muatan terkirim.'
+                    ? 'Total volume titik realisasi harus sama dengan volume aktual muatan.'
                     : null;
     const selectedBillableDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
     const selectedHoldDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
@@ -1241,31 +1241,6 @@ export default function SuratJalanDetailPage() {
             hasActualDropItemValues(pickActualDropItemValues(getActualDropAllocationForItem(drop, cargoItem)))
         ) || cargoItems[0]
     )?.deliveryOrderItemRef || '';
-
-    const applyActualDropItem = (draftKey: string, deliveryOrderItemRef: string) => {
-        const selectedCargoItem = actualCargoItems.find(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
-        const currentDrop = actualDropPoints.find(item => item.draftKey === draftKey);
-        if (currentDrop?.deliveryOrderItemRef) {
-            const currentValueKey = buildActualDropItemValueKey(draftKey, currentDrop.deliveryOrderItemRef);
-            setActualDropItemValueMap(previous => ({
-                ...previous,
-                [currentValueKey]: pickActualDropItemValues(currentDrop),
-            }));
-        }
-        setActualDropPoints(previous => previous.map(item => {
-            if (item.draftKey !== draftKey || !selectedCargoItem) {
-                return item;
-            }
-            const selectedValueKey = buildActualDropItemValueKey(draftKey, selectedCargoItem.deliveryOrderItemRef);
-            return {
-                ...item,
-                deliveryOrderItemRef,
-                shipperReferenceKey: selectedCargoItem.shipperReferenceKey || item.shipperReferenceKey,
-                shipperReferenceNumber: selectedCargoItem.shipperReferenceNumber || item.shipperReferenceNumber,
-                ...(actualDropItemValueMap[selectedValueKey] || getRemainingActualDropValuesForCargoItem(selectedCargoItem, draftKey)),
-            };
-        }));
-    };
 
     const expandActualDropDraftsBySelectedItems = (dropDrafts: ActualDropDraft[]) =>
         dropDrafts.map(drop => {

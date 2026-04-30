@@ -117,13 +117,38 @@ assertIncludes(
 );
 assertIncludes(
     completionSource,
+    'required this.customerRecipients',
+    'Mobile completion harus menerima master tujuan customer untuk finalisasi titik drop.'
+);
+assertIncludes(
+    completionSource,
+    'labelText: \'Master Tujuan Customer\'',
+    'Mobile completion harus menyediakan dropdown master tujuan saat finalisasi drop.'
+);
+assertNotIncludes(
+    completionSource,
+    "locationName: (trip.receiverName ?? trip.destinationLabel).trim()",
+    'Mobile completion tidak boleh mengisi tujuan default dari receiver/route sebelum finalisasi.'
+);
+assertNotIncludes(
+    completionSource,
     'shipperReferenceNumber: target.shipperReferenceNumber',
-    'Mobile completion harus membawa nomor SJ pada default titik drop multi-target.'
+    'Mobile completion tidak boleh membuat titik drop default per SJ sebelum tujuan aktual diisi driver.'
 );
 assertIncludes(
     serviceSource,
     "'shipperReferenceNumber': shipperReferenceNumber",
     'Mobile completion payload harus mengirim relasi titik drop ke nomor SJ.'
+);
+assertIncludes(
+    serviceSource,
+    "decoded['customerRecipients']",
+    'Mobile service harus membaca master tujuan customer dari portal driver.'
+);
+assertIncludes(
+    serviceSource,
+    'destinationLabel: destinationLabel',
+    'Mobile service harus memakai rute trip, bukan alamat tujuan invoice/order, untuk label perjalanan.'
 );
 
 for (const unstableKeyPattern of [

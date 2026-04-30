@@ -59,10 +59,6 @@ export async function POST(request: Request) {
                 referenceNumber?: string;
                 pickupStopKey?: string;
             }>;
-            receiverName?: string;
-            receiverPhone?: string;
-            receiverAddress?: string;
-            receiverCompany?: string;
             notes?: string;
             cargoItems?: Array<{
                 customerProductRef?: string;
@@ -101,10 +97,6 @@ export async function POST(request: Request) {
                 orderTripPlanKey,
                 customerDoNumber: parsedBody.data.customerDoNumber,
                 shipperReferences: parsedBody.data.shipperReferences,
-                receiverName: parsedBody.data.receiverName,
-                receiverPhone: parsedBody.data.receiverPhone,
-                receiverAddress: parsedBody.data.receiverAddress,
-                receiverCompany: parsedBody.data.receiverCompany,
                 notes: parsedBody.data.notes,
                 cargoItems: parsedBody.data.cargoItems,
             },

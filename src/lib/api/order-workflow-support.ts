@@ -209,11 +209,6 @@ const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
     'EXTRA_DROP',
     'RETURN',
 ]);
-const BILLABLE_DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
-    'DROP',
-    'EXTRA_DROP',
-]);
-
 export const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
     HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
@@ -962,7 +957,6 @@ export function normalizeDeliveryActualDropPoints(
     }
 
     const aggregated = normalized
-        .filter(point => BILLABLE_DELIVERY_ACTUAL_DROP_TYPES.has(point.stopType))
         .reduce<ActualCargoTotals>(
             (sum, point) => ({
                 qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(point.qtyKoli ?? 0)),
@@ -973,13 +967,13 @@ export function normalizeDeliveryActualDropPoints(
         );
 
     if (actualTotals.qtyKoli > 0 && Math.abs(aggregated.qtyKoli - actualTotals.qtyKoli) > 0.01) {
-        throw new Error('Total qty titik drop harus sama dengan qty aktual DO');
+        throw new Error('Total qty titik realisasi harus sama dengan qty aktual DO');
     }
     if (actualTotals.weightKg > 0 && Math.abs(aggregated.weightKg - actualTotals.weightKg) > 0.01) {
-        throw new Error('Total berat titik drop harus sama dengan berat aktual DO');
+        throw new Error('Total berat titik realisasi harus sama dengan berat aktual DO');
     }
     if (actualTotals.volumeM3 > 0 && Math.abs(aggregated.volumeM3 - actualTotals.volumeM3) > 0.001) {
-        throw new Error('Total volume titik drop harus sama dengan volume aktual DO');
+        throw new Error('Total volume titik realisasi harus sama dengan volume aktual DO');
     }
 
     return normalized;

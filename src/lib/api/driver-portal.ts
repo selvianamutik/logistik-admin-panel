@@ -6,6 +6,7 @@ import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import type {
     CompanyProfile,
+    CustomerRecipient,
     CustomerProduct,
     DeliveryOrder,
     DeliveryOrderItem,
@@ -210,8 +211,8 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             return {
                 ...item,
                 customerName: item.customerName || (typeof relatedOrder?.customerName === 'string' ? relatedOrder.customerName : undefined),
-                receiverName: item.receiverName || (typeof relatedOrder?.receiverName === 'string' ? relatedOrder.receiverName : undefined),
-                receiverAddress: item.receiverAddress || (typeof relatedOrder?.receiverAddress === 'string' ? relatedOrder.receiverAddress : undefined),
+                receiverName: item.receiverName,
+                receiverAddress: item.receiverAddress,
                 pickupAddress: item.pickupAddress || (typeof relatedOrder?.pickupAddress === 'string' ? relatedOrder.pickupAddress : undefined),
                 driverCargoItems: cargoByDeliveryOrderRef.get(item._id) || [],
                 allowsDirectCargoInput: typeof item.orderRef === 'string' ? (directCargoCapabilities.get(item.orderRef) ?? false) : false,
@@ -402,6 +403,19 @@ export async function getDriverCustomerProducts(customerRefs: string[]) {
     }))
         .filter(item => item.active !== false)
         .sort((left, right) => `${left.code || left.name || ''}`.localeCompare(`${right.code || right.name || ''}`));
+}
+
+export async function getDriverCustomerRecipients(customerRefs: string[]) {
+    const normalizedCustomerRefs = [...new Set(customerRefs.filter(Boolean))];
+    if (normalizedCustomerRefs.length === 0) {
+        return [] as CustomerRecipient[];
+    }
+
+    return (await listDocumentsByFilter<CustomerRecipient>('customerRecipient', {
+        customerRef: normalizedCustomerRefs,
+    }))
+        .filter(item => item.active !== false)
+        .sort((left, right) => `${left.label || left.receiverCompany || left.receiverName || ''}`.localeCompare(`${right.label || right.receiverCompany || right.receiverName || ''}`));
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

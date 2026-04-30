@@ -42,6 +42,9 @@ class DeliveryOrderService {
     final customerProductData = decoded['customerProducts'] is List
         ? decoded['customerProducts'] as List
         : const [];
+    final customerRecipientData = decoded['customerRecipients'] is List
+        ? decoded['customerRecipients'] as List
+        : const [];
 
     return DriverPortalData(
       trips: tripData
@@ -55,6 +58,10 @@ class DeliveryOrderService {
       customerProducts: customerProductData
           .whereType<Map<String, dynamic>>()
           .map(_mapCustomerProduct)
+          .toList(growable: false),
+      customerRecipients: customerRecipientData
+          .whereType<Map<String, dynamic>>()
+          .map(_mapCustomerRecipient)
           .toList(growable: false),
     );
   }
@@ -212,10 +219,22 @@ class DeliveryOrderService {
 
     final date = (json['date'] as String?)?.trim();
     final pickupAddress = (json['pickupAddress'] as String?)?.trim();
-    final destination = (json['receiverAddress'] as String?)?.trim();
     final receiverName = (json['receiverName'] as String?)?.trim();
+    final receiverAddress = (json['receiverAddress'] as String?)?.trim();
     final notes = (json['notes'] as String?)?.trim();
     final pickupStops = _mapPickupStops(json['pickupStops']);
+    final tripOriginArea = (json['tripOriginArea'] as String?)?.trim();
+    final tripDestinationArea = (json['tripDestinationArea'] as String?)
+        ?.trim();
+    var originLabel = '-';
+    if (pickupAddress?.isNotEmpty == true) {
+      originLabel = pickupAddress!;
+    } else if (tripOriginArea?.isNotEmpty == true) {
+      originLabel = tripOriginArea!;
+    }
+    final destinationLabel = tripDestinationArea?.isNotEmpty == true
+        ? tripDestinationArea!
+        : '-';
 
     return DeliveryTrip(
       deliveryOrderId: json['_id'] as String? ?? '',
@@ -223,8 +242,8 @@ class DeliveryOrderService {
       vehiclePlate: (json['vehiclePlate'] as String?)?.trim().isNotEmpty == true
           ? json['vehiclePlate'] as String
           : '-',
-      originLabel: pickupAddress?.isNotEmpty == true ? pickupAddress! : '-',
-      destinationLabel: destination?.isNotEmpty == true ? destination! : '-',
+      originLabel: originLabel,
+      destinationLabel: destinationLabel,
       customerName: (json['customerName'] as String?)?.trim().isNotEmpty == true
           ? json['customerName'] as String
           : 'Tanpa customer',
@@ -238,7 +257,9 @@ class DeliveryOrderService {
       orderRef: _readRefId(json['orderRef']),
       customerRef: _readRefId(json['customerRef']),
       receiverName: receiverName?.isNotEmpty == true ? receiverName : null,
-      receiverAddress: destination?.isNotEmpty == true ? destination : null,
+      receiverAddress: receiverAddress?.isNotEmpty == true
+          ? receiverAddress
+          : null,
       itemSummary: notes?.isNotEmpty == true ? notes : null,
       trackingState: (json['trackingState'] as String?)?.trim(),
       pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
@@ -310,6 +331,18 @@ class DeliveryOrderService {
     );
   }
 
+  CustomerRecipientOption _mapCustomerRecipient(Map<String, dynamic> json) {
+    return CustomerRecipientOption(
+      id: (json['_id'] as String?)?.trim() ?? '',
+      customerRef: _readRefId(json['customerRef']) ?? '',
+      label: (json['label'] as String?)?.trim() ?? '',
+      receiverName: (json['receiverName'] as String?)?.trim() ?? '',
+      receiverAddress: (json['receiverAddress'] as String?)?.trim() ?? '',
+      receiverPhone: (json['receiverPhone'] as String?)?.trim(),
+      receiverCompany: (json['receiverCompany'] as String?)?.trim(),
+    );
+  }
+
   List<DeliveryPickupStop> _mapPickupStops(dynamic raw) {
     if (raw is! List) return const [];
     return raw
@@ -377,8 +410,8 @@ class DeliveryOrderService {
             pickupAddress: (item['pickupAddress'] as String?)?.trim(),
             shipperReferenceKey: (item['shipperReferenceKey'] as String?)
                 ?.trim(),
-            shipperReferenceNumber:
-                (item['shipperReferenceNumber'] as String?)?.trim(),
+            shipperReferenceNumber: (item['shipperReferenceNumber'] as String?)
+                ?.trim(),
             qtyKoli: _toDouble(
               item['orderItemQtyKoli'] ?? item['shippedQtyKoli'],
             ),
@@ -489,7 +522,8 @@ class DeliveryOrderService {
     }
     if (value is Map<String, dynamic>) {
       final ref =
-          (value['_ref'] as String?)?.trim() ?? (value['_id'] as String?)?.trim();
+          (value['_ref'] as String?)?.trim() ??
+          (value['_id'] as String?)?.trim();
       return ref != null && ref.isNotEmpty ? ref : null;
     }
     return null;

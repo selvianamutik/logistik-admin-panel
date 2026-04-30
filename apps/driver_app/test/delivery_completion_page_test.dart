@@ -88,6 +88,7 @@ void main() {
                       MaterialPageRoute(
                         builder: (_) => const DeliveryCompletionPage(
                           trip: singleTargetTrip,
+                          customerRecipients: [],
                         ),
                       ),
                     );
@@ -101,6 +102,17 @@ void main() {
       );
 
       await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      final locationField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Nama Lokasi',
+        description: 'Nama Lokasi TextField',
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(locationField);
+      await tester.enterText(locationField, 'PT Penerima');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.check_circle_rounded));
@@ -119,7 +131,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
-          home: const DeliveryCompletionPage(trip: multiTargetTrip),
+          home: const DeliveryCompletionPage(
+            trip: multiTargetTrip,
+            customerRecipients: [],
+          ),
         ),
       );
 

@@ -180,6 +180,47 @@ class CustomerProductOption {
   }
 }
 
+class CustomerRecipientOption {
+  const CustomerRecipientOption({
+    required this.id,
+    required this.customerRef,
+    required this.label,
+    required this.receiverName,
+    required this.receiverAddress,
+    this.receiverPhone,
+    this.receiverCompany,
+  });
+
+  final String id;
+  final String customerRef;
+  final String label;
+  final String receiverName;
+  final String receiverAddress;
+  final String? receiverPhone;
+  final String? receiverCompany;
+
+  String get locationName {
+    final company = (receiverCompany ?? '').trim();
+    if (company.isNotEmpty) return company;
+    final name = receiverName.trim();
+    if (name.isNotEmpty) return name;
+    return label.trim();
+  }
+
+  String get displayLabel {
+    final normalizedLabel = label.trim();
+    final target = locationName.trim();
+    if (normalizedLabel.isNotEmpty &&
+        target.isNotEmpty &&
+        normalizedLabel.toLowerCase() != target.toLowerCase()) {
+      return '$normalizedLabel - $target';
+    }
+    if (normalizedLabel.isNotEmpty) return normalizedLabel;
+    if (target.isNotEmpty) return target;
+    return receiverAddress;
+  }
+}
+
 class DriverAssignedTripPlan {
   const DriverAssignedTripPlan({
     required this.orderRef,
@@ -241,11 +282,13 @@ class DriverPortalData {
     required this.trips,
     required this.plannedTrips,
     required this.customerProducts,
+    required this.customerRecipients,
   });
 
   final List<DeliveryTrip> trips;
   final List<DriverAssignedTripPlan> plannedTrips;
   final List<CustomerProductOption> customerProducts;
+  final List<CustomerRecipientOption> customerRecipients;
 }
 
 class DeliveryTrip {
