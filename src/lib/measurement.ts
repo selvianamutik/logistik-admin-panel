@@ -44,9 +44,14 @@ function formatQuantityValue(value: number) {
   });
 }
 
+export function getWeightInputFractionDigits(unit: WeightInputUnit | 'KG' = 'KG') {
+  // Kg supports two decimals, so ton needs five decimals to preserve 0.01 kg.
+  return unit === 'TON' ? 5 : 2;
+}
+
 function formatWeightValue(value: number, unit: WeightInputUnit | 'KG' = 'KG') {
   return formatNumber(value, {
-    maximumFractionDigits: unit === 'TON' ? 3 : 2,
+    maximumFractionDigits: getWeightInputFractionDigits(unit),
   });
 }
 
@@ -87,7 +92,7 @@ export function formatWeightDisplay(input: {
   const unit = input.weightInputUnit || 'KG';
   const weightKg = parseFormattedNumberish(input.weightKg || 0);
   const inputValue = parseFormattedNumberish(input.weightInputValue || 0, {
-    maxFractionDigits: unit === 'TON' ? 3 : 2,
+    maxFractionDigits: getWeightInputFractionDigits(unit),
   });
 
   if (inputValue > 0) {

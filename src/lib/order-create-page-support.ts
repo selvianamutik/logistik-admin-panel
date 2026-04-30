@@ -5,6 +5,7 @@ import {
     convertM3ToVolumeInputValue,
     convertVolumeToM3,
     convertWeightToKg,
+    getWeightInputFractionDigits,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from './measurement';
@@ -94,7 +95,7 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
     });
     const normalizedWeightInputValue = parseFormattedNumberish(
         selectedProduct.defaultWeightInputValue ?? 0,
-        { maxFractionDigits: nextWeightUnit === 'TON' ? 3 : 2 }
+        { maxFractionDigits: getWeightInputFractionDigits(nextWeightUnit) }
     );
     const normalizedWeightKg = parseFormattedNumberish(selectedProduct.defaultWeight ?? 0, {
         maxFractionDigits: 2,
@@ -144,7 +145,7 @@ export function applyOrderItemAutoWeightFromQty(
         maxFractionDigits: 2,
     });
     const normalizedCurrentWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
-        maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+        maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
     });
     const currentWeightKg = normalizedCurrentWeightInputValue > 0
         ? convertWeightToKg(normalizedCurrentWeightInputValue, item.weightInputUnit)
@@ -168,7 +169,7 @@ export function applyOrderItemAutoWeightFromQty(
         };
     }
 
-    const maxFractionDigits = item.weightInputUnit === 'TON' ? 3 : 2;
+    const maxFractionDigits = getWeightInputFractionDigits(item.weightInputUnit);
     const nextWeightKg = (basisWeightKg / basisQtyKoli) * normalizedNextQtyKoli;
     const nextWeightInputValue = roundToFractionDigits(
         convertKgToWeightInputValue(nextWeightKg, item.weightInputUnit),

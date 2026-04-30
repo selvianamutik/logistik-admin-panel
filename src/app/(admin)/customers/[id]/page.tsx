@@ -11,7 +11,7 @@ import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-cli
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
 import { buildPph23Label, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
-import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
+import { formatCargoSummary, getWeightInputFractionDigits, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerBillingRate, CustomerBillingRateBasis, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota, Service } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -1408,7 +1408,7 @@ export default function CustomerDetailPage() {
                                         <div style={{ display: 'flex', gap: 8 }}>
                                         <FormattedNumberInput
                                             min={0}
-                                            maxFractionDigits={productForm.defaultWeightInputUnit === 'TON' ? 3 : 2}
+                                            maxFractionDigits={getWeightInputFractionDigits(productForm.defaultWeightInputUnit)}
                                             value={productForm.defaultWeightInputValue}
                                             onValueChange={value => setProductForm(prev => ({ ...prev, defaultWeightInputValue: value }))}
                                         />

@@ -65,6 +65,7 @@ import {
     convertVolumeToM3,
     convertWeightToKg,
     formatCargoSummary,
+    getWeightInputFractionDigits,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
@@ -198,7 +199,7 @@ function hasActualDropItemValues(values: ActualDropItemValueDraft) {
     const qtyKoli = parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 });
     const weightKg = convertWeightToKg(
         parseFormattedNumberish(values.weightInputValue || 0, {
-            maxFractionDigits: values.weightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
         }),
         values.weightInputUnit
     );
@@ -963,7 +964,7 @@ export default function TripDetailPage() {
                             qtyKoli: parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
                             weightInputValue: parseFormattedNumberish(
                                 item.orderItemWeightInputValue ?? item.orderItemWeight ?? item.shippedWeight ?? 0,
-                                { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                                { maxFractionDigits: getWeightInputFractionDigits(weightInputUnit) }
                             ),
                             weightInputUnit,
                             volumeInputValue: parseFormattedNumberish(
@@ -1300,7 +1301,7 @@ export default function TripDetailPage() {
                 qtyKoli: parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
                 weightInputValue: parseFormattedNumberish(
                     item.orderItemWeightInputValue ?? item.orderItemWeight ?? item.shippedWeight ?? 0,
-                    { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                    { maxFractionDigits: getWeightInputFractionDigits(weightInputUnit) }
                 ),
                 weightInputUnit,
                 volumeInputValue: parseFormattedNumberish(
@@ -1995,7 +1996,7 @@ export default function TripDetailPage() {
                     return item;
                 }
                 const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                 });
                 const currentWeightKg = currentWeightInputValue > 0
                     ? convertWeightToKg(currentWeightInputValue, item.actualWeightInputUnit)
@@ -2306,7 +2307,7 @@ export default function TripDetailPage() {
         const baseQtyKoli = parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 });
         const baseWeightKg = convertWeightToKg(
             parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
             }),
             cargoItem.actualWeightInputUnit
         );
@@ -2346,7 +2347,7 @@ export default function TripDetailPage() {
                 qtyKoli: sum.qtyKoli + parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),
                 weightKg: sum.weightKg + convertWeightToKg(
                     parseFormattedNumberish(values.weightInputValue || 0, {
-                        maxFractionDigits: values.weightInputUnit === 'TON' ? 3 : 2,
+                        maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
                     }),
                     values.weightInputUnit
                 ),
@@ -2492,7 +2493,7 @@ export default function TripDetailPage() {
                                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                                     actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli),
                                     actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue, {
-                                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                                     }),
                                     actualWeightInputUnit: item.actualWeightInputUnit,
                                     actualVolumeInputValue: item.actualVolumeInputValue.trim()
@@ -2512,7 +2513,7 @@ export default function TripDetailPage() {
                                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
                                     weightInputValue: item.weightInputValue.trim()
                                         ? parseFormattedNumberish(item.weightInputValue, {
-                                            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                                            maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
                                         })
                                         : 0,
                                     weightInputUnit: item.weightInputUnit,
@@ -3647,7 +3648,7 @@ export default function TripDetailPage() {
         const actualWeightKg = itemBillableDrops.reduce(
             (sum, point) => sum + convertWeightToKg(
                 parseFormattedNumberish(point.weightInputValue || 0, {
-                    maxFractionDigits: point.weightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
                 }),
                 point.weightInputUnit
             ),
@@ -3673,7 +3674,7 @@ export default function TripDetailPage() {
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
             parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
             }),
             item.actualWeightInputUnit
         ),
@@ -3688,7 +3689,7 @@ export default function TripDetailPage() {
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
             parseFormattedNumberish(point.weightInputValue || 0, {
-                maxFractionDigits: point.weightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
             }),
             point.weightInputUnit
         ),
@@ -3771,7 +3772,7 @@ export default function TripDetailPage() {
                     qtyKoli: parseFormattedNumberish(allocation.qtyKoli || 0, { maxFractionDigits: 2 }),
                     weightKg: convertWeightToKg(
                         parseFormattedNumberish(allocation.weightInputValue || 0, {
-                            maxFractionDigits: allocation.weightInputUnit === 'TON' ? 3 : 2,
+                            maxFractionDigits: getWeightInputFractionDigits(allocation.weightInputUnit),
                         }),
                         allocation.weightInputUnit
                     ),
@@ -3786,7 +3787,7 @@ export default function TripDetailPage() {
                     qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
                     weightKg: convertWeightToKg(
                         parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                            maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+                            maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
                         }),
                         cargoItem.actualWeightInputUnit
                     ),
@@ -3820,7 +3821,7 @@ export default function TripDetailPage() {
     const selectedActualCargoReady = selectedDerivedActualCargoItems.length > 0 && selectedDerivedActualCargoItems.every(item => {
         const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
         const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
         });
         const volume = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
             maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
@@ -3839,7 +3840,7 @@ export default function TripDetailPage() {
         selectedEffectiveActualDropPoints.every(item => {
             const qty = parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 });
             const weight = parseFormattedNumberish(item.weightInputValue || 0, {
-                maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
             });
             const volume = parseFormattedNumberish(item.volumeInputValue || 0, {
                 maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
@@ -5873,9 +5874,9 @@ export default function TripDetailPage() {
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                 <FormattedNumberInput
                                                     min={0}
-                                                    maxFractionDigits={(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit) === 'TON' ? 3 : 2}
+                                                    maxFractionDigits={getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit)}
                                                     value={parseFormattedNumberish((activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0, {
-                                                        maxFractionDigits: (activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit) === 'TON' ? 3 : 2,
+                                                        maxFractionDigits: getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit),
                                                     })}
                                                     onValueChange={value => {
                                                         if (activeFinalizationDrop) {
@@ -6301,7 +6302,7 @@ export default function TripDetailPage() {
                                                                 <div style={{ display: 'flex', gap: 8 }}>
                                                                     <FormattedNumberInput
                                                                         min={0}
-                                                                        maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                        maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                         value={item.weightInputValue}
                                                                         onValueChange={value => updateSelectedExistingShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
                                                                         disabled={savingShipperReference}
@@ -6415,7 +6416,7 @@ export default function TripDetailPage() {
                                                     <div style={{ display: 'flex', gap: 8 }}>
                                                         <FormattedNumberInput
                                                             min={0}
-                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                            maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                             value={item.weightInputValue}
                                                             onValueChange={value => updateSelectedShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
                                                             disabled={savingShipperReference}
@@ -6736,7 +6737,7 @@ export default function TripDetailPage() {
                                                             <div style={{ display: 'flex', gap: 8 }}>
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'weightInputValue', value)}
                                                                     disabled={savingCargo}

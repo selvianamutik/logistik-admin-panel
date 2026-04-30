@@ -18,6 +18,7 @@ import {
     convertVolumeToM3,
     convertM3ToVolumeInputValue,
     formatCargoSummary,
+    getWeightInputFractionDigits,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
@@ -99,7 +100,7 @@ export function buildActualCargoDraft(
     const plannedWeightInputValue =
         item.orderItemWeightInputValue !== undefined && item.orderItemWeightInputValue !== null
             ? parseFormattedNumberish(item.orderItemWeightInputValue, {
-                maxFractionDigits: plannedWeightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(plannedWeightInputUnit),
             })
             : plannedWeightKg > 0
                 ? convertKgToWeightInputValue(plannedWeightKg, plannedWeightInputUnit)
@@ -119,13 +120,13 @@ export function buildActualCargoDraft(
         pendingDraft?.actualWeightInputValue !== undefined && pendingDraft.actualWeightInputValue !== null
             ? String(
                 parseFormattedNumberish(pendingDraft.actualWeightInputValue, {
-                    maxFractionDigits: actualWeightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(actualWeightInputUnit),
                 })
             )
             : item.actualWeightInputValue !== undefined && item.actualWeightInputValue !== null
             ? String(
                 parseFormattedNumberish(item.actualWeightInputValue, {
-                    maxFractionDigits: actualWeightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(actualWeightInputUnit),
                 })
             )
             : plannedWeightKg > 0
@@ -201,7 +202,7 @@ export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUni
     }
 
     const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
     });
     const currentWeightKg =
         currentWeightInputValue > 0
@@ -248,7 +249,7 @@ export function applyActualCargoAutoWeightFromQty(
     const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
     const actualWeightInputValue =
         weightKg > 0
-            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
+            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
             : '';
 
     return {
@@ -284,7 +285,7 @@ export function applyActualDropAutoWeightFromQty(
     const actualWeightKg = cargoItem
         ? convertWeightToKg(
             parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
             }),
             cargoItem.actualWeightInputUnit
         )
@@ -301,7 +302,7 @@ export function applyActualDropAutoWeightFromQty(
         ...drop,
         qtyKoli: String(nextQtyKoli),
         weightInputValue: weightKg > 0
-            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), nextUnit === 'TON' ? 3 : 2))
+            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
             : '',
         weightInputUnit: nextUnit,
         autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
@@ -333,7 +334,7 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
     const qtyKoli = items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0), 0);
     const weightKg = items.reduce((sum, item) => {
         const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
         });
         if (!value) return sum;
         return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
@@ -442,7 +443,7 @@ export function summarizeActualDropDrafts(items: ActualDropDraft[]) {
     const qtyKoli = items.reduce((sum, item) => sum + parseFormattedNumberish(item.qtyKoli || 0), 0);
     const weightKg = items.reduce((sum, item) => {
         const value = parseFormattedNumberish(item.weightInputValue || 0, {
-            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
         });
         if (!value) return sum;
         return sum + convertWeightToKg(value, item.weightInputUnit);
@@ -795,7 +796,7 @@ export function buildDeliveryOrderDetailState(params: {
     const actualCargoReady = actualCargoItems.every(item => {
         const qty = parseFormattedNumberish(item.actualQtyKoli);
         const weight = parseFormattedNumberish(item.actualWeightInputValue, {
-            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
         });
         const volume = parseFormattedNumberish(item.actualVolumeInputValue, {
             maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
@@ -816,7 +817,7 @@ export function buildDeliveryOrderDetailState(params: {
     const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
         const qty = parseFormattedNumberish(item.qtyKoli);
         const weight = parseFormattedNumberish(item.weightInputValue, {
-            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
         });
         const volume = parseFormattedNumberish(item.volumeInputValue, {
             maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
@@ -1144,7 +1145,7 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                     actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli),
                     actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue, {
-                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                     }),
                     actualWeightInputUnit: item.actualWeightInputUnit,
                     actualVolumeInputValue: item.actualVolumeInputValue.trim()
@@ -1164,7 +1165,7 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
                     weightInputValue: item.weightInputValue.trim()
                         ? parseFormattedNumberish(item.weightInputValue, {
-                            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                            maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
                         })
                         : 0,
                     weightInputUnit: item.weightInputUnit,

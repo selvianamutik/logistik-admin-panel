@@ -10,6 +10,7 @@ import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client
 import type { Order, Customer, CustomerPickupLocation, CustomerProduct, Service, DeliveryOrder, OrderItem } from '@/lib/types';
 import {
     formatCargoSummary,
+    getWeightInputFractionDigits,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
@@ -752,7 +753,7 @@ export default function OrderEditPage() {
                                     <div style={{ flex: '1 1 180px' }}>
                                         <label className="form-label">{isRevisionMode ? 'Target Berat' : 'Berat'}</label>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                            <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={shouldLockOrderItemWeight(item)} />
+                                            <FormattedNumberInput min={0} maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={shouldLockOrderItemWeight(item)} />
                                             <select
                                                 className="form-select"
                                                 value={item.weightInputUnit}

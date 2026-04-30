@@ -4,6 +4,7 @@ import {
     convertKgToWeightInputValue,
     convertWeightToKg,
     convertM3ToVolumeInputValue,
+    getWeightInputFractionDigits,
     type WeightInputUnit,
     type VolumeInputUnit,
 } from './measurement';
@@ -130,7 +131,7 @@ export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
         maxFractionDigits: 2,
     });
     const normalizedWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
-        maxFractionDigits: nextWeightUnit === 'TON' ? 3 : 2,
+        maxFractionDigits: getWeightInputFractionDigits(nextWeightUnit),
     });
     const normalizedWeightKg = parseFormattedNumberish(item.weight ?? 0, {
         maxFractionDigits: 2,

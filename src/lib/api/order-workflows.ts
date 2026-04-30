@@ -36,6 +36,7 @@ import {
     convertM3ToVolumeInputValue,
     convertVolumeToM3,
     convertWeightToKg,
+    getWeightInputFractionDigits,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
@@ -657,8 +658,8 @@ export async function handleOrderItemHoldSet(
         );
     }
     const holdWeightInputValue = roundQuantity(normalizeNumber(data.holdWeightInputValue, {
-        maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
-    }), holdWeightInputUnit === 'TON' ? 3 : 2);
+        maxFractionDigits: getWeightInputFractionDigits(holdWeightInputUnit),
+    }), getWeightInputFractionDigits(holdWeightInputUnit));
     const holdVolumeInputValue = roundQuantity(normalizeNumber(data.holdVolumeInputValue, {
         maxFractionDigits: holdVolumeInputUnit === 'LITER' ? 0 : 3,
     }), holdVolumeInputUnit === 'LITER' ? 0 : 3);
@@ -2001,8 +2002,8 @@ export async function handleOrderTargetRevision(
             );
         }
         const weightInputValue = roundQuantity(normalizeNumber(rawItem.weightInputValue, {
-            maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
-        }), weightInputUnit === 'TON' ? 3 : 2);
+            maxFractionDigits: getWeightInputFractionDigits(weightInputUnit),
+        }), getWeightInputFractionDigits(weightInputUnit));
         if (!Number.isFinite(weightInputValue) || weightInputValue < 0) {
             return NextResponse.json(
                 { error: `Target berat untuk ${existingItem.description || 'item order'} tidak valid` },
@@ -4596,7 +4597,7 @@ export async function handleDeliveryOrderCreate(
                 );
             }
             const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
-                maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                maxFractionDigits: getWeightInputFractionDigits(selection.weightInputUnit),
             });
             const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
                 maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
@@ -4814,7 +4815,7 @@ export async function handleDeliveryOrderCreate(
                 const usesQtyBasis = progress.totalQtyKoli > 0;
                 const shippedQtyKoli = usesQtyBasis ? roundQuantity(selection.qtyKoli) : 0;
                 const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
-                    maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(selection.weightInputUnit),
                 });
                 const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
                     maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
@@ -4831,9 +4832,9 @@ export async function handleDeliveryOrderCreate(
                         : 0);
                 const shippedWeightInputValue =
                     usesQtyBasis && item.weightInputValue && item.weightInputUnit
-                        ? roundQuantity(convertKgToWeightInputValue(shippedWeight, item.weightInputUnit), item.weightInputUnit === 'TON' ? 3 : 2)
+                        ? roundQuantity(convertKgToWeightInputValue(shippedWeight, item.weightInputUnit), getWeightInputFractionDigits(item.weightInputUnit))
                         : !usesQtyBasis && selection.weightInputValue && selection.weightInputUnit
-                            ? roundQuantity(selection.weightInputValue, selection.weightInputUnit === 'TON' ? 3 : 2)
+                            ? roundQuantity(selection.weightInputValue, getWeightInputFractionDigits(selection.weightInputUnit))
                             : undefined;
                 const shippedWeightInputUnit =
                     shippedWeightInputValue !== undefined

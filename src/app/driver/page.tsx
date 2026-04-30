@@ -41,7 +41,7 @@ import {
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
-import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
+import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary, getWeightInputFractionDigits } from '@/lib/measurement';
 import {
     applyCustomerProductToOrderItem,
     summarizeDraftOrderCargo,
@@ -164,7 +164,7 @@ function areActualCargoDraftsReady(items: ActualCargoDraft[]) {
     return items.every(item => {
         const qty = parseFormattedNumberish(item.actualQtyKoli || 0);
         const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
         });
         const volume = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
             maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
@@ -343,7 +343,7 @@ export default function DriverPortalPage() {
             qtyKoli: completionCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0), 0),
             weightKg: completionCargoItems.reduce((sum, item) => {
                 const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                 });
                 return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
             }, 0),
@@ -1086,7 +1086,7 @@ export default function DriverPortalPage() {
                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                     actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0),
                     actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                     }),
                     actualWeightInputUnit: item.actualWeightInputUnit,
                     actualVolumeInputValue: parseFormattedNumberish(item.actualVolumeInputValue || 0, {
@@ -1103,7 +1103,7 @@ export default function DriverPortalPage() {
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
                     weightInputValue: item.weightInputValue.trim()
                         ? parseFormattedNumberish(item.weightInputValue, {
-                            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                            maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
                         })
                         : 0,
                     weightInputUnit: item.weightInputUnit,
@@ -1722,7 +1722,7 @@ export default function DriverPortalPage() {
                                                             <div className="driver-completion-unit-row">
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'weightInputValue', value)}
                                                                     disabled={isActionInFlight}
@@ -2041,7 +2041,7 @@ export default function DriverPortalPage() {
                                                             <div className="driver-completion-unit-row">
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoInputItem(group.id, itemIndex, 'weightInputValue', value)}
                                                                     disabled={isActionInFlight}
@@ -2255,9 +2255,9 @@ export default function DriverPortalPage() {
                                                         <div className="driver-completion-unit-row">
                                                             <FormattedNumberInput
                                                                 min={0}
-                                                                maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
+                                                                maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
                                                                 value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
                                                                 })}
                                                                 onValueChange={value => updateCompletionCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
                                                                 disabled={isActionInFlight}
@@ -2502,8 +2502,8 @@ export default function DriverPortalPage() {
                                                         <div className="driver-completion-unit-row">
                                                             <FormattedNumberInput
                                                                 min={0}
-                                                                maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                                value={parseFormattedNumberish(item.weightInputValue || 0, { maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2 })}
+                                                                maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
+                                                                value={parseFormattedNumberish(item.weightInputValue || 0, { maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit) })}
                                                                 onValueChange={value => updateCompletionDropDraft(item.draftKey, 'weightInputValue', String(value))}
                                                                 disabled={isActionInFlight}
                                                             />

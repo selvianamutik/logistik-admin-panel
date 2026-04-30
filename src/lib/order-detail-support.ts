@@ -4,6 +4,7 @@ import {
     convertVolumeToM3,
     convertWeightToKg,
     formatCargoSummary,
+    getWeightInputFractionDigits,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
@@ -125,7 +126,7 @@ export function buildSelectedNonKoliCargo(selection?: SelectedShipmentMap[string
         weightKg:
             selection.weightInputValue.trim() && selection.weightInputUnit
                 ? roundQuantity(convertWeightToKg(parseFormattedNumberish(selection.weightInputValue, {
-                    maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(selection.weightInputUnit),
                 }), selection.weightInputUnit))
                 : 0,
         volumeM3:
@@ -360,7 +361,7 @@ export function buildCreateDeliveryOrderItems(
                 qtyKoli,
                 weightInputValue: selection.weightInputValue.trim()
                     ? parseFormattedNumberish(selection.weightInputValue, {
-                        maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                        maxFractionDigits: getWeightInputFractionDigits(selection.weightInputUnit),
                     })
                     : 0,
                 weightInputUnit: selection.weightInputUnit,

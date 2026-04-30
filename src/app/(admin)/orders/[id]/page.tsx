@@ -19,6 +19,7 @@ import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER
 import {
     formatCargoSummary,
     formatVolumeDisplay,
+    getWeightInputFractionDigits,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
@@ -1390,7 +1391,7 @@ export default function OrderDetailPage() {
                         holdQtyKoli: parseFormattedNumberish(holdQtyKoli),
                         holdWeightInputValue: holdWeightInputValue.trim()
                             ? parseFormattedNumberish(holdWeightInputValue, {
-                                maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
+                                maxFractionDigits: getWeightInputFractionDigits(holdWeightInputUnit),
                             })
                             : 0,
                         holdWeightInputUnit,
@@ -2780,7 +2781,7 @@ export default function OrderDetailPage() {
                                                                     <div style={{ display: 'flex', gap: 8 }}>
                                                                         <FormattedNumberInput
                                                                             min={0}
-                                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                            maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                             value={item.weightInputValue}
                                                                             onValueChange={value => updateDirectCargoGroupItem(group.id, itemIndex, 'weightInputValue', value)}
                                                                             disabled={creatingDO || shouldLockOrderItemWeight(item)}
@@ -3061,9 +3062,9 @@ export default function OrderDetailPage() {
                                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
                                                                                         <FormattedNumberInput
                                                                                             min={0}
-                                                                                            maxFractionDigits={(selection.weightInputUnit || 'KG') === 'TON' ? 3 : 2}
+                                                                                            maxFractionDigits={getWeightInputFractionDigits(selection.weightInputUnit || 'KG')}
                                                                                             value={parseFormattedNumberish(selection.weightInputValue || 0, {
-                                                                                                maxFractionDigits: (selection.weightInputUnit || 'KG') === 'TON' ? 3 : 2,
+                                                                                                maxFractionDigits: getWeightInputFractionDigits(selection.weightInputUnit || 'KG'),
                                                                                             })}
                                                                                             disabled={!selection || creatingDO}
                                                                                             onValueChange={value => {
@@ -3347,9 +3348,9 @@ export default function OrderDetailPage() {
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
                                                 <FormattedNumberInput
                                                     min={0}
-                                                    maxFractionDigits={holdWeightInputUnit === 'TON' ? 3 : 2}
+                                                    maxFractionDigits={getWeightInputFractionDigits(holdWeightInputUnit)}
                                                     value={parseFormattedNumberish(holdWeightInputValue || 0, {
-                                                        maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
+                                                        maxFractionDigits: getWeightInputFractionDigits(holdWeightInputUnit),
                                                     })}
                                                     onValueChange={value => setHoldWeightInputValue(String(value))}
                                                     disabled={savingHold}

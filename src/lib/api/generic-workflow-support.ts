@@ -3,6 +3,7 @@ import {
     convertM3ToVolumeInputValue,
     convertVolumeToM3,
     convertWeightToKg,
+    getWeightInputFractionDigits,
     isVolumeInputUnit,
     isWeightInputUnit,
     readVolumeInputUnit,
@@ -585,16 +586,16 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
                 ? parseStrictNumericInput(
                     data.defaultWeightInputValue ?? data.defaultWeight ?? 0,
                     'Default berat barang customer tidak valid',
-                    { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                    { maxFractionDigits: getWeightInputFractionDigits(weightInputUnit) }
                 )
                 : normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0, {
-                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(weightInputUnit),
                 })
             : normalizeNumber(
                 existing?.defaultWeightInputValue ??
                 convertKgToWeightInputValue(normalizeNumber(existing?.defaultWeight ?? 0), weightInputUnit),
                 {
-                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                    maxFractionDigits: getWeightInputFractionDigits(weightInputUnit),
                 }
             );
     if (!Number.isFinite(defaultWeightInputValue) || defaultWeightInputValue < 0) {
