@@ -84,6 +84,14 @@ export default function NewOrderPage() {
     const selectedServiceCapacityLabel = selectedService ? serviceCapacityRangeMap[selectedService._id] || 'Kapasitas belum diisi' : 'Belum dipilih';
     const pickupSummary = summarizePickupStopList(pickupStops);
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
+    const getVehicleServiceRef = (vehicleRef: string) => vehicles.find(vehicle => vehicle._id === vehicleRef)?.serviceRef || '';
+    const getTripRouteServiceRef = (trip: Pick<TripDraftForm, 'vehicleRef'>) => serviceRef || getVehicleServiceRef(trip.vehicleRef);
+    const resolveTripRateForDraft = (trip: Pick<TripDraftForm, 'vehicleRef'>, originArea: string, destinationArea: string) => findMatchingTripRouteRate(tripRouteRates, {
+        originArea,
+        destinationArea,
+        serviceRef: getTripRouteServiceRef(trip),
+    });
+    const shouldResetTripFeeForRoute = (originArea: string, destinationArea: string) => Boolean(originArea && destinationArea);
 
     useEffect(() => {
         Promise.all([
@@ -246,22 +254,41 @@ export default function NewOrderPage() {
     };
 
     const updateTripRouteSelection = (index: number, nextOriginArea: string, nextDestinationArea: string) => {
-        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
-            originArea: nextOriginArea,
-            destinationArea: nextDestinationArea,
-            serviceRef,
-        });
         setTripDrafts(previous => previous.map((trip, tripIndex) => (
             tripIndex === index
-                ? {
-                    ...trip,
-                    tripOriginArea: nextOriginArea,
-                    tripDestinationArea: nextDestinationArea,
-                    tripRouteRateRef: matchedRate?._id || '',
-                    tripFee: matchedRate?.rate || trip.tripFee,
-                }
+                ? (() => {
+                    const matchedRate = resolveTripRateForDraft(trip, nextOriginArea, nextDestinationArea);
+                    return {
+                        ...trip,
+                        tripOriginArea: nextOriginArea,
+                        tripDestinationArea: nextDestinationArea,
+                        tripRouteRateRef: matchedRate?._id || '',
+                        tripFee: matchedRate?.rate || (shouldResetTripFeeForRoute(nextOriginArea, nextDestinationArea) ? 0 : trip.tripFee),
+                    };
+                })()
                 : trip
         )));
+    };
+
+    const handleTripVehicleChange = (index: number, nextVehicleRef: string) => {
+        setTripDrafts(previous => previous.map((trip, tripIndex) => {
+            if (tripIndex !== index) {
+                return trip;
+            }
+            const nextTrip = {
+                ...trip,
+                vehicleRef: nextVehicleRef,
+            };
+            const matchedRate = resolveTripRateForDraft(nextTrip, trip.tripOriginArea, trip.tripDestinationArea);
+            const selectedVehicle = vehicles.find(vehicle => vehicle._id === nextVehicleRef) || null;
+            const nextRequiresOverrideReason = Boolean(serviceRef && selectedVehicle && (!selectedVehicle.serviceRef || selectedVehicle.serviceRef !== serviceRef));
+            return {
+                ...nextTrip,
+                vehicleOverrideReason: nextRequiresOverrideReason ? trip.vehicleOverrideReason : '',
+                tripRouteRateRef: matchedRate?._id || '',
+                tripFee: matchedRate?.rate || (shouldResetTripFeeForRoute(trip.tripOriginArea, trip.tripDestinationArea) ? 0 : trip.tripFee),
+            };
+        }));
     };
 
     const addTripDraft = () => {
@@ -442,15 +469,19 @@ export default function NewOrderPage() {
                                         const nextServiceRef = event.target.value;
                                         setServiceRef(nextServiceRef);
                                         setTripDrafts(previous => previous.map(trip => {
+                                            const effectiveRouteServiceRef = nextServiceRef || getVehicleServiceRef(trip.vehicleRef);
                                             const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
                                                 originArea: trip.tripOriginArea,
                                                 destinationArea: trip.tripDestinationArea,
-                                                serviceRef: nextServiceRef,
+                                                serviceRef: effectiveRouteServiceRef,
                                             });
+                                            const selectedVehicle = vehicles.find(vehicle => vehicle._id === trip.vehicleRef) || null;
+                                            const nextRequiresOverrideReason = Boolean(nextServiceRef && selectedVehicle && (!selectedVehicle.serviceRef || selectedVehicle.serviceRef !== nextServiceRef));
                                             return {
                                                 ...trip,
+                                                vehicleOverrideReason: nextRequiresOverrideReason ? trip.vehicleOverrideReason : '',
                                                 tripRouteRateRef: matchedRate?._id || '',
-                                                tripFee: matchedRate?.rate || trip.tripFee,
+                                                tripFee: matchedRate?.rate || (shouldResetTripFeeForRoute(trip.tripOriginArea, trip.tripDestinationArea) ? 0 : trip.tripFee),
                                             };
                                         }));
                                     }}
@@ -570,12 +601,13 @@ export default function NewOrderPage() {
                             const availableTripDrivers = drivers.filter(driver => !busyDriverIds.has(driver._id) || driver._id === trip.driverRef);
                             const selectedTripVehicle = vehicles.find(vehicle => vehicle._id === trip.vehicleRef) || null;
                             const requiresOverrideReason = Boolean(serviceRef && selectedTripVehicle && (!selectedTripVehicle.serviceRef || selectedTripVehicle.serviceRef !== serviceRef));
-                            const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', { serviceRef });
-                            const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', { originArea: trip.tripOriginArea, serviceRef });
+                            const tripRouteServiceRef = serviceRef || selectedTripVehicle?.serviceRef || '';
+                            const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', { serviceRef: tripRouteServiceRef });
+                            const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', { originArea: trip.tripOriginArea, serviceRef: tripRouteServiceRef });
                             const matchedTripRate = findMatchingTripRouteRate(tripRouteRates, {
                                 originArea: trip.tripOriginArea,
                                 destinationArea: trip.tripDestinationArea,
-                                serviceRef,
+                                serviceRef: tripRouteServiceRef,
                             });
                             const isTripFeeLockedToMaster = Boolean(matchedTripRate);
 
@@ -634,7 +666,7 @@ export default function NewOrderPage() {
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Kendaraan <span className="required">*</span></label>
-                                            <select className="form-select" value={trip.vehicleRef} onChange={event => updateTripDraft(index, 'vehicleRef', event.target.value)} disabled={loading}>
+                                            <select className="form-select" value={trip.vehicleRef} onChange={event => handleTripVehicleChange(index, event.target.value)} disabled={loading}>
                                                 <option value="">Pilih kendaraan</option>
                                                 {availableTripVehicles.map(vehicle => (
                                                     <option key={vehicle._id} value={vehicle._id}>

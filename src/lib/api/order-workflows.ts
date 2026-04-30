@@ -1025,8 +1025,8 @@ export async function handleOrderCreate(
         pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
         pickupStops,
         tripPlans,
-        serviceRef: serviceRef || '',
-        serviceName,
+        serviceRef: serviceRef || undefined,
+        serviceName: serviceName || undefined,
         notes: normalizeOptionalText(data.notes),
         masterResi,
         status: 'OPEN',
@@ -1036,31 +1036,18 @@ export async function handleOrderCreate(
 
     try {
         await createDocument(orderDoc);
-        const seenProductRefs = new Set<string>();
-        const touchPromises: Array<Promise<unknown>> = [
-            updateDocument(customer._id, { updatedAt: createdAt }, 'customer'),
-        ];
-        if (serviceRef && service?._id) {
-            touchPromises.push(updateDocument(service._id, { updatedAt: createdAt }, 'service'));
-        }
-        for (const item of items) {
-            if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
-                continue;
-            }
-            touchPromises.push(updateDocument(item.customerProductRef, { updatedAt: createdAt }, 'customerProduct'));
-            seenProductRefs.add(item.customerProductRef);
-        }
-        if (customerRecipientRef && customerRecipient?._id) {
-            touchPromises.push(updateDocument(customerRecipient._id, { updatedAt: createdAt }, 'customerRecipient'));
-        }
-        if (customerPickupRef && customerPickup?._id) {
-            touchPromises.push(updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickupLocation'));
-        }
         await Promise.all([
-            ...touchPromises,
             ...items.map(item => createDocument(buildOrderItemDraftDocument(orderId, item))),
         ]);
     } catch (error) {
+        const errorCode = isPlainObject(error) && typeof error.code === 'string' ? error.code : '';
+        const errorMessage = error instanceof Error ? error.message : '';
+        if (errorCode === '23503' || /foreign key/i.test(errorMessage)) {
+            return NextResponse.json(
+                { error: 'Data master order tidak valid atau sudah berubah. Pilih ulang customer, kategori armada, pickup, kendaraan, supir, dan kas/bank lalu simpan lagi.' },
+                { status: 409 }
+            );
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Order, customer, barang customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -4411,7 +4398,7 @@ export async function handleDeliveryOrderCreate(
             tripDestinationArea: normalizeOptionalText(data.tripDestinationArea) || selectedTripPlan?.tripDestinationArea,
         };
         tripRouteSelection = await resolveTripRouteRateSelection(tripRouteSelectionInput, {
-            serviceRef: order.serviceRef,
+            serviceRef: normalizeOptionalText(order.serviceRef) || vehicleServiceRef,
         });
     } catch (error) {
         return NextResponse.json(
@@ -5008,7 +4995,7 @@ async function normalizeOrderTripPlansInput(
         const driverRef = normalizeText(rawPlan.driverRef);
         const issueBankRef = normalizeText(rawPlan.issueBankRef);
         const cashGiven = normalizeCurrencyNumber(rawPlan.cashGiven ?? 0);
-        const taripBorongan = normalizeCurrencyNumber(rawPlan.taripBorongan ?? rawPlan.tripFee ?? 0);
+        const requestedTaripBorongan = normalizeCurrencyNumber(rawPlan.taripBorongan ?? rawPlan.tripFee ?? 0);
         const date = normalizeOptionalText(rawPlan.date) || getBusinessDateValue();
         const pickupStopKeys = Array.isArray(rawPlan.pickupStopKeys)
             ? rawPlan.pickupStopKeys
@@ -5030,8 +5017,8 @@ async function normalizeOrderTripPlansInput(
         if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
             throw new Error(`Nominal uang jalan awal wajib diisi pada trip ${index + 1}`);
         }
-        if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
-            throw new Error(`Upah trip wajib diisi pada trip ${index + 1}`);
+        if (!Number.isFinite(requestedTaripBorongan) || requestedTaripBorongan < 0) {
+            throw new Error(`Upah trip pada trip ${index + 1} tidak valid`);
         }
         assertIsoDate(date, `Tanggal trip ${index + 1}`);
 
@@ -5071,6 +5058,28 @@ async function normalizeOrderTripPlansInput(
         if (serviceRef && vehicleServiceRef !== serviceRef && !vehicleCategoryOverrideReason) {
             throw new Error(`Alasan override armada wajib diisi pada trip ${index + 1}`);
         }
+        const effectiveRouteServiceRef = serviceRef || vehicleServiceRef;
+        let tripRouteSelection: Awaited<ReturnType<typeof resolveTripRouteRateSelection>>;
+        try {
+            tripRouteSelection = await resolveTripRouteRateSelection(rawPlan, {
+                serviceRef: effectiveRouteServiceRef,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Master biaya rute trip tidak valid';
+            throw new Error(`${message} pada trip ${index + 1}`);
+        }
+        const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection.matchedTripRouteRate?.rate ?? 0);
+        if (
+            matchedTripRouteRateFee > 0 &&
+            requestedTaripBorongan > 0 &&
+            Math.abs(requestedTaripBorongan - matchedTripRouteRateFee) > 0.01
+        ) {
+            throw new Error(`Upah trip pada trip ${index + 1} mengikuti master biaya rute trip yang dipilih`);
+        }
+        const taripBorongan = matchedTripRouteRateFee > 0 ? matchedTripRouteRateFee : requestedTaripBorongan;
+        if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
+            throw new Error(`Upah trip wajib diisi pada trip ${index + 1}`);
+        }
 
         plans.push({
             _key: normalizeOptionalText(rawPlan._key) || crypto.randomUUID(),
@@ -5083,9 +5092,9 @@ async function normalizeOrderTripPlansInput(
             vehicleCategoryOverrideReason,
             driverRef,
             driverName: driver.name,
-            tripRouteRateRef: normalizeOptionalText(rawPlan.tripRouteRateRef),
-            tripOriginArea: normalizeOptionalText(rawPlan.tripOriginArea),
-            tripDestinationArea: normalizeOptionalText(rawPlan.tripDestinationArea),
+            tripRouteRateRef: tripRouteSelection.tripRouteRateRef,
+            tripOriginArea: tripRouteSelection.tripOriginArea,
+            tripDestinationArea: tripRouteSelection.tripDestinationArea,
             taripBorongan,
             issueBankRef,
             issueBankName: [issueBank.bankName, issueBank.accountNumber].filter(Boolean).join(' - ') || issueBank.bankName,
