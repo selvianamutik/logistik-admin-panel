@@ -28,6 +28,7 @@ import {
     resolveTrackedTirePlacementLabel,
 } from '@/lib/tire-inventory';
 import { isTireTrackedWarehouseItem } from '@/lib/inventory';
+import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import type { BankTransaction, CompanyProfile, User, WarehouseItem } from '@/lib/types';
 
 import {
@@ -841,6 +842,7 @@ export async function handleGenericUpdate(
                     updates.tripRouteRateRef = tripRouteSelection.tripRouteRateRef;
                     updates.tripOriginArea = tripRouteSelection.tripOriginArea;
                     updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
+                    updates.overtonaseDriverRatePerKg = getTripRouteOvertonaseRatePerKg(tripRouteSelection.matchedTripRouteRate) || undefined;
                     if (tripRouteSelection.matchedTripRouteRate?._id) {
                         if (!tripRouteSelection.matchedTripRouteRate._rev && !isSupabaseBackendEnabled()) {
                             return NextResponse.json(

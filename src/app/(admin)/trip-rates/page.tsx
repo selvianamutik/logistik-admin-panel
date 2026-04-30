@@ -10,9 +10,10 @@ import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPermission } from '@/lib/rbac';
 import { formatCurrency } from '@/lib/utils';
+import { getTripRouteOvertonaseRatePerTon, stripTripRouteOvertonaseRateNote } from '@/lib/trip-route-rate-support';
 import type { Service, TripRouteRate } from '@/lib/types';
 
-type TripRouteRateSortField = 'originArea' | 'destinationArea' | 'serviceName' | 'rate' | 'active';
+type TripRouteRateSortField = 'originArea' | 'destinationArea' | 'serviceName' | 'rate' | 'overtonaseDriverRatePerTon' | 'active';
 
 function getNextSortDirection(currentField: TripRouteRateSortField, nextField: TripRouteRateSortField, currentDirection: SortDirection) {
     if (currentField !== nextField) {
@@ -48,6 +49,7 @@ export default function TripRouteRatesPage() {
         destinationArea: '',
         serviceRef: '',
         rate: 0,
+        overtonaseDriverRatePerTon: 0,
         notes: '',
         active: true,
     });
@@ -180,6 +182,7 @@ export default function TripRouteRatesPage() {
             destinationArea: '',
             serviceRef: '',
             rate: 0,
+            overtonaseDriverRatePerTon: 0,
             notes: '',
             active: true,
         });
@@ -193,7 +196,8 @@ export default function TripRouteRatesPage() {
             destinationArea: item.destinationArea || '',
             serviceRef: item.serviceRef || '',
             rate: item.rate || 0,
-            notes: item.notes || '',
+            overtonaseDriverRatePerTon: getTripRouteOvertonaseRatePerTon(item),
+            notes: stripTripRouteOvertonaseRateNote(item.notes),
             active: item.active !== false,
         });
         setShowModal(true);
@@ -210,6 +214,10 @@ export default function TripRouteRatesPage() {
         }
         if (!form.rate || form.rate <= 0) {
             addToast('error', 'Tarif trip wajib lebih besar dari 0');
+            return;
+        }
+        if (form.overtonaseDriverRatePerTon < 0) {
+            addToast('error', 'Referensi overtonase tidak boleh negatif');
             return;
         }
 
@@ -399,6 +407,13 @@ export default function TripRouteRatesPage() {
                                         onToggle={() => handleSort('rate')}
                                     />
                                 </th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Overtonase"
+                                        direction={sortField === 'overtonaseDriverRatePerTon' ? sortDir : null}
+                                        onToggle={() => handleSort('overtonaseDriverRatePerTon')}
+                                    />
+                                </th>
                                 <th>Catatan</th>
                                 <th>
                                     <SortableTableHeader
@@ -414,14 +429,14 @@ export default function TripRouteRatesPage() {
                             {loading ? (
                                 [1, 2].map(row => (
                                     <tr key={row}>
-                                        {[1, 2, 3, 4, 5, 6, 7].map(cell => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => (
                                             <td key={cell}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalItems === 0 ? (
                                 <tr>
-                                    <td colSpan={7}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <MapPin size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada biaya rute trip</div>
@@ -435,7 +450,12 @@ export default function TripRouteRatesPage() {
                                         <td className="font-semibold">{item.destinationArea || '-'}</td>
                                         <td>{item.serviceName || <span className="text-muted">Semua layanan</span>}</td>
                                         <td className="font-semibold">{formatCurrency(item.rate || 0)}</td>
-                                        <td className="text-muted">{item.notes || '-'}</td>
+                                        <td className="font-semibold">
+                                            {getTripRouteOvertonaseRatePerTon(item) > 0
+                                                ? `${formatCurrency(getTripRouteOvertonaseRatePerTon(item))}/ton`
+                                                : '-'}
+                                        </td>
+                                        <td className="text-muted">{stripTripRouteOvertonaseRateNote(item.notes) || '-'}</td>
                                         <td>
                                             <span className={`badge ${item.active !== false ? 'badge-success' : 'badge-gray'}`}>
                                                 {item.active !== false ? 'Aktif' : 'Nonaktif'}
@@ -530,6 +550,14 @@ export default function TripRouteRatesPage() {
                                         value={form.rate}
                                         onValueChange={value => setForm(previous => ({ ...previous, rate: value }))}
                                         placeholder="Ketik tarif upah trip"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Referensi Overtonase / Ton</label>
+                                    <FormattedNumberInput allowDecimal={false}
+                                        value={form.overtonaseDriverRatePerTon}
+                                        onValueChange={value => setForm(previous => ({ ...previous, overtonaseDriverRatePerTon: value }))}
+                                        placeholder="Ketik referensi overtonase"
                                     />
                                 </div>
                             </div>

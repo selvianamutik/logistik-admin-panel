@@ -28,7 +28,7 @@ import {
     parseInventoryQuantity,
     parseWholeMoneyAmount,
 } from '@/lib/inventory';
-import { findMatchingTripRouteRate } from '@/lib/trip-route-rate-support';
+import { findMatchingTripRouteRate, stripTripRouteOvertonaseRateNote } from '@/lib/trip-route-rate-support';
 import type { TripRouteRate } from '@/lib/types';
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
@@ -970,6 +970,14 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
         throw new Error('Tarif trip harus lebih besar dari 0');
     }
 
+    const overtonaseDriverRatePerTon =
+        Object.prototype.hasOwnProperty.call(data, 'overtonaseDriverRatePerTon') || !existing
+            ? normalizeCurrencyNumber(data.overtonaseDriverRatePerTon ?? 0)
+            : normalizeCurrencyNumber(existing?.overtonaseDriverRatePerTon ?? 0);
+    if (!Number.isFinite(overtonaseDriverRatePerTon) || overtonaseDriverRatePerTon < 0) {
+        throw new Error('Referensi overtonase per ton tidak valid');
+    }
+
     const serviceRef =
         Object.prototype.hasOwnProperty.call(data, 'serviceRef') || !existing
             ? normalizeOptionalText(data.serviceRef)
@@ -1006,10 +1014,12 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
     next.serviceRef = serviceRef;
     next.serviceName = serviceName;
     next.rate = rate;
-    next.notes =
+    next.overtonaseDriverRatePerTon = overtonaseDriverRatePerTon;
+    next.notes = stripTripRouteOvertonaseRateNote(
         Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
             ? normalizeOptionalText(data.notes)
-            : normalizeOptionalText(existing?.notes);
+            : normalizeOptionalText(existing?.notes)
+    );
     if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
         if (data.active !== undefined && typeof data.active !== 'boolean') {
             throw new Error('Status tarif trip tidak valid');

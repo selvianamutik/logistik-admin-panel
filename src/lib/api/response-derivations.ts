@@ -5,8 +5,9 @@ import {
     getDeliveryOrderBillableCargoSummary,
     hasDeliveryOrderBillableCargo,
 } from '@/lib/delivery-order-completion';
+import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { listDocumentsByFilter } from '@/lib/repositories/document-store';
-import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order, TrackingLog } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order, TrackingLog, TripRouteRate } from '@/lib/types';
 
 import { summarizeDeliveryOrderItems, type FreightNotaDeliveryOrderItemSource } from './finance-workflow-support';
 import { extractRefId, normalizeCurrencyNumber, normalizeNumber, normalizeOptionalText } from './data-helpers';
@@ -25,7 +26,6 @@ type DeliveryOrderTrackingLogSource = Pick<TrackingLog, 'refRef' | 'status' | 't
 type DeliveryOrderServiceSource = {
     _id: string;
     maxPayloadKg?: number;
-    overtonaseDriverRatePerKg?: number;
 };
 
 type DeliveryOrderVehicleSource = {
@@ -234,8 +234,15 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
                 .filter((value): value is string => Boolean(value)),
         ),
     ];
+    const tripRouteRateRefs = [
+        ...new Set(
+            deliveryOrders
+                .map(item => extractRefId(item.tripRouteRateRef))
+                .filter((value): value is string => Boolean(value)),
+        ),
+    ];
 
-    const [deliveryOrderItems, trackingLogs, services, vehicles] = await Promise.all([
+    const [deliveryOrderItems, trackingLogs, services, vehicles, tripRouteRates] = await Promise.all([
         listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: deliveryOrderIds }),
         listDocumentsByFilter<DeliveryOrderTrackingLogSource>('trackingLog', { refType: 'DO', refRef: deliveryOrderIds }),
         serviceRefs.length > 0
@@ -243,6 +250,9 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
             : Promise.resolve([]),
         vehicleRefs.length > 0
             ? listDocumentsByFilter<DeliveryOrderVehicleSource>('vehicle', { _id: vehicleRefs })
+            : Promise.resolve([]),
+        tripRouteRateRefs.length > 0
+            ? listDocumentsByFilter<Pick<TripRouteRate, '_id' | 'overtonaseDriverRatePerTon' | 'notes'> & { overtonaseReferencePerTon?: number }>('tripRouteRate', { _id: tripRouteRateRefs })
             : Promise.resolve([]),
     ]);
 
@@ -266,6 +276,7 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
 
     const serviceMap = new Map(services.map(item => [item._id, item]));
     const vehicleMap = new Map(vehicles.map(item => [item._id, item]));
+    const tripRouteRateMap = new Map(tripRouteRates.map(item => [item._id, item]));
 
     return deliveryOrders.map(deliveryOrder => {
         const linkedItems = itemsByDeliveryOrderRef.get(deliveryOrder._id) || [];
@@ -292,6 +303,15 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
         const vehicle = extractRefId(deliveryOrder.vehicleRef)
             ? vehicleMap.get(extractRefId(deliveryOrder.vehicleRef) as string)
             : undefined;
+        const tripRouteRate = extractRefId(deliveryOrder.tripRouteRateRef)
+            ? tripRouteRateMap.get(extractRefId(deliveryOrder.tripRouteRateRef) as string)
+            : undefined;
+        const routeOvertonaseRatePerKg = getTripRouteOvertonaseRatePerKg(tripRouteRate);
+        const deliveryOrderOvertonaseRatePerKg = normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0);
+        const effectiveOvertonaseRatePerKg =
+            deliveryOrderOvertonaseRatePerKg > 0
+                ? deliveryOrderOvertonaseRatePerKg
+                : routeOvertonaseRatePerKg;
         const serviceMaxPayloadKg =
             normalizeNumber(deliveryOrder.serviceMaxPayloadKg, { maxFractionDigits: 2 }) > 0
                 ? normalizeNumber(deliveryOrder.serviceMaxPayloadKg, { maxFractionDigits: 2 })
@@ -311,8 +331,7 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
                     serviceMaxPayloadKg,
                     vehicleCapacityKg,
                     baseTripFee: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0),
-                    overtonaseDriverRatePerKg:
-                        normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? service?.overtonaseDriverRatePerKg ?? 0),
+                    overtonaseDriverRatePerKg: effectiveOvertonaseRatePerKg,
                 })
                 : null;
 
@@ -339,8 +358,8 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
             overtonaseWeightKg:
                 derivedOvertonage?.overtonaseWeightKg,
             overtonaseDriverRatePerKg:
-                normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0) > 0
-                    ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0)
+                deliveryOrderOvertonaseRatePerKg > 0
+                    ? deliveryOrderOvertonaseRatePerKg
                     : derivedOvertonage?.overtonaseDriverRatePerKg,
             overtonaseDriverAmount:
                 derivedOvertonage?.overtonaseDriverAmount,

@@ -274,14 +274,6 @@ export async function normalizeServicePayload(
         next.maxPayloadKg = maxPayloadKg ?? 0;
     }
 
-    if (!partial || hasOwnKey(data, 'overtonaseDriverRatePerKg')) {
-        const overtonaseDriverRatePerKg = normalizeOptionalNonNegativeNumber(
-            data.overtonaseDriverRatePerKg,
-            'Tarif tambahan upah overtonase per kg'
-        );
-        next.overtonaseDriverRatePerKg = overtonaseDriverRatePerKg ?? 0;
-    }
-
     if (!partial || hasOwnKey(data, 'tireLayoutConfig')) {
         next.tireLayoutConfig = normalizeTireLayoutConfig(
             (data.tireLayoutConfig as Record<string, unknown> | undefined) || undefined

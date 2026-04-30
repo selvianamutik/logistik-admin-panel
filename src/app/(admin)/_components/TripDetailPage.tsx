@@ -3440,8 +3440,11 @@ export default function TripDetailPage() {
     const totalTripFee = doData.taripBorongan || 0;
     const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
     const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
-    const effectiveOvertonaseLimitKg = doData.vehicleCapacityKg || doData.serviceMaxPayloadKg || 0;
-    const effectiveOvertonaseLimitSource = doData.vehicleCapacityKg ? 'Kapasitas kendaraan' : 'Referensi layanan';
+    const effectiveOvertonaseLimitKg = doData.serviceMaxPayloadKg || doData.vehicleCapacityKg || 0;
+    const effectiveOvertonaseLimitSource = doData.serviceMaxPayloadKg ? 'Batas layanan' : 'Kapasitas kendaraan';
+    const overtonaseDriverRatePerTon = doData.overtonaseDriverRatePerKg
+        ? Math.round(doData.overtonaseDriverRatePerKg * 1000)
+        : 0;
     const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || exceedsVehicleCapacity;
     const settledVoucherNeedsManualAdjustment = Boolean(
         linkedVoucher?.status === 'SETTLED' &&
@@ -4611,9 +4614,9 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Rate Tambahan / kg</div>
+                                    <div className="detail-label">Rate Tambahan / ton</div>
                                     <div className="detail-value">
-                                        {doData.overtonaseDriverRatePerKg ? formatCurrency(doData.overtonaseDriverRatePerKg) : '-'}
+                                        {overtonaseDriverRatePerTon ? formatCurrency(overtonaseDriverRatePerTon) : '-'}
                                     </div>
                                 </div>
                                 <div className="detail-item">

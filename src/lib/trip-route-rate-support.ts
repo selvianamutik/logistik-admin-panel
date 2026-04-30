@@ -6,8 +6,60 @@ type TripRouteRateMatchParams = {
     serviceRef?: string | null;
 };
 
+type TripRouteOvertonaseSource = Pick<TripRouteRate, 'overtonaseDriverRatePerTon' | 'notes'> & {
+    overtonaseReferencePerTon?: number;
+};
+
 function normalizeTripAreaLabel(value?: string | null) {
     return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function parseIndonesianMoney(value: string) {
+    const normalized = value.replace(/\./g, '').replace(',', '.');
+    const numeric = Number(normalized);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+export function parseTripRouteOvertonaseRatePerTonFromNotes(notes?: string | null) {
+    if (!notes) {
+        return 0;
+    }
+
+    const match = notes.match(/referensi\s+overtonase\s+admin\s*:\s*rp\s*([0-9.,]+)\s*\/\s*ton/i);
+    return match ? Math.round(parseIndonesianMoney(match[1])) : 0;
+}
+
+export function stripTripRouteOvertonaseRateNote(notes?: string | null) {
+    if (!notes) {
+        return '';
+    }
+
+    return notes
+        .replace(/\s*Referensi\s+overtonase\s+admin\s*:\s*Rp\s*[0-9.,]+\s*\/\s*ton\.?/ig, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+export function getTripRouteOvertonaseRatePerTon(
+    rate?: TripRouteOvertonaseSource | null
+) {
+    if (rate && rate.overtonaseDriverRatePerTon !== undefined && rate.overtonaseDriverRatePerTon !== null) {
+        const explicitRate = Number(rate.overtonaseDriverRatePerTon);
+        return Number.isFinite(explicitRate) && explicitRate > 0 ? Math.round(explicitRate) : 0;
+    }
+    if (rate && rate.overtonaseReferencePerTon !== undefined && rate.overtonaseReferencePerTon !== null) {
+        const legacyRate = Number(rate.overtonaseReferencePerTon);
+        return Number.isFinite(legacyRate) && legacyRate > 0 ? Math.round(legacyRate) : 0;
+    }
+
+    return parseTripRouteOvertonaseRatePerTonFromNotes(rate?.notes);
+}
+
+export function getTripRouteOvertonaseRatePerKg(
+    rate?: TripRouteOvertonaseSource | null
+) {
+    const ratePerTon = getTripRouteOvertonaseRatePerTon(rate);
+    return ratePerTon > 0 ? ratePerTon / 1000 : 0;
 }
 
 export function buildTripRateAreaOptions(

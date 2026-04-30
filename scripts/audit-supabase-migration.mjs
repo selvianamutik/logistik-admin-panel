@@ -58,8 +58,6 @@ const functionChecks = [
     mustInclude: [
       "const masterResi = await getNextNumber('resi')",
       'await createDocument(orderDoc);',
-      'const touchPromises: Array<Promise<unknown>> = [',
-      "updateDocument(customer._id, { updatedAt: createdAt }, 'customer'),",
       '...items.map(item => createDocument(buildOrderItemDraftDocument(orderId, item)))',
     ],
   },
@@ -174,7 +172,7 @@ const supportFunctionChecks = [
   {
     name: 'resolveOrderPickupData',
     mode: 'file',
-    mustInclude: ["getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickup')"],
+    mustInclude: ["getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickupLocation')"],
   },
   {
     name: 'normalizeOrderItemsInput',

@@ -432,6 +432,7 @@ export interface TripRouteRate {
   serviceRef?: string;
   serviceName?: string;
   rate: number;
+  overtonaseDriverRatePerTon?: number;
   notes?: string;
   active: boolean;
 }
@@ -444,7 +445,6 @@ export interface Service {
   name: string;
   description: string;
   maxPayloadKg?: number;
-  overtonaseDriverRatePerKg?: number;
   tireLayoutConfig?: TireLayoutConfig;
   active: boolean;
 }

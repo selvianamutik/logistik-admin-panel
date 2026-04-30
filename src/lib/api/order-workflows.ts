@@ -67,6 +67,7 @@ import {
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
+import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals } from './driver-workflow-support';
 import {
@@ -2163,6 +2164,7 @@ export async function handleDeliveryOrderStatusUpdate(
         driverRef?: unknown;
         serviceRef?: unknown;
         vehicleRef?: unknown;
+        tripRouteRateRef?: unknown;
         trackingState?: string;
         podReceiverName?: string;
         podReceivedDate?: string;
@@ -2172,6 +2174,7 @@ export async function handleDeliveryOrderStatusUpdate(
         receiverAddress?: string;
         baseTaripBorongan?: number;
         taripBorongan?: number;
+        overtonaseDriverRatePerKg?: number;
         pendingDriverStatus?: string;
         pendingDriverStatusRequestedAt?: string;
         pendingDriverStatusRequestedBy?: string;
@@ -2253,7 +2256,6 @@ export async function handleDeliveryOrderStatusUpdate(
     let linkedVoucherPatch:
         | {
             _id: string;
-            _rev: string;
             driverFeeAmount: number;
             totalClaimAmount: number;
         }
@@ -2304,12 +2306,12 @@ export async function handleDeliveryOrderStatusUpdate(
         const actualCargoTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
         const serviceRef = extractRefId(deliveryOrder.serviceRef);
         const vehicleRef = extractRefId(deliveryOrder.vehicleRef);
-        const [service, vehicle, linkedVoucher] = await Promise.all([
+        const tripRouteRateRef = extractRefId(deliveryOrder.tripRouteRateRef);
+        const [service, vehicle, tripRouteRate, linkedVoucher] = await Promise.all([
             serviceRef
                 ? getDocumentById<{
                     _id: string;
                     maxPayloadKg?: number;
-                    overtonaseDriverRatePerKg?: number;
                 }>(serviceRef, 'service')
                 : Promise.resolve(null),
             vehicleRef
@@ -2317,6 +2319,14 @@ export async function handleDeliveryOrderStatusUpdate(
                     _id: string;
                     capacityKg?: number;
                 }>(vehicleRef, 'vehicle')
+                : Promise.resolve(null),
+            tripRouteRateRef
+                ? getDocumentById<{
+                    _id: string;
+                    overtonaseDriverRatePerTon?: number;
+                    overtonaseReferencePerTon?: number;
+                    notes?: string;
+                }>(tripRouteRateRef, 'tripRouteRate')
                 : Promise.resolve(null),
             listDocumentsByFilter<{
                 _id: string;
@@ -2335,12 +2345,14 @@ export async function handleDeliveryOrderStatusUpdate(
             serviceMaxPayloadKg: service?.maxPayloadKg,
             vehicleCapacityKg: vehicle?.capacityKg,
             baseTripFee: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0),
-            overtonaseDriverRatePerKg: service?.overtonaseDriverRatePerKg,
+            overtonaseDriverRatePerKg:
+                normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0) > 0
+                    ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0)
+                    : getTripRouteOvertonaseRatePerKg(tripRouteRate),
         });
 
         if (
             linkedVoucher?._id &&
-            linkedVoucher._rev &&
             linkedVoucher.status !== 'SETTLED' &&
             Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
         ) {
@@ -2351,7 +2363,6 @@ export async function handleDeliveryOrderStatusUpdate(
             );
             linkedVoucherPatch = {
                 _id: linkedVoucher._id,
-                _rev: linkedVoucher._rev,
                 driverFeeAmount: voucherTotals.driverFeeAmount,
                 totalClaimAmount: voucherTotals.totalClaimAmount,
             };
@@ -4381,6 +4392,7 @@ export async function handleDeliveryOrderCreate(
         );
     }
     const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+    const matchedTripRouteOvertonaseRatePerKg = getTripRouteOvertonaseRatePerKg(tripRouteSelection?.matchedTripRouteRate);
     if (!isSupabaseBackendEnabled() && tripRouteSelection?.matchedTripRouteRate && !tripRouteSelection.matchedTripRouteRate._rev) {
         return NextResponse.json(
             { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
@@ -4699,6 +4711,7 @@ export async function handleDeliveryOrderCreate(
         plannedTripCashGiven: selectedTripPlan?.cashGiven,
         baseTaripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
         taripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
+        overtonaseDriverRatePerKg: matchedTripRouteOvertonaseRatePerKg > 0 ? matchedTripRouteOvertonaseRatePerKg : undefined,
         date: doDate,
         notes: normalizeOptionalText(data.notes),
         doNumber,

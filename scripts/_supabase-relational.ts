@@ -731,7 +731,6 @@ function mapServices(docs: SeedDoc[]) {
             name: toText(doc.name),
             description: toText(doc.description),
             max_payload_kg: toNumber(doc.maxPayloadKg),
-            overtonase_driver_rate_per_kg: toNumber(doc.overtonaseDriverRatePerKg),
             active: toBoolean(doc.active, true),
             extra_data: omitKeys(doc, [
                 '_id', '_type', '_createdAt', '_updatedAt',
@@ -751,12 +750,13 @@ function mapTripRouteRates(docs: SeedDoc[]) {
             service_ref: toText(doc.serviceRef),
             service_name: toText(doc.serviceName),
             rate: toNumber(doc.rate),
+            overtonase_driver_rate_per_ton: toNumber(doc.overtonaseDriverRatePerTon ?? doc.overtonaseReferencePerTon),
             notes: toText(doc.notes),
             active: toBoolean(doc.active, true),
             extra_data: omitKeys(doc, [
                 '_id', '_type', '_createdAt', '_updatedAt',
                 'originArea', 'destinationArea', 'serviceRef', 'serviceName',
-                'rate', 'notes', 'active',
+                'rate', 'overtonaseDriverRatePerTon', 'overtonaseReferencePerTon', 'notes', 'active',
             ]),
         }));
 }
