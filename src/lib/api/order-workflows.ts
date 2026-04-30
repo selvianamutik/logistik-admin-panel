@@ -95,29 +95,6 @@ function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, delivery
     );
 }
 
-function getDeliveryOrderSuratJalanStatusMap(
-    deliveryOrder: DeliveryOrder,
-    deliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>
-) {
-    return new Map(
-        mapDeliveryOrderToSuratJalanRecords(deliveryOrder, deliveryOrderItems as DeliveryOrderItem[])
-            .map(record => [record._id, record.tripStatus || deliveryOrder.status || 'CREATED'] as const)
-    );
-}
-
-function getDeliveryOrderItemSuratJalanStatus(
-    deliveryOrder: DeliveryOrder,
-    deliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>,
-    item: Pick<DeliveryOrderItem, 'shipperReferenceKey' | 'shipperReferenceNumber'>
-) {
-    const statusMap = getDeliveryOrderSuratJalanStatusMap(deliveryOrder, deliveryOrderItems);
-    return statusMap.get(getDeliveryOrderSuratJalanIdentity({
-        deliveryOrderId: deliveryOrder._id,
-        shipperReferenceKey: item.shipperReferenceKey,
-        shipperReferenceNumber: item.shipperReferenceNumber,
-    })) || deliveryOrder.status || 'CREATED';
-}
-
 function buildAutoFinalizeBatchRawDropPoints(
     deliveryOrderId: string,
     deliveryOrder: {
@@ -5242,26 +5219,6 @@ export async function handleDeliveryOrderAppendCargoItems(
     }
 
     const mutationTimestamp = new Date().toISOString();
-    const currentDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
-    const currentSuratJalanStatusMap = getDeliveryOrderSuratJalanStatusMap(deliveryOrder as DeliveryOrder, currentDeliveryOrderItems);
-    const nextEffectiveShipperReferences = nextShipperReferences || deliveryOrder.shipperReferences;
-    for (const item of directCargoItems) {
-        const cargoItemContext = resolveDeliveryOrderCargoItemContext(item, {
-            pickupStops: deliveryOrder.pickupStops,
-            shipperReferences: nextEffectiveShipperReferences,
-        });
-        const targetSuratJalanStatus = currentSuratJalanStatusMap.get(getDeliveryOrderSuratJalanIdentity({
-            deliveryOrderId: id,
-            shipperReferenceKey: cargoItemContext.shipperReferenceKey,
-            shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
-        }));
-        if (targetSuratJalanStatus === 'DELIVERED') {
-            return NextResponse.json(
-                { error: `SJ ${cargoItemContext.shipperReferenceNumber || 'terpilih'} sudah delivered dan tidak bisa ditambah barang lagi.` },
-                { status: 409 }
-            );
-        }
-    }
     try {
         if (directCargoItems.length > 0 && order.cargoEntryMode !== 'DELIVERY_ORDER') {
             await updateDocument(orderRef, { cargoEntryMode: 'DELIVERY_ORDER' }, 'order');
@@ -5431,7 +5388,7 @@ export async function handleDeliveryOrderCargoItemRemove(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa dihapus pada status surat jalan saat ini' }, { status: 409 });
     }
     if (deliveryOrder.pendingDriverStatus) {
@@ -5451,18 +5408,6 @@ export async function handleDeliveryOrderCargoItemRemove(
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
-    }
-    const allDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
-    const targetSuratJalanStatus = getDeliveryOrderItemSuratJalanStatus(
-        deliveryOrder as DeliveryOrder,
-        allDeliveryOrderItems,
-        {
-            shipperReferenceKey: deliveryOrderItem.shipperReferenceKey,
-            shipperReferenceNumber: deliveryOrderItem.shipperReferenceNumber,
-        }
-    );
-    if (targetSuratJalanStatus === 'DELIVERED') {
-        return NextResponse.json({ error: 'Barang pada SJ yang sudah delivered tidak bisa dihapus.' }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -5554,7 +5499,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa diubah pada status surat jalan saat ini' }, { status: 409 });
     }
     if (deliveryOrder.pendingDriverStatus) {
@@ -5573,18 +5518,6 @@ export async function handleDeliveryOrderCargoItemUpdate(
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
-    }
-    const allDeliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
-    const targetSuratJalanStatus = getDeliveryOrderItemSuratJalanStatus(
-        deliveryOrder as DeliveryOrder,
-        allDeliveryOrderItems,
-        {
-            shipperReferenceKey: deliveryOrderItem.shipperReferenceKey,
-            shipperReferenceNumber: deliveryOrderItem.shipperReferenceNumber,
-        }
-    );
-    if (targetSuratJalanStatus === 'DELIVERED') {
-        return NextResponse.json({ error: 'Barang pada SJ yang sudah delivered tidak bisa diedit.' }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -6151,15 +6084,6 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         pickupStopKey?: string;
         pickupAddress?: string;
     }>('deliveryOrderItem', { deliveryOrderRef: id });
-    const suratJalanStatusMap = getDeliveryOrderSuratJalanStatusMap(
-        deliveryOrder as DeliveryOrder,
-        deliveryOrderItems.map(item => ({
-            _id: item._id,
-            deliveryOrderRef: id,
-            shipperReferenceKey: item.shipperReferenceKey,
-            shipperReferenceNumber: item.shipperReferenceNumber,
-        }))
-    );
     const previousReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
     const previousReferenceByKey = new Map(
         previousReferences
@@ -6172,45 +6096,6 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
     );
     const nextReferenceByKey = new Map(nextShipperReferences.map(reference => [reference._key, reference]));
-    const normalizeReferenceSnapshot = (reference: {
-        referenceNumber?: string;
-        pickupStopKey?: string;
-        pickupAddress?: string;
-        billingCustomerRef?: string;
-        receiverName?: string;
-        receiverPhone?: string;
-        receiverAddress?: string;
-        receiverCompany?: string;
-        notes?: string;
-    } | undefined | null) => JSON.stringify({
-        referenceNumber: normalizeOptionalText(reference?.referenceNumber)?.toUpperCase() || '',
-        pickupStopKey: normalizeOptionalText(reference?.pickupStopKey) || '',
-        pickupAddress: normalizeOptionalText(reference?.pickupAddress) || '',
-        billingCustomerRef: normalizeOptionalText(reference?.billingCustomerRef) || '',
-        receiverName: normalizeOptionalText(reference?.receiverName) || '',
-        receiverPhone: normalizeOptionalText(reference?.receiverPhone) || '',
-        receiverAddress: normalizeOptionalText(reference?.receiverAddress) || '',
-        receiverCompany: normalizeOptionalText(reference?.receiverCompany) || '',
-        notes: normalizeOptionalText(reference?.notes) || '',
-    });
-    const changedDeliveredReference = previousReferences.find(reference => {
-        const identity = getDeliveryOrderSuratJalanIdentity({
-            deliveryOrderId: id,
-            shipperReferenceKey: reference._key,
-            shipperReferenceNumber: reference.referenceNumber,
-        });
-        if (suratJalanStatusMap.get(identity) !== 'DELIVERED') {
-            return false;
-        }
-        const nextReference = reference._key ? nextReferenceByKey.get(reference._key) : undefined;
-        return !nextReference || normalizeReferenceSnapshot(reference) !== normalizeReferenceSnapshot(nextReference);
-    });
-    if (changedDeliveredReference) {
-        return NextResponse.json(
-            { error: `SJ ${changedDeliveredReference.referenceNumber || 'delivered'} sudah delivered dan tidak bisa diedit atau dihapus.` },
-            { status: 409 }
-        );
-    }
     const singleNextReference = nextShipperReferences.length === 1 ? nextShipperReferences[0] : null;
     const itemReferencePatches = new Map<string, NonNullable<typeof singleNextReference>>();
 

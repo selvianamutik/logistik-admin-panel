@@ -184,7 +184,7 @@ export default function OrderEditPage() {
             if (field === 'qtyKoli') {
                 return applyOrderItemAutoWeightFromQty(item, value as number | string);
             }
-            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)) {
+            if (field === 'weightInputValue' && shouldLockOrderItemWeight(item)) {
                 return item;
             }
             return { ...item, [field]: value };
@@ -760,7 +760,7 @@ export default function OrderEditPage() {
                                                     i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
                                                 )))}
                                                 style={{ width: 92 }}
-                                                disabled={shouldLockOrderItemWeight(item)}
+                                                disabled={false}
                                             >
                                                 {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                             </select>

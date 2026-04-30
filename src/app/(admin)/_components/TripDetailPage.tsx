@@ -33,7 +33,6 @@ import {
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
     shouldLockActualDropWeight,
-    shouldLockActualCargoWeight,
     sortTrackingLogs,
     updateActualCargoDraftVolumeUnit,
     type ActualCargoDraft,
@@ -194,6 +193,23 @@ function pickActualDropItemValues(drop: ActualDropDraft): ActualDropItemValueDra
         volumeInputValue: drop.volumeInputValue,
         volumeInputUnit: drop.volumeInputUnit,
     };
+}
+
+function hasActualDropItemValues(values: ActualDropItemValueDraft) {
+    const qtyKoli = parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 });
+    const weightKg = convertWeightToKg(
+        parseFormattedNumberish(values.weightInputValue || 0, {
+            maxFractionDigits: values.weightInputUnit === 'TON' ? 3 : 2,
+        }),
+        values.weightInputUnit
+    );
+    const volumeM3 = convertVolumeToM3(
+        parseFormattedNumberish(values.volumeInputValue || 0, {
+            maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
+        }),
+        values.volumeInputUnit
+    );
+    return qtyKoli > 0 || weightKg > 0 || volumeM3 > 0;
 }
 
 function buildResolvedShipperReferenceEntries(
@@ -364,6 +380,9 @@ export default function TripDetailPage() {
     const [showTripCashTopUpModal, setShowTripCashTopUpModal] = useState(false);
     const [showTripCashExpenseModal, setShowTripCashExpenseModal] = useState(false);
     const [showCancelTripModal, setShowCancelTripModal] = useState(false);
+    const [showActualCargoFinalizationModal, setShowActualCargoFinalizationModal] = useState(false);
+    const [activeFinalizationCargoItemRef, setActiveFinalizationCargoItemRef] = useState('');
+    const [activeFinalizationDropKey, setActiveFinalizationDropKey] = useState('');
     const [newStatus, setNewStatus] = useState('');
     const [selectedStatusSuratJalanRefs, setSelectedStatusSuratJalanRefs] = useState<string[]>([]);
     const [statusNote, setStatusNote] = useState('');
@@ -405,6 +424,7 @@ export default function TripDetailPage() {
     const [savingShipperReference, setSavingShipperReference] = useState(false);
     const [savingCargo, setSavingCargo] = useState(false);
     const [togglingTripClosure, setTogglingTripClosure] = useState(false);
+    const [pendingTripClosure, setPendingTripClosure] = useState<boolean | null>(null);
     const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
     const [deletingShipperReferenceKey, setDeletingShipperReferenceKey] = useState<string | null>(null);
     const [pendingDeleteAction, setPendingDeleteAction] = useState<
@@ -482,7 +502,9 @@ export default function TripDetailPage() {
         showTripCashIssueModal ||
         showTripCashTopUpModal ||
         showTripCashExpenseModal ||
-        showCancelTripModal;
+        showCancelTripModal ||
+        showActualCargoFinalizationModal ||
+        pendingTripClosure !== null;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
         serviceRef: doData?.serviceRef,
     });
@@ -883,14 +905,7 @@ export default function TripDetailPage() {
                 receiverCompany: reference.receiverCompany,
             }))
             .filter(reference => Boolean(reference.referenceNumber));
-        const editableReferenceKeySet = new Set(
-            resolvedShipperReferences
-                .filter(reference => getSuratJalanOperationalStatus(reference.referenceKey).status !== 'DELIVERED')
-                .map(reference => reference.referenceKey || reference.draftKey || reference.referenceNumber)
-        );
-        const firstEditableDraftKey = nextReferences.find(reference =>
-            editableReferenceKeySet.has(reference.referenceKey || reference.draftKey || reference.referenceNumber)
-        )?.draftKey || '';
+        const firstEditableDraftKey = nextReferences[0]?.draftKey || '';
         const baseDrafts = nextReferences.length > 0
             ? nextReferences
             : [{
@@ -1031,7 +1046,7 @@ export default function TripDetailPage() {
                                 pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
                                 shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
                             }, value as number))
-                            : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                            : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                 ? item
                             : { ...item, [field]: value }
                     )
@@ -1060,7 +1075,7 @@ export default function TripDetailPage() {
                                     shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
                                 }, value as number)),
                             }
-                            : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                            : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                 ? item
                             : { ...item, [field]: value }
                     )
@@ -1132,9 +1147,7 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? shouldLockOrderItemWeight(item)
-                        ? item
-                        : toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                    ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
                         ...item,
                         pickupStopKey: selectedShipperReferenceDraft.pickupStopKey,
                         shipperReferenceNumber: selectedShipperReferenceDraft.referenceNumber,
@@ -1150,9 +1163,7 @@ export default function TripDetailPage() {
             ...previous,
             [selectedShipperReferenceDraft.draftKey]: (previous[selectedShipperReferenceDraft.draftKey] || []).map((item, currentIndex) => (
                 currentIndex === itemIndex
-                    ? shouldLockOrderItemWeight(item)
-                        ? item
-                        : {
+                    ? {
                         ...item,
                         ...toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
                             ...item,
@@ -1333,7 +1344,7 @@ export default function TripDetailPage() {
                                         pickupStopKey: group.pickupStopKey,
                                         shipperReferenceNumber: group.shipperReferenceNumber,
                                     }, value as number))
-                                    : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                    : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                         ? item
                                     : { ...item, [field]: value }
                             )
@@ -1609,6 +1620,9 @@ export default function TripDetailPage() {
         setActualCargoItemValueMap({});
         setActualDropItemValueMap({});
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
+        setShowActualCargoFinalizationModal(false);
+        setActiveFinalizationCargoItemRef('');
+        setActiveFinalizationDropKey('');
         setShowStatusModal(true);
     };
 
@@ -1745,18 +1759,14 @@ export default function TripDetailPage() {
         void openStatusModal('DELIVERED');
     };
 
-    const toggleTripClosure = async () => {
+    const toggleTripClosure = () => {
         if (!canManageDeliveryStatus || !doData?._id) return;
-        const nextClosed = !isTripClosedByAdmin;
-        if (typeof window !== 'undefined') {
-            const confirmed = window.confirm(
-                nextClosed
-                    ? 'Tutup trip ini? Setelah ditutup admin, tambah SJ dan edit muatan SJ akan dikunci sampai trip dibuka kembali.'
-                    : 'Buka kembali trip ini? Admin bisa menambah SJ baru lagi setelah trip dibuka.'
-            );
-            if (!confirmed) return;
-        }
+        setPendingTripClosure(!isTripClosedByAdmin);
+    };
 
+    const confirmTripClosure = async () => {
+        if (!canManageDeliveryStatus || !doData?._id || pendingTripClosure === null) return;
+        const nextClosed = pendingTripClosure;
         setTogglingTripClosure(true);
         try {
             const res = await fetch('/api/data', {
@@ -1776,6 +1786,7 @@ export default function TripDetailPage() {
                 addToast('error', result.error || 'Gagal memperbarui status penutupan trip');
                 return;
             }
+            setPendingTripClosure(null);
             await refreshTripDetail();
             addToast('success', nextClosed ? 'Trip ditutup oleh admin' : 'Trip dibuka kembali');
         } catch {
@@ -1826,11 +1837,6 @@ export default function TripDetailPage() {
             addToast('error', 'Trip ini sudah ditutup admin. Buka kembali trip jika masih ingin menghapus SJ.');
             return;
         }
-        if (getSuratJalanOperationalStatus(reference.referenceKey).status === 'DELIVERED') {
-            addToast('error', `SJ ${reference.referenceNumber || 'ini'} sudah delivered dan tidak bisa dihapus.`);
-            return;
-        }
-
         const referenceLabel = reference.referenceNumber || 'Surat Jalan ini';
         const referenceIdentity = reference.referenceKey || reference.draftKey || reference.referenceNumber;
         const remainingReferences = shipperReferenceDisplayList.filter(candidate => {
@@ -2072,6 +2078,174 @@ export default function TripDetailPage() {
         );
     };
 
+    function hasOtherSavedActualDropAllocationForItem(deliveryOrderItemRef: string, excludeDraftKey = '') {
+        return Object.entries(actualDropItemValueMap).some(([valueKey, cachedValues]) => {
+            const parsedKey = parseActualDropItemValueKey(valueKey);
+            return Boolean(
+                parsedKey &&
+                parsedKey.draftKey !== excludeDraftKey &&
+                parsedKey.deliveryOrderItemRef === deliveryOrderItemRef &&
+                hasActualDropItemValues(cachedValues)
+            );
+        });
+    }
+
+    const getActualDropDraftIndex = (draftKey: string) =>
+        actualDropPoints.findIndex(drop => drop.draftKey === draftKey);
+
+    const isActualDropAfter = (candidateDraftKey: string, sourceDraftKey: string) => {
+        const candidateIndex = getActualDropDraftIndex(candidateDraftKey);
+        const sourceIndex = getActualDropDraftIndex(sourceDraftKey);
+        return candidateIndex >= 0 && sourceIndex >= 0 && candidateIndex > sourceIndex;
+    };
+
+    const clearLaterActualDropAllocationsForItem = (draftKey: string, deliveryOrderItemRef: string) => {
+        setActualDropItemValueMap(previous => {
+            const next = { ...previous };
+            Object.keys(next).forEach(valueKey => {
+                const parsedKey = parseActualDropItemValueKey(valueKey);
+                if (
+                    parsedKey &&
+                    parsedKey.deliveryOrderItemRef === deliveryOrderItemRef &&
+                    isActualDropAfter(parsedKey.draftKey, draftKey)
+                ) {
+                    delete next[valueKey];
+                }
+            });
+            return next;
+        });
+    };
+
+    function getActualDropAllocationForItem(drop: ActualDropDraft, cargoItem: ActualCargoDraft): ActualDropDraft {
+        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        const cachedValues = actualDropItemValueMap[valueKey];
+        const baseDrop = {
+            ...drop,
+            deliveryOrderItemRef: cargoItem.deliveryOrderItemRef,
+            shipperReferenceKey: cargoItem.shipperReferenceKey || drop.shipperReferenceKey,
+            shipperReferenceNumber: cargoItem.shipperReferenceNumber || drop.shipperReferenceNumber,
+        };
+        if (cachedValues && hasActualDropItemValues(cachedValues)) {
+            return { ...baseDrop, ...cachedValues };
+        }
+        if (
+            drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef &&
+            !hasOtherSavedActualDropAllocationForItem(cargoItem.deliveryOrderItemRef, drop.draftKey)
+        ) {
+            return baseDrop;
+        }
+        const remainingValues = getRemainingActualDropValuesForCargoItem(cargoItem, drop, drop.draftKey);
+        return {
+            ...baseDrop,
+            ...remainingValues,
+        };
+    }
+
+    const updateActualDropAllocationForItem = (
+        drop: ActualDropDraft,
+        cargoItem: ActualCargoDraft,
+        field: keyof ActualDropItemValueDraft,
+        value: string
+    ) => {
+        const currentAllocation = getActualDropAllocationForItem(drop, cargoItem);
+        const nextAllocation =
+            field === 'qtyKoli'
+                ? applyActualDropAutoWeightFromQty(currentAllocation, cargoItem, value)
+                : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockActualDropWeight(cargoItem)
+                    ? applyActualDropAutoWeightFromQty(
+                        currentAllocation,
+                        cargoItem,
+                        currentAllocation.qtyKoli,
+                        field === 'weightInputUnit' ? value as ActualDropDraft['weightInputUnit'] : currentAllocation.weightInputUnit
+                    )
+                    : { ...currentAllocation, [field]: value };
+        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        setActualDropItemValueMap(previous => ({
+            ...previous,
+            [valueKey]: pickActualDropItemValues(nextAllocation),
+        }));
+        clearLaterActualDropAllocationsForItem(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        setActualDropPoints(previous => previous.map(item =>
+            item.draftKey === drop.draftKey && item.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef
+                ? { ...item, ...pickActualDropItemValues(nextAllocation) }
+                : item
+        ));
+    };
+
+    const persistActualDropAllocationsForItems = (
+        drop: ActualDropDraft,
+        cargoItems: ActualCargoDraft[]
+    ) => {
+        const nextAllocationEntries = cargoItems
+            .map(cargoItem => ({
+                itemRef: cargoItem.deliveryOrderItemRef,
+                values: pickActualDropItemValues(getActualDropAllocationForItem(drop, cargoItem)),
+            }))
+            .filter(entry => hasActualDropItemValues(entry.values));
+        const nextAllocationByItemRef = new Map(
+            nextAllocationEntries.map(entry => [entry.itemRef, entry.values])
+        );
+        setActualDropItemValueMap(previous => {
+            const next = { ...previous };
+            cargoItems.forEach(cargoItem => {
+                const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+                const allocationValues = nextAllocationByItemRef.get(cargoItem.deliveryOrderItemRef);
+                if (allocationValues) {
+                    next[valueKey] = allocationValues;
+                } else {
+                    delete next[valueKey];
+                }
+            });
+            return next;
+        });
+        setActualDropPoints(previous => previous.map(item => {
+            if (item.draftKey !== drop.draftKey) {
+                return item;
+            }
+            const visibleItemRef =
+                item.deliveryOrderItemRef && nextAllocationByItemRef.has(item.deliveryOrderItemRef)
+                    ? item.deliveryOrderItemRef
+                    : Array.from(nextAllocationByItemRef.keys())[0] || item.deliveryOrderItemRef;
+            const visibleAllocation = visibleItemRef ? nextAllocationByItemRef.get(visibleItemRef) : undefined;
+            return visibleAllocation
+                ? { ...item, deliveryOrderItemRef: visibleItemRef, ...visibleAllocation }
+                : item;
+        }));
+    };
+
+    const getDefaultFinalizationCargoItemRef = (
+        drop: ActualDropDraft,
+        cargoItems: ActualCargoDraft[]
+    ) => (
+        cargoItems.find(cargoItem =>
+            hasActualDropItemValues(pickActualDropItemValues(getActualDropAllocationForItem(drop, cargoItem)))
+        ) || cargoItems[0]
+    )?.deliveryOrderItemRef || '';
+
+    const toggleActualDropItemSelection = (drop: ActualDropDraft, cargoItem: ActualCargoDraft, checked: boolean) => {
+        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        setActualDropItemValueMap(previous => {
+            const next = { ...previous };
+            if (!checked) {
+                delete next[valueKey];
+                return next;
+            }
+            next[valueKey] = {
+                qtyKoli: '',
+                weightInputValue: '',
+                weightInputUnit: cargoItem.actualWeightInputUnit,
+                volumeInputValue: '',
+                volumeInputUnit: cargoItem.actualVolumeInputUnit,
+            };
+            return next;
+        });
+    };
+
+    const isActualDropItemSelected = (drop: ActualDropDraft, cargoItem: ActualCargoDraft) => {
+        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        return Boolean(actualDropItemValueMap[valueKey]) || drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef;
+    };
+
     const applyActualDropShipperReference = (draftKey: string, optionValue: string) => {
         const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === optionValue);
         setActualDropPoints(previous => previous.map(item => {
@@ -2196,60 +2370,47 @@ export default function TripDetailPage() {
             }),
             cargoItem.actualVolumeInputUnit
         );
-        const visibleValueKeys = new Set(
-            actualDropPoints
-                .filter(drop => drop.deliveryOrderItemRef)
-                .map(drop => buildActualDropItemValueKey(drop.draftKey, drop.deliveryOrderItemRef))
-        );
-        const usedFromVisibleDrops = actualDropPoints
-            .filter(drop => drop.draftKey !== excludeDraftKey && drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef)
-            .reduce((sum, drop) => ({
-                qtyKoli: sum.qtyKoli + parseFormattedNumberish(drop.qtyKoli || 0, { maxFractionDigits: 2 }),
+        const usedAllocationByKey = new Map<string, ActualDropItemValueDraft>();
+        actualDropPoints.forEach(drop => {
+            if (drop.draftKey === excludeDraftKey || drop.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef) {
+                return;
+            }
+            const values = pickActualDropItemValues(drop);
+            if (hasActualDropItemValues(values)) {
+                usedAllocationByKey.set(buildActualDropItemValueKey(drop.draftKey, drop.deliveryOrderItemRef), values);
+            }
+        });
+        Object.entries(actualDropItemValueMap).forEach(([valueKey, cachedValues]) => {
+            const parsedKey = parseActualDropItemValueKey(valueKey);
+            if (
+                !parsedKey ||
+                parsedKey.draftKey === excludeDraftKey ||
+                parsedKey.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef
+            ) {
+                return;
+            }
+            if (hasActualDropItemValues(cachedValues)) {
+                usedAllocationByKey.set(valueKey, cachedValues);
+            } else {
+                usedAllocationByKey.delete(valueKey);
+            }
+        });
+        const used = Array.from(usedAllocationByKey.values())
+            .reduce((sum, values) => ({
+                qtyKoli: sum.qtyKoli + parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),
                 weightKg: sum.weightKg + convertWeightToKg(
-                    parseFormattedNumberish(drop.weightInputValue || 0, {
-                        maxFractionDigits: drop.weightInputUnit === 'TON' ? 3 : 2,
+                    parseFormattedNumberish(values.weightInputValue || 0, {
+                        maxFractionDigits: values.weightInputUnit === 'TON' ? 3 : 2,
                     }),
-                    drop.weightInputUnit
+                    values.weightInputUnit
                 ),
                 volumeM3: sum.volumeM3 + convertVolumeToM3(
-                    parseFormattedNumberish(drop.volumeInputValue || 0, {
-                        maxFractionDigits: drop.volumeInputUnit === 'LITER' ? 0 : 3,
+                    parseFormattedNumberish(values.volumeInputValue || 0, {
+                        maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
                     }),
-                    drop.volumeInputUnit
+                    values.volumeInputUnit
                 ),
             }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-        const usedFromCachedDrops = Object.entries(actualDropItemValueMap)
-            .reduce((sum, [valueKey, cachedValues]) => {
-                const parsedKey = parseActualDropItemValueKey(valueKey);
-                if (
-                    !parsedKey ||
-                    parsedKey.draftKey === excludeDraftKey ||
-                    parsedKey.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef ||
-                    visibleValueKeys.has(valueKey)
-                ) {
-                    return sum;
-                }
-                return {
-                    qtyKoli: sum.qtyKoli + parseFormattedNumberish(cachedValues.qtyKoli || 0, { maxFractionDigits: 2 }),
-                    weightKg: sum.weightKg + convertWeightToKg(
-                        parseFormattedNumberish(cachedValues.weightInputValue || 0, {
-                            maxFractionDigits: cachedValues.weightInputUnit === 'TON' ? 3 : 2,
-                        }),
-                        cachedValues.weightInputUnit
-                    ),
-                    volumeM3: sum.volumeM3 + convertVolumeToM3(
-                        parseFormattedNumberish(cachedValues.volumeInputValue || 0, {
-                            maxFractionDigits: cachedValues.volumeInputUnit === 'LITER' ? 0 : 3,
-                        }),
-                        cachedValues.volumeInputUnit
-                    ),
-                };
-            }, { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-        const used = {
-            qtyKoli: usedFromVisibleDrops.qtyKoli + usedFromCachedDrops.qtyKoli,
-            weightKg: usedFromVisibleDrops.weightKg + usedFromCachedDrops.weightKg,
-            volumeM3: usedFromVisibleDrops.volumeM3 + usedFromCachedDrops.volumeM3,
-        };
         const remainingQtyKoli = Math.max(baseQtyKoli - used.qtyKoli, 0);
         const remainingWeightKg = Math.max(baseWeightKg - used.weightKg, 0);
         const remainingVolumeM3 = Math.max(baseVolumeM3 - used.volumeM3, 0);
@@ -2312,7 +2473,11 @@ export default function TripDetailPage() {
                 locationAddress: selectedReference.receiverAddress || nextDraft.locationAddress,
             }
             : nextDraft;
-        const firstCargoItem = getActualDropItemOptionsFromCargoItems(baseDraft, actualCargoItems)[0];
+        const itemOptions = getActualDropItemOptionsFromCargoItems(baseDraft, actualCargoItems);
+        const firstCargoItem =
+            itemOptions.find(cargoItem =>
+                hasActualDropItemValues(getRemainingActualDropValuesForCargoItem(cargoItem, baseDraft))
+            ) || itemOptions[0];
         setActualDropPoints(previous => [
             ...previous,
             firstCargoItem
@@ -2425,9 +2590,12 @@ export default function TripDetailPage() {
             }
 
             setShowStatusModal(false);
+            setShowActualCargoFinalizationModal(false);
             setNewStatus('');
             setStatusNote('');
             setReviewingDriverRequest(false);
+            setActiveFinalizationCargoItemRef('');
+            setActiveFinalizationDropKey('');
             if (completingDelivery) {
                 setPodName('');
                 setPodDate(getBusinessDateValue());
@@ -3157,16 +3325,9 @@ export default function TripDetailPage() {
         };
     };
     const isTripClosedByAdmin = Boolean(doData.tripClosedByAdminAt);
-    const hasEditableShipperReference = shipperReferenceDisplayList.some(reference =>
-        getSuratJalanOperationalStatus(reference.referenceKey).status !== 'DELIVERED'
-    );
-    const selectedShipperReferenceDraftStatus = selectedShipperReferenceDraft
-        ? getSuratJalanOperationalStatus(selectedShipperReferenceDraft.referenceKey).status
-        : '';
     const isDeliveryOrderItemEditable = (item: Pick<DeliveryOrderItem, '_id' | 'shipperReferenceKey'>) =>
         Boolean(editableCargoItemMap[item._id]) &&
-        !isTripClosedByAdmin &&
-        getSuratJalanOperationalStatus(item.shipperReferenceKey).status !== 'DELIVERED';
+        !isTripClosedByAdmin;
     const suratJalanStatusSortWeight: Record<string, number> = {
         CREATED: 0,
         HEADING_TO_PICKUP: 1,
@@ -3482,14 +3643,7 @@ export default function TripDetailPage() {
             partialHoldContinuationItemRefSet.has(item.deliveryOrderItemRef)
         )
     );
-    const shouldDisableAutoInferredActualDropPoints =
-        newStatus === 'DELIVERED' &&
-        partialHoldContinuationItemRefSet.size > 0 &&
-        selectedPartialHoldSuratJalanRefSet.size > 0;
     const selectedActualCargoItemRefs = new Set(selectedActualCargoItems.map(item => item.deliveryOrderItemRef));
-    const selectedActualCargoItemByRef = new Map(
-        selectedActualCargoItems.map(item => [item.deliveryOrderItemRef, item])
-    );
     const selectedActualDropPoints = actualDropPoints.filter(drop => {
         const hasDropTarget =
             Boolean(drop.deliveryOrderItemRef) ||
@@ -3501,65 +3655,36 @@ export default function TripDetailPage() {
             (showAdvancedDropEditor && !hasDropTarget)
         );
     });
+    const expandActualDropPointAllocations = (drop: ActualDropDraft, cargoItems: ActualCargoDraft[]) =>
+        cargoItems
+            .map(cargoItem => {
+                const allocation = getActualDropAllocationForItem(drop, cargoItem);
+                const values = pickActualDropItemValues(allocation);
+                if (!hasActualDropItemValues(values)) {
+                    return null;
+                }
+                const isVisibleItem = drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef;
+                return {
+                    ...drop,
+                    ...values,
+                    draftKey: isVisibleItem
+                        ? drop.draftKey
+                        : `${drop.draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${cargoItem.deliveryOrderItemRef}`,
+                    deliveryOrderItemRef: cargoItem.deliveryOrderItemRef,
+                    shipperReferenceKey: cargoItem.shipperReferenceKey || drop.shipperReferenceKey,
+                    shipperReferenceNumber: cargoItem.shipperReferenceNumber || drop.shipperReferenceNumber,
+                };
+            })
+            .filter((drop): drop is ActualDropDraft => Boolean(drop));
     const selectedWorkingActualDropPoints = (() => {
         if (!showAdvancedDropEditor) {
             return selectedActualDropPoints;
         }
 
-        const visibleDropValueKeys = new Set(
-            selectedActualDropPoints
-                .filter(drop => drop.deliveryOrderItemRef.trim())
-                .map(drop => buildActualDropItemValueKey(drop.draftKey, drop.deliveryOrderItemRef))
-                .filter(Boolean)
+        return selectedActualDropPoints.flatMap(drop =>
+            expandActualDropPointAllocations(drop, selectedActualCargoItems)
         );
-        const cachedDropPoints = Object.entries(actualDropItemValueMap)
-            .map(([valueKey, cachedValues]) => {
-                const parsedKey = parseActualDropItemValueKey(valueKey);
-                if (!parsedKey || visibleDropValueKeys.has(valueKey)) {
-                    return null;
-                }
-                const sourceDrop = actualDropPoints.find(drop => drop.draftKey === parsedKey.draftKey);
-                const cargoItem = selectedActualCargoItemByRef.get(parsedKey.deliveryOrderItemRef);
-                if (!sourceDrop || !cargoItem || !selectedActualCargoItemRefs.has(parsedKey.deliveryOrderItemRef)) {
-                    return null;
-                }
-                return {
-                    ...sourceDrop,
-                    ...cachedValues,
-                    draftKey: `${sourceDrop.draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${parsedKey.deliveryOrderItemRef}`,
-                    deliveryOrderItemRef: parsedKey.deliveryOrderItemRef,
-                    shipperReferenceKey: cargoItem.shipperReferenceKey || sourceDrop.shipperReferenceKey,
-                    shipperReferenceNumber: cargoItem.shipperReferenceNumber || sourceDrop.shipperReferenceNumber,
-                };
-            })
-            .filter((drop): drop is ActualDropDraft => Boolean(drop));
-
-        return [...cachedDropPoints, ...selectedActualDropPoints];
     })();
-    const getActualCargoItemWeightKg = (item: ActualCargoDraft) => convertWeightToKg(
-        parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
-        }),
-        item.actualWeightInputUnit
-    );
-    const getActualCargoItemVolumeM3 = (item: ActualCargoDraft) => convertVolumeToM3(
-        parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-        }),
-        item.actualVolumeInputUnit
-    );
-    const getActualDropWeightKg = (drop: ActualDropDraft) => convertWeightToKg(
-        parseFormattedNumberish(drop.weightInputValue || 0, {
-            maxFractionDigits: drop.weightInputUnit === 'TON' ? 3 : 2,
-        }),
-        drop.weightInputUnit
-    );
-    const getActualDropVolumeM3 = (drop: ActualDropDraft) => convertVolumeToM3(
-        parseFormattedNumberish(drop.volumeInputValue || 0, {
-            maxFractionDigits: drop.volumeInputUnit === 'LITER' ? 0 : 3,
-        }),
-        drop.volumeInputUnit
-    );
     const getActualCargoSuratJalanGroupKey = (item: ActualCargoDraft) => {
         const referenceKey = item.shipperReferenceKey.trim();
         const referenceNumber = item.shipperReferenceNumber.trim().toUpperCase();
@@ -3585,69 +3710,45 @@ export default function TripDetailPage() {
         }
         return 'primary';
     };
-    const selectedDeliveryRatioBySuratJalan = selectedWorkingActualDropPoints
-        .filter(drop => isDeliveryOrderBillableDropType(drop.stopType) && drop.deliveryOrderItemRef.trim())
-        .reduce<Map<string, {
-            qtyRatio: number;
-            weightRatio: number;
-            volumeRatio: number;
-        }>>((groups, drop) => {
-            const cargoItem = selectedActualCargoItemByRef.get(drop.deliveryOrderItemRef);
-            if (!cargoItem) {
-                return groups;
-            }
-            const groupKey = getActualCargoSuratJalanGroupKey(cargoItem);
-            const baseQtyKoli = parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 });
-            const baseWeightKg = getActualCargoItemWeightKg(cargoItem);
-            const baseVolumeM3 = getActualCargoItemVolumeM3(cargoItem);
-            groups.set(groupKey, {
-                qtyRatio: baseQtyKoli > 0
-                    ? parseFormattedNumberish(drop.qtyKoli || 0, { maxFractionDigits: 2 }) / baseQtyKoli
-                    : 1,
-                weightRatio: baseWeightKg > 0 ? getActualDropWeightKg(drop) / baseWeightKg : 1,
-                volumeRatio: baseVolumeM3 > 0 ? getActualDropVolumeM3(drop) / baseVolumeM3 : 1,
-            });
-            return groups;
-        }, new Map());
-    const selectedAutoDerivedActualCargoItems = selectedActualCargoItems.map(item => {
+    const selectedEffectiveActualDropPoints = (() => {
         if (!showAdvancedDropEditor) {
-            return item;
+            return selectedActualDropPoints;
         }
-
-        const itemSpecificDrops = selectedWorkingActualDropPoints.filter(drop => drop.deliveryOrderItemRef === item.deliveryOrderItemRef);
-        const billableItemDrops = itemSpecificDrops.filter(drop => isDeliveryOrderBillableDropType(drop.stopType));
-        const nonBillableItemDrops = itemSpecificDrops.filter(drop => !isDeliveryOrderBillableDropType(drop.stopType));
-
-        const groupRatio = selectedDeliveryRatioBySuratJalan.get(getActualCargoSuratJalanGroupKey(item));
-        if (groupRatio) {
-            const actualQtyKoli = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }) * groupRatio.qtyRatio;
-            const actualWeightKg = getActualCargoItemWeightKg(item) * groupRatio.weightRatio;
-            const actualVolumeM3 = getActualCargoItemVolumeM3(item) * groupRatio.volumeRatio;
-            return {
-                ...item,
-                actualQtyKoli: actualQtyKoli > 0 ? String(actualQtyKoli) : '',
-                actualWeightInputValue: actualWeightKg > 0 ? String(convertKgToWeightInputValue(actualWeightKg, item.actualWeightInputUnit)) : '',
-                actualVolumeInputValue: actualVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(actualVolumeM3, item.actualVolumeInputUnit)) : '',
-            };
+        return selectedWorkingActualDropPoints;
+    })();
+    const selectedBillableEffectiveActualDropPoints = selectedEffectiveActualDropPoints.filter(point =>
+        isDeliveryOrderBillableDropType(point.stopType)
+    );
+    const selectedDerivedActualCargoItems = selectedActualCargoItems.map(item => {
+        const manualValues = actualCargoItemValueMap[item.deliveryOrderItemRef];
+        if (!showAdvancedDropEditor) {
+            return manualValues ? { ...item, ...manualValues } : item;
         }
-
-        if (billableItemDrops.length === 0 && nonBillableItemDrops.length === 0) {
-            return item;
-        }
-
-        const actualQtyKoli = billableItemDrops.reduce(
-            (sum, drop) => sum + parseFormattedNumberish(drop.qtyKoli || 0, { maxFractionDigits: 2 }),
+        const itemBillableDrops = selectedBillableEffectiveActualDropPoints.filter(point =>
+            point.deliveryOrderItemRef === item.deliveryOrderItemRef
+        );
+        const actualQtyKoli = itemBillableDrops.reduce(
+            (sum, point) => sum + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
             0
         );
-        const actualWeightKg = billableItemDrops.reduce(
-            (sum, drop) => sum + getActualDropWeightKg(drop),
+        const actualWeightKg = itemBillableDrops.reduce(
+            (sum, point) => sum + convertWeightToKg(
+                parseFormattedNumberish(point.weightInputValue || 0, {
+                    maxFractionDigits: point.weightInputUnit === 'TON' ? 3 : 2,
+                }),
+                point.weightInputUnit
+            ),
             0
         );
-        const actualVolumeM3 = billableItemDrops.reduce(
-            (sum, drop) => sum + getActualDropVolumeM3(drop),
+        const actualVolumeM3 = itemBillableDrops.reduce(
+            (sum, point) => sum + convertVolumeToM3(
+                parseFormattedNumberish(point.volumeInputValue || 0, {
+                    maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                point.volumeInputUnit
+            ),
             0
         );
-
         return {
             ...item,
             actualQtyKoli: actualQtyKoli > 0 ? String(actualQtyKoli) : '',
@@ -3655,53 +3756,6 @@ export default function TripDetailPage() {
             actualVolumeInputValue: actualVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(actualVolumeM3, item.actualVolumeInputUnit)) : '',
         };
     });
-    const selectedDerivedActualCargoItems = selectedAutoDerivedActualCargoItems.map(item => {
-        const manualValues = actualCargoItemValueMap[item.deliveryOrderItemRef];
-        return manualValues ? { ...item, ...manualValues } : item;
-    });
-    const selectedEffectiveActualDropPoints = (() => {
-        if (!showAdvancedDropEditor) {
-            return selectedActualDropPoints;
-        }
-        if (shouldDisableAutoInferredActualDropPoints) {
-            return selectedWorkingActualDropPoints;
-        }
-
-        const explicitItemRefs = new Set(
-            selectedWorkingActualDropPoints
-                .map(drop => drop.deliveryOrderItemRef.trim())
-                .filter(Boolean)
-        );
-        const fallbackBillableDrop = selectedWorkingActualDropPoints.find(drop => isDeliveryOrderBillableDropType(drop.stopType));
-        const inferredDropPoints = selectedDerivedActualCargoItems
-            .filter(item => !explicitItemRefs.has(item.deliveryOrderItemRef))
-            .filter(item =>
-                parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }) > 0 ||
-                parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
-                }) > 0 ||
-                parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                }) > 0
-            )
-            .map((item): ActualDropDraft => ({
-                draftKey: `auto-drop-${item.deliveryOrderItemRef}`,
-                stopType: 'DROP',
-                deliveryOrderItemRef: item.deliveryOrderItemRef,
-                shipperReferenceKey: item.shipperReferenceKey,
-                shipperReferenceNumber: item.shipperReferenceNumber,
-                locationName: fallbackBillableDrop?.locationName || doData.receiverCompany || doData.receiverName || 'Tujuan Invoice',
-                locationAddress: fallbackBillableDrop?.locationAddress || doData.receiverAddress || '',
-                qtyKoli: item.actualQtyKoli,
-                weightInputValue: item.actualWeightInputValue,
-                weightInputUnit: item.actualWeightInputUnit,
-                volumeInputValue: item.actualVolumeInputValue,
-                volumeInputUnit: item.actualVolumeInputUnit,
-                note: 'Auto dari item SJ tanpa titik khusus',
-            }));
-
-        return [...selectedWorkingActualDropPoints, ...inferredDropPoints];
-    })();
     const selectedActualCargoTotals = selectedDerivedActualCargoItems.reduce((sum, item) => ({
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
@@ -3717,9 +3771,6 @@ export default function TripDetailPage() {
             item.actualVolumeInputUnit
         ),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-    const selectedBillableEffectiveActualDropPoints = selectedEffectiveActualDropPoints.filter(point =>
-        isDeliveryOrderBillableDropType(point.stopType)
-    );
     const selectedActualDropTotals = selectedBillableEffectiveActualDropPoints.reduce((sum, point) => ({
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
@@ -3796,6 +3847,99 @@ export default function TripDetailPage() {
         return groups;
     }, new Map());
     const selectedDerivedActualCargoGroups = Array.from(selectedDerivedActualCargoGroupMap.values());
+    const selectedDerivedActualCargoTabItems = selectedDerivedActualCargoGroups.flatMap(group =>
+        group.items.map(item => ({
+            ...item,
+            groupLabel: group.label,
+        }))
+    );
+    const getActualDropAllocationSummaryRows = (drop: ActualDropDraft) =>
+        selectedActualCargoItems
+            .map(cargoItem => {
+                const allocation = getActualDropAllocationForItem(drop, cargoItem);
+                const allocatedSummary = {
+                    qtyKoli: parseFormattedNumberish(allocation.qtyKoli || 0, { maxFractionDigits: 2 }),
+                    weightKg: convertWeightToKg(
+                        parseFormattedNumberish(allocation.weightInputValue || 0, {
+                            maxFractionDigits: allocation.weightInputUnit === 'TON' ? 3 : 2,
+                        }),
+                        allocation.weightInputUnit
+                    ),
+                    volumeM3: convertVolumeToM3(
+                        parseFormattedNumberish(allocation.volumeInputValue || 0, {
+                            maxFractionDigits: allocation.volumeInputUnit === 'LITER' ? 0 : 3,
+                        }),
+                        allocation.volumeInputUnit
+                    ),
+                };
+                const totalSummary = {
+                    qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+                    weightKg: convertWeightToKg(
+                        parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
+                            maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
+                        }),
+                        cargoItem.actualWeightInputUnit
+                    ),
+                    volumeM3: convertVolumeToM3(
+                        parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
+                            maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                        }),
+                        cargoItem.actualVolumeInputUnit
+                    ),
+                };
+                return {
+                    key: cargoItem.deliveryOrderItemRef,
+                    label: cargoItem.description || 'Barang',
+                    allocatedSummary,
+                    totalSummary,
+                    hasAllocation: allocatedSummary.qtyKoli > 0 || allocatedSummary.weightKg > 0 || allocatedSummary.volumeM3 > 0,
+                };
+            })
+            .filter(row => row.hasAllocation);
+    const activeFinalizationCargoItem =
+        selectedDerivedActualCargoTabItems.find(item => item.deliveryOrderItemRef === activeFinalizationCargoItemRef)
+        || selectedDerivedActualCargoTabItems[0]
+        || null;
+    const activeFinalizationDrop = activeFinalizationDropKey
+        ? selectedActualDropPoints.find(drop => drop.draftKey === activeFinalizationDropKey) || null
+        : null;
+    const activeFinalizationDropAllocation =
+        activeFinalizationDrop && activeFinalizationCargoItem
+            ? getActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem)
+            : null;
+    const selectedActualCargoReady = selectedDerivedActualCargoItems.length > 0 && selectedDerivedActualCargoItems.every(item => {
+        const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
+        const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+        });
+        const volume = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
+        return (
+            (!item.requireQty || qty > 0) &&
+            (!item.requireWeight || weight > 0) &&
+            (!item.requireVolume || volume > 0) &&
+            ((item.requireQty && qty > 0) || weight > 0 || volume > 0)
+        );
+    });
+    const selectedActualDropReady =
+        !selectedActualDropMismatchMessage &&
+        !selectedActualDropAmbiguityMessage &&
+        selectedEffectiveActualDropPoints.length > 0 &&
+        selectedEffectiveActualDropPoints.every(item => {
+            const qty = parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 });
+            const weight = parseFormattedNumberish(item.weightInputValue || 0, {
+                maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+            });
+            const volume = parseFormattedNumberish(item.volumeInputValue || 0, {
+                maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+            });
+            return Boolean(item.locationName.trim() || item.locationAddress.trim()) && (qty > 0 || weight > 0 || volume > 0);
+        });
+    const selectedActualDropSetupReady =
+        selectedActualDropPoints.length > 0 &&
+        selectedActualDropPoints.every(item => Boolean(item.locationName.trim() || item.locationAddress.trim())) &&
+        !selectedActualDropAmbiguityMessage;
     const selectedDropOutcomeSummary = [
         selectedBillableDropCount > 0 ? `${selectedBillableDropCount} drop invoice` : null,
         selectedHoldDropCount > 0 ? `${selectedHoldDropCount} hold` : null,
@@ -4262,7 +4406,7 @@ export default function TripDetailPage() {
                                                 background: 'var(--color-gray-50)',
                                             }}>
                                                 {(() => {
-                                                    const { document, status: documentOperationalStatus, meta: documentStatusMeta } = getSuratJalanOperationalStatus(reference.referenceKey);
+                                                    const { document, meta: documentStatusMeta } = getSuratJalanOperationalStatus(reference.referenceKey);
                                                     return (
                                                         <>
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -4281,7 +4425,7 @@ export default function TripDetailPage() {
                                                                     <span className={`badge badge-${documentStatusMeta.color}`}>
                                                                         <span className="badge-dot" /> {documentStatusMeta.label}
                                                                     </span>
-                                                                    {canEditShipperReference && documentOperationalStatus !== 'DELIVERED' && !isTripClosedByAdmin && (
+                                                                    {canEditShipperReference && !isTripClosedByAdmin && (
                                                                         <button
                                                                             type="button"
                                                                             className="btn btn-ghost btn-sm"
@@ -5443,11 +5587,9 @@ export default function TripDetailPage() {
                                                     {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
                                                 </button>
                                             </div>
-                                            {selectedActualDropLocationMissing && (
-                                                <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
-                                                    Tujuan final titik drop wajib diisi dari master customer atau manual.
-                                                </div>
-                                            )}
+                                            <div style={{ background: 'var(--color-info-light)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
+                                                Pilih dulu barang batch SJ ini turun ke mana. Kalau semua selesai di satu tujuan, sistem otomatis pakai <strong>{selectedAutoActualDropDraft.locationName || 'Tujuan Invoice'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
+                                            </div>
                                             {selectedActualDropMismatchMessage && (
                                                 <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
                                                     {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
@@ -5529,16 +5671,55 @@ export default function TripDetailPage() {
                                                                 const selectedItemRef = resolveActualDropItemValue(item);
                                                                 const selectedCargoItem = actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef);
                                                                 const lockedDropWeight = shouldLockActualDropWeight(selectedCargoItem);
+                                                                const allocationSummaryRows = getActualDropAllocationSummaryRows(item);
                                                                 const recipientOptions = getActualDropRecipientOptions(item);
                                                                 const selectedRecipientId = resolveActualDropRecipientValue(item);
                                                                 return (
                                                             <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                                                                    <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
-                                                                    {selectedActualDropPoints.length > 1 && (
-                                                                        <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
-                                                                            Hapus
+                                                                    <div>
+                                                                        <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
+                                                                        <div className="text-muted text-sm">Barang untuk titik ini diatur dari tombol ini.</div>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="btn btn-primary btn-sm"
+                                                                            onClick={() => {
+                                                                                setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(item, selectedDerivedActualCargoTabItems));
+                                                                                setActiveFinalizationDropKey(item.draftKey);
+                                                                                setShowStatusModal(false);
+                                                                                setShowActualCargoFinalizationModal(true);
+                                                                            }}
+                                                                            disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || !podName.trim() || !podDate || !(item.locationName.trim() || item.locationAddress.trim())}
+                                                                        >
+                                                                            Tentukan Barang
                                                                         </button>
+                                                                        {selectedActualDropPoints.length > 1 && (
+                                                                            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
+                                                                                Hapus
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.7rem 0.8rem', background: 'var(--color-white)', marginBottom: '0.75rem' }}>
+                                                                    <div className="text-muted text-sm" style={{ marginBottom: '0.45rem' }}>
+                                                                        Alokasi {DO_ACTUAL_DROP_TYPE_MAP[item.stopType]?.label || item.stopType}
+                                                                    </div>
+                                                                    {allocationSummaryRows.length > 0 ? (
+                                                                        <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                                                            {allocationSummaryRows.map(row => (
+                                                                                <div key={row.key} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8rem' }}>
+                                                                                    <div style={{ fontWeight: 600 }}>{row.label}</div>
+                                                                                    <div style={{ display: 'grid', gap: '0.15rem', color: 'var(--color-gray-700)' }}>
+                                                                                        <div>Dialokasikan: {formatCargoSummary(row.allocatedSummary)}</div>
+                                                                                        <div>Total barang: {formatCargoSummary(row.totalSummary)}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-muted text-sm">Belum ada barang dialokasikan.</div>
                                                                     )}
                                                                 </div>
                                                                 <div className="form-row">
@@ -5603,35 +5784,6 @@ export default function TripDetailPage() {
                                                                     </div>
                                                                 </div>
                                                                 <div className="form-group">
-                                                                    <label className="form-label">Barang di SJ</label>
-                                                                    <select
-                                                                        className="form-select"
-                                                                        value={selectedItemRef}
-                                                                        onChange={e => applyActualDropItem(item.draftKey, e.target.value)}
-                                                                        disabled={updatingStatus || itemOptions.length === 0}
-                                                                    >
-                                                                        {itemOptions.length === 0 && <option value="">Tidak ada barang di SJ ini</option>}
-                                                                        {itemOptions.map(cargoItem => (
-                                                                            <option key={cargoItem.deliveryOrderItemRef} value={cargoItem.deliveryOrderItemRef}>
-                                                                                {cargoItem.description} - {formatCargoSummary({
-                                                                                    qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
-                                                                                    weightInputValue: parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                                                                                        maxFractionDigits: cargoItem.actualWeightInputUnit === 'TON' ? 3 : 2,
-                                                                                    }),
-                                                                                    weightInputUnit: cargoItem.actualWeightInputUnit,
-                                                                                    volumeInputValue: parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
-                                                                                        maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                                                                                    }),
-                                                                                    volumeInputUnit: cargoItem.actualVolumeInputUnit,
-                                                                                })}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                                                        {selectedItemRef ? `Barang dipakai di baris ini: ${getActualDropCargoSummary(item)}. Perubahan qty, berat, dan volume disimpan di modal sampai finalisasi disimpan.` : 'Belum ada barang yang bisa dialokasikan untuk titik ini.'}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="form-group">
                                                                     <label className="form-label">Alamat Lokasi</label>
                                                                     <input
                                                                         className="form-input"
@@ -5640,77 +5792,6 @@ export default function TripDetailPage() {
                                                                         disabled={updatingStatus}
                                                                         placeholder="Opsional, isi jika berbeda dari tujuan invoice"
                                                                     />
-                                                                </div>
-                                                                <div className="form-row">
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Qty Drop</label>
-                                                                        <FormattedNumberInput
-                                                                            min={0}
-                                                                            maxFractionDigits={2}
-                                                                            value={parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 })}
-                                                                            onValueChange={value => updateActualDropDraft(item.draftKey, 'qtyKoli', String(value))}
-                                                                            disabled={updatingStatus}
-                                                                        />
-                                                                    </div>
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Berat Drop</label>
-                                                                        {lockedDropWeight ? (
-                                                                            <div className="form-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--color-gray-100)', color: 'var(--color-gray-900)' }}>
-                                                                                {formatWeightDisplay({
-                                                                                    weightInputValue: item.weightInputValue,
-                                                                                    weightInputUnit: item.weightInputUnit,
-                                                                                })}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                                <FormattedNumberInput
-                                                                                    min={0}
-                                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                                                    value={parseFormattedNumberish(item.weightInputValue || 0, {
-                                                                                        maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
-                                                                                    })}
-                                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
-                                                                                    disabled={updatingStatus}
-                                                                                />
-                                                                                <select
-                                                                                    className="form-select"
-                                                                                    value={item.weightInputUnit}
-                                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
-                                                                                    disabled={updatingStatus}
-                                                                                >
-                                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="form-row">
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Volume Drop</label>
-                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                        <FormattedNumberInput
-                                                                            min={0}
-                                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                                            value={parseFormattedNumberish(item.volumeInputValue || 0, {
-                                                                                maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
-                                                                            })}
-                                                                            onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
-                                                                            disabled={updatingStatus}
-                                                                            />
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={item.volumeInputUnit}
-                                                                                onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputUnit', e.target.value)}
-                                                                                disabled={updatingStatus}
-                                                                            >
-                                                                                {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                    </div>
                                                                 </div>
                                                                 <div className="form-group">
                                                                     <label className="form-label">Catatan Titik Drop</label>
@@ -5732,109 +5813,8 @@ export default function TripDetailPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="form-group">
-                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '1rem', padding: '1rem', background: 'var(--color-white)' }}>
-                                            <div style={{ marginBottom: '0.75rem' }}>
-                                                <div className="text-muted text-sm" style={{ marginBottom: '0.2rem' }}>Langkah 2</div>
-                                                <label className="form-label" style={{ marginBottom: 0 }}>Review Muatan Aktual per Item <span className="required">*</span></label>
-                                            </div>
-                                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                                Setelah titik drop ditentukan, muatan aktual per item dihitung otomatis dari titik Drop / Extra Drop. Baris Hold / Transit / Retur tidak masuk angka terkirim agar bisa dilanjutkan lagi nanti.
-                                            </div>
-                                            <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                                {(selectedDerivedActualCargoGroups.length > 0
-                                                    ? selectedDerivedActualCargoGroups
-                                                    : [{ key: 'selected-items', label: 'Surat Jalan', items: selectedDerivedActualCargoItems }]
-                                                ).map(group => (
-                                                    <div key={group.key} style={{ display: 'grid', gap: '0.75rem' }}>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{group.label}</div>
-                                                        {group.items.map(item => (
-                                                            <div key={item.deliveryOrderItemRef} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
-                                                                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>{item.description}</div>
-                                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                                                                    Rencana Trip (estimasi): {formatCargoSummary({
-                                                                        qtyKoli: item.plannedQtyKoli,
-                                                                        weightKg: item.plannedWeightKg,
-                                                                        weightInputValue: item.plannedWeightInputValue,
-                                                                        weightInputUnit: item.plannedWeightInputUnit,
-                                                                        volumeM3: item.plannedVolumeM3,
-                                                                        volumeInputValue: item.plannedVolumeInputValue,
-                                                                        volumeInputUnit: item.plannedVolumeInputUnit,
-                                                                    })}
-                                                                </div>
-                                                                {!item.requireQty && (
-                                                                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                                                                        Item ini tidak memakai basis koli. Isi realisasi berat dan/atau volume aktual lapangan.
-                                                                    </div>
-                                                                )}
-                                                                <div className="form-row">
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Koli Aktual {item.requireQty && <span className="required">*</span>}</label>
-                                                                        <FormattedNumberInput
-                                                                            min={0}
-                                                                            maxFractionDigits={2}
-                                                                           value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
-                                                                           onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
-                                                                            disabled={updatingStatus || !item.requireQty}
-                                                                        />
-                                                                    </div>
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
-                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                            <FormattedNumberInput
-                                                                                min={0}
-                                                                                maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
-                                                                                value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                                                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
-                                                                                })}
-                                                                                onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                                                disabled={updatingStatus}
-                                                                            />
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={item.actualWeightInputUnit}
-                                                                                onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
-                                                                                disabled={updatingStatus}
-                                                                            >
-                                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="form-row">
-                                                                    <div className="form-group">
-                                                                        <label className="form-label">Volume Aktual {item.requireVolume && <span className="required">*</span>}</label>
-                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                            <FormattedNumberInput
-                                                                                min={0}
-                                                                                maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                                                value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                                                                                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                                                                                })}
-                                                                                onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
-                                                                                disabled={updatingStatus}
-                                                                            />
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={item.actualVolumeInputUnit}
-                                                                                onChange={e => updateActualCargoVolumeUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualVolumeInputUnit'])}
-                                                                                disabled={updatingStatus}
-                                                                            >
-                                                                                {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
-                                                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                    <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                        Langkah berikutnya akan membuka modal aktual barang. Setiap item dibuka sebagai tab supaya koreksi per barang tetap fokus.
                                     </div>
                                 </>
                             )}
@@ -5845,9 +5825,266 @@ export default function TripDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>Batal</button>
-                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || (isCompletingDelivery && (!podName.trim() || !podDate || selectedActualDropLocationMissing || Boolean(selectedActualDropMismatchMessage) || Boolean(selectedActualDropAmbiguityMessage)))}>
-                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve Batch SJ' : (isCompletingDelivery ? 'Finalkan Batch SJ' : 'Simpan Batch SJ'))}
+                            {isCompletingDelivery ? (
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(selectedAutoActualDropDraft, selectedDerivedActualCargoTabItems));
+                                        setActiveFinalizationDropKey('');
+                                        setShowStatusModal(false);
+                                        setShowActualCargoFinalizationModal(true);
+                                    }}
+                                    disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || !podName.trim() || !podDate || !selectedActualDropSetupReady}
+                                >
+                                    Lanjut Aktual Barang
+                                </button>
+                            ) : (
+                                <button className="btn btn-primary" onClick={updateDOStatus} disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0}>
+                                    <Save size={16} /> {updatingStatus ? 'Menyimpan...' : 'Simpan Batch SJ'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showActualCargoFinalizationModal && (
+                <div className="modal-overlay" onClick={() => { if (!updatingStatus) setShowActualCargoFinalizationModal(false); }}>
+                    <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">
+                                    {activeFinalizationDrop ? 'Tentukan Barang Titik Drop' : (reviewingDriverRequest ? 'Review Aktual Barang SJ' : 'Aktual Barang SJ')}
+                                </h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                    {activeFinalizationDrop ? 'Alokasi titik drop' : 'Langkah 2 dari 2'} | {selectedDerivedActualCargoTabItems.length} item dalam batch SJ
+                                    {activeFinalizationDrop ? ` | ${activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'Titik Drop'}` : ''}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={() => setShowActualCargoFinalizationModal(false)} disabled={updatingStatus}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">{activeFinalizationDrop ? 'Muatan aktual saat ini' : 'Muatan terkirim'}</div>
+                                    <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                        {formatCargoSummary(selectedActualCargoTotals)}
+                                    </div>
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Realisasi drop</div>
+                                    <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>{selectedDropModeLabel}</div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>{selectedDropOutcomeSummary}</div>
+                                </div>
+                            </div>
+
+                            {!activeFinalizationDrop && selectedActualDropMismatchMessage && (
+                                <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
+                                    {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
+                                </div>
+                            )}
+
+                            {!activeFinalizationDrop && !selectedActualCargoReady && (
+                                <div style={{ background: 'var(--color-warning-soft)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-warning-dark)' }}>
+                                    Lengkapi aktual barang yang bertanda wajib sebelum finalisasi SJ disimpan.
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '0.35rem', overflowX: 'auto', borderBottom: '1px solid var(--color-gray-200)', marginBottom: '1rem', paddingBottom: '0.35rem' }}>
+                                {selectedDerivedActualCargoTabItems.map((item, index) => {
+                                    const isActive = activeFinalizationCargoItem?.deliveryOrderItemRef === item.deliveryOrderItemRef;
+                                    return (
+                                        <button
+                                            key={item.deliveryOrderItemRef}
+                                            type="button"
+                                            className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => setActiveFinalizationCargoItemRef(item.deliveryOrderItemRef)}
+                                            disabled={updatingStatus}
+                                            title={`${item.groupLabel} | ${item.description}`}
+                                            style={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Item {index + 1}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {activeFinalizationCargoItem ? (
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                    {(() => {
+                                        return (
+                                            <>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                        <div>
+                                            <div className="text-muted text-sm">{activeFinalizationCargoItem.groupLabel}</div>
+                                            <div style={{ fontWeight: 700, marginTop: '0.2rem' }}>{activeFinalizationCargoItem.description}</div>
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            Rencana: {formatCargoSummary({
+                                                qtyKoli: activeFinalizationCargoItem.plannedQtyKoli,
+                                                weightKg: activeFinalizationCargoItem.plannedWeightKg,
+                                                weightInputValue: activeFinalizationCargoItem.plannedWeightInputValue,
+                                                weightInputUnit: activeFinalizationCargoItem.plannedWeightInputUnit,
+                                                volumeM3: activeFinalizationCargoItem.plannedVolumeM3,
+                                                volumeInputValue: activeFinalizationCargoItem.plannedVolumeInputValue,
+                                                volumeInputUnit: activeFinalizationCargoItem.plannedVolumeInputUnit,
+                                            })}
+                                        </div>
+                                    </div>
+                                    {!activeFinalizationCargoItem.requireQty && (
+                                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                                            Item ini tidak memakai basis koli. Isi realisasi berat dan/atau volume aktual lapangan.
+                                        </div>
+                                    )}
+                                    {activeFinalizationDrop && (
+                                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.85rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                            Isi alokasi barang untuk titik <strong>{activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'ini'}</strong>. Nilai ini hanya rencana pembagian DROP, HOLD, RETURN, atau TRANSIT dan masih bisa diubah pada langkah Aktual Barang.
+                                        </div>
+                                    )}
+                                    {activeFinalizationDrop && (
+                                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.85rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                            Data aktual final tetap diisi terpisah setelah pembagian titik drop selesai.
+                                        </div>
+                                    )}
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">{activeFinalizationDrop ? 'Koli Alokasi' : 'Koli Aktual'} {activeFinalizationCargoItem.requireQty && <span className="required">*</span>}</label>
+                                            <FormattedNumberInput
+                                                min={0}
+                                                maxFractionDigits={2}
+                                                value={parseFormattedNumberish((activeFinalizationDropAllocation?.qtyKoli ?? activeFinalizationCargoItem.actualQtyKoli) || 0, { maxFractionDigits: 2 })}
+                                                onValueChange={value => {
+                                                    if (activeFinalizationDrop) {
+                                                        updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'qtyKoli', String(value));
+                                                        return;
+                                                    }
+                                                    updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualQtyKoli', String(value));
+                                                }}
+                                                disabled={updatingStatus || !activeFinalizationCargoItem.requireQty}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">{activeFinalizationDrop ? 'Berat Alokasi' : 'Berat Aktual'} {activeFinalizationCargoItem.requireWeight && <span className="required">*</span>}</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit) === 'TON' ? 3 : 2}
+                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0, {
+                                                        maxFractionDigits: (activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit) === 'TON' ? 3 : 2,
+                                                    })}
+                                                    onValueChange={value => {
+                                                        if (activeFinalizationDrop) {
+                                                            updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'weightInputValue', String(value));
+                                                            return;
+                                                        }
+                                                        updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualWeightInputValue', String(value));
+                                                    }}
+                                                    disabled={updatingStatus}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit}
+                                                    onChange={e => {
+                                                        if (activeFinalizationDrop) {
+                                                            updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'weightInputUnit', e.target.value);
+                                                            return;
+                                                        }
+                                                        updateActualCargoWeightUnit(activeFinalizationCargoItem.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit']);
+                                                    }}
+                                                    disabled={updatingStatus}
+                                                >
+                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">{activeFinalizationDrop ? 'Volume Alokasi' : 'Volume Aktual'} {activeFinalizationCargoItem.requireVolume && <span className="required">*</span>}</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={(activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3}
+                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue) || 0, {
+                                                        maxFractionDigits: (activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3,
+                                                    })}
+                                                    onValueChange={value => {
+                                                        if (activeFinalizationDrop) {
+                                                            updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'volumeInputValue', String(value));
+                                                            return;
+                                                        }
+                                                        updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualVolumeInputValue', String(value));
+                                                    }}
+                                                    disabled={updatingStatus}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit}
+                                                    onChange={e => {
+                                                        if (activeFinalizationDrop) {
+                                                            updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'volumeInputUnit', e.target.value);
+                                                            return;
+                                                        }
+                                                        updateActualCargoVolumeUnit(activeFinalizationCargoItem.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualVolumeInputUnit']);
+                                                    }}
+                                                    disabled={updatingStatus}
+                                                >
+                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            ) : (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Belum ada item barang dalam batch SJ ini</div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    setShowActualCargoFinalizationModal(false);
+                                    setShowStatusModal(true);
+                                }}
+                                disabled={updatingStatus}
+                            >
+                                Kembali ke Titik Drop
                             </button>
+                            {activeFinalizationDrop ? (
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        if (activeFinalizationDrop) {
+                                            persistActualDropAllocationsForItems(
+                                                activeFinalizationDrop,
+                                                selectedDerivedActualCargoTabItems
+                                            );
+                                        }
+                                        setShowActualCargoFinalizationModal(false);
+                                        setShowStatusModal(true);
+                                    }}
+                                    disabled={updatingStatus}
+                                >
+                                    Simpan Alokasi Barang
+                                </button>
+                            ) : (
+                                <button
+                                    className="btn btn-success"
+                                    onClick={updateDOStatus}
+                                    disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || !podName.trim() || !podDate || !selectedActualDropReady || !selectedActualCargoReady}
+                                >
+                                    <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve Batch SJ' : 'Finalkan Batch SJ')}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -5905,7 +6142,7 @@ export default function TripDetailPage() {
                                             <option
                                                 key={entry.draftKey}
                                                 value={entry.draftKey}
-                                                disabled={getSuratJalanOperationalStatus(entry.referenceKey).status === 'DELIVERED'}
+                                                disabled={false}
                                             >
                                                 {entry.referenceNumber || `SJ ${index + 1}`}{getSuratJalanOperationalStatus(entry.referenceKey).status === 'DELIVERED' ? ' (Delivered)' : ''}
                                             </option>
@@ -6162,14 +6399,14 @@ export default function TripDetailPage() {
                                                                         maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                         value={item.weightInputValue}
                                                                         onValueChange={value => updateSelectedExistingShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                                        disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
+                                                                        disabled={savingShipperReference}
                                                                     />
                                                                     <select
                                                                         className="form-select"
                                                                         value={item.weightInputUnit}
                                                                         onChange={e => updateSelectedExistingShipperReferenceItemWeightUnit(itemIndex, e.target.value as DeliveryOrderCargoDraftItem['weightInputUnit'])}
                                                                         style={{ width: 92 }}
-                                                                        disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
+                                                                        disabled={savingShipperReference}
                                                                     >
                                                                         {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                     </select>
@@ -6276,14 +6513,14 @@ export default function TripDetailPage() {
                                                             maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                             value={item.weightInputValue}
                                                             onValueChange={value => updateSelectedShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                            disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
+                                                            disabled={savingShipperReference}
                                                         />
                                                         <select
                                                             className="form-select"
                                                             value={item.weightInputUnit}
                                                             onChange={e => updateSelectedShipperReferenceItemWeightUnit(itemIndex, e.target.value as DeliveryOrderCargoDraftItem['weightInputUnit'])}
                                                             style={{ width: 92 }}
-                                                            disabled={savingShipperReference || shouldLockOrderItemWeight(item)}
+                                                            disabled={savingShipperReference}
                                                         >
                                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                         </select>
@@ -6325,10 +6562,56 @@ export default function TripDetailPage() {
                                 disabled={
                                     savingShipperReference
                                     || shipperReferenceDrafts.every(entry => !entry.referenceNumber.trim())
-                                    || (!isCreatingNewShipperReference && (!selectedShipperReferenceDraft || selectedShipperReferenceDraftStatus === 'DELIVERED'))
+                                    || (!isCreatingNewShipperReference && !selectedShipperReferenceDraft)
                                 }
                             >
                                 <Save size={16} /> {savingShipperReference ? 'Menyimpan...' : (isCreatingNewShipperReference ? 'Buat SJ' : 'Simpan')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pendingTripClosure !== null && (
+                <div className="modal-overlay" onClick={() => {
+                    if (!togglingTripClosure) {
+                        setPendingTripClosure(null);
+                    }
+                }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">
+                                {pendingTripClosure ? 'Tutup Trip' : 'Buka Kembali Trip'}
+                            </h3>
+                            <button
+                                className="modal-close"
+                                onClick={() => setPendingTripClosure(null)}
+                                disabled={togglingTripClosure}
+                            >
+                                &times;
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="text-muted text-sm">
+                                {pendingTripClosure
+                                    ? 'Setelah trip ditutup admin, tambah SJ dan edit muatan SJ akan dikunci sampai trip dibuka kembali.'
+                                    : 'Setelah trip dibuka kembali, admin bisa menambah SJ baru dan mengubah muatan SJ lagi.'}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setPendingTripClosure(null)}
+                                disabled={togglingTripClosure}
+                            >
+                                Batal
+                            </button>
+                            <button
+                                className={pendingTripClosure ? 'btn btn-danger' : 'btn btn-primary'}
+                                onClick={() => void confirmTripClosure()}
+                                disabled={togglingTripClosure}
+                            >
+                                {togglingTripClosure ? 'Menyimpan...' : (pendingTripClosure ? 'Tutup Trip' : 'Buka Kembali')}
                             </button>
                         </div>
                     </div>
@@ -6551,7 +6834,7 @@ export default function TripDetailPage() {
                                                                     maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                    disabled={savingCargo || shouldLockOrderItemWeight(item)}
+                                                                    disabled={savingCargo}
                                                                 />
                                                                 <select
                                                                     className="form-select"
@@ -6573,7 +6856,7 @@ export default function TripDetailPage() {
                                                                             : entry
                                                                     )))}
                                                                     style={{ width: 92 }}
-                                                                    disabled={savingCargo || shouldLockOrderItemWeight(item)}
+                                                                    disabled={savingCargo}
                                                                 >
                                                                     {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                 </select>
