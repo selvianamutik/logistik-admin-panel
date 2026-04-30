@@ -175,17 +175,10 @@ function buildAutoFinalizeBatchRawDropPoints(
         }
 
         const isSelected = selectedSuratJalanRefs.has(suratJalanRef);
-        const targetName =
-            matchedReference?.receiverCompany?.trim()
-            || matchedReference?.receiverName?.trim()
-            || matchedReference?.receiverAddress?.trim()
-            || deliveryOrder.receiverCompany?.trim()
-            || deliveryOrder.receiverName?.trim()
-            || 'Tujuan Invoice';
-        const targetAddress =
-            matchedReference?.receiverAddress?.trim()
-            || deliveryOrder.receiverAddress?.trim()
-            || '';
+        const targetName = matchedReference?.referenceNumber
+            ? `Tujuan final ${matchedReference.referenceNumber}`
+            : 'Tujuan Invoice';
+        const targetAddress = '';
 
         return [{
             stopType: isSelected ? 'DROP' : 'HOLD',

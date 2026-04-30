@@ -529,43 +529,10 @@ function getActualDropAmbiguityMessage(
     return null;
 }
 
-function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
-    const shipperTargets = Array.from(new Set(
-        (doData?.shipperReferences || [])
-            .map(reference => ({
-                locationName:
-                    reference.receiverCompany?.trim()
-                    || reference.receiverName?.trim()
-                    || reference.receiverAddress?.trim()
-                    || '',
-                locationAddress: reference.receiverAddress?.trim() || '',
-            }))
-            .filter(target => target.locationName || target.locationAddress)
-            .map(target => `${target.locationName}::${target.locationAddress}`)
-    )).map(entry => {
-        const [locationName = '', locationAddress = ''] = entry.split('::');
-        return { locationName, locationAddress };
-    });
-
-    if (shipperTargets.length === 1) {
-        return {
-            locationName: shipperTargets[0].locationName || 'Tujuan Invoice',
-            locationAddress: shipperTargets[0].locationAddress || '',
-            distinctTargetCount: 1,
-        };
-    }
-
-    if (shipperTargets.length > 1) {
-        return {
-            locationName: `${shipperTargets.length} tujuan SJ`,
-            locationAddress: '',
-            distinctTargetCount: shipperTargets.length,
-        };
-    }
-
+function resolveDefaultActualDropTarget() {
     return {
-        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Invoice',
-        locationAddress: doData?.receiverAddress || '',
+        locationName: '',
+        locationAddress: '',
         distinctTargetCount: 0,
     };
 }
@@ -601,7 +568,7 @@ export function buildDefaultActualDropDrafts(
         }));
     }
 
-    const defaultTarget = resolveDefaultActualDropTarget(doData);
+    const defaultTarget = resolveDefaultActualDropTarget();
     const shipperReferences = doData?.shipperReferences || [];
     const buildDraftFromCargoItems = (
         items: ActualCargoDraft[],
@@ -632,18 +599,12 @@ export function buildDefaultActualDropDrafts(
     };
 
     if (shipperReferences.length > 1) {
-        return shipperReferences.map((reference, index) => {
+        return shipperReferences.map(reference => {
             const referenceCargoItems = getActualCargoDraftsForDrop({
                 shipperReferenceKey: reference._key || '',
                 shipperReferenceNumber: reference.referenceNumber || '',
             }, cargoItems);
-            const locationName =
-                reference.receiverCompany?.trim()
-                || reference.receiverName?.trim()
-                || reference.receiverAddress?.trim()
-                || `Tujuan SJ ${index + 1}`;
-            const locationAddress = reference.receiverAddress || '';
-            return buildDraftFromCargoItems(referenceCargoItems, locationName, locationAddress, {
+            return buildDraftFromCargoItems(referenceCargoItems, '', '', {
                 key: reference._key || '',
                 number: reference.referenceNumber || '',
             });
@@ -660,7 +621,7 @@ export function buildDefaultActualDropDrafts(
 
 export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft {
     const totals = summarizeActualCargoDrafts(cargoItems);
-    const defaultTarget = resolveDefaultActualDropTarget(doData);
+    const defaultTarget = resolveDefaultActualDropTarget();
     const singleShipperReference = doData?.shipperReferences?.length === 1 ? doData.shipperReferences[0] : null;
     return {
         draftKey: 'auto-default-drop',
@@ -680,7 +641,7 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
 }
 
 export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropDrafts: ActualDropDraft[]) {
-    const defaultTarget = resolveDefaultActualDropTarget(doData);
+    const defaultTarget = resolveDefaultActualDropTarget();
 
     if (defaultTarget.distinctTargetCount > 1) {
         return true;
@@ -812,7 +773,23 @@ export function buildDeliveryOrderDetailState(params: {
 }): DeliveryOrderDetailState {
     const { doData, actualCargoItems, actualDropPoints, showAdvancedDropEditor } = params;
     const actualCargoTotals = summarizeActualCargoDrafts(actualCargoItems);
-    const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
+    const defaultAutoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
+    const manualAutoDropDraft = !showAdvancedDropEditor && actualDropPoints.length === 1
+        ? actualDropPoints[0]
+        : null;
+    const autoActualDropDraft = manualAutoDropDraft
+        ? {
+            ...defaultAutoActualDropDraft,
+            draftKey: manualAutoDropDraft.draftKey || defaultAutoActualDropDraft.draftKey,
+            stopType: manualAutoDropDraft.stopType || defaultAutoActualDropDraft.stopType,
+            deliveryOrderItemRef: manualAutoDropDraft.deliveryOrderItemRef || defaultAutoActualDropDraft.deliveryOrderItemRef,
+            shipperReferenceKey: manualAutoDropDraft.shipperReferenceKey || defaultAutoActualDropDraft.shipperReferenceKey,
+            shipperReferenceNumber: manualAutoDropDraft.shipperReferenceNumber || defaultAutoActualDropDraft.shipperReferenceNumber,
+            locationName: manualAutoDropDraft.locationName,
+            locationAddress: manualAutoDropDraft.locationAddress,
+            note: manualAutoDropDraft.note || defaultAutoActualDropDraft.note,
+        }
+        : defaultAutoActualDropDraft;
     const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
     const actualDropTotals = summarizeActualDropDrafts(effectiveActualDropPoints);
     const actualCargoReady = actualCargoItems.every(item => {
@@ -883,11 +860,11 @@ export function buildDeliveryOrderPrintHtml(
 ) {
     const receiverSummary = formatShipperReceiverSummary(doData, {
         mode: 'summary',
-        fallback: doData.receiverCompany || doData.receiverName || doData.receiverAddress || '-',
+        fallback: '-',
     });
     const receiverFullSummary = formatShipperReceiverSummary(doData, {
         mode: 'full',
-        fallback: doData.receiverAddress || doData.receiverCompany || doData.receiverName || '-',
+        fallback: '-',
     });
 
     return `
@@ -965,8 +942,8 @@ export function buildDeliveryOrderPrintHtml(
                     <tr>
                         <td>${reference.referenceNumber || '-'}</td>
                         <td>${reference.billingCustomerName || doData.customerName || '-'}</td>
-                        <td>${reference.receiverCompany || reference.receiverName || doData.receiverCompany || doData.receiverName || '-'}</td>
-                        <td>${reference.receiverAddress || doData.receiverAddress || '-'}</td>
+                        <td>${reference.receiverCompany || reference.receiverName || '-'}</td>
+                        <td>${reference.receiverAddress || '-'}</td>
                     </tr>
                 `).join('')}
             </tbody>

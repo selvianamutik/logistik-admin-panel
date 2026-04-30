@@ -796,23 +796,13 @@ export function normalizeDeliveryDropType(value: unknown, label = 'Tipe titik dr
     return normalized as DeliveryActualDropType;
 }
 
-export function buildDefaultActualDropPoint(
-    deliveryOrder: {
-        receiverName?: string;
-        receiverCompany?: string;
-        receiverAddress?: string;
-    },
-    totals: ActualCargoTotals
-): NormalizedDeliveryActualDropPoint {
+export function buildDefaultActualDropPoint(totals: ActualCargoTotals): NormalizedDeliveryActualDropPoint {
     return {
         _key: crypto.randomUUID(),
         sequence: 1,
         stopType: 'DROP',
-        locationName:
-            normalizeOptionalText(deliveryOrder.receiverCompany) ||
-            normalizeOptionalText(deliveryOrder.receiverName) ||
-            'Tujuan Invoice',
-        locationAddress: normalizeOptionalText(deliveryOrder.receiverAddress),
+        locationName: 'Tujuan Invoice',
+        locationAddress: '',
         qtyKoli: totals.qtyKoli > 0 ? totals.qtyKoli : undefined,
         weightKg: totals.weightKg > 0 ? totals.weightKg : undefined,
         weightInputValue: totals.weightKg > 0 ? convertKgToWeightInputValue(totals.weightKg, 'KG') : undefined,
@@ -845,7 +835,7 @@ export function normalizeDeliveryActualDropPoints(
     const knownDeliveryOrderItemRefs = new Set(actualCargoByDoItemId.keys());
 
     if (rawDropPoints.length === 0) {
-        return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
+        return [buildDefaultActualDropPoint(actualTotals)];
     }
 
     const normalized: NormalizedDeliveryActualDropPoint[] = [];
@@ -968,7 +958,7 @@ export function normalizeDeliveryActualDropPoints(
     });
 
     if (normalized.length === 0) {
-        return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
+        return [buildDefaultActualDropPoint(actualTotals)];
     }
 
     const aggregated = normalized

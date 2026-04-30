@@ -359,7 +359,6 @@ export default function TripDetailPage() {
     const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
     const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
     const [showShipperReferenceModal, setShowShipperReferenceModal] = useState(false);
-    const [showTargetModal, setShowTargetModal] = useState(false);
     const [showCargoModal, setShowCargoModal] = useState(false);
     const [showTripCashIssueModal, setShowTripCashIssueModal] = useState(false);
     const [showTripCashTopUpModal, setShowTripCashTopUpModal] = useState(false);
@@ -404,7 +403,6 @@ export default function TripDetailPage() {
     const [loadingTripResources, setLoadingTripResources] = useState(false);
     const [savingTripResources, setSavingTripResources] = useState(false);
     const [savingShipperReference, setSavingShipperReference] = useState(false);
-    const [savingTarget, setSavingTarget] = useState(false);
     const [savingCargo, setSavingCargo] = useState(false);
     const [togglingTripClosure, setTogglingTripClosure] = useState(false);
     const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
@@ -439,11 +437,6 @@ export default function TripDetailPage() {
     const [shipperReferenceExistingItemDraftMap, setShipperReferenceExistingItemDraftMap] = useState<Record<string, ExistingShipperReferenceItemDraft[]>>({});
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [cargoDraftGroups, setCargoDraftGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
-    const [targetReceiverName, setTargetReceiverName] = useState('');
-    const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
-    const [targetReceiverAddress, setTargetReceiverAddress] = useState('');
-    const [targetReceiverCompany, setTargetReceiverCompany] = useState('');
-    const [selectedTargetRecipientId, setSelectedTargetRecipientId] = useState('');
     const [tripCashIssueForm, setTripCashIssueForm] = useState<TripCashIssueFormState>(createDefaultTripCashIssueForm);
     const [tripCashTopUpForm, setTripCashTopUpForm] = useState(createDefaultDriverVoucherTopUpForm);
     const [tripCashExpenseForm, setTripCashExpenseForm] = useState(createDefaultDriverVoucherItemForm);
@@ -463,7 +456,6 @@ export default function TripDetailPage() {
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canEditDeliveryCargo = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
-    const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
     const canManageTripCashCosts = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
@@ -486,7 +478,6 @@ export default function TripDetailPage() {
         showRejectRequestModal ||
         showTripResourcesModal ||
         showShipperReferenceModal ||
-        showTargetModal ||
         showCargoModal ||
         showTripCashIssueModal ||
         showTripCashTopUpModal ||
@@ -907,18 +898,13 @@ export default function TripDetailPage() {
                 referenceKey: '',
                 referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                 pickupStopKey: '',
-                selectedRecipientId: resolveMatchingRecipientId(doData?.customerRef, {
-                    receiverName: doData?.receiverName,
-                    receiverPhone: doData?.receiverPhone,
-                    receiverCompany: doData?.receiverCompany,
-                    receiverAddress: doData?.receiverAddress,
-                }),
+                selectedRecipientId: '',
                 billingCustomerRef: doData?.customerRef || '',
                 billingCustomerName: doData?.customerName || '',
-                receiverName: doData?.receiverName || '',
-                receiverPhone: doData?.receiverPhone || '',
-                receiverAddress: doData?.receiverAddress || '',
-                receiverCompany: doData?.receiverCompany || '',
+                receiverName: '',
+                receiverPhone: '',
+                receiverAddress: '',
+                receiverCompany: '',
             }];
         const initialDrafts = mode === 'create'
             ? [
@@ -928,18 +914,13 @@ export default function TripDetailPage() {
                     referenceKey: '',
                     referenceNumber: '',
                     pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
-                    selectedRecipientId: resolveMatchingRecipientId(doData?.customerRef, {
-                        receiverName: doData?.receiverName,
-                        receiverPhone: doData?.receiverPhone,
-                        receiverCompany: doData?.receiverCompany,
-                        receiverAddress: doData?.receiverAddress,
-                    }),
+                    selectedRecipientId: '',
                     billingCustomerRef: doData?.customerRef || '',
                     billingCustomerName: doData?.customerName || '',
-                    receiverName: doData?.receiverName || '',
-                    receiverPhone: doData?.receiverPhone || '',
-                    receiverAddress: doData?.receiverAddress || '',
-                    receiverCompany: doData?.receiverCompany || '',
+                    receiverName: '',
+                    receiverPhone: '',
+                    receiverAddress: '',
+                    receiverCompany: '',
                 },
             ]
             : baseDrafts;
@@ -1007,18 +988,13 @@ export default function TripDetailPage() {
                 referenceKey: '',
                 referenceNumber: '',
                 pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
-                selectedRecipientId: resolveMatchingRecipientId(doData?.customerRef, {
-                    receiverName: doData?.receiverName,
-                    receiverPhone: doData?.receiverPhone,
-                    receiverCompany: doData?.receiverCompany,
-                    receiverAddress: doData?.receiverAddress,
-                }),
+                selectedRecipientId: '',
                 billingCustomerRef: doData?.customerRef || '',
                 billingCustomerName: doData?.customerName || '',
-                receiverName: doData?.receiverName || '',
-                receiverPhone: doData?.receiverPhone || '',
-                receiverAddress: doData?.receiverAddress || '',
-                receiverCompany: doData?.receiverCompany || '',
+                receiverName: '',
+                receiverPhone: '',
+                receiverAddress: '',
+                receiverCompany: '',
             }];
         setShipperReferenceDrafts(resolvedDrafts);
         setSelectedShipperReferenceDraftKey(current => (
@@ -1272,16 +1248,6 @@ export default function TripDetailPage() {
         return matchedRecipient?._id || '';
     };
 
-    const applyTargetRecipient = (recipientId: string) => {
-        const recipient = customerRecipients.find(item => item._id === recipientId);
-        if (!recipient) return;
-        setSelectedTargetRecipientId(recipientId);
-        setTargetReceiverName(recipient.receiverName || '');
-        setTargetReceiverPhone(recipient.receiverPhone || '');
-        setTargetReceiverCompany(recipient.receiverCompany || '');
-        setTargetReceiverAddress(recipient.receiverAddress || '');
-    };
-
     const applyShipperReferenceRecipient = (draftKey: string, recipientId: string) => {
         const recipient = customerRecipients.find(item => item._id === recipientId);
         if (!recipient) return;
@@ -1292,21 +1258,6 @@ export default function TripDetailPage() {
             receiverCompany: recipient.receiverCompany || '',
             receiverAddress: recipient.receiverAddress || '',
         });
-    };
-
-    const openTargetModal = () => {
-        if (!canEditDeliveryTarget) return;
-        setSelectedTargetRecipientId(resolveMatchingRecipientId(doData?.customerRef, {
-            receiverName: doData?.receiverName,
-            receiverPhone: doData?.receiverPhone,
-            receiverCompany: doData?.receiverCompany,
-            receiverAddress: doData?.receiverAddress,
-        }));
-        setTargetReceiverName(doData?.receiverName || '');
-        setTargetReceiverPhone(doData?.receiverPhone || '');
-        setTargetReceiverAddress(doData?.receiverAddress || '');
-        setTargetReceiverCompany(doData?.receiverCompany || '');
-        setShowTargetModal(true);
     };
 
     const getDefaultCargoDraftPickupKey = () => (
@@ -1690,42 +1641,6 @@ export default function TripDetailPage() {
             addToast('error', 'Gagal menolak permintaan driver');
         } finally {
             setRejectingRequest(false);
-        }
-    };
-
-    const saveDeliveryTarget = async () => {
-        if (!canEditDeliveryTarget || !doData?._id) return;
-        setSavingTarget(true);
-        try {
-            const res = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    entity: 'delivery-orders',
-                    action: 'update',
-                    data: {
-                        id: doData._id,
-                        updates: {
-                            receiverName: targetReceiverName,
-                            receiverPhone: targetReceiverPhone,
-                            receiverAddress: targetReceiverAddress,
-                            receiverCompany: targetReceiverCompany,
-                        },
-                    },
-                }),
-            });
-            const result = await res.json();
-            if (!res.ok) {
-                addToast('error', result.error || 'Gagal menyimpan tujuan surat jalan');
-                return;
-            }
-            setShowTargetModal(false);
-            await refreshTripDetail();
-            addToast('success', 'Tujuan surat jalan berhasil diperbarui');
-        } catch {
-            addToast('error', 'Gagal menyimpan tujuan surat jalan');
-        } finally {
-            setSavingTarget(false);
         }
     };
 
@@ -3326,6 +3241,47 @@ export default function TripDetailPage() {
             );
         });
     };
+    const getActualDropRecipientOptions = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+    ) => {
+        const selectedReferenceValue = resolveActualDropShipperReferenceValue(drop);
+        const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
+        return getCustomerRecipientOptions(selectedReference?.billingCustomerRef || doData?.customerRef);
+    };
+    const resolveActualDropRecipientValue = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress'>
+    ) => {
+        const recipientOptions = getActualDropRecipientOptions(drop);
+        if (recipientOptions.length === 0) {
+            return '';
+        }
+        const dropLocationName = normalizeRecipientComparable(drop.locationName);
+        const dropLocationAddress = normalizeRecipientComparable(drop.locationAddress);
+        return recipientOptions.find(recipient => {
+            const recipientName = normalizeRecipientComparable(recipient.receiverCompany || recipient.receiverName || recipient.label);
+            const recipientAddress = normalizeRecipientComparable(recipient.receiverAddress);
+            return Boolean(
+                (dropLocationAddress && recipientAddress === dropLocationAddress) ||
+                (dropLocationName && recipientName === dropLocationName)
+            );
+        })?._id || '';
+    };
+    const applyActualDropRecipient = (draftKey: string, recipientId: string) => {
+        const recipient = customerRecipients.find(item => item._id === recipientId);
+        if (!recipient) {
+            return;
+        }
+        const locationName = recipient.receiverCompany || recipient.receiverName || recipient.label;
+        setActualDropPoints(previous => previous.map(item => (
+            item.draftKey === draftKey
+                ? {
+                    ...item,
+                    locationName,
+                    locationAddress: recipient.receiverAddress || item.locationAddress,
+                }
+                : item
+        )));
+    };
     const resolveActualDropItemValue = (
         drop: Pick<ActualDropDraft, 'deliveryOrderItemRef'>
     ) => drop.deliveryOrderItemRef ? drop.deliveryOrderItemRef : '';
@@ -3802,6 +3758,9 @@ export default function TripDetailPage() {
     const selectedBillableDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
     const selectedHoldDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
     const selectedReturnDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
+    const selectedActualDropLocationMissing = selectedEffectiveActualDropPoints.some(point =>
+        !point.locationName.trim() && !point.locationAddress.trim()
+    );
     const selectedDropModeLabel = showAdvancedDropEditor ? `${selectedEffectiveActualDropPoints.length} titik aktual` : 'Trip normal / 1 tujuan';
     const selectedSuratJalanLabelMap = new Map(
         selectedStatusSuratJalanDocuments.flatMap(document => {
@@ -3997,11 +3956,6 @@ export default function TripDetailPage() {
                             {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
                                 <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
                                     <Truck size={14} /> Edit Trip / Armada
-                                </button>
-                            )}
-                            {canEditDeliveryTarget && (
-                                <button className="btn btn-secondary btn-sm" onClick={openTargetModal}>
-                                    <MapPin size={14} /> Edit Tujuan
                                 </button>
                             )}
                             {canAppendCargoToDo && (
@@ -4372,32 +4326,20 @@ export default function TripDetailPage() {
                     </div>
                 </div>
 
-                <div className="card">
-                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                        <span className="card-header-title">Tujuan / Penerima Default Trip</span>
-                        {!canShowTripManager && canEditDeliveryTarget && (
-                            <button className="btn btn-secondary btn-sm" onClick={openTargetModal}>
-                                <Edit size={14} /> Edit Tujuan
-                            </button>
-                        )}
-                    </div>
-                    <div className="card-body">
-                        <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
-                        <div className="detail-item mt-2"><div className="detail-label">Telepon</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
-                        <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{doData.receiverAddress || '-'}</div></div>
-                        {doData.receiverCompany && <div className="detail-item mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{doData.receiverCompany}</div></div>}
-                    </div>
-                    {doData.podReceiverName && (
-                        <div className="card-body" style={{ borderTop: '1px solid var(--color-gray-100)', background: 'var(--color-success-light)' }}>
-                            <div className="form-section-title" style={{ color: 'var(--color-success)' }}>Proof of Delivery (POD)</div>
+                {doData.podReceiverName && (
+                    <div className="card">
+                        <div className="card-header">
+                            <span className="card-header-title">Proof of Delivery (POD)</span>
+                        </div>
+                        <div className="card-body" style={{ background: 'var(--color-success-light)' }}>
                             <div className="detail-row">
                                 <div className="detail-item"><div className="detail-label">Diterima Oleh</div><div className="detail-value">{doData.podReceiverName}</div></div>
                                 <div className="detail-item"><div className="detail-label">Tanggal Terima</div><div className="detail-value">{formatDate(doData.podReceivedDate)}</div></div>
                             </div>
                             {doData.podNote && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.podNote}</div></div>}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
@@ -5501,9 +5443,11 @@ export default function TripDetailPage() {
                                                     {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
                                                 </button>
                                             </div>
-                                            <div style={{ background: 'var(--color-info-light)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
-                                                Pilih dulu barang batch SJ ini turun ke mana. Kalau semua selesai di satu tujuan, sistem otomatis pakai <strong>{selectedAutoActualDropDraft.locationName || 'Tujuan Invoice'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
-                                            </div>
+                                            {selectedActualDropLocationMissing && (
+                                                <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
+                                                    Tujuan final titik drop wajib diisi dari master customer atau manual.
+                                                </div>
+                                            )}
                                             {selectedActualDropMismatchMessage && (
                                                 <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
                                                     {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
@@ -5515,15 +5459,58 @@ export default function TripDetailPage() {
                                                 </div>
                                             )}
                                             {!showAdvancedDropEditor ? (
-                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>
-                                                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
-                                                        <div>Lokasi: {selectedAutoActualDropDraft.locationName || 'Tujuan Invoice'}</div>
-                                                        {selectedAutoActualDropDraft.locationAddress && <div>Alamat: {selectedAutoActualDropDraft.locationAddress}</div>}
-                                                        <div>Barang: {summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(selectedAutoActualDropDraft, selectedActualCargoItems))}</div>
-                                                        <div>Muatan: {formatCargoSummary({ qtyKoli: selectedActualCargoTotals.qtyKoli, weightKg: selectedActualCargoTotals.weightKg, volumeM3: selectedActualCargoTotals.volumeM3 })}</div>
-                                                    </div>
-                                                </div>
+                                                (() => {
+                                                    const recipientOptions = getActualDropRecipientOptions(selectedAutoActualDropDraft);
+                                                    const selectedRecipientId = resolveActualDropRecipientValue(selectedAutoActualDropDraft);
+                                                    return (
+                                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                                            {recipientOptions.length > 0 && (
+                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                    <label className="form-label">Tujuan dari Master Customer</label>
+                                                                    <select
+                                                                        className="form-select"
+                                                                        value={selectedRecipientId}
+                                                                        onChange={event => applyActualDropRecipient(selectedAutoActualDropDraft.draftKey, event.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                    >
+                                                                        <option value="">Pilih tujuan final...</option>
+                                                                        {recipientOptions.map(recipient => (
+                                                                            <option key={recipient._id} value={recipient._id}>
+                                                                                {formatCustomerRecipientLabel(recipient)}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            )}
+                                                            <div className="form-row">
+                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                    <label className="form-label">Nama Lokasi Drop <span className="required">*</span></label>
+                                                                    <input
+                                                                        className="form-input"
+                                                                        value={selectedAutoActualDropDraft.locationName}
+                                                                        onChange={event => updateActualDropDraft(selectedAutoActualDropDraft.draftKey, 'locationName', event.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                        placeholder="Mis. Gudang Customer Surabaya"
+                                                                    />
+                                                                </div>
+                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                    <label className="form-label">Alamat Drop</label>
+                                                                    <input
+                                                                        className="form-input"
+                                                                        value={selectedAutoActualDropDraft.locationAddress}
+                                                                        onChange={event => updateActualDropDraft(selectedAutoActualDropDraft.draftKey, 'locationAddress', event.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                        placeholder="Opsional"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
+                                                                <div>Barang: {summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(selectedAutoActualDropDraft, selectedActualCargoItems))}</div>
+                                                                <div>Muatan: {formatCargoSummary({ qtyKoli: selectedActualCargoTotals.qtyKoli, weightKg: selectedActualCargoTotals.weightKg, volumeM3: selectedActualCargoTotals.volumeM3 })}</div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()
                                             ) : (
                                                 <>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
@@ -5542,6 +5529,8 @@ export default function TripDetailPage() {
                                                                 const selectedItemRef = resolveActualDropItemValue(item);
                                                                 const selectedCargoItem = actualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === item.deliveryOrderItemRef);
                                                                 const lockedDropWeight = shouldLockActualDropWeight(selectedCargoItem);
+                                                                const recipientOptions = getActualDropRecipientOptions(item);
+                                                                const selectedRecipientId = resolveActualDropRecipientValue(item);
                                                                 return (
                                                             <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
@@ -5584,6 +5573,24 @@ export default function TripDetailPage() {
                                                                             ))}
                                                                         </select>
                                                                     </div>
+                                                                    {recipientOptions.length > 0 && (
+                                                                        <div className="form-group">
+                                                                            <label className="form-label">Tujuan Master Customer</label>
+                                                                            <select
+                                                                                className="form-select"
+                                                                                value={selectedRecipientId}
+                                                                                onChange={e => applyActualDropRecipient(item.draftKey, e.target.value)}
+                                                                                disabled={updatingStatus}
+                                                                            >
+                                                                                <option value="">Pilih tujuan final...</option>
+                                                                                {recipientOptions.map(recipient => (
+                                                                                    <option key={recipient._id} value={recipient._id}>
+                                                                                        {formatCustomerRecipientLabel(recipient)}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
+                                                                    )}
                                                                     <div className="form-group">
                                                                         <label className="form-label">Nama Lokasi <span className="required">*</span></label>
                                                                         <input
@@ -5838,7 +5845,7 @@ export default function TripDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>Batal</button>
-                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || (isCompletingDelivery && (!podName.trim() || !podDate))}>
+                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || (isCompletingDelivery && (!podName.trim() || !podDate || selectedActualDropLocationMissing || Boolean(selectedActualDropMismatchMessage) || Boolean(selectedActualDropAmbiguityMessage)))}>
                                 <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve Batch SJ' : (isCompletingDelivery ? 'Finalkan Batch SJ' : 'Simpan Batch SJ'))}
                             </button>
                         </div>
@@ -5870,61 +5877,6 @@ export default function TripDetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>Batal</button>
                             <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
                                 <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showTargetModal && (
-                <div className="modal-overlay" onClick={() => { if (!savingTarget) setShowTargetModal(false); }}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3 className="modal-title">Edit Tujuan / Penerima Trip</h3>
-                            <button className="modal-close" onClick={() => setShowTargetModal(false)} disabled={savingTarget}>&times;</button>
-                        </div>
-                        <div className="modal-body">
-                            {getCustomerRecipientOptions(doData?.customerRef).length > 0 && (
-                                <div className="form-group">
-                                    <label className="form-label">Ambil dari Master Tujuan</label>
-                                    <select
-                                        className="form-select"
-                                        value={selectedTargetRecipientId}
-                                        onChange={event => applyTargetRecipient(event.target.value)}
-                                        disabled={savingTarget}
-                                    >
-                                        <option value="">Pilih tujuan customer...</option>
-                                        {getCustomerRecipientOptions(doData?.customerRef).map(recipient => (
-                                            <option key={recipient._id} value={recipient._id}>
-                                                {formatCustomerRecipientLabel(recipient)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Nama Penerima / PIC</label>
-                                    <input className="form-input" value={targetReceiverName} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverName(e.target.value); }} disabled={savingTarget} />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Telepon</label>
-                                    <input className="form-input" value={targetReceiverPhone} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverPhone(e.target.value); }} disabled={savingTarget} />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Perusahaan</label>
-                                <input className="form-input" value={targetReceiverCompany} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverCompany(e.target.value); }} disabled={savingTarget} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Alamat Tujuan</label>
-                                <textarea className="form-textarea" rows={3} value={targetReceiverAddress} onChange={e => { setSelectedTargetRecipientId(''); setTargetReceiverAddress(e.target.value); }} disabled={savingTarget} placeholder="Boleh dikosongkan jika tujuan final belum turun" />
-                            </div>
-                        </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowTargetModal(false)} disabled={savingTarget}>Batal</button>
-                            <button className="btn btn-primary" onClick={saveDeliveryTarget} disabled={savingTarget}>
-                                <Save size={16} /> {savingTarget ? 'Menyimpan...' : 'Simpan Tujuan'}
                             </button>
                         </div>
                     </div>
