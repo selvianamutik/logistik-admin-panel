@@ -97,6 +97,20 @@ function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, delivery
     );
 }
 
+async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string; _type?: unknown; orderRef?: unknown; date?: unknown }) {
+    const existingTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    if (!existingTripRecord) {
+        const completeDeliveryOrder =
+            deliveryOrder._type === 'deliveryOrder' && typeof deliveryOrder.orderRef === 'string' && typeof deliveryOrder.date === 'string'
+                ? deliveryOrder as DeliveryOrder
+                : await getDocumentById<DeliveryOrder>(deliveryOrder._id, 'deliveryOrder');
+        if (!completeDeliveryOrder) {
+            throw new Error('Trip tidak ditemukan');
+        }
+        await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+    }
+}
+
 function buildAutoFinalizeBatchRawDropPoints(
     deliveryOrderId: string,
     deliveryOrder: {
@@ -2846,6 +2860,8 @@ export async function handleDeliveryOrderContinueHeldCargo(
     const timestamp = new Date().toISOString();
 
     try {
+        await ensureTripRecordForSuratJalanWrites(deliveryOrder);
+
         await updateDocument(id, {
             status: 'DELIVERED',
             actualDropPoints: nextDropPoints,
@@ -2954,6 +2970,15 @@ export async function handleDeliveryOrderCancelTrip(
             { error: 'Trip yang sudah punya finalisasi/drop aktual tidak bisa dibatalkan. Revisi data finalisasi atau lanjutkan sisa hold dari alur status.' },
             { status: 409 }
         );
+    }
+
+    try {
+        await ensureTripRecordForSuratJalanWrites(deliveryOrder);
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json({ error: 'Data trip berubah karena update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        throw error;
     }
 
     let suratJalanRecords = await listDocumentsByFilter<{
@@ -3137,10 +3162,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             return NextResponse.json({ error: 'Trip ini belum punya surat jalan yang bisa diupdate.' }, { status: 409 });
         }
 
-        const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
-        if (!tripRecord) {
-            await createDocument({ ...mapDeliveryOrderToTripRecord(deliveryOrder) });
-        }
+        await ensureTripRecordForSuratJalanWrites(deliveryOrder);
 
         for (const record of derivedSuratJalanRecords) {
             await createDocument({ ...record });
@@ -3626,6 +3648,8 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     };
 
     try {
+        await ensureTripRecordForSuratJalanWrites(deliveryOrder);
+
         for (const record of targetedRecords) {
             await updateDocument(record._id, {
                 tripStatus: getSuratJalanStatusAfterFinalize(record),
@@ -6175,6 +6199,8 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             }, 'deliveryOrderItem');
         }
         if (addedReferences.length > 0) {
+            await ensureTripRecordForSuratJalanWrites(deliveryOrder);
+
             const nextOperationalStatus =
                 (deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')
                     ? 'ARRIVED'
