@@ -590,7 +590,7 @@ export default function OrderDetailPage() {
                                             pickupStopKey: group.pickupStopKey,
                                             shipperReferenceNumber: group.shipperReferenceNumber,
                                         }, value as number))
-                                        : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockOrderItemWeight(item)
+                                        : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                             ? item
                                         : { ...item, [field]: value }
                                 )
@@ -2794,16 +2794,14 @@ export default function OrderDetailPage() {
                                                                                         ...entry,
                                                                                         items: entry.items.map((groupItem, currentItemIndex) => (
                                                                                             currentItemIndex === itemIndex
-                                                                                                ? shouldLockOrderItemWeight(groupItem)
-                                                                                                    ? { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
-                                                                                                    : updateOrderItemWeightUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as WeightInputUnit)
+                                                                                                ? updateOrderItemWeightUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as WeightInputUnit)
                                                                                                 : { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
                                                                                         )).map(groupItem => toDirectCargoGroupItem(groupItem)),
                                                                                     }
                                                                                     : entry
                                                                             )))}
                                                                             style={{ width: 92 }}
-                                                                            disabled={creatingDO || shouldLockOrderItemWeight(item)}
+                                                                            disabled={creatingDO}
                                                                         >
                                                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                         </select>
