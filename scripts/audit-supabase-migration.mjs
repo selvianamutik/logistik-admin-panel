@@ -495,13 +495,30 @@ if (!String(packageJson.scripts?.['reseed:supabase'] || '').includes('backfill:a
 }
 const resetSupabaseSource = readFileSync(path.join(repoRoot, resetSupabaseFile), 'utf8');
 if (
-  !resetSupabaseSource.includes("PRESERVED_RESEED_TABLES = new Set(['trip_route_rates'])") ||
-  !resetSupabaseSource.includes('Preserving Supabase table during reseed:') ||
-  !resetSupabaseSource.includes('Cleaning removed demo trip route rates only.')
+  !resetSupabaseSource.includes("hasFlag('--preserve-trip-rates')") ||
+  !resetSupabaseSource.includes("preserveTables.add('services')") ||
+  !resetSupabaseSource.includes("preserveTables.add('trip_route_rates')") ||
+  !resetSupabaseSource.includes("hasFlag('--preserve-users')") ||
+  !resetSupabaseSource.includes("preserveTables.add('app_users')") ||
+  !resetSupabaseSource.includes("hasFlag('--all-managed-data')") ||
+  !resetSupabaseSource.includes('source_document_id=is.null')
 ) {
-  fail('Reset Supabase harus preserve trip_route_rates saat reseed dan hanya membersihkan demo trip-rate lama secara spesifik.');
+  fail('Reset Supabase safe workflow harus bisa reset semua data managed, preserve user login, dan preserve layanan/upah trip saat diminta.');
 } else {
-  console.log('- OK   reset:supabase preserves trip_route_rates during reseed');
+  console.log('- OK   reset:supabase supports safe full reset with preserved users and trip rates');
+}
+const safeReseedScript = String(packageJson.scripts?.['reseed:supabase:safe-workflow'] || '');
+const safeSeedScript = String(packageJson.scripts?.['seed:supabase:safe-workflow'] || '');
+if (
+  !safeSeedScript.includes('--skip-doc-types=user,service,tripRouteRate') ||
+  !safeReseedScript.includes('--all-managed-data') ||
+  !safeReseedScript.includes('--preserve-users') ||
+  !safeReseedScript.includes('--preserve-trip-rates') ||
+  !safeReseedScript.includes('backfill:accounting')
+) {
+  fail('Safe Supabase reseed harus skip user/service/tripRouteRate seed, preserve data tersebut saat reset, dan menjalankan backfill accounting.');
+} else {
+  console.log('- OK   safe Supabase reseed preserves login users, services, trip rates, and backfills accounting');
 }
 const seedPath = path.join(repoRoot, 'artifacts/default-supabase-seed.json');
 const seedDocuments = JSON.parse(readFileSync(seedPath, 'utf8'));
