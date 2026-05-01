@@ -501,12 +501,11 @@ export async function normalizeOrderItemsInput(
                         maxFractionDigits: getWeightInputFractionDigits(productWeightUnit),
                     })
                     : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
-            const productQtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 0);
             const productWeightKg = productWeightInputValue > 0
                 ? convertWeightToKg(productWeightInputValue, productWeightUnit)
                 : normalizeNumber(customerProduct.defaultWeight ?? 0);
-            if (productQtyKoli > 0 && productWeightKg > 0 && item.qtyKoli > 0) {
-                const lockedWeightKg = calculateWeightPortion(productWeightKg, productQtyKoli, item.qtyKoli);
+            if (productWeightKg > 0 && item.qtyKoli > 0) {
+                const lockedWeightKg = roundQuantity(productWeightKg * item.qtyKoli);
                 item.weightInputValue = lockedWeightKg > 0
                     ? roundQuantity(convertKgToWeightInputValue(lockedWeightKg, productWeightUnit), getWeightInputFractionDigits(productWeightUnit))
                     : undefined;
@@ -717,7 +716,6 @@ export function normalizeDeliveryOrderActualCargoInputs(
         const actualQtyKoli = roundQuantity(
             normalizeNumber(rawItem?.actualQtyKoli ?? item.actualQtyKoli ?? plannedQtyKoli)
         );
-        const isWeightLockedFromQty = plannedQtyKoli > 0 && plannedWeightKg > 0;
         const parsedWeightInputValue = roundQuantity(normalizeNumber(
             rawItem?.actualWeightInputValue ??
             item.actualWeightInputValue ??
@@ -736,16 +734,10 @@ export function normalizeDeliveryOrderActualCargoInputs(
         , {
             maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
         }), volumeInputUnit === 'LITER' ? 0 : 3);
-        const actualWeightKg = isWeightLockedFromQty
-            ? calculateWeightPortion(plannedWeightKg, plannedQtyKoli, actualQtyKoli)
-            : roundQuantity(convertWeightToKg(parsedWeightInputValue, weightInputUnit));
-        const rawWeightInputValue = isWeightLockedFromQty
-            ? actualWeightKg > 0
-                ? roundQuantity(convertKgToWeightInputValue(actualWeightKg, weightInputUnit), getWeightInputFractionDigits(weightInputUnit))
-                : 0
-            : actualWeightKg > 0
-                ? roundQuantity(convertKgToWeightInputValue(actualWeightKg, weightInputUnit), getWeightInputFractionDigits(weightInputUnit))
-                : parsedWeightInputValue;
+        const actualWeightKg = roundQuantity(convertWeightToKg(parsedWeightInputValue, weightInputUnit));
+        const rawWeightInputValue = actualWeightKg > 0
+            ? roundQuantity(convertKgToWeightInputValue(actualWeightKg, weightInputUnit), getWeightInputFractionDigits(weightInputUnit))
+            : parsedWeightInputValue;
         const actualVolumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
         normalized.set(item._id, {
@@ -885,9 +877,22 @@ export function normalizeDeliveryActualDropPoints(
         const itemSpecificActualCargo = normalizedDeliveryOrderItemRefs.length === 1
             ? actualCargoByDoItemId.get(normalizedDeliveryOrderItemRefs[0])
             : undefined;
-        const weightInputUnit = itemSpecificActualCargo?.actualWeightInputUnit
-            || resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
-        const itemSpecificWeightKg = itemSpecificActualCargo &&
+        const hasExplicitDropWeightInput =
+            rawPoint.weightInputValue !== undefined &&
+            rawPoint.weightInputValue !== null &&
+            (typeof rawPoint.weightInputValue !== 'string' || rawPoint.weightInputValue.trim().length > 0);
+        const hasExplicitDropWeight =
+            hasExplicitDropWeightInput ||
+            (rawPoint.weightKg !== undefined && rawPoint.weightKg !== null);
+        const hasExplicitDropWeightUnit =
+            rawPoint.weightInputUnit !== undefined &&
+            rawPoint.weightInputUnit !== null &&
+            (typeof rawPoint.weightInputUnit !== 'string' || rawPoint.weightInputUnit.trim().length > 0);
+        const weightInputUnit = hasExplicitDropWeightUnit
+            ? resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`)
+            : itemSpecificActualCargo?.actualWeightInputUnit
+                || resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
+        const itemSpecificWeightKg = !hasExplicitDropWeight && itemSpecificActualCargo &&
             itemSpecificActualCargo.actualQtyKoli > 0 &&
             itemSpecificActualCargo.actualWeightKg > 0 &&
             qtyKoli > 0

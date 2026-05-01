@@ -342,6 +342,42 @@ function splitActualCargoForOrderProgress(params: {
     };
 }
 
+function getActualCargoOverPlanMessages(
+    doItems: DeliveryOrderItemCargoSnapshot[],
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>
+) {
+    const messages: string[] = [];
+
+    for (const item of doItems) {
+        const actualCargo = actualCargoByDoItemId.get(item._id);
+        if (!actualCargo) {
+            continue;
+        }
+
+        const label = item.shipperReferenceNumber || item._id;
+        const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+        const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
+        const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
+        const itemMessages: string[] = [];
+
+        if (plannedQtyKoli > 0 && actualCargo.actualQtyKoli - plannedQtyKoli > 0.01) {
+            itemMessages.push(`koli ${plannedQtyKoli} -> ${actualCargo.actualQtyKoli}`);
+        }
+        if (plannedWeight > 0 && actualCargo.actualWeightKg - plannedWeight > 0.01) {
+            itemMessages.push(`berat ${plannedWeight} kg -> ${actualCargo.actualWeightKg} kg`);
+        }
+        if (plannedVolume > 0 && normalizeNumber(actualCargo.actualVolumeM3 ?? 0) - plannedVolume > 0.001) {
+            itemMessages.push(`volume ${plannedVolume} m3 -> ${roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3)} m3`);
+        }
+
+        if (itemMessages.length > 0) {
+            messages.push(`${label}: ${itemMessages.join(', ')}`);
+        }
+    }
+
+    return messages;
+}
+
 function getAmbiguousActualDropMappingMessage(
     actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
     doItems: DeliveryOrderItemCargoSnapshot[]
@@ -2320,6 +2356,16 @@ export async function handleDeliveryOrderStatusUpdate(
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
             }
+            const overPlanMessages = getActualCargoOverPlanMessages(doItems, actualCargoByDoItemId);
+            const finalizationAuditNote = normalizeOptionalText(podNote) || normalizeOptionalText(data.note);
+            if (overPlanMessages.length > 0 && !finalizationAuditNote) {
+                return NextResponse.json(
+                    {
+                        error: `Aktual final melebihi rencana estimasi. Isi catatan finalisasi untuk audit: ${overPlanMessages.join('; ')}`,
+                    },
+                    { status: 400 }
+                );
+            }
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
@@ -2507,18 +2553,6 @@ export async function handleDeliveryOrderStatusUpdate(
                             { status: 400 }
                         );
                     }
-                    const otherReservedQtyKoli = roundQuantity(
-                        Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli - plannedQtyKoli, 0)
-                    );
-                    const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
-                    if (!usesDeliveryOrderOwnedTarget && actualCargo.actualQtyKoli > maxActualQtyKoli) {
-                        return NextResponse.json(
-                            {
-                                error: `Qty aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualQtyKoli} koli). Revisi order/resi dulu jika total barang fisik memang bertambah.`,
-                            },
-                            { status: 409 }
-                        );
-                    }
                 }
                 if (!Number.isFinite(actualCargo.actualWeightKg) || actualCargo.actualWeightKg < 0) {
                     return NextResponse.json(
@@ -2556,35 +2590,6 @@ export async function handleDeliveryOrderStatusUpdate(
                     shipperReferenceNumber: item.shipperReferenceNumber,
                     actualDropPoints,
                 });
-                const otherReservedWeight = roundQuantity(
-                    Math.max(progress.deliveredWeight + progress.assignedWeight - plannedWeight, 0)
-                );
-                if (!usesDeliveryOrderOwnedTarget && progress.totalWeight > 0) {
-                    const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
-                    if (actualWeight - maxActualWeight > 0.00001) {
-                        return NextResponse.json(
-                            {
-                                error: `Berat aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualWeight} kg). Revisi target berat order/resi dulu jika total muatan fisik memang bertambah.`,
-                            },
-                            { status: 409 }
-                        );
-                    }
-                }
-                const otherReservedVolume = roundQuantity(
-                    Math.max(progress.deliveredVolume + progress.assignedVolume - plannedVolume, 0),
-                    3
-                );
-                if (!usesDeliveryOrderOwnedTarget && progress.totalVolume > 0) {
-                    const maxActualVolume = roundQuantity(Math.max(progress.totalVolume - otherReservedVolume, 0), 3);
-                    if (actualVolume - maxActualVolume > 0.00001) {
-                        return NextResponse.json(
-                            {
-                                error: `Volume aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualVolume} m3). Revisi target volume order/resi dulu jika total muatan fisik memang bertambah.`,
-                            },
-                            { status: 409 }
-                        );
-                    }
-                }
                 const nextProgress = {
                     ...progress,
                     assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
@@ -3334,6 +3339,16 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
             }
+            const overPlanMessages = getActualCargoOverPlanMessages(targetedDoItems, actualCargoByDoItemId);
+            const finalizationAuditNote = normalizeOptionalText(podNote) || normalizeOptionalText(data.note);
+            if (overPlanMessages.length > 0 && !finalizationAuditNote) {
+                return NextResponse.json(
+                    {
+                        error: `Aktual final melebihi rencana estimasi. Isi catatan finalisasi untuk audit: ${overPlanMessages.join('; ')}`,
+                    },
+                    { status: 400 }
+                );
+            }
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Muatan aktual batch SJ tidak valid' },
@@ -3491,50 +3506,6 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                 weight: roundQuantity(itemNonBillableCargoForProgress.weightKg),
                 volume: roundQuantity(itemNonBillableCargoForProgress.volumeM3, 3),
             };
-
-            if (!usesDeliveryOrderOwnedTarget && requireQty) {
-                const otherReservedQtyKoli = roundQuantity(
-                    Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli - previousSplit.delivered.qtyKoli - plannedQtyKoli, 0)
-                );
-                const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
-                if (actualQtyKoli > maxActualQtyKoli) {
-                    return NextResponse.json(
-                        {
-                            error: `Qty aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualQtyKoli} koli).`,
-                        },
-                        { status: 409 }
-                    );
-                }
-            }
-            if (!usesDeliveryOrderOwnedTarget && progress.totalWeight > 0) {
-                const otherReservedWeight = roundQuantity(
-                    Math.max(progress.deliveredWeight + progress.assignedWeight - previousSplit.delivered.weight - plannedWeight, 0)
-                );
-                const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
-                if (actualWeight - maxActualWeight > 0.00001) {
-                    return NextResponse.json(
-                        {
-                            error: `Berat aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualWeight} kg).`,
-                        },
-                        { status: 409 }
-                    );
-                }
-            }
-            if (!usesDeliveryOrderOwnedTarget && progress.totalVolume > 0) {
-                const otherReservedVolume = roundQuantity(
-                    Math.max(progress.deliveredVolume + progress.assignedVolume - previousSplit.delivered.volume - plannedVolume, 0),
-                    3
-                );
-                const maxActualVolume = roundQuantity(Math.max(progress.totalVolume - otherReservedVolume, 0), 3);
-                if (actualVolume - maxActualVolume > 0.00001) {
-                    return NextResponse.json(
-                        {
-                            error: `Volume aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualVolume} m3).`,
-                        },
-                        { status: 409 }
-                    );
-                }
-            }
 
             const nextProgress = {
                 ...progress,

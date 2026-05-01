@@ -34,6 +34,19 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
     return response;
 }
 
+function getArgValue(flag: string, fallback = '') {
+    const match = process.argv.find(arg => arg.startsWith(`${flag}=`));
+    return match ? match.slice(flag.length + 1) : fallback;
+}
+
+function getCsvArgValues(flag: string) {
+    const value = getArgValue(flag, '');
+    return value
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
 function logSkippedTypes(seedDocuments: SeedDoc[]) {
     const skipped = summarizeUnsupportedSeedDocTypes(seedDocuments);
     if (skipped.length === 0) {
@@ -50,9 +63,18 @@ async function seed() {
     const seedFile = path.join(process.cwd(), 'artifacts', 'default-supabase-seed.json');
     const raw = await readFile(seedFile, 'utf8');
     const seedDocuments = JSON.parse(raw) as SeedDoc[];
-    logSkippedTypes(seedDocuments);
+    const skipDocTypes = new Set(getCsvArgValues('--skip-doc-types'));
+    const seedDocumentsToImport = skipDocTypes.size > 0
+        ? seedDocuments.filter(doc => !skipDocTypes.has(doc?._type))
+        : seedDocuments;
+
+    if (skipDocTypes.size > 0) {
+        console.log(`Skipping seed document types: ${Array.from(skipDocTypes).sort().join(', ')}`);
+    }
+
+    logSkippedTypes(seedDocumentsToImport);
     console.log('Seeding relational tables only...');
-    await seedRelationalTables(supabaseRequest, seedDocuments);
+    await seedRelationalTables(supabaseRequest, seedDocumentsToImport);
     console.log('Seed selesai.');
 }
 

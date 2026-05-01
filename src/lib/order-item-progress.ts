@@ -198,20 +198,23 @@ export function deriveOrderItemStatusFromProgress(progress: OrderItemProgress, m
         ? progress.heldWeight
         : progress.heldVolume;
 
-  if (totalBasis > 0 && deliveredBasis >= totalBasis) {
-    return 'DELIVERED';
-  }
   if (mode === 'in-transit' && assignedBasis > 0) {
     return 'ON_DELIVERY';
   }
   if (assignedBasis > 0) {
     return 'ASSIGNED';
   }
-  if (deliveredBasis > 0) {
+  if (heldBasis > 0 && deliveredBasis > 0) {
     return 'PARTIAL';
   }
   if (heldBasis > 0) {
     return 'HOLD';
+  }
+  if (totalBasis > 0 && deliveredBasis >= totalBasis) {
+    return 'DELIVERED';
+  }
+  if (deliveredBasis > 0) {
+    return 'PARTIAL';
   }
   return 'PENDING';
 }

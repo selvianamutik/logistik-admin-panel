@@ -21,11 +21,13 @@ import {
     buildDefaultActualDropDrafts,
     buildDeliveryOrderDetailState,
     createEmptyActualDropDraft,
+    applyActualCargoAutoWeightFromQty,
     getActualCargoDraftsForDrop,
     shouldOpenAdvancedDropEditor,
     summarizeActualCargoDraftDescriptions,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
+    updateActualDropDraftWeightUnit,
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
@@ -988,7 +990,9 @@ export default function DriverPortalPage() {
         setCompletionCargoItems(previous =>
             previous.map(item =>
                 item.deliveryOrderItemRef === deliveryOrderItemRef
-                    ? { ...item, [field]: value }
+                    ? field === 'actualQtyKoli'
+                        ? applyActualCargoAutoWeightFromQty(item, value)
+                        : { ...item, [field]: value }
                     : item
             )
         );
@@ -1026,7 +1030,15 @@ export default function DriverPortalPage() {
         value: string
     ) => {
         setCompletionDropPoints(previous =>
-            previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
+            previous.map(item => {
+                if (item.draftKey !== draftKey) {
+                    return item;
+                }
+                if (field === 'weightInputUnit') {
+                    return updateActualDropDraftWeightUnit(item, value as ActualDropDraft['weightInputUnit']);
+                }
+                return { ...item, [field]: value };
+            })
         );
     }, []);
 

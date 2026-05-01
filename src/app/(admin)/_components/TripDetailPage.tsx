@@ -32,9 +32,9 @@ import {
     summarizeDeliveryOrderItemDescriptionsForDrop,
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
-    shouldLockActualDropWeight,
     sortTrackingLogs,
     updateActualCargoDraftVolumeUnit,
+    updateActualDropDraftWeightUnit,
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
@@ -2063,11 +2063,8 @@ export default function TripDetailPage() {
             if (field === 'qtyKoli') {
                 return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, value);
             }
-            if ((field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockActualDropWeight(selectedCargoItem)) {
-                const nextUnit = field === 'weightInputUnit'
-                    ? value as ActualDropDraft['weightInputUnit']
-                    : drop.weightInputUnit;
-                return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, drop.qtyKoli, nextUnit);
+            if (field === 'weightInputUnit') {
+                return updateActualDropDraftWeightUnit(drop, value as ActualDropDraft['weightInputUnit']);
             }
             return { ...drop, [field]: value };
         };
@@ -2160,13 +2157,8 @@ export default function TripDetailPage() {
         const nextAllocation =
             field === 'qtyKoli'
                 ? applyActualDropAutoWeightFromQty(currentAllocation, cargoItem, value)
-                : (field === 'weightInputValue' || field === 'weightInputUnit') && shouldLockActualDropWeight(cargoItem)
-                    ? applyActualDropAutoWeightFromQty(
-                        currentAllocation,
-                        cargoItem,
-                        currentAllocation.qtyKoli,
-                        field === 'weightInputUnit' ? value as ActualDropDraft['weightInputUnit'] : currentAllocation.weightInputUnit
-                    )
+                : field === 'weightInputUnit'
+                    ? updateActualDropDraftWeightUnit(currentAllocation, value as ActualDropDraft['weightInputUnit'])
                     : { ...currentAllocation, [field]: value };
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setActualDropItemValueMap(previous => ({

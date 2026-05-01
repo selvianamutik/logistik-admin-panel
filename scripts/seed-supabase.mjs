@@ -19,6 +19,14 @@ function hasFlag(flag) {
     return process.argv.includes(flag);
 }
 
+function getCsvArgValues(flag) {
+    const value = getArgValue(flag, '');
+    return value
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
 async function supabaseRequest(pathname, init = {}) {
     const response = await fetch(`${supabaseUrl}/rest/v1/${pathname}`, {
         ...init,
@@ -73,9 +81,18 @@ async function main() {
         })()
         : parsedSeedDocuments;
 
-    logSkippedTypes(seedDocuments);
+    const skipDocTypes = new Set(getCsvArgValues('--skip-doc-types'));
+    const seedDocumentsToImport = skipDocTypes.size > 0
+        ? seedDocuments.filter(doc => !skipDocTypes.has(doc?._type))
+        : seedDocuments;
+
+    if (skipDocTypes.size > 0) {
+        console.log(`Skipping seed document types: ${Array.from(skipDocTypes).sort().join(', ')}`);
+    }
+
+    logSkippedTypes(seedDocumentsToImport);
     console.log(`Seeding relational tables from ${seedFile}${deriveTripSuratJalan ? ' with direct Trip / Surat Jalan derivation' : ''}...`);
-    await seedRelationalTables(supabaseRequest, seedDocuments);
+    await seedRelationalTables(supabaseRequest, seedDocumentsToImport);
     console.log('Seed selesai.');
 }
 

@@ -24,13 +24,45 @@ async function supabaseRequest(pathname, init = {}) {
     return response;
 }
 
+function hasFlag(flag) {
+    return process.argv.includes(flag);
+}
+
+async function resetTable(table, resetAllRows) {
+    if (!resetAllRows) {
+        await supabaseRequest(`${table}?source_document_id=not.is.null`, {
+            method: 'DELETE',
+        });
+        return;
+    }
+
+    await supabaseRequest(`${table}?source_document_id=not.is.null`, {
+        method: 'DELETE',
+    });
+    await supabaseRequest(`${table}?source_document_id=is.null`, {
+        method: 'DELETE',
+    });
+}
+
 async function main() {
+    const preserveTables = new Set();
+    const resetAllRows = hasFlag('--all-managed-data');
+    if (hasFlag('--preserve-users')) {
+        preserveTables.add('app_users');
+    }
+    if (hasFlag('--preserve-trip-rates')) {
+        preserveTables.add('services');
+        preserveTables.add('trip_route_rates');
+    }
+
     for (const table of RELATIONAL_RESET_TABLES) {
-        console.log(`Resetting Supabase table: ${table}`);
+        if (preserveTables.has(table)) {
+            console.log(`Preserving Supabase table: ${table}`);
+            continue;
+        }
+        console.log(`Resetting Supabase table: ${table}${resetAllRows ? ' (all rows)' : ''}`);
         try {
-            await supabaseRequest(`${table}?source_document_id=not.is.null`, {
-                method: 'DELETE',
-            });
+            await resetTable(table, resetAllRows);
         } catch (error) {
             if (isMissingSupabaseTableError(error)) {
                 console.warn(`Skipping reset for ${table}: table not found`);

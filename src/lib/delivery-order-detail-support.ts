@@ -199,10 +199,6 @@ export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUni
         return item;
     }
 
-    if (shouldLockActualCargoWeight(item)) {
-        return applyActualCargoAutoWeightFromQty(item, item.actualQtyKoli, nextUnit);
-    }
-
     const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
         maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
     });
@@ -248,7 +244,22 @@ export function applyActualCargoAutoWeightFromQty(
         item.plannedWeightKg > 0
             ? item.plannedWeightKg
             : parseFormattedNumberish(item.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
-    const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
+    const currentQtyKoli = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
+    const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+    });
+    const currentWeightKg =
+        currentWeightInputValue > 0
+            ? convertWeightToKg(currentWeightInputValue, item.actualWeightInputUnit)
+            : 0;
+    const previousAutoWeightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli);
+    const shouldRefreshAutoWeight =
+        currentWeightKg <= 0 ||
+        previousAutoWeightKg <= 0 ||
+        Math.abs(currentWeightKg - previousAutoWeightKg) <= 0.01;
+    const weightKg = shouldRefreshAutoWeight
+        ? calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli)
+        : currentWeightKg;
     const actualWeightInputValue =
         weightKg > 0
             ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
@@ -266,6 +277,28 @@ export function applyActualCargoAutoWeightFromQty(
 
 export function shouldLockActualDropWeight(cargoItem?: ActualCargoDraft | null) {
     return Boolean(cargoItem && shouldLockActualCargoWeight(cargoItem));
+}
+
+export function updateActualDropDraftWeightUnit(drop: ActualDropDraft, nextUnit: WeightInputUnit): ActualDropDraft {
+    if (drop.weightInputUnit === nextUnit) {
+        return drop;
+    }
+
+    const currentWeightInputValue = parseFormattedNumberish(drop.weightInputValue || 0, {
+        maxFractionDigits: getWeightInputFractionDigits(drop.weightInputUnit),
+    });
+    const currentWeightKg =
+        currentWeightInputValue > 0
+            ? convertWeightToKg(currentWeightInputValue, drop.weightInputUnit)
+            : 0;
+
+    return {
+        ...drop,
+        weightInputUnit: nextUnit,
+        weightInputValue: currentWeightKg > 0
+            ? String(roundQuantity(convertKgToWeightInputValue(currentWeightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
+            : '',
+    };
 }
 
 export function applyActualDropAutoWeightFromQty(
@@ -298,7 +331,22 @@ export function applyActualDropAutoWeightFromQty(
     const basisWeightKg = actualWeightKg > 0
         ? actualWeightKg
         : cargoItem?.plannedWeightKg || parseFormattedNumberish(drop.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
-    const weightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli);
+    const currentQtyKoli = parseFormattedNumberish(drop.qtyKoli || 0, { maxFractionDigits: 2 });
+    const currentWeightInputValue = parseFormattedNumberish(drop.weightInputValue || 0, {
+        maxFractionDigits: getWeightInputFractionDigits(drop.weightInputUnit),
+    });
+    const currentWeightKg =
+        currentWeightInputValue > 0
+            ? convertWeightToKg(currentWeightInputValue, drop.weightInputUnit)
+            : 0;
+    const previousAutoWeightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli);
+    const shouldRefreshAutoWeight =
+        currentWeightKg <= 0 ||
+        previousAutoWeightKg <= 0 ||
+        Math.abs(currentWeightKg - previousAutoWeightKg) <= 0.01;
+    const weightKg = shouldRefreshAutoWeight
+        ? calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli)
+        : currentWeightKg;
 
     return {
         ...drop,
