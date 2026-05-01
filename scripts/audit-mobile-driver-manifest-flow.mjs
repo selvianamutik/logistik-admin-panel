@@ -101,6 +101,26 @@ assertIncludes(
     'Mobile manifest harus memakai field controller sinkron untuk input stabil.'
 );
 assertIncludes(
+    manifestSource,
+    '_normalizeManifestItemPatch',
+    'Mobile manifest harus menormalisasi perubahan barang/koli agar berat terkunci tetap sinkron.'
+);
+assertIncludes(
+    manifestSource,
+    'final nextQty = currentQty > 0',
+    'Mobile manifest harus mempertahankan koli yang sudah diinput saat master barang diganti.'
+);
+assertIncludes(
+    manifestSource,
+    '_productWeightPerKoliKg(selectedProduct)',
+    'Mobile manifest harus menghitung ulang berat dari master barang per koli.'
+);
+assertIncludes(
+    manifestSource,
+    'enabled: !item.isWeightLocked',
+    'Mobile manifest harus mengunci input berat manual jika barang master dan koli sudah menentukan berat.'
+);
+assertIncludes(
     completionSource,
     'key: ValueKey(draft.itemId)',
     'Mobile completion cargo card harus punya key stabil agar controller tidak tertukar.'

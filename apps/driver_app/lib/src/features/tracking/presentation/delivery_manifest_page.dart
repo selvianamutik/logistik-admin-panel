@@ -154,7 +154,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
               items: group.items
                   .map(
                     (item) => item.id == itemId
-                        ? item.copyWith(
+                        ? _normalizeManifestItemPatch(
+                            item,
                             customerProductRef: customerProductRef,
                             description: description,
                             qtyKoli: qtyKoli,
@@ -187,18 +188,26 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
       return;
     }
 
+    final currentItem = _findItem(groupId, itemId);
+    final currentQty = currentItem?.qtyKoliValue ?? 0;
+    final nextQty = currentQty > 0
+        ? currentQty
+        : (selectedProduct.defaultQtyKoli ?? 0);
+    final nextWeightUnit = (selectedProduct.defaultWeightInputUnit ?? 'KG')
+        .toUpperCase();
+    final weightPerKoliKg = _productWeightPerKoliKg(selectedProduct);
+    final nextWeightValue = nextQty > 0 && weightPerKoliKg > 0
+        ? _convertKgToWeightInputValue(weightPerKoliKg * nextQty, nextWeightUnit)
+        : 0;
+
     _updateItem(
       groupId,
       itemId,
       customerProductRef: selectedProduct.id,
       description: (selectedProduct.description ?? selectedProduct.name).trim(),
-      qtyKoli: _formatNumber(selectedProduct.defaultQtyKoli),
-      weightInputValue: _formatNumber(
-        selectedProduct.defaultWeightInputValue ??
-            selectedProduct.defaultWeight,
-      ),
-      weightInputUnit: (selectedProduct.defaultWeightInputUnit ?? 'KG')
-          .toUpperCase(),
+      qtyKoli: _formatNumber(nextQty),
+      weightInputValue: _formatNumber(nextWeightValue),
+      weightInputUnit: nextWeightUnit,
       volumeInputValue: _formatNumber(
         selectedProduct.defaultVolumeInputValue ??
             selectedProduct.defaultVolume,
@@ -206,6 +215,96 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
       volumeInputUnit: (selectedProduct.defaultVolumeInputUnit ?? 'M3')
           .toUpperCase(),
     );
+  }
+
+  _ManifestItemDraft _normalizeManifestItemPatch(
+    _ManifestItemDraft item, {
+    String? customerProductRef,
+    String? description,
+    String? qtyKoli,
+    String? weightInputValue,
+    String? weightInputUnit,
+    String? volumeInputValue,
+    String? volumeInputUnit,
+  }) {
+    if (weightInputValue != null &&
+        customerProductRef == null &&
+        qtyKoli == null &&
+        weightInputUnit == null &&
+        _shouldLockWeight(item)) {
+      return item;
+    }
+
+    final patched = item.copyWith(
+      customerProductRef: customerProductRef,
+      description: description,
+      qtyKoli: qtyKoli,
+      weightInputValue: weightInputValue,
+      weightInputUnit: weightInputUnit,
+      volumeInputValue: volumeInputValue,
+      volumeInputUnit: volumeInputUnit,
+    );
+
+    if (qtyKoli == null && weightInputUnit == null) {
+      return patched;
+    }
+
+    final selectedProduct = widget.customerProducts.firstWhere(
+      (product) => product.id == patched.customerProductRef,
+      orElse: () =>
+          const CustomerProductOption(id: '', customerRef: '', name: ''),
+    );
+    if (selectedProduct.id.isEmpty) {
+      return patched;
+    }
+
+    final nextQty = patched.qtyKoliValue;
+    final nextWeightUnit = patched.weightInputUnit.toUpperCase();
+    final weightPerKoliKg = _productWeightPerKoliKg(selectedProduct);
+    if (nextQty <= 0 || weightPerKoliKg <= 0) {
+      return patched.copyWith(weightInputValue: '');
+    }
+
+    return patched.copyWith(
+      weightInputValue: _formatNumber(
+        _convertKgToWeightInputValue(weightPerKoliKg * nextQty, nextWeightUnit),
+      ),
+      weightInputUnit: nextWeightUnit,
+    );
+  }
+
+  _ManifestItemDraft? _findItem(String groupId, String itemId) {
+    for (final group in _groups) {
+      if (group.id != groupId) continue;
+      for (final item in group.items) {
+        if (item.id == itemId) {
+          return item;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _shouldLockWeight(_ManifestItemDraft item) {
+    return item.isWeightLocked;
+  }
+
+  double _productWeightPerKoliKg(CustomerProductOption product) {
+    final inputValue = product.defaultWeightInputValue ?? 0;
+    if (inputValue > 0) {
+      final weightInputUnit = (product.defaultWeightInputUnit ?? 'KG')
+          .toUpperCase();
+      return _convertWeightToKg(inputValue, weightInputUnit);
+    }
+    return product.defaultWeight ?? 0;
+  }
+
+  double _convertWeightToKg(double value, String unit) {
+    return unit.toUpperCase() == 'TON' ? value * 1000 : value;
+  }
+
+  double _convertKgToWeightInputValue(double valueKg, String unit) {
+    return unit.toUpperCase() == 'TON' ? valueKg / 1000 : valueKg;
   }
 
   Future<void> _submit() async {
@@ -294,7 +393,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
     if (value == value.roundToDouble()) {
       return value.toInt().toString();
     }
-    return value.toString();
+    return value
+        .toStringAsFixed(5)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   @override
@@ -489,6 +591,11 @@ class _ManifestItemDraft {
       qtyKoliValue > 0 ||
       weightInputValueNumber > 0 ||
       volumeInputValueNumber > 0;
+
+  bool get isWeightLocked =>
+      customerProductRef.trim().isNotEmpty &&
+      qtyKoliValue > 0 &&
+      weightInputValueNumber > 0;
 
   double get qtyKoliValue => double.tryParse(qtyKoli.replaceAll(',', '.')) ?? 0;
   double get weightInputValueNumber =>
@@ -789,6 +896,7 @@ class _ManifestItemCard extends StatelessWidget {
                     decimal: true,
                   ),
                   decoration: const InputDecoration(labelText: 'Berat'),
+                  enabled: !item.isWeightLocked,
                   onChanged: (value) => onChanged(weightInputValue: value),
                 ),
               ),
@@ -861,6 +969,7 @@ class _SyncedTextFormField extends StatefulWidget {
     this.keyboardType,
     this.textCapitalization = TextCapitalization.none,
     this.validator,
+    this.enabled = true,
   });
 
   final String value;
@@ -869,6 +978,7 @@ class _SyncedTextFormField extends StatefulWidget {
   final TextInputType? keyboardType;
   final TextCapitalization textCapitalization;
   final FormFieldValidator<String>? validator;
+  final bool enabled;
 
   @override
   State<_SyncedTextFormField> createState() => _SyncedTextFormFieldState();
@@ -907,6 +1017,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       keyboardType: widget.keyboardType,
       textCapitalization: widget.textCapitalization,
       decoration: widget.decoration,
+      enabled: widget.enabled,
       validator: widget.validator,
       onChanged: widget.onChanged,
     );

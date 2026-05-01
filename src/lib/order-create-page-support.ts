@@ -88,11 +88,16 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
         return { ...item, customerProductRef: '' };
     }
 
+    const productWeightInputUnit = selectedProduct.defaultWeightInputUnit || 'KG';
     const nextWeightUnit = selectedProduct.defaultWeightInputUnit || item.weightInputUnit || 'KG';
     const nextVolumeUnit = selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit || 'M3';
-    const normalizedQtyKoli = parseFormattedNumberish(selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0, {
+    const currentQtyKoli = parseFormattedNumberish(item.qtyKoli ?? 0, {
         maxFractionDigits: 2,
     });
+    const productDefaultQtyKoli = parseFormattedNumberish(selectedProduct.defaultQtyKoli ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedQtyKoli = currentQtyKoli > 0 ? currentQtyKoli : productDefaultQtyKoli;
     const normalizedWeightInputValue = parseFormattedNumberish(
         selectedProduct.defaultWeightInputValue ?? 0,
         { maxFractionDigits: getWeightInputFractionDigits(nextWeightUnit) }
@@ -100,12 +105,21 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
     const normalizedWeightKg = parseFormattedNumberish(selectedProduct.defaultWeight ?? 0, {
         maxFractionDigits: 2,
     });
-    const nextWeightValue =
+    const productWeightPerKoliKg =
         normalizedWeightInputValue > 0
-            ? normalizedWeightInputValue
+            ? convertWeightToKg(normalizedWeightInputValue, productWeightInputUnit)
             : normalizedWeightKg > 0
-                ? convertKgToWeightInputValue(normalizedWeightKg, nextWeightUnit)
+                ? normalizedWeightKg
                 : 0;
+    const nextWeightKg = productWeightPerKoliKg > 0 && normalizedQtyKoli > 0
+        ? productWeightPerKoliKg * normalizedQtyKoli
+        : 0;
+    const nextWeightValue = nextWeightKg > 0
+        ? roundToFractionDigits(
+            convertKgToWeightInputValue(nextWeightKg, nextWeightUnit),
+            getWeightInputFractionDigits(nextWeightUnit)
+        )
+        : 0;
     const normalizedVolumeInputValue = parseFormattedNumberish(
         selectedProduct.defaultVolumeInputValue ?? 0,
         { maxFractionDigits: nextVolumeUnit === 'LITER' ? 0 : 3 }
@@ -128,7 +142,7 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
         weightInputValue: nextWeightValue,
         weightInputUnit: nextWeightUnit,
         autoWeightBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
-        autoWeightBasisWeightKg: nextWeightValue > 0 ? convertWeightToKg(nextWeightValue, nextWeightUnit) : undefined,
+        autoWeightBasisWeightKg: nextWeightKg > 0 ? nextWeightKg : undefined,
         volumeInputValue: nextVolumeValue,
         volumeInputUnit: nextVolumeUnit,
     };

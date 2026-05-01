@@ -13,6 +13,7 @@
     "audit:accounting-integrity": "npx tsx --conditions react-server scripts/audit-accounting-integrity.ts",
     "audit:finance-integrity": "npx tsx --conditions react-server scripts/audit-finance-integrity.ts",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
+    "audit:order-item-auto-weight": "npx tsx scripts/audit-order-item-auto-weight.ts",
     "audit:delivery-order-billing-eligibility": "npx tsx scripts/audit-delivery-order-billing-eligibility.ts",
     "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",

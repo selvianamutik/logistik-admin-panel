@@ -44,6 +44,8 @@ import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary, getWeightInputFractionDigits } from '@/lib/measurement';
 import {
     applyCustomerProductToOrderItem,
+    applyOrderItemAutoWeightFromQty,
+    shouldLockOrderItemWeight,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
@@ -797,7 +799,17 @@ export default function DriverPortalPage() {
                     ...group,
                     items: group.items.map((item, currentIndex) => (
                         currentIndex === itemIndex
-                            ? { ...item, [field]: value }
+                            ? (
+                                field === 'qtyKoli'
+                                    ? toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                                        ...item,
+                                        pickupStopKey: group.pickupStopKey,
+                                        shipperReferenceNumber: group.shipperReferenceNumber,
+                                    }, value))
+                                    : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
+                                        ? item
+                                        : { ...item, [field]: value }
+                            )
                             : item
                     )),
                 }
@@ -888,7 +900,17 @@ export default function DriverPortalPage() {
                     ...group,
                     items: group.items.map((item, currentIndex) => (
                         currentIndex === itemIndex
-                            ? { ...item, [field]: value }
+                            ? (
+                                field === 'qtyKoli'
+                                    ? toDeliveryOrderCargoDraftItem(applyOrderItemAutoWeightFromQty({
+                                        ...item,
+                                        pickupStopKey: group.pickupStopKey,
+                                        shipperReferenceNumber: group.shipperReferenceNumber,
+                                    }, value))
+                                    : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
+                                        ? item
+                                        : { ...item, [field]: value }
+                            )
                             : item
                     )),
                 }
@@ -1725,7 +1747,7 @@ export default function DriverPortalPage() {
                                                                     maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                    disabled={isActionInFlight}
+                                                                    disabled={isActionInFlight || shouldLockOrderItemWeight(item)}
                                                                 />
                                                                 <select
                                                                     className="form-select"
@@ -2044,7 +2066,7 @@ export default function DriverPortalPage() {
                                                                     maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoInputItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                    disabled={isActionInFlight}
+                                                                    disabled={isActionInFlight || shouldLockOrderItemWeight(item)}
                                                                 />
                                                                 <select
                                                                     className="form-select"
