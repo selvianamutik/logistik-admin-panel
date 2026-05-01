@@ -3719,22 +3719,19 @@ export default function TripDetailPage() {
         }
         return selectedWorkingActualDropPoints;
     })();
-    const selectedBillableEffectiveActualDropPoints = selectedEffectiveActualDropPoints.filter(point =>
-        isDeliveryOrderBillableDropType(point.stopType)
-    );
     const selectedDerivedActualCargoItems = selectedActualCargoItems.map(item => {
         const manualValues = actualCargoItemValueMap[item.deliveryOrderItemRef];
         if (!showAdvancedDropEditor) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
-        const itemBillableDrops = selectedBillableEffectiveActualDropPoints.filter(point =>
+        const itemRealizationDrops = selectedEffectiveActualDropPoints.filter(point =>
             point.deliveryOrderItemRef === item.deliveryOrderItemRef
         );
-        const actualQtyKoli = itemBillableDrops.reduce(
+        const actualQtyKoli = itemRealizationDrops.reduce(
             (sum, point) => sum + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
             0
         );
-        const actualWeightKg = itemBillableDrops.reduce(
+        const actualWeightKg = itemRealizationDrops.reduce(
             (sum, point) => sum + convertWeightToKg(
                 parseFormattedNumberish(point.weightInputValue || 0, {
                     maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
@@ -3743,7 +3740,7 @@ export default function TripDetailPage() {
             ),
             0
         );
-        const actualVolumeM3 = itemBillableDrops.reduce(
+        const actualVolumeM3 = itemRealizationDrops.reduce(
             (sum, point) => sum + convertVolumeToM3(
                 parseFormattedNumberish(point.volumeInputValue || 0, {
                     maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
@@ -5995,7 +5992,7 @@ export default function TripDetailPage() {
                         <div className="modal-body">
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                                    <div className="text-muted text-sm">{activeFinalizationDrop ? 'Muatan aktual saat ini' : 'Muatan terkirim'}</div>
+                                    <div className="text-muted text-sm">{activeFinalizationDrop ? 'Muatan aktual saat ini' : 'Muatan realisasi'}</div>
                                     <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
                                         {formatCargoSummary(selectedActualCargoTotals)}
                                     </div>

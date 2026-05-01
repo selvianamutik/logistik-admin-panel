@@ -511,9 +511,11 @@ async function main() {
     const pickupTwoKey = `audit-pickup-2-${suffix}`;
     const tripOneKey = `audit-trip-1-${suffix}`;
     const tripTwoKey = `audit-trip-2-${suffix}`;
+    const tripSplitKey = `audit-trip-split-${suffix}`;
     const tripCancelKey = `audit-trip-cancel-${suffix}`;
     const sjA = `AUD-${suffix}-A`;
     const sjB = `AUD-${suffix}-B`;
+    const sjSplit = `AUD-${suffix}-SPLIT`;
     const sjHold = `AUD-${suffix}-HOLD`;
     const sjCancel = `AUD-${suffix}-CANCEL`;
 
@@ -641,6 +643,16 @@ async function main() {
                         date: AUDIT_DATE,
                     },
                     {
+                        _key: tripSplitKey,
+                        pickupStopKeys: [pickupTwoKey],
+                        vehicleRef: resources.vehicles[1]._id,
+                        driverRef: resources.drivers[1]._id,
+                        taripBorongan: 285000,
+                        issueBankRef: resources.bankAccount._id,
+                        cashGiven: 130000,
+                        date: AUDIT_DATE,
+                    },
+                    {
                         _key: tripCancelKey,
                         pickupStopKeys: [pickupTwoKey],
                         vehicleRef: resources.vehicles[0]._id,
@@ -661,7 +673,7 @@ async function main() {
             cookieHeader
         );
         assert(createdOrder.data.cargoEntryMode === 'DELIVERY_ORDER', 'Order header booking harus memakai mode barang di Surat Jalan.');
-        assert((createdOrder.data.tripPlans || []).length === 3, 'Order harus menyimpan 3 rencana trip termasuk 1 trip batal.');
+        assert((createdOrder.data.tripPlans || []).length === 4, 'Order harus menyimpan 4 rencana trip termasuk split drop/hold dan 1 trip batal.');
 
         auditStep('create DO trip 1 dengan 2 nomor SJ; SJ A berisi 2 barang dan SJ B hold');
         const doOneCreate = await postData<DeliveryOrder>(cookieHeader, {
@@ -1033,6 +1045,103 @@ async function main() {
             ],
         });
 
+        auditStep('create DO trip 3 untuk satu item yang split drop dan hold dalam SJ yang sama');
+        const doSplitCreate = await postData<DeliveryOrder>(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'create-with-items',
+            data: {
+                orderRef: createdState.orderId,
+                orderTripPlanKey: tripSplitKey,
+                date: AUDIT_DATE,
+                shipperReferences: [
+                    { referenceNumber: sjSplit, pickupStopKey: pickupTwoKey },
+                ],
+                cargoItems: [
+                    {
+                        description: 'Audit barang split drop hold',
+                        qtyKoli: 3,
+                        weightInputValue: 180,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 3,
+                        volumeInputUnit: 'M3',
+                        pickupStopKey: pickupTwoKey,
+                        shipperReferenceNumber: sjSplit,
+                    },
+                ],
+            },
+        });
+        const doSplitId = normalizeText(doSplitCreate.data?._id) || normalizeText(doSplitCreate.id);
+        assert(doSplitId, 'Create DO split drop/hold tidak mengembalikan ID.');
+        createdState.deliveryOrderIds.push(doSplitId);
+        const doSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
+        const splitItem = doSplitItems[0];
+        assert(doSplitItems.length === 1 && splitItem, 'DO split harus punya tepat 1 barang.');
+        await advanceDeliveryOrderToDelivered({
+            cookieHeader,
+            deliveryOrderId: doSplitId,
+            actualItems: [
+                {
+                    deliveryOrderItemRef: splitItem._id,
+                    actualQtyKoli: 3,
+                    actualWeightInputValue: 180,
+                    actualWeightInputUnit: 'KG',
+                    actualVolumeInputValue: 3,
+                    actualVolumeInputUnit: 'M3',
+                },
+            ],
+            actualDropPoints: [
+                {
+                    stopType: 'DROP',
+                    deliveryOrderItemRef: splitItem._id,
+                    deliveryOrderItemRefs: [splitItem._id],
+                    shipperReferenceNumber: sjSplit,
+                    locationName: 'Audit Drop Split',
+                    locationAddress: 'Audit Drop Split Address',
+                    qtyKoli: 1,
+                    weightInputValue: 60,
+                    weightInputUnit: 'KG',
+                    volumeInputValue: 1,
+                    volumeInputUnit: 'M3',
+                },
+                {
+                    stopType: 'HOLD',
+                    deliveryOrderItemRef: splitItem._id,
+                    deliveryOrderItemRefs: [splitItem._id],
+                    shipperReferenceNumber: sjSplit,
+                    locationName: 'Audit Hold Split',
+                    locationAddress: 'Audit Hold Split Address',
+                    qtyKoli: 2,
+                    weightInputValue: 120,
+                    weightInputUnit: 'KG',
+                    volumeInputValue: 2,
+                    volumeInputUnit: 'M3',
+                },
+            ],
+        });
+        const finalizedSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
+        assert(
+            normalizeNumber(finalizedSplitItems[0]?.actualQtyKoli) === 3 &&
+            normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 180,
+            'Split drop/hold satu item harus menyimpan aktual total 3 koli / 180 kg, bukan hanya bagian drop.'
+        );
+        const doSplitState = await requestJson<{ data: DeliveryOrder }>(
+            `/api/data?entity=delivery-orders&id=${encodeURIComponent(doSplitId)}`,
+            cookieHeader
+        );
+        const splitNotaRows = buildNotaRowsFromDeliveryOrder({
+            deliveryOrder: doSplitState.data,
+            orders: [createdOrder.data],
+            deliveryOrderItems: finalizedSplitItems,
+        });
+        assert(splitNotaRows.length === 1, `Split drop/hold harus menghasilkan 1 row nota billable, sekarang ${splitNotaRows.length}.`);
+        assert(
+            splitNotaRows[0].noSJ === sjSplit &&
+            splitNotaRows[0].collie === 1 &&
+            splitNotaRows[0].beratKg === 60 &&
+            splitNotaRows[0].volumeM3 === 1,
+            'Nota split drop/hold harus hanya memakai porsi DROP billable: 1 koli / 60 kg / 1 m3.'
+        );
+
         const deliveredOrder = await requestJson<{ data: Order }>(
             `/api/data?entity=orders&id=${encodeURIComponent(createdState.orderId)}`,
             cookieHeader
@@ -1167,7 +1276,7 @@ async function main() {
         );
         assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menyembunyikan row freightNotaItem VOID dari tagihan aktif.');
 
-        console.log('Order to nota E2E audit OK: create/delete order, cancel trip, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/void verified.');
+        console.log('Order to nota E2E audit OK: create/delete order, cancel trip, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, split drop/hold same item, append/edit/delete cargo, hold-only completion, nota create/void verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);
