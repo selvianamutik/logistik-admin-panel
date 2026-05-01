@@ -5797,7 +5797,12 @@ export default function TripDetailPage() {
                                                                                 setShowStatusModal(false);
                                                                                 setShowActualCargoFinalizationModal(true);
                                                                             }}
-                                                                            disabled={!newStatus || updatingStatus || selectedStatusSuratJalanRefs.length === 0 || !podName.trim() || !podDate || !(item.locationName.trim() || item.locationAddress.trim())}
+                                                                            disabled={
+                                                                                !newStatus ||
+                                                                                updatingStatus ||
+                                                                                selectedStatusSuratJalanRefs.length === 0 ||
+                                                                                selectedDerivedActualCargoTabItems.length === 0
+                                                                            }
                                                                         >
                                                                             Tentukan Barang
                                                                         </button>

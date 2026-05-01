@@ -106,9 +106,11 @@ async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string;
         throw new Error('Trip tidak ditemukan');
     }
 
-    await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
-
-    const persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    let persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    if (!persistedTripRecord) {
+        await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+        persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    }
     if (!persistedTripRecord) {
         throw new Error('Trip relasional belum siap untuk penulisan surat jalan');
     }
