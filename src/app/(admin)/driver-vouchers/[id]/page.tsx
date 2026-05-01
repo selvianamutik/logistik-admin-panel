@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
+import { CheckCircle, Pencil, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -44,6 +44,7 @@ export default function DriverVoucherDetailPage() {
     const [settling, setSettling] = useState(false);
     const [savingItem, setSavingItem] = useState(false);
     const [toppingUp, setToppingUp] = useState(false);
+    const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
     const [deletingDisbursementId, setDeletingDisbursementId] = useState<string | null>(null);
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
@@ -131,7 +132,33 @@ export default function DriverVoucherDetailPage() {
     const linkedDoHasFinalActualWeight = (linkedDeliveryOrder?.actualTotalWeightKg || 0) > 0;
     const linkedDoFinalTripFee = linkedDeliveryOrder?.taripBorongan || driverFeeAmount;
 
-    const handleAddItem = async () => {
+    const openAddItemModal = () => {
+        if (isSettled || !canManageVoucherItems) return;
+        setEditingItemId(null);
+        setItemForm(createDefaultDriverVoucherItemForm());
+        setShowAddItem(true);
+    };
+
+    const openEditItemModal = (item: DriverVoucherItem) => {
+        if (isSettled || !canManageVoucherItems) return;
+        setEditingItemId(item._id);
+        setItemForm({
+            expenseDate: item.expenseDate || getBusinessDateValue(),
+            category: item.category || 'Lain-lain',
+            description: item.description || '',
+            amount: item.amount || 0,
+        });
+        setShowAddItem(true);
+    };
+
+    const closeItemModal = () => {
+        if (savingItem) return;
+        setShowAddItem(false);
+        setEditingItemId(null);
+        setItemForm(createDefaultDriverVoucherItemForm());
+    };
+
+    const handleSaveItem = async () => {
         if (!canManageVoucherItems) return;
         if (!itemForm.amount || itemForm.amount <= 0) {
             addToast('error', 'Nominal harus diisi');
@@ -140,34 +167,53 @@ export default function DriverVoucherDetailPage() {
 
         setSavingItem(true);
         try {
+            const isEditing = Boolean(editingItemId);
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'driver-voucher-items',
+                    action: isEditing ? 'update' : undefined,
                     data: {
-                        voucherRef: params.id,
-                        expenseDate: itemForm.expenseDate,
-                        category: itemForm.category,
-                        description: itemForm.description,
-                        amount: itemForm.amount,
+                        ...(isEditing
+                            ? {
+                                id: editingItemId,
+                                updates: {
+                                    expenseDate: itemForm.expenseDate,
+                                    category: itemForm.category,
+                                    description: itemForm.description,
+                                    amount: itemForm.amount,
+                                },
+                            }
+                            : {
+                                voucherRef: params.id,
+                                expenseDate: itemForm.expenseDate,
+                                category: itemForm.category,
+                                description: itemForm.description,
+                                amount: itemForm.amount,
+                            }),
                     },
                 }),
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menambah item');
+                addToast('error', result.error || (isEditing ? 'Gagal mengubah item' : 'Gagal menambah item'));
                 return;
             }
-            setItems(prev => sortDriverVoucherItems([...prev, result.data]));
+            setItems(prev => sortDriverVoucherItems(
+                isEditing
+                    ? prev.map(item => item._id === editingItemId ? result.data : item)
+                    : [...prev, result.data]
+            ));
             if (result.voucher) {
                 setVoucher(result.voucher);
             }
-            addToast('success', 'Item pengeluaran ditambahkan');
+            addToast('success', isEditing ? 'Item pengeluaran diubah' : 'Item pengeluaran ditambahkan');
             setShowAddItem(false);
+            setEditingItemId(null);
             setItemForm(createDefaultDriverVoucherItemForm());
         } catch {
-            addToast('error', 'Gagal menambah item');
+            addToast('error', editingItemId ? 'Gagal mengubah item' : 'Gagal menambah item');
         } finally {
             setSavingItem(false);
         }
@@ -620,7 +666,7 @@ export default function DriverVoucherDetailPage() {
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 className="card-title">Catat Biaya Lain-lain ({items.length})</h3>
-                    {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya Lain-lain</button>}
+                    {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={openAddItemModal}><Plus size={14} /> Tambah Biaya Lain-lain</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper">
@@ -637,7 +683,28 @@ export default function DriverVoucherDetailPage() {
                                             <td><span className="badge badge-gray">{item.category}</span></td>
                                             <td>{item.description || '-'}</td>
                                             <td className="font-medium">{formatCurrency(item.amount)}</td>
-                                            {!isSettled && canManageVoucherItems && <td><button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item._id)} disabled={deletingItemId === item._id}><Trash2 size={14} style={{ color: '#ef4444' }} /></button></td>}
+                                            {!isSettled && canManageVoucherItems && (
+                                                <td>
+                                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => openEditItemModal(item)}
+                                                            disabled={deletingItemId === item._id || savingItem}
+                                                            aria-label={`Edit biaya lain-lain ${item.category}`}
+                                                        >
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => handleDeleteItem(item._id)}
+                                                            disabled={deletingItemId === item._id}
+                                                            aria-label={`Hapus biaya lain-lain ${item.category}`}
+                                                        >
+                                                            <Trash2 size={14} style={{ color: '#ef4444' }} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))
                                 )}
@@ -649,9 +716,9 @@ export default function DriverVoucherDetailPage() {
             </div>
 
             {showAddItem && canManageVoucherItems && (
-                <div className="modal-overlay" onClick={() => { if (!savingItem) setShowAddItem(false); }}>
+                <div className="modal-overlay" onClick={closeItemModal}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Biaya Lain-lain</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editingItemId ? 'Edit Biaya Lain-lain' : 'Tambah Biaya Lain-lain'}</h3><button className="modal-close" onClick={closeItemModal} disabled={savingItem}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Tanggal Biaya</label>
@@ -672,7 +739,7 @@ export default function DriverVoucherDetailPage() {
                                 <FormattedNumberInput allowDecimal={false} value={itemForm.amount} onValueChange={value => setItemForm({ ...itemForm, amount: value })} placeholder="Ketik nominal biaya" />
                             </div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowAddItem(false)} disabled={savingItem}>Batal</button><button className="btn btn-primary" onClick={handleAddItem} disabled={savingItem}><Save size={16} /> {savingItem ? 'Menyimpan...' : 'Simpan'}</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={closeItemModal} disabled={savingItem}>Batal</button><button className="btn btn-primary" onClick={handleSaveItem} disabled={savingItem}><Save size={16} /> {savingItem ? 'Menyimpan...' : editingItemId ? 'Simpan Perubahan' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

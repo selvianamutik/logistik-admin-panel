@@ -348,6 +348,21 @@ assert(
         !driverVoucherDisbursementDeleteBlock.includes('deleteDocument(disbursement.bankTransactionRef'),
     'Hapus top up uang jalan harus soft-void disbursement, membuat mutasi bank pembalik, dan void jurnal; bukan menghapus histori pencairan.'
 );
+const driverVoucherItemUpdateBlock = extractBalancedBlockFrom(
+    driverWorkflowSource,
+    'handleDriverVoucherItemUpdate',
+    'export async function handleDriverVoucherItemUpdate'
+);
+assert(
+    driverVoucherItemUpdateBlock.includes("state.voucher.status === 'SETTLED'") &&
+        driverVoucherItemUpdateBlock.includes('computeDriverVoucherTotals') &&
+        driverVoucherItemUpdateBlock.includes("updateDocument(itemId, itemPatch, 'driverVoucherItem')") &&
+        driverVoucherItemUpdateBlock.includes("updateDocument(initialItem.voucherRef") &&
+        driverVoucherItemUpdateBlock.includes("'UPDATE'") &&
+        driverVoucherItemUpdateBlock.includes("'driver-voucher-items'"),
+    'Edit biaya lain-lain harus lewat workflow khusus, menolak bon settled, update item, hitung ulang total voucher, dan tulis audit log.'
+);
+assertDispatch(postBlock, 'driver-voucher-items', 'update', 'handleDriverVoucherItemUpdate');
 assert(
     source.includes("entity === 'driver-voucher-disbursements'") &&
         source.includes("items = items.filter(item => item.status !== 'VOID');"),

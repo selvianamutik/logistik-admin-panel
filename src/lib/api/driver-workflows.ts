@@ -1307,6 +1307,94 @@ export async function handleDriverVoucherItemCreate(
     });
 }
 
+export async function handleDriverVoucherItemUpdate(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const itemId = typeof data.id === 'string' ? data.id : '';
+    const updates = isPlainObject(data.updates) ? data.updates : {};
+    if (!itemId) {
+        return NextResponse.json({ error: 'Item bon tidak valid' }, { status: 400 });
+    }
+
+    const amount = normalizeCurrencyNumber(updates.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal item tidak valid' }, { status: 400 });
+    }
+
+    const expenseDate =
+        typeof updates.expenseDate === 'string' && updates.expenseDate
+            ? updates.expenseDate
+            : getBusinessDateValue();
+    const expenseDateError = validateIsoDateOrResponse(
+        expenseDate,
+        'Tanggal biaya lain-lain',
+        'Tanggal biaya lain-lain tidak valid'
+    );
+    if (expenseDateError) {
+        return expenseDateError;
+    }
+
+    const initialItem = await getDocumentById<{ _id: string; voucherRef?: string }>(itemId, 'driverVoucherItem');
+    if (!initialItem?.voucherRef) {
+        return NextResponse.json({ error: 'Item bon tidak ditemukan' }, { status: 404 });
+    }
+
+    const state = await getDriverVoucherState(initialItem.voucherRef);
+    if ('error' in state) return state.error;
+    if (state.voucher.status === 'SETTLED') {
+        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+    }
+
+    const existingItem = state.items.find(existing => existing._id === itemId);
+    if (!existingItem) {
+        return NextResponse.json({ error: 'Item bon tidak ditemukan atau sudah berubah. Muat ulang lalu coba lagi.' }, { status: 404 });
+    }
+
+    const itemPatch = {
+        expenseDate,
+        category: normalizeText(updates.category) || 'Lain-lain',
+        description: normalizeText(updates.description),
+        amount,
+    };
+    const nextOperationalSpent = state.items.reduce((sum, existing) => {
+        const itemAmount = existing._id === itemId
+            ? itemPatch.amount
+            : normalizeNumber(existing.amount || 0, { maxFractionDigits: 0 });
+        return sum + itemAmount;
+    }, 0);
+    const nextTotals = computeDriverVoucherTotals(
+        getDriverVoucherIssuedAmount(state.voucher),
+        nextOperationalSpent,
+        normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
+    );
+
+    const updatedItem = await updateDocument(itemId, itemPatch, 'driverVoucherItem');
+    await updateDocument(initialItem.voucherRef, {
+        totalSpent: nextTotals.totalSpent,
+        totalClaimAmount: nextTotals.totalClaimAmount,
+        balance: nextTotals.balance,
+    }, 'driverVoucher');
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'driver-voucher-items',
+        itemId,
+        `Mengubah item bon ${state.voucher.bonNumber}: ${existingItem.category || 'Item'} (${existingItem.amount}) menjadi ${itemPatch.category} (${itemPatch.amount})`
+    );
+    return NextResponse.json({
+        data: updatedItem,
+        voucher: {
+            ...state.voucher,
+            totalSpent: nextTotals.totalSpent,
+            totalClaimAmount: nextTotals.totalClaimAmount,
+            balance: nextTotals.balance,
+        },
+    });
+}
+
 export async function handleDriverVoucherItemDelete(
     session: Pick<ApiSession, '_id' | 'name'>,
     data: Record<string, unknown>,

@@ -31,6 +31,7 @@ import {
     handleDriverVoucherCreate,
     handleDriverVoucherIssueRepair,
     handleDriverVoucherItemCreate,
+    handleDriverVoucherItemUpdate,
     handleDriverVoucherSettlement,
     handleDriverVoucherTopUp,
 } from '@/lib/api/driver-workflows';
@@ -1682,6 +1683,10 @@ export async function POST(request: Request) {
 
         if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
             return await handleDriverVoucherIssueRepair(session, data, addAuditLog);
+        }
+
+        if (entity === 'driver-voucher-items' && action === 'update') {
+            return await handleDriverVoucherItemUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {
