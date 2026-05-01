@@ -45,6 +45,7 @@ export default function DriverVoucherDetailPage() {
     const [savingItem, setSavingItem] = useState(false);
     const [toppingUp, setToppingUp] = useState(false);
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
+    const [editingDisbursementId, setEditingDisbursementId] = useState<string | null>(null);
     const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
     const [deletingDisbursementId, setDeletingDisbursementId] = useState<string | null>(null);
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
@@ -256,8 +257,27 @@ export default function DriverVoucherDetailPage() {
             voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
                 ? voucher.issueBankRef
                 : '';
+        setEditingDisbursementId(null);
         setTopUpForm(createDefaultDriverVoucherTopUpForm(defaultBankRef));
         setShowTopUpModal(true);
+    };
+
+    const openEditDisbursementModal = (disbursement: DriverVoucherDisbursement) => {
+        if (isSettled || !canTopUpVoucher || disbursement.kind !== 'TOP_UP') return;
+        setEditingDisbursementId(disbursement._id);
+        setTopUpForm({
+            date: disbursement.date || getBusinessDateValue(),
+            bankAccountRef: disbursement.bankAccountRef || '',
+            amount: disbursement.amount || 0,
+            note: disbursement.note || '',
+        });
+        setShowTopUpModal(true);
+    };
+
+    const closeTopUpModal = () => {
+        if (toppingUp) return;
+        setShowTopUpModal(false);
+        setEditingDisbursementId(null);
     };
 
     const handleTopUp = async () => {
@@ -273,24 +293,36 @@ export default function DriverVoucherDetailPage() {
 
         setToppingUp(true);
         try {
+            const isEditing = Boolean(editingDisbursementId);
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    entity: 'driver-vouchers',
-                    action: 'top-up',
+                    entity: isEditing ? 'driver-voucher-disbursements' : 'driver-vouchers',
+                    action: isEditing ? 'update' : 'top-up',
                     data: {
-                        id: voucher._id,
-                        date: topUpForm.date,
-                        bankAccountRef: topUpForm.bankAccountRef,
-                        amount: topUpForm.amount,
-                        note: topUpForm.note || undefined,
+                        id: isEditing ? editingDisbursementId : voucher._id,
+                        ...(isEditing
+                            ? {
+                                updates: {
+                                    date: topUpForm.date,
+                                    bankAccountRef: topUpForm.bankAccountRef,
+                                    amount: topUpForm.amount,
+                                    note: topUpForm.note || undefined,
+                                },
+                            }
+                            : {
+                                date: topUpForm.date,
+                                bankAccountRef: topUpForm.bankAccountRef,
+                                amount: topUpForm.amount,
+                                note: topUpForm.note || undefined,
+                            }),
                     },
                 }),
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menambah bon');
+                addToast('error', result.error || (isEditing ? 'Gagal mengubah tambahan bon' : 'Gagal menambah bon'));
                 return;
             }
 
@@ -299,10 +331,15 @@ export default function DriverVoucherDetailPage() {
             }
             if (result.data) {
                 setDisbursements(prev =>
-                    sortDriverVoucherDisbursements([...prev, result.data])
+                    sortDriverVoucherDisbursements(
+                        isEditing
+                            ? prev.map(item => item._id === editingDisbursementId ? result.data : item)
+                            : [...prev, result.data]
+                    )
                 );
             }
             setShowTopUpModal(false);
+            setEditingDisbursementId(null);
             setTopUpForm(
                 createDefaultDriverVoucherTopUpForm(
                     voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
@@ -310,9 +347,9 @@ export default function DriverVoucherDetailPage() {
                         : ''
                 )
             );
-            addToast('success', 'Tambahan bon berhasil dicatat');
+            addToast('success', isEditing ? 'Tambahan bon berhasil diubah' : 'Tambahan bon berhasil dicatat');
         } catch {
-            addToast('error', 'Gagal menambah bon');
+            addToast('error', editingDisbursementId ? 'Gagal mengubah tambahan bon' : 'Gagal menambah bon');
         } finally {
             setToppingUp(false);
         }
@@ -613,9 +650,24 @@ export default function DriverVoucherDetailPage() {
                                         {!isSettled && canTopUpVoucher && (
                                             <td>
                                                 {item.kind === 'TOP_UP' ? (
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => handleDeleteDisbursement(item._id)} disabled={deletingDisbursementId === item._id}>
-                                                        <Trash2 size={14} style={{ color: '#ef4444' }} />
-                                                    </button>
+                                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => openEditDisbursementModal(item)}
+                                                            disabled={deletingDisbursementId === item._id || toppingUp}
+                                                            aria-label={`Edit ${bonLabel}`}
+                                                        >
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => handleDeleteDisbursement(item._id)}
+                                                            disabled={deletingDisbursementId === item._id}
+                                                            aria-label={`Hapus ${bonLabel}`}
+                                                        >
+                                                            <Trash2 size={14} style={{ color: '#ef4444' }} />
+                                                        </button>
+                                                    </div>
                                                 ) : (
                                                     <span className="text-muted" style={{ fontSize: '0.78rem' }}>Tetap</span>
                                                 )}
@@ -651,6 +703,9 @@ export default function DriverVoucherDetailPage() {
                                 </div>
                                 {!isSettled && canTopUpVoucher && item.kind === 'TOP_UP' && (
                                     <div className="mobile-record-actions">
+                                        <button className="btn btn-secondary" onClick={() => openEditDisbursementModal(item)} disabled={deletingDisbursementId === item._id || toppingUp}>
+                                            <Pencil size={14} /> Edit Top Up
+                                        </button>
                                         <button className="btn btn-secondary" onClick={() => handleDeleteDisbursement(item._id)} disabled={deletingDisbursementId === item._id}>
                                             <Trash2 size={14} /> Hapus Top Up
                                         </button>
@@ -745,9 +800,9 @@ export default function DriverVoucherDetailPage() {
             )}
 
             {showTopUpModal && canTopUpVoucher && (
-                <div className="modal-overlay" onClick={() => { if (!toppingUp) setShowTopUpModal(false); }}>
+                <div className="modal-overlay" onClick={closeTopUpModal}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Uang Jalan</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editingDisbursementId ? 'Edit Uang Jalan' : 'Tambah Uang Jalan'}</h3><button className="modal-close" onClick={closeTopUpModal} disabled={toppingUp}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', border: '1px solid var(--color-gray-200)' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
@@ -785,7 +840,7 @@ export default function DriverVoucherDetailPage() {
                                 <textarea className="form-textarea" rows={2} value={topUpForm.note} onChange={event => setTopUpForm({ ...topUpForm, note: event.target.value })} placeholder="Alasan tambahan bon, misalnya kurang solar, inap, atau kebutuhan lain..." />
                             </div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}>Batal</button><button className="btn btn-primary" onClick={handleTopUp} disabled={toppingUp}><Plus size={16} /> {toppingUp ? 'Memproses...' : 'Tambah Uang Jalan'}</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={closeTopUpModal} disabled={toppingUp}>Batal</button><button className="btn btn-primary" onClick={handleTopUp} disabled={toppingUp}><Plus size={16} /> {toppingUp ? 'Memproses...' : editingDisbursementId ? 'Simpan Perubahan' : 'Tambah Uang Jalan'}</button></div>
                     </div>
                 </div>
             )}

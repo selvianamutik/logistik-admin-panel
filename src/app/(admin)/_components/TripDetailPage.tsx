@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../layout';
-import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, Trash2, X } from 'lucide-react';
+import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -83,13 +83,15 @@ import {
     createDefaultDriverVoucherItemForm,
     createDefaultDriverVoucherTopUpForm,
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
+    buildDriverVoucherCashBreakdown,
+    sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
 import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -379,6 +381,7 @@ export default function TripDetailPage() {
     const [showTripCashIssueModal, setShowTripCashIssueModal] = useState(false);
     const [showTripCashTopUpModal, setShowTripCashTopUpModal] = useState(false);
     const [showTripCashExpenseModal, setShowTripCashExpenseModal] = useState(false);
+    const [showTripCashSettleModal, setShowTripCashSettleModal] = useState(false);
     const [showCancelTripModal, setShowCancelTripModal] = useState(false);
     const [showActualCargoFinalizationModal, setShowActualCargoFinalizationModal] = useState(false);
     const [activeFinalizationCargoItemRef, setActiveFinalizationCargoItemRef] = useState('');
@@ -407,6 +410,7 @@ export default function TripDetailPage() {
     const [tripOriginArea, setTripOriginArea] = useState('');
     const [tripDestinationArea, setTripDestinationArea] = useState('');
     const [linkedVoucher, setLinkedVoucher] = useState<DriverVoucher | null>(null);
+    const [linkedVoucherDisbursements, setLinkedVoucherDisbursements] = useState<DriverVoucherDisbursement[]>([]);
     const [linkedTripCashLink, setLinkedTripCashLink] = useState<TripCashLinkSummary | null>(null);
     const [linkedVoucherBonNumber, setLinkedVoucherBonNumber] = useState('');
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -417,6 +421,7 @@ export default function TripDetailPage() {
     const [issuingTripCash, setIssuingTripCash] = useState(false);
     const [toppingUpTripCash, setToppingUpTripCash] = useState(false);
     const [savingTripCashExpense, setSavingTripCashExpense] = useState(false);
+    const [settlingTripCash, setSettlingTripCash] = useState(false);
     const [cancellingTrip, setCancellingTrip] = useState(false);
     const [rejectingRequest, setRejectingRequest] = useState(false);
     const [loadingTripResources, setLoadingTripResources] = useState(false);
@@ -460,6 +465,8 @@ export default function TripDetailPage() {
     const [tripCashIssueForm, setTripCashIssueForm] = useState<TripCashIssueFormState>(createDefaultTripCashIssueForm);
     const [tripCashTopUpForm, setTripCashTopUpForm] = useState(createDefaultDriverVoucherTopUpForm);
     const [tripCashExpenseForm, setTripCashExpenseForm] = useState(createDefaultDriverVoucherItemForm);
+    const [tripCashSettlementDate, setTripCashSettlementDate] = useState(getBusinessDateValue());
+    const [tripCashSettlementBankRef, setTripCashSettlementBankRef] = useState('');
     const editingTaripRef = useRef(false);
     const loadedReferenceCustomerRef = useRef<string>('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
@@ -479,6 +486,7 @@ export default function TripDetailPage() {
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
     const canManageTripCashCosts = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
+    const canSettleTripCash = normalizedRole === 'OWNER' || normalizedRole === 'FINANCE';
     const currentPath = pathname || `/delivery-orders/${doId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
     const getDefaultPodName = useCallback(() => {
@@ -502,6 +510,7 @@ export default function TripDetailPage() {
         showTripCashIssueModal ||
         showTripCashTopUpModal ||
         showTripCashExpenseModal ||
+        showTripCashSettleModal ||
         showCancelTripModal ||
         showActualCargoFinalizationModal ||
         pendingTripClosure !== null;
@@ -697,6 +706,15 @@ export default function TripDetailPage() {
         setLinkedVoucher(tripDetail?.linkedVoucher || null);
         setLinkedTripCashLink(tripDetail?.tripCashLink || null);
         setLinkedVoucherBonNumber(tripDetail?.linkedVoucher?.bonNumber || tripDetail?.tripCashLink?.bonNumber || '');
+        if (tripDetail?.linkedVoucher?._id) {
+            const disbursementRows = await fetchAllAdminCollectionData<DriverVoucherDisbursement>(
+                `/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: tripDetail.linkedVoucher._id }))}`,
+                'Gagal memuat riwayat uang jalan trip'
+            ).catch(() => []);
+            setLinkedVoucherDisbursements(sortDriverVoucherDisbursements(disbursementRows || []));
+        } else {
+            setLinkedVoucherDisbursements([]);
+        }
         if (!editingTaripRef.current) {
             setTaripBorongan((resolvedDeliveryOrder?.baseTaripBorongan ?? resolvedDeliveryOrder?.taripBorongan) || 0);
             setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
@@ -1260,18 +1278,6 @@ export default function TripDetailPage() {
         });
 
         return matchedRecipient?._id || '';
-    };
-
-    const applyShipperReferenceRecipient = (draftKey: string, recipientId: string) => {
-        const recipient = customerRecipients.find(item => item._id === recipientId);
-        if (!recipient) return;
-        updateShipperReferenceDraft(draftKey, {
-            selectedRecipientId: recipientId,
-            receiverName: recipient.receiverName || '',
-            receiverPhone: recipient.receiverPhone || '',
-            receiverCompany: recipient.receiverCompany || '',
-            receiverAddress: recipient.receiverAddress || '',
-        });
     };
 
     const getDefaultCargoDraftPickupKey = () => (
@@ -2047,7 +2053,7 @@ export default function TripDetailPage() {
 
     const updateActualDropDraft = (
         draftKey: string,
-        field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
+        field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef' | 'billingCustomerName' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
         value: string
     ) => {
         const buildNextDrop = (drop: ActualDropDraft) => {
@@ -2508,6 +2514,8 @@ export default function TripDetailPage() {
                                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                                     shipperReferenceKey: item.shipperReferenceKey,
                                     shipperReferenceNumber: item.shipperReferenceNumber,
+                                    billingCustomerRef: item.billingCustomerRef,
+                                    billingCustomerName: item.billingCustomerName,
                                     locationName: item.locationName,
                                     locationAddress: item.locationAddress,
                                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
@@ -2929,6 +2937,47 @@ export default function TripDetailPage() {
         }
     };
 
+    const openTripCashSettleModal = async () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canSettleTripCash) return;
+        setTripCashSettlementDate(getBusinessDateValue());
+        setTripCashSettlementBankRef(linkedVoucher.settlementBankRef || linkedVoucher.issueBankRef || '');
+        setShowTripCashSettleModal(true);
+        await loadTripCashBankAccounts();
+    };
+
+    const handleTripCashSettle = async () => {
+        if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canSettleTripCash) return;
+        setSettlingTripCash(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-vouchers',
+                    action: 'settle',
+                    data: {
+                        id: linkedVoucher._id,
+                        date: tripCashSettlementDate,
+                        settlementBankRef: tripCashSettlementBankRef || linkedVoucher.issueBankRef || undefined,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyelesaikan uang jalan trip');
+                return;
+            }
+
+            setShowTripCashSettleModal(false);
+            await refreshTripDetail();
+            addToast('success', 'Uang jalan trip berhasil diselesaikan');
+        } catch {
+            addToast('error', 'Gagal menyelesaikan uang jalan trip');
+        } finally {
+            setSettlingTripCash(false);
+        }
+    };
+
     const openTripCashExpenseModal = () => {
         if (!linkedVoucher || linkedVoucher.status === 'SETTLED' || !canManageTripCashCosts) return;
         setTripCashExpenseForm(createDefaultDriverVoucherItemForm());
@@ -2982,12 +3031,12 @@ export default function TripDetailPage() {
                 referenceKey: entry.referenceKey.trim(),
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
                 pickupStopKey: entry.pickupStopKey.trim(),
-                billingCustomerRef: entry.billingCustomerRef.trim(),
-                billingCustomerName: entry.billingCustomerName.trim(),
-                receiverName: entry.receiverName.trim(),
-                receiverPhone: entry.receiverPhone.trim(),
-                receiverAddress: entry.receiverAddress.trim(),
-                receiverCompany: entry.receiverCompany.trim(),
+                billingCustomerRef: '',
+                billingCustomerName: '',
+                receiverName: '',
+                receiverPhone: '',
+                receiverAddress: '',
+                receiverCompany: '',
             }))
             .filter(entry => Boolean(entry.referenceNumber));
         if (normalizedReferences.length === 0) {
@@ -3326,14 +3375,33 @@ export default function TripDetailPage() {
         return referenceValue ? `sj:${referenceValue}` : '';
     };
     const getActualDropRecipientOptions = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef'>
     ) => {
         const selectedReferenceValue = resolveActualDropShipperReferenceValue(drop);
         const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
-        return getCustomerRecipientOptions(selectedReference?.billingCustomerRef || doData?.customerRef);
+        return getCustomerRecipientOptions(drop.billingCustomerRef || selectedReference?.billingCustomerRef || doData?.customerRef);
+    };
+    const getActualDropBillingCustomerValue = (
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef'>
+    ) => {
+        const selectedReferenceValue = resolveActualDropShipperReferenceValue(drop);
+        const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
+        return drop.billingCustomerRef || selectedReference?.billingCustomerRef || doData?.customerRef || '';
+    };
+    const updateActualDropBillingCustomer = (draftKey: string, customerRef: string) => {
+        const nextCustomer = billingCustomers.find(customer => customer._id === customerRef);
+        setActualDropPoints(previous => previous.map(item => (
+            item.draftKey === draftKey
+                ? {
+                    ...item,
+                    billingCustomerRef: customerRef,
+                    billingCustomerName: nextCustomer?.name || '',
+                }
+                : item
+        )));
     };
     const resolveActualDropRecipientValue = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress'>
+        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef' | 'locationName' | 'locationAddress'>
     ) => {
         const recipientOptions = getActualDropRecipientOptions(drop);
         if (recipientOptions.length === 0) {
@@ -3421,6 +3489,26 @@ export default function TripDetailPage() {
         !isTripClosedByAdmin &&
         !doData.pendingDriverStatus;
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
+    const linkedVoucherCashBreakdown = linkedVoucher && linkedVoucherSummary
+        ? buildDriverVoucherCashBreakdown(linkedVoucherDisbursements, {
+            initialCashGiven: linkedVoucherSummary.initialCashGiven,
+            topUpAmount: linkedVoucherSummary.topUpAmount,
+        })
+        : '';
+    const linkedVoucherSettlementLabel = linkedVoucherSummary
+        ? linkedVoucherSummary.balance > 0
+            ? 'Driver mengembalikan net settlement akhir ke rekening atau kas perusahaan'
+            : linkedVoucherSummary.balance < 0
+                ? 'Perusahaan masih perlu menambah pembayaran akhir ke supir'
+                : 'Tidak ada net settlement akhir'
+        : '';
+    const linkedVoucherSettlementPrimaryLabel = linkedVoucherSummary
+        ? linkedVoucherSummary.balance > 0
+            ? 'Selesaikan & Catat Pengembalian Akhir'
+            : linkedVoucherSummary.balance < 0
+                ? 'Selesaikan & Tambah Bayar Akhir'
+                : 'Selesaikan Bon'
+        : 'Selesaikan Bon';
     const linkedTripCashVoucherId = linkedVoucher?._id || linkedTripCashLink?.voucherId || '';
     const linkedTripCashBonNumber = linkedVoucher?.bonNumber || linkedTripCashLink?.bonNumber || linkedVoucherBonNumber;
     const linkedTripCashIssuedDate = linkedVoucher?.issuedDate || linkedTripCashLink?.issuedDate || '';
@@ -3428,6 +3516,12 @@ export default function TripDetailPage() {
     const hasLinkedTripCash = Boolean(linkedTripCashVoucherId || linkedTripCashBonNumber);
     const canTopUpLinkedTripCash = Boolean(linkedVoucher && linkedVoucher.status !== 'SETTLED' && canManageTripCashCosts);
     const canAddLinkedTripCashExpense = canTopUpLinkedTripCash;
+    const canSettleLinkedTripCash = Boolean(
+        linkedVoucher &&
+        linkedVoucher.status !== 'SETTLED' &&
+        canSettleTripCash &&
+        ((linkedVoucherSummary?.totalSpent || 0) > 0 || (linkedVoucherSummary?.driverFeeAmount || 0) > 0)
+    );
     const linkedVoucherStatusMeta = linkedTripCashStatus
         ? ({
             DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -4075,6 +4169,11 @@ export default function TripDetailPage() {
                                     <Plus size={14} /> Tambah Uang Jalan
                                 </button>
                             )}
+                            {canSettleLinkedTripCash && (
+                                <button className="btn btn-primary btn-sm" onClick={() => void openTripCashSettleModal()}>
+                                    <CheckCircle size={14} /> Selesaikan Bon
+                                </button>
+                            )}
                             {linkedTripCashVoucherId && canOpenTripCashPage && (
                                 <Link className="btn btn-secondary btn-sm" href={withReturnTo(`/driver-vouchers/${linkedTripCashVoucherId}`)}>
                                     <Wallet size={14} /> Buka Detail Bon
@@ -4135,6 +4234,9 @@ export default function TripDetailPage() {
                                     <div className="detail-item">
                                         <div className="detail-label">Total Uang Diberikan</div>
                                         <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</div>
+                                        {linkedVoucherCashBreakdown && (
+                                            <div className="text-muted text-sm">{linkedVoucherCashBreakdown}</div>
+                                        )}
                                     </div>
                                     <div className="detail-item">
                                         <div className="detail-label">Net Settlement Akhir</div>
@@ -5235,6 +5337,89 @@ export default function TripDetailPage() {
                 </div>
             )}
 
+            {showTripCashSettleModal && linkedVoucher && linkedVoucherSummary && (
+                <div className="modal-overlay" onClick={() => { if (!settlingTripCash) setShowTripCashSettleModal(false); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Selesaikan Bon</h3>
+                            <button className="modal-close" onClick={() => setShowTripCashSettleModal(false)} disabled={settlingTripCash}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', border: '1px solid var(--color-gray-200)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                                    <div>
+                                        <div className="text-muted text-sm">Total Uang Diberikan</div>
+                                        <div className="font-semibold">{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</div>
+                                        {linkedVoucherCashBreakdown && <div className="text-muted text-sm">{linkedVoucherCashBreakdown}</div>}
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Biaya Lain-lain</div>
+                                        <div className="font-semibold">{formatCurrency(linkedVoucherSummary.totalSpent)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Upah Borongan</div>
+                                        <div className="font-semibold">{formatCurrency(linkedVoucherSummary.driverFeeAmount)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Net Settlement Akhir</div>
+                                        <div className="font-semibold" style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                            {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Selesai</label>
+                                <input
+                                    type="date"
+                                    className="form-input"
+                                    value={tripCashSettlementDate}
+                                    onChange={event => setTripCashSettlementDate(event.target.value)}
+                                    disabled={settlingTripCash}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Rekening / Kas Settlement {linkedVoucherSummary.balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <select
+                                    className="form-select"
+                                    value={tripCashSettlementBankRef}
+                                    onChange={event => setTripCashSettlementBankRef(event.target.value)}
+                                    disabled={loadingTripCashOptions || settlingTripCash}
+                                >
+                                    <option value="">{loadingTripCashOptions ? 'Memuat kas / bank...' : 'Pilih kas / bank'}</option>
+                                    {bankAccounts.map(account => (
+                                        <option key={account._id} value={account._id}>
+                                            {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                {linkedVoucherSettlementLabel && <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{linkedVoucherSettlementLabel}</div>}
+                            </div>
+                            <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>- {formatCurrency(linkedVoucherSummary.totalSpent)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(linkedVoucherSummary.operationalBalance)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>- {formatCurrency(linkedVoucherSummary.driverFeeAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.5rem' }}>
+                                    <span>Net Settlement Akhir</span>
+                                    <strong style={{ color: linkedVoucherSummary.balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(linkedVoucherSummary.balance))}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTripCashSettleModal(false)} disabled={settlingTripCash}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleTripCashSettle}
+                                disabled={settlingTripCash || loadingTripCashOptions || (linkedVoucherSummary.balance !== 0 && !tripCashSettlementBankRef)}
+                            >
+                                <CheckCircle size={16} /> {settlingTripCash ? 'Memproses...' : linkedVoucherSettlementPrimaryLabel}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {showTripResourcesModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingTripResources) setShowTripResourcesModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
@@ -5518,8 +5703,27 @@ export default function TripDetailPage() {
                                                 (() => {
                                                     const recipientOptions = getActualDropRecipientOptions(selectedAutoActualDropDraft);
                                                     const selectedRecipientId = resolveActualDropRecipientValue(selectedAutoActualDropDraft);
+                                                    const selectedBillingCustomerRef = getActualDropBillingCustomerValue(selectedAutoActualDropDraft);
                                                     return (
                                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                                            {billingCustomers.length > 0 && (
+                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                    <label className="form-label">Customer Invoice</label>
+                                                                    <select
+                                                                        className="form-select"
+                                                                        value={selectedBillingCustomerRef}
+                                                                        onChange={event => updateActualDropBillingCustomer(selectedAutoActualDropDraft.draftKey, event.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                    >
+                                                                        <option value={doData?.customerRef || ''}>Ikuti customer order / resi</option>
+                                                                        {billingCustomers.map(customer => (
+                                                                            <option key={customer._id} value={customer._id}>
+                                                                                {customer.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            )}
                                                             {recipientOptions.length > 0 && (
                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                     <label className="form-label">Tujuan dari Master Customer</label>
@@ -5583,6 +5787,7 @@ export default function TripDetailPage() {
                                                                 const allocationSummaryRows = getActualDropAllocationSummaryRows(item);
                                                                 const recipientOptions = getActualDropRecipientOptions(item);
                                                                 const selectedRecipientId = resolveActualDropRecipientValue(item);
+                                                                const selectedBillingCustomerRef = getActualDropBillingCustomerValue(item);
                                                                 return (
                                                             <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
@@ -5663,6 +5868,24 @@ export default function TripDetailPage() {
                                                                             ))}
                                                                         </select>
                                                                     </div>
+                                                                    {billingCustomers.length > 0 && (
+                                                                        <div className="form-group">
+                                                                            <label className="form-label">Customer Invoice</label>
+                                                                            <select
+                                                                                className="form-select"
+                                                                                value={selectedBillingCustomerRef}
+                                                                                onChange={e => updateActualDropBillingCustomer(item.draftKey, e.target.value)}
+                                                                                disabled={updatingStatus}
+                                                                            >
+                                                                                <option value={doData?.customerRef || ''}>Ikuti customer order / resi</option>
+                                                                                {billingCustomers.map(customer => (
+                                                                                    <option key={customer._id} value={customer._id}>
+                                                                                        {customer.name}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
+                                                                    )}
                                                                     {recipientOptions.length > 0 && (
                                                                         <div className="form-group">
                                                                             <label className="form-label">Tujuan Master Customer</label>
@@ -6125,100 +6348,6 @@ export default function TripDetailPage() {
                                             {pickupStopMap.get(selectedShipperReferenceDraft.pickupStopKey)?.pickupAddress}
                                         </div>
                                     )}
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Customer Invoice</label>
-                                        <select
-                                            className="form-select"
-                                            value={selectedShipperReferenceDraft.billingCustomerRef}
-                                            onChange={event => {
-                                                const nextCustomerRef = event.target.value;
-                                                const nextCustomerName = billingCustomers.find(customer => customer._id === nextCustomerRef)?.name || '';
-                                                updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, {
-                                                    selectedRecipientId: resolveMatchingRecipientId(nextCustomerRef || doData?.customerRef, {
-                                                        receiverName: selectedShipperReferenceDraft.receiverName,
-                                                        receiverPhone: selectedShipperReferenceDraft.receiverPhone,
-                                                        receiverCompany: selectedShipperReferenceDraft.receiverCompany,
-                                                        receiverAddress: selectedShipperReferenceDraft.receiverAddress,
-                                                    }),
-                                                    billingCustomerRef: nextCustomerRef,
-                                                    billingCustomerName: nextCustomerName,
-                                                });
-                                            }}
-                                            disabled={savingShipperReference}
-                                        >
-                                            <option value="">Ikuti customer order / resi</option>
-                                            {billingCustomers.map(customer => (
-                                                <option key={customer._id} value={customer._id}>
-                                                    {customer.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    {(() => {
-                                        const recipientOptions = getCustomerRecipientOptions(selectedShipperReferenceDraft.billingCustomerRef || doData?.customerRef);
-                                        return recipientOptions.length > 0 ? (
-                                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Tujuan dari Master Customer</label>
-                                                <select
-                                                    className="form-select"
-                                                    value={selectedShipperReferenceDraft.selectedRecipientId}
-                                                    onChange={event => applyShipperReferenceRecipient(selectedShipperReferenceDraft.draftKey, event.target.value)}
-                                                    disabled={savingShipperReference}
-                                                >
-                                                    <option value="">Pilih tujuan untuk SJ ini...</option>
-                                                    {recipientOptions.map(recipient => (
-                                                        <option key={recipient._id} value={recipient._id}>
-                                                            {formatCustomerRecipientLabel(recipient)}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        ) : null;
-                                    })()}
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Nama Penerima</label>
-                                            <input
-                                                className="form-input"
-                                                value={selectedShipperReferenceDraft.receiverName}
-                                                onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { selectedRecipientId: '', receiverName: event.target.value })}
-                                                disabled={savingShipperReference}
-                                                placeholder="Opsional"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Telepon</label>
-                                            <input
-                                                className="form-input"
-                                                value={selectedShipperReferenceDraft.receiverPhone}
-                                                onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { selectedRecipientId: '', receiverPhone: event.target.value })}
-                                                disabled={savingShipperReference}
-                                                placeholder="Opsional"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Perusahaan / Tujuan</label>
-                                        <input
-                                            className="form-input"
-                                            value={selectedShipperReferenceDraft.receiverCompany}
-                                            onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { selectedRecipientId: '', receiverCompany: event.target.value })}
-                                            disabled={savingShipperReference}
-                                            placeholder="Opsional"
-                                        />
-                                    </div>
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Alamat Tujuan SJ</label>
-                                        <textarea
-                                            className="form-textarea"
-                                            rows={2}
-                                            value={selectedShipperReferenceDraft.receiverAddress}
-                                            onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { selectedRecipientId: '', receiverAddress: event.target.value })}
-                                            disabled={savingShipperReference}
-                                            placeholder="Alamat tujuan untuk invoice / dokumen SJ ini"
-                                        />
-                                    </div>
-
                                     <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.35rem' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                             <div>

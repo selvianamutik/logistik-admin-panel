@@ -553,6 +553,11 @@ export interface DriverVoucherDisbursement {
   voidedByName?: string;
   voidReason?: string;
   reversalBankTransactionRef?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  replacedBankTransactionRef?: string;
+  adjustmentBankTransactionRef?: string;
   createdBy?: string;
   createdByName?: string;
 }
@@ -653,6 +658,8 @@ export interface DeliveryActualDropPoint {
   deliveryOrderItemRefs?: string[];
   shipperReferenceKey?: string;
   shipperReferenceNumber?: string;
+  billingCustomerRef?: string;
+  billingCustomerName?: string;
   locationName: string;
   locationAddress?: string;
   qtyKoli?: number;

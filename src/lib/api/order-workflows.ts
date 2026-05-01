@@ -480,6 +480,7 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
                     ? normalizeOptionalText(deliveryOrder.pickupStops?.[0]?._key)
                     : undefined);
             const pickupStop = resolvedPickupStopKey ? pickupStopByKey.get(resolvedPickupStopKey) : undefined;
+            const hasReferenceField = (field: string) => Object.prototype.hasOwnProperty.call(reference, field);
 
             return {
                 _key: normalizeOptionalText(existingReference?._key) || crypto.randomUUID(),
@@ -490,23 +491,29 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
                     normalizeOptionalText(pickupStop?.pickupAddress)
                     || normalizeOptionalText(existingReference?.pickupAddress),
                 billingCustomerRef:
-                    normalizeOptionalText(reference.billingCustomerRef)
-                    || normalizeOptionalText(existingReference?.billingCustomerRef),
+                    hasReferenceField('billingCustomerRef')
+                        ? normalizeOptionalText(reference.billingCustomerRef)
+                        : normalizeOptionalText(existingReference?.billingCustomerRef),
                 billingCustomerName:
-                    normalizeOptionalText(reference.billingCustomerName)
-                    || normalizeOptionalText(existingReference?.billingCustomerName),
+                    hasReferenceField('billingCustomerName')
+                        ? normalizeOptionalText(reference.billingCustomerName)
+                        : normalizeOptionalText(existingReference?.billingCustomerName),
                 receiverName:
-                    normalizeOptionalText(reference.receiverName)
-                    || normalizeOptionalText(existingReference?.receiverName),
+                    hasReferenceField('receiverName')
+                        ? normalizeOptionalText(reference.receiverName)
+                        : normalizeOptionalText(existingReference?.receiverName),
                 receiverPhone:
-                    normalizeOptionalText(reference.receiverPhone)
-                    || normalizeOptionalText(existingReference?.receiverPhone),
+                    hasReferenceField('receiverPhone')
+                        ? normalizeOptionalText(reference.receiverPhone)
+                        : normalizeOptionalText(existingReference?.receiverPhone),
                 receiverAddress:
-                    normalizeOptionalText(reference.receiverAddress)
-                    || normalizeOptionalText(existingReference?.receiverAddress),
+                    hasReferenceField('receiverAddress')
+                        ? normalizeOptionalText(reference.receiverAddress)
+                        : normalizeOptionalText(existingReference?.receiverAddress),
                 receiverCompany:
-                    normalizeOptionalText(reference.receiverCompany)
-                    || normalizeOptionalText(existingReference?.receiverCompany),
+                    hasReferenceField('receiverCompany')
+                        ? normalizeOptionalText(reference.receiverCompany)
+                        : normalizeOptionalText(existingReference?.receiverCompany),
                 notes:
                     normalizeOptionalText(reference.notes)
                     || normalizeOptionalText(existingReference?.notes),

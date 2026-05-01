@@ -373,12 +373,12 @@ export default function SuratJalanDetailPage() {
                     ...reference,
                     referenceNumber: nextReferenceNumber,
                     pickupStopKey: editForm.pickupStopKey.trim() || undefined,
-                    billingCustomerRef: editForm.billingCustomerRef.trim() || undefined,
-                    billingCustomerName: editForm.billingCustomerName.trim() || undefined,
-                    receiverName: editForm.receiverName.trim() || undefined,
-                    receiverPhone: editForm.receiverPhone.trim() || undefined,
-                    receiverCompany: editForm.receiverCompany.trim() || undefined,
-                    receiverAddress: editForm.receiverAddress.trim() || undefined,
+                    billingCustomerRef: '',
+                    billingCustomerName: '',
+                    receiverName: '',
+                    receiverPhone: '',
+                    receiverCompany: '',
+                    receiverAddress: '',
                 }
                 : reference
         ));
@@ -440,12 +440,12 @@ export default function SuratJalanDetailPage() {
                             _key: reference._key,
                             referenceNumber: reference.referenceNumber,
                             pickupStopKey: reference.pickupStopKey,
-                            billingCustomerRef: reference.billingCustomerRef,
-                            billingCustomerName: reference.billingCustomerName,
-                            receiverName: reference.receiverName,
-                            receiverPhone: reference.receiverPhone,
-                            receiverCompany: reference.receiverCompany,
-                            receiverAddress: reference.receiverAddress,
+                            billingCustomerRef: '',
+                            billingCustomerName: '',
+                            receiverName: '',
+                            receiverPhone: '',
+                            receiverCompany: '',
+                            receiverAddress: '',
                         })),
                     },
                 }),
@@ -1582,36 +1582,6 @@ export default function SuratJalanDetailPage() {
                                     </select>
                                 </div>
                             )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Customer Invoice</label>
-                                    <input className="form-input" value={editForm.billingCustomerName} onChange={event => updateEditForm({ billingCustomerName: event.target.value })} disabled={savingEdit} />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Nama Penerima / PIC</label>
-                                    <input className="form-input" value={editForm.receiverName} onChange={event => updateEditForm({ receiverName: event.target.value })} disabled={savingEdit} />
-                                </div>
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Telepon Penerima</label>
-                                    <input className="form-input" value={editForm.receiverPhone} onChange={event => updateEditForm({ receiverPhone: event.target.value })} disabled={savingEdit} />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Perusahaan / Tujuan</label>
-                                    <input className="form-input" value={editForm.receiverCompany} onChange={event => updateEditForm({ receiverCompany: event.target.value })} disabled={savingEdit} />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Alamat Tujuan SJ</label>
-                                <textarea
-                                    className="form-textarea"
-                                    rows={3}
-                                    value={editForm.receiverAddress}
-                                    onChange={event => updateEditForm({ receiverAddress: event.target.value })}
-                                    disabled={savingEdit}
-                                />
-                            </div>
                             <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.5rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     <div>

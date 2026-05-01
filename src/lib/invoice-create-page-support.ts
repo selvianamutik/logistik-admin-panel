@@ -228,12 +228,41 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             billableOnly: true,
             deliveryOrderItemRef,
         }).join(', ');
+    const getActualDropBillingContext = (shipperReferenceNumber: string, deliveryOrderItemRef?: string) => {
+        const scopedReference = getDropReferenceScope(shipperReferenceNumber);
+        const normalizedReference = (scopedReference || '').trim();
+        const normalizedItemRef = (deliveryOrderItemRef || '').trim();
+        const billableDrop = actualDropPoints.find(point => {
+            if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
+                return false;
+            }
+            if (normalizedReference && (point.shipperReferenceNumber || '').trim() !== normalizedReference) {
+                return false;
+            }
+            if (normalizedItemRef) {
+                const pointItemRefs = [
+                    point.deliveryOrderItemRef,
+                    ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+                ].map(value => (value || '').trim()).filter(Boolean);
+                if (pointItemRefs.length > 0 && !pointItemRefs.includes(normalizedItemRef)) {
+                    return false;
+                }
+            }
+            return Boolean(point.billingCustomerRef || point.billingCustomerName);
+        });
+
+        return {
+            customerRef: billableDrop?.billingCustomerRef || '',
+            customerName: billableDrop?.billingCustomerName || '',
+        };
+    };
 
     const buildShipperReferenceRow = (
         shipperReferenceNumber: string,
         items: DeliveryOrderItem[] = []
     ): NotaItemRow => {
         const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+        const actualDropBilling = getActualDropBillingContext(shipperReferenceNumber);
         const billableItems = hasActualDropPoints
             ? items.filter(item => {
                 const itemBillableCargo = getDeliveryOrderBillableCargoSummary(
@@ -255,8 +284,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             ...baseRow,
             deliveryOrderItemRef: billableItems[0]?._id,
             deliveryOrderItemRefs: billableItems.map(item => item._id).filter(Boolean),
-            customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
-            customerName: matchedReference?.billingCustomerName || baseRow.customerName,
+            customerRef: actualDropBilling.customerRef || matchedReference?.billingCustomerRef || baseRow.customerRef,
+            customerName: actualDropBilling.customerName || matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
             tujuan:
@@ -285,6 +314,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         }
     ): NotaItemRow | null => {
         const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+        const actualDropBilling = getActualDropBillingContext(shipperReferenceNumber, item._id);
         const itemActualCargo = getItemActualOrPlannedCargo(item);
         const itemSpecificBillableCargo = getDeliveryOrderItemSpecificBillableCargoSummary(
             deliveryOrder,
@@ -306,8 +336,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             ...baseRow,
             deliveryOrderItemRef: item._id,
             deliveryOrderItemRefs: [item._id],
-            customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
-            customerName: matchedReference?.billingCustomerName || baseRow.customerName,
+            customerRef: actualDropBilling.customerRef || matchedReference?.billingCustomerRef || baseRow.customerRef,
+            customerName: actualDropBilling.customerName || matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
             tujuan:
@@ -329,12 +359,13 @@ export function buildNotaRowsFromDeliveryOrder(params: {
                     shipperReferenceNumber: reference.referenceNumber,
                     billableOnly: true,
                 }).join(', ');
+                const actualDropBilling = getActualDropBillingContext(reference.referenceNumber);
 
                 return {
                     id: Math.random().toString(36).slice(2),
                     ...baseRow,
-                    customerRef: reference.billingCustomerRef || baseRow.customerRef,
-                    customerName: reference.billingCustomerName || baseRow.customerName,
+                    customerRef: actualDropBilling.customerRef || reference.billingCustomerRef || baseRow.customerRef,
+                    customerName: actualDropBilling.customerName || reference.billingCustomerName || baseRow.customerName,
                     noSJ: reference.referenceNumber,
                     dari: reference.pickupAddress || baseRow.dari,
                     tujuan:

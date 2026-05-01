@@ -11,6 +11,8 @@ type DeliveryActualDropPointLike = {
     deliveryOrderItemRef?: string | null;
     deliveryOrderItemRefs?: string[] | null;
     shipperReferenceNumber?: string | null;
+    billingCustomerRef?: string | null;
+    billingCustomerName?: string | null;
     locationName?: string | null;
     locationAddress?: string | null;
     qtyKoli?: unknown;

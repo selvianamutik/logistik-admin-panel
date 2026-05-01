@@ -1602,6 +1602,237 @@ export async function handleDriverVoucherDisbursementDelete(
     });
 }
 
+export async function handleDriverVoucherDisbursementUpdate(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const disbursementId = typeof data.id === 'string' ? data.id : '';
+    const updates = isPlainObject(data.updates) ? data.updates : {};
+    if (!disbursementId) {
+        return NextResponse.json({ error: 'Tambahan bon tidak valid' }, { status: 400 });
+    }
+
+    const amount = normalizeCurrencyNumber(updates.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal tambahan bon tidak valid' }, { status: 400 });
+    }
+
+    const bankAccountRef = typeof updates.bankAccountRef === 'string' ? updates.bankAccountRef : '';
+    if (!bankAccountRef) {
+        return NextResponse.json({ error: 'Rekening sumber tambahan bon wajib dipilih' }, { status: 400 });
+    }
+
+    const topUpDate =
+        typeof updates.date === 'string' && updates.date
+            ? updates.date
+            : getBusinessDateValue();
+    const topUpDateError = validateIsoDateOrResponse(topUpDate, 'Tanggal tambahan bon', 'Tanggal tambahan bon tidak valid');
+    if (topUpDateError) {
+        return topUpDateError;
+    }
+    const note = normalizeOptionalText(updates.note);
+
+    const initialDisbursement = await getDocumentById<{
+        _id: string;
+        _rev?: string;
+        voucherRef?: string;
+        amount?: number;
+        kind?: 'INITIAL' | 'TOP_UP';
+        status?: 'ACTIVE' | 'VOID';
+        date?: string;
+        bankAccountRef?: string;
+        bankTransactionRef?: string;
+        note?: string;
+    }>(disbursementId, 'driverVoucherDisbursement');
+    if (!initialDisbursement?.voucherRef) {
+        return NextResponse.json({ error: 'Tambahan bon tidak ditemukan' }, { status: 404 });
+    }
+    if (initialDisbursement.kind !== 'TOP_UP') {
+        return NextResponse.json({ error: 'Bon awal tidak bisa diedit dari riwayat pencairan' }, { status: 409 });
+    }
+    if (initialDisbursement.status === 'VOID') {
+        return NextResponse.json({ error: 'Tambahan bon sudah dibatalkan' }, { status: 404 });
+    }
+
+    const state = await getDriverVoucherState(initialDisbursement.voucherRef);
+    if ('error' in state) return state.error;
+    if (state.voucher.status === 'SETTLED') {
+        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
+    }
+
+    const disbursement = state.disbursements.find(existing => existing._id === disbursementId);
+    if (!disbursement) {
+        return NextResponse.json({ error: 'Tambahan bon tidak ditemukan atau sudah berubah. Muat ulang lalu coba lagi.' }, { status: 404 });
+    }
+    if (disbursement.kind !== 'TOP_UP') {
+        return NextResponse.json({ error: 'Bon awal tidak bisa diedit dari riwayat pencairan' }, { status: 409 });
+    }
+
+    const previousAmount = normalizeNumber(disbursement.amount || 0, { maxFractionDigits: 0 });
+    if (previousAmount <= 0) {
+        return NextResponse.json({ error: 'Nominal tambahan bon lama tidak valid' }, { status: 409 });
+    }
+    if (!disbursement.bankAccountRef || !disbursement.bankTransactionRef) {
+        return NextResponse.json({ error: 'Riwayat bank tambahan bon belum lengkap. Hapus dan input ulang tambahan bon.' }, { status: 409 });
+    }
+
+    const oldBank = await getDocumentById<BankAccountSummary>(disbursement.bankAccountRef, 'bankAccount');
+    if (!oldBank) {
+        return NextResponse.json({ error: 'Rekening historis tambahan bon tidak ditemukan' }, { status: 404 });
+    }
+
+    const newBank = await getLedgerAccount(bankAccountRef);
+    if (!newBank) {
+        return NextResponse.json({ error: 'Rekening sumber tambahan bon tidak ditemukan' }, { status: 404 });
+    }
+
+    const hasBankLedgerChange =
+        bankAccountRef !== disbursement.bankAccountRef ||
+        amount !== previousAmount ||
+        topUpDate !== disbursement.date;
+    let reversalTransactionId: string | undefined;
+    let newTransactionId = disbursement.bankTransactionRef;
+    const oldBankBalanceAfterReversal = readLedgerBalance(oldBank.currentBalance) + previousAmount;
+    let oldBankFinalBalance = oldBankBalanceAfterReversal;
+    let newBankFinalBalance = readLedgerBalance(newBank.currentBalance);
+
+    if (hasBankLedgerChange) {
+        if (bankAccountRef === disbursement.bankAccountRef) {
+            const nextSameBankBalance = oldBankBalanceAfterReversal - amount;
+            if (nextSameBankBalance < 0) {
+                return NextResponse.json(
+                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${oldBankBalanceAfterReversal}` },
+                    { status: 409 }
+                );
+            }
+            oldBankFinalBalance = nextSameBankBalance;
+            newBankFinalBalance = nextSameBankBalance;
+        } else {
+            newBankFinalBalance = readLedgerBalance(newBank.currentBalance) - amount;
+            if (newBankFinalBalance < 0) {
+                return NextResponse.json(
+                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${readLedgerBalance(newBank.currentBalance)}` },
+                    { status: 409 }
+                );
+            }
+        }
+
+        reversalTransactionId = `driver-voucher-disbursement-edit-reversal-${disbursementId}-${crypto.randomUUID()}`;
+        newTransactionId = `driver-voucher-disbursement-edit-${disbursementId}-${crypto.randomUUID()}`;
+
+        await createDocument({
+            _id: reversalTransactionId,
+            _type: 'bankTransaction',
+            bankAccountRef: disbursement.bankAccountRef,
+            bankAccountName: oldBank.bankName,
+            bankAccountNumber: oldBank.accountNumber,
+            type: 'CREDIT',
+            amount: previousAmount,
+            date: getBusinessDateValue(),
+            description: `Koreksi tambahan bon ${state.voucher.bonNumber}`,
+            balanceAfter: oldBankBalanceAfterReversal,
+            relatedVoucherRef: initialDisbursement.voucherRef,
+            reversesBankTransactionRef: disbursement.bankTransactionRef,
+        });
+        await createDocument({
+            _id: newTransactionId,
+            _type: 'bankTransaction',
+            bankAccountRef,
+            bankAccountName: newBank.bankName,
+            bankAccountNumber: newBank.accountNumber,
+            type: 'DEBIT',
+            amount,
+            date: topUpDate,
+            description: `Koreksi tambahan bon ${state.voucher.bonNumber}`,
+            balanceAfter: newBankFinalBalance,
+            relatedVoucherRef: initialDisbursement.voucherRef,
+            replacesBankTransactionRef: disbursement.bankTransactionRef,
+        });
+
+        if (bankAccountRef === disbursement.bankAccountRef) {
+            await updateDocument(bankAccountRef, { currentBalance: newBankFinalBalance }, 'bankAccount');
+        } else {
+            await Promise.all([
+                updateDocument(disbursement.bankAccountRef, { currentBalance: oldBankFinalBalance }, 'bankAccount'),
+                updateDocument(bankAccountRef, { currentBalance: newBankFinalBalance }, 'bankAccount'),
+            ]);
+        }
+    }
+
+    const nextIssuedAmount = Math.max(
+        state.disbursements.reduce((sum, existing) => {
+            const rowAmount = existing._id === disbursementId
+                ? amount
+                : normalizeNumber(existing.amount || 0, { maxFractionDigits: 0 });
+            return sum + rowAmount;
+        }, 0),
+        getDriverVoucherInitialCash(state.voucher)
+    );
+    const nextTopUpCount = state.disbursements.filter(existing =>
+        existing.kind === 'TOP_UP' && normalizeNumber(existing.amount || 0, { maxFractionDigits: 0 }) > 0
+    ).length;
+    const totals = computeDriverVoucherTotals(
+        nextIssuedAmount,
+        state.items.reduce((sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }), 0),
+        normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
+    );
+
+    await updateDocument(initialDisbursement.voucherRef, {
+        totalIssuedAmount: nextIssuedAmount,
+        topUpCount: nextTopUpCount,
+        totalSpent: totals.totalSpent,
+        totalClaimAmount: totals.totalClaimAmount,
+        balance: totals.balance,
+    }, 'driverVoucher');
+    await voidJournalEntryForSource(session, 'DRIVER_VOUCHER_DISBURSEMENT', disbursementId, 'TOP_UP');
+    await postDriverVoucherTopUpJournal(session, {
+        voucherId: initialDisbursement.voucherRef,
+        bonNumber: state.voucher.bonNumber,
+        date: topUpDate,
+        amount,
+        disbursementId,
+        bankAccount: newBank,
+    });
+
+    const disbursementPatch = {
+        date: topUpDate,
+        amount,
+        bankAccountRef,
+        bankAccountName: newBank.bankName,
+        bankAccountNumber: newBank.accountNumber,
+        bankTransactionRef: newTransactionId,
+        note,
+        updatedAt: new Date().toISOString(),
+        updatedBy: session._id,
+        updatedByName: session.name,
+        replacedBankTransactionRef: disbursement.bankTransactionRef,
+        adjustmentBankTransactionRef: reversalTransactionId,
+    };
+    const updatedDisbursement = await updateDocument(disbursementId, disbursementPatch, 'driverVoucherDisbursement');
+    const updatedVoucher = {
+        ...state.voucher,
+        totalIssuedAmount: nextIssuedAmount,
+        topUpCount: nextTopUpCount,
+        totalSpent: totals.totalSpent,
+        totalClaimAmount: totals.totalClaimAmount,
+        balance: totals.balance,
+    };
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'driver-voucher-disbursements',
+        disbursementId,
+        `Mengubah tambahan bon ${state.voucher.bonNumber}: ${previousAmount} menjadi ${amount}`
+    );
+
+    return NextResponse.json({
+        data: updatedDisbursement,
+        voucher: updatedVoucher,
+    });
+}
+
 export async function handleDriverVoucherSettlement(
     session: Pick<ApiSession, '_id' | 'name'>,
     data: Record<string, unknown>,

@@ -277,6 +277,14 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteBySourceId('tracking_logs', itemId);
         }
         for (const itemId of driverVoucherIds) {
+            const disbursementIds = await listSourceIds(
+                'driver_voucher_disbursements',
+                `voucher_ref=eq.${encodeURIComponent(itemId)}`
+            ).catch(() => []);
+            for (const disbursementId of disbursementIds) {
+                await deleteJournalEntriesBySource('DRIVER_VOUCHER_DISBURSEMENT', disbursementId);
+                await deleteBySourceId('driver_voucher_disbursements', disbursementId);
+            }
             await deleteJournalEntriesBySource('DRIVER_VOUCHER', itemId);
             await deleteBySourceId('driver_vouchers', itemId);
         }

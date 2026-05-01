@@ -54,6 +54,8 @@ export interface ActualDropDraft {
     deliveryOrderItemRef: string;
     shipperReferenceKey: string;
     shipperReferenceNumber: string;
+    billingCustomerRef: string;
+    billingCustomerName: string;
     locationName: string;
     locationAddress: string;
     qtyKoli: string;
@@ -550,6 +552,8 @@ export function buildDefaultActualDropDrafts(
             deliveryOrderItemRef: point.deliveryOrderItemRef || '',
             shipperReferenceKey: point.shipperReferenceKey || '',
             shipperReferenceNumber: point.shipperReferenceNumber || '',
+            billingCustomerRef: point.billingCustomerRef || '',
+            billingCustomerName: point.billingCustomerName || '',
             locationName: point.locationName || '',
             locationAddress: point.locationAddress || '',
             qtyKoli: point.qtyKoli !== undefined ? String(point.qtyKoli) : '',
@@ -588,6 +592,8 @@ export function buildDefaultActualDropDrafts(
         deliveryOrderItemRef: '',
         shipperReferenceKey: reference?.key || singleItem?.shipperReferenceKey || '',
         shipperReferenceNumber: reference?.number || singleItem?.shipperReferenceNumber || '',
+        billingCustomerRef: '',
+        billingCustomerName: '',
         locationName,
         locationAddress,
         qtyKoli: itemTotals.qtyKoli > 0 ? String(itemTotals.qtyKoli) : '',
@@ -630,6 +636,8 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
         deliveryOrderItemRef: '',
         shipperReferenceKey: singleShipperReference?._key || '',
         shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
+        billingCustomerRef: '',
+        billingCustomerName: '',
         locationName: defaultTarget.locationName,
         locationAddress: defaultTarget.locationAddress,
         qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
@@ -786,6 +794,8 @@ export function buildDeliveryOrderDetailState(params: {
             deliveryOrderItemRef: manualAutoDropDraft.deliveryOrderItemRef || defaultAutoActualDropDraft.deliveryOrderItemRef,
             shipperReferenceKey: manualAutoDropDraft.shipperReferenceKey || defaultAutoActualDropDraft.shipperReferenceKey,
             shipperReferenceNumber: manualAutoDropDraft.shipperReferenceNumber || defaultAutoActualDropDraft.shipperReferenceNumber,
+            billingCustomerRef: manualAutoDropDraft.billingCustomerRef || defaultAutoActualDropDraft.billingCustomerRef,
+            billingCustomerName: manualAutoDropDraft.billingCustomerName || defaultAutoActualDropDraft.billingCustomerName,
             locationName: manualAutoDropDraft.locationName,
             locationAddress: manualAutoDropDraft.locationAddress,
             note: manualAutoDropDraft.note || defaultAutoActualDropDraft.note,
@@ -1108,6 +1118,8 @@ export function createEmptyActualDropDraft(): ActualDropDraft {
         deliveryOrderItemRef: '',
         shipperReferenceKey: '',
         shipperReferenceNumber: '',
+        billingCustomerRef: '',
+        billingCustomerName: '',
         locationName: '',
         locationAddress: '',
         qtyKoli: '',
@@ -1160,6 +1172,8 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                     shipperReferenceKey: item.shipperReferenceKey,
                     shipperReferenceNumber: item.shipperReferenceNumber,
+                    billingCustomerRef: item.billingCustomerRef,
+                    billingCustomerName: item.billingCustomerName,
                     locationName: item.locationName,
                     locationAddress: item.locationAddress,
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,

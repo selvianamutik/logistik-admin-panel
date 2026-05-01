@@ -29,8 +29,11 @@ import {
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
+    handleDriverVoucherDisbursementDelete,
+    handleDriverVoucherDisbursementUpdate,
     handleDriverVoucherIssueRepair,
     handleDriverVoucherItemCreate,
+    handleDriverVoucherItemDelete,
     handleDriverVoucherItemUpdate,
     handleDriverVoucherSettlement,
     handleDriverVoucherTopUp,
@@ -1685,8 +1688,20 @@ export async function POST(request: Request) {
             return await handleDriverVoucherIssueRepair(session, data, addAuditLog);
         }
 
+        if (entity === 'driver-voucher-disbursements' && action === 'update') {
+            return await handleDriverVoucherDisbursementUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'driver-voucher-disbursements' && action === 'delete') {
+            return await handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
+        }
+
         if (entity === 'driver-voucher-items' && action === 'update') {
             return await handleDriverVoucherItemUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'driver-voucher-items' && action === 'delete') {
+            return await handleDriverVoucherItemDelete(session, data, addAuditLog);
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {
