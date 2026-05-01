@@ -1004,19 +1004,28 @@ export default function OrderDetailPage() {
         const progressInfo = itemProgressById[item._id];
         return progressInfo.heldQtyKoli > 0 || progressInfo.heldWeight > 0 || progressInfo.heldVolume > 0;
     });
+    const hasPendingAvailableItems = availableItems.some(item => {
+        const progressInfo = itemProgressById[item._id];
+        return progressInfo.pendingQtyKoli > 0 || progressInfo.pendingWeight > 0 || progressInfo.pendingVolume > 0;
+    });
     const canCreateContinuationDeliveryOrder =
         canCreateDeliveryOrder &&
         availableItems.length > 0 &&
         dos.length > 0;
+    const canCreateOrderLevelContinuationDeliveryOrder =
+        canCreateContinuationDeliveryOrder &&
+        hasPendingAvailableItems &&
+        !hasHeldAvailableItems;
     const usesExistingItemsForDeliveryOrder = !isHeaderOnlyOrder || canCreateContinuationDeliveryOrder;
-    const continuationButtonLabel = hasHeldAvailableItems
-        ? 'Buat SJ Lanjutan Hold'
-        : 'Buat SJ Lanjutan';
-    const primaryDeliveryOrderButtonLabel = canCreateContinuationDeliveryOrder
+    const continuationButtonLabel = 'Buat SJ Lanjutan';
+    const primaryDeliveryOrderButtonLabel = canCreateOrderLevelContinuationDeliveryOrder
         ? continuationButtonLabel
         : isHeaderOnlyOrder && dos.length > 0
             ? 'Tambah Surat Jalan'
             : 'Buat Surat Jalan';
+    const canShowPrimaryDeliveryOrderButton =
+        !hasPlannedTrips &&
+        (!canCreateContinuationDeliveryOrder || canCreateOrderLevelContinuationDeliveryOrder || isHeaderOnlyOrder);
     const flattenedDirectCargoItems = flattenDirectCargoGroups(directCargoGroups);
     const draftDirectCargoItems = getDraftOrderItems(flattenedDirectCargoItems);
     const draftDirectCargoGroups = directCargoGroups
@@ -1471,17 +1480,17 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {!hasPlannedTrips && (
+                    {canShowPrimaryDeliveryOrderButton && (
                         <button className="btn btn-primary" onClick={() => openCreateDOModal()} disabled={!canCreateDeliveryOrder}>
                             <Truck size={16} /> {primaryDeliveryOrderButtonLabel}
                         </button>
                     )}
-                    {hasPlannedTrips && canCreateContinuationDeliveryOrder && (
+                    {hasPlannedTrips && canCreateOrderLevelContinuationDeliveryOrder && (
                         <button
                             className="btn btn-primary"
                             onClick={() => openCreateDOModal()}
                             disabled={!canCreateDeliveryOrder}
-                            title="Buat surat jalan tambahan untuk sisa atau hold/inap dari order ini"
+                            title="Buat surat jalan tambahan untuk sisa order yang masih pending"
                         >
                             <Truck size={16} /> {continuationButtonLabel}
                         </button>
@@ -1642,15 +1651,13 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
-            {!hasPlannedTrips && canCreateContinuationDeliveryOrder && (
+            {!hasPlannedTrips && canCreateOrderLevelContinuationDeliveryOrder && (
                 <div className="card mt-6">
                     <div className="card-body" style={{ padding: '0.9rem 1rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <div>
                             <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
                             <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
-                                {hasHeldAvailableItems
-                                    ? 'Ada item hold/inap yang bisa dikirim tanpa melepas status hold manual.'
-                                    : 'Ada sisa item yang belum masuk surat jalan berikutnya.'}
+                                Ada sisa item pending yang belum masuk surat jalan berikutnya.
                             </div>
                         </div>
                         <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
@@ -1703,14 +1710,12 @@ export default function OrderDetailPage() {
                         )}
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
-                        {canCreateContinuationDeliveryOrder && (
+                        {canCreateOrderLevelContinuationDeliveryOrder && (
                             <div style={{ padding: '0.9rem 1rem', borderRadius: '0.75rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                 <div>
                                     <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
                                     <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
-                                        {hasHeldAvailableItems
-                                            ? 'Ada item hold/inap yang bisa dikirim tanpa melepas status hold manual.'
-                                            : 'Ada sisa item yang belum masuk trip terencana.'}
+                                        Ada sisa item pending yang belum masuk trip terencana.
                                     </div>
                                 </div>
                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
@@ -2458,7 +2463,7 @@ export default function OrderDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!creatingDO) { setShowDOModal(false); setSelectedOrderTripPlanKey(''); } }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : canCreateContinuationDeliveryOrder ? continuationButtonLabel : 'Buat Surat Jalan'}</h3>
+                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : canCreateOrderLevelContinuationDeliveryOrder ? continuationButtonLabel : 'Buat Surat Jalan'}</h3>
                             <button className="modal-close" onClick={() => { setShowDOModal(false); setSelectedOrderTripPlanKey(''); }} disabled={creatingDO}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -3303,7 +3308,7 @@ export default function OrderDetailPage() {
                                         ? (draftDirectCargoItems.length > 0 ? `Input Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Input Surat Jalan (barang menyusul)')
                                           : isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder
                                             ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
-                                            : canCreateContinuationDeliveryOrder
+                                            : canCreateOrderLevelContinuationDeliveryOrder
                                                 ? `${continuationButtonLabel} (${Object.keys(selectedShipments).length} item)`
                                                 : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
