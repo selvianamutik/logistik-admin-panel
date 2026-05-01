@@ -511,14 +511,15 @@ const safeReseedScript = String(packageJson.scripts?.['reseed:supabase:safe-work
 const safeSeedScript = String(packageJson.scripts?.['seed:supabase:safe-workflow'] || '');
 if (
   !safeSeedScript.includes('--skip-doc-types=user,service,tripRouteRate') ||
+  !safeSeedScript.includes('--derive-trip-surat-jalan') ||
   !safeReseedScript.includes('--all-managed-data') ||
   !safeReseedScript.includes('--preserve-users') ||
   !safeReseedScript.includes('--preserve-trip-rates') ||
   !safeReseedScript.includes('backfill:accounting')
 ) {
-  fail('Safe Supabase reseed harus skip user/service/tripRouteRate seed, preserve data tersebut saat reset, dan menjalankan backfill accounting.');
+  fail('Safe Supabase reseed harus derive Trip/SJ terbaru, skip user/service/tripRouteRate seed, preserve data tersebut saat reset, dan menjalankan backfill accounting.');
 } else {
-  console.log('- OK   safe Supabase reseed preserves login users, services, trip rates, and backfills accounting');
+  console.log('- OK   safe Supabase reseed derives Trip/SJ, preserves login users, services, trip rates, and backfills accounting');
 }
 const seedPath = path.join(repoRoot, 'artifacts/default-supabase-seed.json');
 const seedDocuments = JSON.parse(readFileSync(seedPath, 'utf8'));
