@@ -98,16 +98,19 @@ function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, delivery
 }
 
 async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string; _type?: unknown; orderRef?: unknown; date?: unknown }) {
-    const existingTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
-    if (!existingTripRecord) {
-        const completeDeliveryOrder =
-            deliveryOrder._type === 'deliveryOrder' && typeof deliveryOrder.orderRef === 'string' && typeof deliveryOrder.date === 'string'
-                ? deliveryOrder as DeliveryOrder
-                : await getDocumentById<DeliveryOrder>(deliveryOrder._id, 'deliveryOrder');
-        if (!completeDeliveryOrder) {
-            throw new Error('Trip tidak ditemukan');
-        }
-        await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+    const completeDeliveryOrder =
+        deliveryOrder._type === 'deliveryOrder' && typeof deliveryOrder.orderRef === 'string' && typeof deliveryOrder.date === 'string'
+            ? deliveryOrder as DeliveryOrder
+            : await getDocumentById<DeliveryOrder>(deliveryOrder._id, 'deliveryOrder');
+    if (!completeDeliveryOrder) {
+        throw new Error('Trip tidak ditemukan');
+    }
+
+    await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+
+    const persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    if (!persistedTripRecord) {
+        throw new Error('Trip relasional belum siap untuk penulisan surat jalan');
     }
 }
 

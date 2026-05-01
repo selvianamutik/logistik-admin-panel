@@ -32,6 +32,13 @@ type CreatedState = {
     orderId?: string;
     deliveryOrderIds: string[];
     notaId?: string;
+    auditDriverIds?: string[];
+    auditVehicleIds?: string[];
+};
+
+type ProvisionedAuditResources = {
+    drivers: Driver[];
+    vehicles: Vehicle[];
 };
 
 const AUDIT_DATE = '2026-04-21';
@@ -129,6 +136,15 @@ async function deleteBySourceId(table: string, id: string) {
         method: 'DELETE',
         headers: { Prefer: 'return=minimal' },
     }).catch(() => undefined);
+}
+
+async function upsertRows(table: string, rows: Array<Record<string, unknown>>) {
+    if (rows.length === 0) return;
+    await supabaseRest(`${table}?on_conflict=source_document_id`, {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(rows),
+    });
 }
 
 async function deleteJournalEntriesBySource(sourceType: string, sourceRef: string) {
@@ -274,6 +290,13 @@ async function cleanupCreatedState(state: CreatedState) {
         }
         await deleteBySourceId('orders', state.orderId);
     }
+
+    for (const vehicleId of state.auditVehicleIds || []) {
+        await deleteBySourceId('vehicles', vehicleId);
+    }
+    for (const driverId of state.auditDriverIds || []) {
+        await deleteBySourceId('drivers', driverId);
+    }
 }
 
 async function cleanupStaleAuditOrders() {
@@ -330,6 +353,67 @@ function pickAuditResources(params: {
         drivers: availableDrivers.length >= 2 ? availableDrivers.slice(0, 2) : availableDrivers.length === 1 ? [availableDrivers[0], availableDrivers[0]] : [],
         bankAccount: params.bankAccounts.find(item => item.active !== false),
     };
+}
+
+async function provisionAuditResources(service: ServiceLike, suffix: string): Promise<ProvisionedAuditResources> {
+    const now = new Date().toISOString();
+    const serviceName = normalizeText(service.name) || 'Audit Service';
+    const drivers: Driver[] = [1, 2].map(index => ({
+        _id: `drv-audit-e2e-${suffix}-${index}`,
+        _type: 'driver',
+        name: `Audit E2E Driver ${index}`,
+        phone: `08129000${suffix.slice(-4)}${index}`,
+        licenseNumber: `SIM-AUD-${suffix}-${index}`,
+        ktpNumber: `KTP-AUD-${suffix}-${index}`,
+        simExpiry: '2027-12-31',
+        address: 'Audit temporary resource',
+        active: true,
+    }) as Driver);
+    const vehicles: Vehicle[] = [1, 2].map(index => ({
+        _id: `veh-audit-e2e-${suffix}-${index}`,
+        _type: 'vehicle',
+        unitCode: `AUD-${suffix}-${index}`,
+        plateNumber: `AUD ${suffix.slice(-4)} E${index}`,
+        vehicleType: serviceName,
+        brandModel: 'Audit temporary unit',
+        year: 2026,
+        capacityKg: 4500,
+        serviceRef: service._id,
+        serviceName,
+        status: 'ACTIVE',
+    }) as Vehicle);
+
+    await Promise.all([
+        upsertRows('drivers', drivers.map(driver => ({
+            source_document_id: driver._id,
+            document_created_at: now,
+            document_updated_at: now,
+            name: driver.name,
+            phone: driver.phone,
+            license_number: driver.licenseNumber,
+            ktp_number: driver.ktpNumber,
+            sim_expiry: driver.simExpiry,
+            address: driver.address,
+            active: true,
+            extra_data: { audit: 'order-to-nota-e2e' },
+        }))),
+        upsertRows('vehicles', vehicles.map(vehicle => ({
+            source_document_id: vehicle._id,
+            document_created_at: now,
+            document_updated_at: now,
+            unit_code: vehicle.unitCode,
+            plate_number: vehicle.plateNumber,
+            vehicle_type: vehicle.vehicleType,
+            brand_model: vehicle.brandModel,
+            year: vehicle.year,
+            capacity_kg: vehicle.capacityKg,
+            service_ref: vehicle.serviceRef,
+            status: vehicle.status,
+            extra_data: { audit: 'order-to-nota-e2e', serviceName },
+        }))),
+    ]);
+
+    return { drivers, vehicles };
 }
 
 async function getDeliveryOrderItems(cookieHeader: string, deliveryOrderId: string) {
@@ -413,7 +497,7 @@ async function finishArrivedDeliveryOrder(params: {
 
 async function main() {
     const cookieHeader = await loginAndGetCookieHeader();
-    const createdState: CreatedState = { deliveryOrderIds: [] };
+    const createdState: CreatedState = { deliveryOrderIds: [], auditDriverIds: [], auditVehicleIds: [] };
     const suffix = Date.now().toString().slice(-6);
     const pickupOneKey = `audit-pickup-1-${suffix}`;
     const pickupTwoKey = `audit-pickup-2-${suffix}`;
@@ -437,7 +521,7 @@ async function main() {
             requestJson<{ data: BankAccountLike[] }>('/api/data?entity=bank-accounts', cookieHeader),
             requestJson<{ data: DeliveryOrder[] }>('/api/data?entity=delivery-orders', cookieHeader),
         ]);
-        const resources = pickAuditResources({
+        let resources = pickAuditResources({
             customers: customerResponse.data || [],
             services: serviceResponse.data || [],
             vehicles: vehicleResponse.data || [],
@@ -445,6 +529,25 @@ async function main() {
             bankAccounts: bankResponse.data || [],
             deliveryOrders: deliveryOrderResponse.data || [],
         });
+
+        if (!resources.service || resources.vehicles.length < 2 || resources.drivers.length < 1) {
+            const fallbackService = resources.service || (serviceResponse.data || []).find(item => item.active !== false);
+            if (fallbackService) {
+                auditStep('provision resource audit sementara karena driver/kendaraan aktif sedang penuh');
+                const provisioned = await provisionAuditResources(fallbackService, suffix);
+                createdState.auditDriverIds = provisioned.drivers.map(driver => driver._id);
+                createdState.auditVehicleIds = provisioned.vehicles.map(vehicle => vehicle._id);
+                resources = pickAuditResources({
+                    customers: customerResponse.data || [],
+                    services: serviceResponse.data || [],
+                    vehicles: [...(vehicleResponse.data || []), ...provisioned.vehicles],
+                    drivers: [...(driverResponse.data || []), ...provisioned.drivers],
+                    bankAccounts: bankResponse.data || [],
+                    deliveryOrders: deliveryOrderResponse.data || [],
+                });
+            }
+        }
+
         assert(resources.customer, 'Audit butuh minimal 1 customer aktif.');
         assert(resources.service, 'Audit butuh minimal 1 kategori armada dengan 2 kendaraan tersedia.');
         assert(resources.vehicles.length >= 2, 'Audit butuh minimal 2 kendaraan tersedia pada kategori armada yang sama.');
@@ -721,7 +824,7 @@ async function main() {
             },
         }, { expectStatus: 409 });
 
-        auditStep('create DO trip batal lalu batalkan saat aktif');
+        auditStep('create DO trip batal lalu batalkan lewat action cancel-trip saat aktif');
         const doCancelCreate = await postData<DeliveryOrder>(cookieHeader, {
             entity: 'delivery-orders',
             action: 'create-with-items',
@@ -760,10 +863,9 @@ async function main() {
         });
         await postData(cookieHeader, {
             entity: 'delivery-orders',
-            action: 'set-status',
+            action: 'cancel-trip',
             data: {
                 id: doCancelId,
-                status: 'CANCELLED',
                 note: 'Audit batal trip',
             },
         });
@@ -1057,7 +1159,7 @@ async function main() {
         );
         assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menyembunyikan row freightNotaItem VOID dari tagihan aktif.');
 
-        console.log('Order to nota E2E audit OK: create/delete order, cancel DO, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/void verified.');
+        console.log('Order to nota E2E audit OK: create/delete order, cancel trip, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/void verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);
