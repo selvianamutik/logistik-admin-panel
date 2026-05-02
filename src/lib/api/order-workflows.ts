@@ -3624,11 +3624,19 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                 heldWeight: roundQuantity(Math.max(progress.heldWeight + nextSplit.held.weight - previousSplit.held.weight, 0)),
                 heldVolume: roundQuantity(Math.max(progress.heldVolume + nextSplit.held.volume - previousSplit.held.volume, 0), 3),
             };
-            const nextActualQtyKoli = requireQty ? nextSplit.delivered.qtyKoli : 0;
             const nextActualWeightInputUnit = actualCargo.actualWeightInputUnit || 'KG';
             const nextActualVolumeInputUnit = actualCargo.actualVolumeInputUnit || 'M3';
-            const nextActualWeightInputValue = convertKgToWeightInputValue(nextSplit.delivered.weight, nextActualWeightInputUnit);
-            const nextActualVolumeInputValue = convertM3ToVolumeInputValue(nextSplit.delivered.volume, nextActualVolumeInputUnit);
+            const nextActualTotalQtyKoli = isPartialHoldContinuationFinalize
+                ? roundQuantity(nextSplit.delivered.qtyKoli + nextSplit.held.qtyKoli)
+                : actualQtyKoli;
+            const nextActualTotalWeight = isPartialHoldContinuationFinalize
+                ? roundQuantity(nextSplit.delivered.weight + nextSplit.held.weight)
+                : actualWeight;
+            const nextActualTotalVolume = isPartialHoldContinuationFinalize
+                ? roundQuantity(nextSplit.delivered.volume + nextSplit.held.volume, 3)
+                : actualVolume;
+            const nextActualWeightInputValue = convertKgToWeightInputValue(nextActualTotalWeight, nextActualWeightInputUnit);
+            const nextActualVolumeInputValue = convertM3ToVolumeInputValue(nextActualTotalVolume, nextActualVolumeInputUnit);
 
             const orderItemUpdates: Record<string, unknown> = {
                 assignedQtyKoli: nextProgress.assignedQtyKoli,
@@ -3645,13 +3653,13 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
 
             if (usesDeliveryOrderOwnedTarget) {
                 if (requireQty) {
-                    orderItemUpdates.qtyKoli = nextActualQtyKoli;
+                    orderItemUpdates.qtyKoli = nextActualTotalQtyKoli;
                 }
-                orderItemUpdates.weight = nextSplit.delivered.weight;
+                orderItemUpdates.weight = nextActualTotalWeight;
                 orderItemUpdates.weightInputValue = nextActualWeightInputValue;
                 orderItemUpdates.weightInputUnit = nextActualWeightInputUnit;
-                if (nextSplit.delivered.volume > 0) {
-                    orderItemUpdates.volume = nextSplit.delivered.volume;
+                if (nextActualTotalVolume > 0) {
+                    orderItemUpdates.volume = nextActualTotalVolume;
                     orderItemUpdates.volumeInputValue = nextActualVolumeInputValue;
                     orderItemUpdates.volumeInputUnit = nextActualVolumeInputUnit;
                 } else {
@@ -3666,9 +3674,9 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                 orderItemUpdates,
                 deliveryOrderItemRef: item._id,
                 deliveryOrderItemUpdates: {
-                    actualQtyKoli: requireQty ? nextActualQtyKoli : null,
-                    actualWeightKg: nextSplit.delivered.weight,
-                    actualVolumeM3: nextSplit.delivered.volume > 0 ? nextSplit.delivered.volume : null,
+                    actualQtyKoli: requireQty ? nextActualTotalQtyKoli : null,
+                    actualWeightKg: nextActualTotalWeight,
+                    actualVolumeM3: nextActualTotalVolume > 0 ? nextActualTotalVolume : null,
                     actualWeightInputValue: nextActualWeightInputValue,
                     actualWeightInputUnit: nextActualWeightInputUnit,
                     actualVolumeInputValue: nextActualVolumeInputValue,

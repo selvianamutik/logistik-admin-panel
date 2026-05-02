@@ -3749,8 +3749,9 @@ export default function TripDetailPage() {
         if (!showAdvancedDropEditor) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
-        const itemRealizationAllocations = selectedActualDropPoints
-            .map(point => pickActualDropItemValues(getActualDropAllocationForItem(point, item)))
+        const itemRealizationAllocations = selectedEffectiveActualDropPoints
+            .filter(point => point.deliveryOrderItemRef === item.deliveryOrderItemRef)
+            .map(point => pickActualDropItemValues(point))
             .filter(values => hasActualDropItemValues(values));
         const actualQtyKoli = itemRealizationAllocations.reduce(
             (sum, values) => sum + parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),

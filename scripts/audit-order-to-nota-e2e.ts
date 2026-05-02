@@ -1197,53 +1197,77 @@ async function main() {
         const doSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
         const splitItem = doSplitItems[0];
         assert(doSplitItems.length === 1 && splitItem, 'DO split harus punya tepat 1 barang.');
-        await advanceDeliveryOrderToDelivered({
-            cookieHeader,
-            deliveryOrderId: doSplitId,
-            actualItems: [
-                {
-                    deliveryOrderItemRef: splitItem._id,
-                    actualQtyKoli: 3,
-                    actualWeightInputValue: 180,
-                    actualWeightInputUnit: 'KG',
-                    actualVolumeInputValue: 3,
-                    actualVolumeInputUnit: 'M3',
+        const splitDocsBeforeInitial = await getSuratJalanDocuments(cookieHeader, doSplitId);
+        const splitDocBeforeInitial = splitDocsBeforeInitial.find(document => document.suratJalanNumber === sjSplit);
+        const splitSuratJalanRef = splitDocBeforeInitial?._id || `${doSplitId}:${sjSplit}`;
+        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+            await postData(cookieHeader, {
+                entity: 'delivery-orders',
+                action: 'set-surat-jalan-status-batch',
+                data: {
+                    id: doSplitId,
+                    status,
+                    targetSuratJalanRefs: [splitSuratJalanRef],
+                    note: `Audit batch split ${status}`,
                 },
-            ],
-            actualDropPoints: [
-                {
-                    stopType: 'DROP',
-                    deliveryOrderItemRef: splitItem._id,
-                    deliveryOrderItemRefs: [splitItem._id],
-                    shipperReferenceNumber: sjSplit,
-                    locationName: 'Audit Drop Split',
-                    locationAddress: 'Audit Drop Split Address',
-                    qtyKoli: 1,
-                    weightInputValue: 60,
-                    weightInputUnit: 'KG',
-                    volumeInputValue: 1,
-                    volumeInputUnit: 'M3',
-                },
-                {
-                    stopType: 'HOLD',
-                    deliveryOrderItemRef: splitItem._id,
-                    deliveryOrderItemRefs: [splitItem._id],
-                    shipperReferenceNumber: sjSplit,
-                    locationName: 'Audit Hold Split',
-                    locationAddress: 'Audit Hold Split Address',
-                    qtyKoli: 2,
-                    weightInputValue: 120,
-                    weightInputUnit: 'KG',
-                    volumeInputValue: 2,
-                    volumeInputUnit: 'M3',
-                },
-            ],
+            });
+        }
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-surat-jalan-status-batch',
+            data: {
+                id: doSplitId,
+                status: 'DELIVERED',
+                targetSuratJalanRefs: [splitSuratJalanRef],
+                note: 'Audit batch split drop hold',
+                podReceiverName: 'Penerima Audit Batch Split',
+                podReceivedDate: AUDIT_DATE,
+                podNote: 'Audit POD Batch Split',
+                actualItems: [
+                    {
+                        deliveryOrderItemRef: splitItem._id,
+                        actualQtyKoli: 3,
+                        actualWeightInputValue: 180,
+                        actualWeightInputUnit: 'KG',
+                        actualVolumeInputValue: 3,
+                        actualVolumeInputUnit: 'M3',
+                    },
+                ],
+                actualDropPoints: [
+                    {
+                        stopType: 'DROP',
+                        deliveryOrderItemRef: splitItem._id,
+                        deliveryOrderItemRefs: [splitItem._id],
+                        shipperReferenceNumber: sjSplit,
+                        locationName: 'Audit Drop Split',
+                        locationAddress: 'Audit Drop Split Address',
+                        qtyKoli: 1,
+                        weightInputValue: 60,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 1,
+                        volumeInputUnit: 'M3',
+                    },
+                    {
+                        stopType: 'HOLD',
+                        deliveryOrderItemRef: splitItem._id,
+                        deliveryOrderItemRefs: [splitItem._id],
+                        shipperReferenceNumber: sjSplit,
+                        locationName: 'Audit Hold Split',
+                        locationAddress: 'Audit Hold Split Address',
+                        qtyKoli: 2,
+                        weightInputValue: 120,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 2,
+                        volumeInputUnit: 'M3',
+                    },
+                ],
+            },
         });
         const finalizedSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
         assert(
             normalizeNumber(finalizedSplitItems[0]?.actualQtyKoli) === 3 &&
             normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 180,
-            'Split drop/hold satu item harus menyimpan aktual total 3 koli / 180 kg, bukan hanya bagian drop.'
+            'Batch split drop/hold satu item harus menyimpan aktual total 3 koli / 180 kg, bukan hanya bagian drop.'
         );
         const doSplitState = await requestJson<{ data: DeliveryOrder }>(
             `/api/data?entity=delivery-orders&id=${encodeURIComponent(doSplitId)}`,
