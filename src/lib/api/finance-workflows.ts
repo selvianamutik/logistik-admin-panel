@@ -13,6 +13,11 @@ import {
     hasDeliveryOrderBillableCargo,
 } from '@/lib/delivery-order-completion';
 import {
+    inferExpenseCategoryScope,
+    isManualExpenseCategory,
+    resolveExpenseCategoryAccountKey,
+} from '@/lib/expense-category-scope';
+import {
     createDocument,
     getAllDocuments,
     getCompanyProfile,
@@ -31,6 +36,7 @@ import type {
     DeliveryOrder,
     DeliveryOrderItem,
     Expense,
+    ExpenseCategory,
     FreightNota,
     FreightNotaInstructionAccount,
     InvoiceAdjustment,
@@ -1544,7 +1550,7 @@ export async function handleExpenseCreate(
         return expenseDateError;
     }
 
-    const category = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(categoryRef, 'expenseCategory');
+    const category = await getDocumentById<ExpenseCategory>(categoryRef, 'expenseCategory');
     if (!category) {
         return NextResponse.json({ error: 'Kategori pengeluaran tidak ditemukan' }, { status: 404 });
     }
@@ -1555,13 +1561,6 @@ export async function handleExpenseCreate(
     let relatedVehicleRef =
         typeof data.relatedVehicleRef === 'string' && data.relatedVehicleRef ? data.relatedVehicleRef : undefined;
     let relatedVehiclePlate: string | undefined;
-    if (relatedVehicleRef) {
-        const vehicle = await getDocumentById<{ _id: string; plateNumber?: string }>(relatedVehicleRef, 'vehicle');
-        if (!vehicle) {
-            return NextResponse.json({ error: 'Kendaraan terkait pengeluaran tidak ditemukan' }, { status: 404 });
-        }
-        relatedVehiclePlate = vehicle.plateNumber;
-    }
 
     let relatedIncidentRef =
         typeof data.relatedIncidentRef === 'string' && data.relatedIncidentRef ? data.relatedIncidentRef : undefined;
@@ -1583,6 +1582,19 @@ export async function handleExpenseCreate(
     if (linkedWorkflowRefs.length > 1) {
         return NextResponse.json(
             { error: 'Pengeluaran hanya boleh dikaitkan ke satu workflow: insiden, maintenance, slip borongan, atau bon trip' },
+            { status: 409 }
+        );
+    }
+    const isWorkflowLinkedExpense = linkedWorkflowRefs.length > 0 || Boolean(relatedIncidentSettlementLineRef);
+    if (!isWorkflowLinkedExpense && relatedVehicleRef) {
+        return NextResponse.json(
+            { error: 'Pengeluaran kendaraan wajib dicatat dari maintenance, insiden, atau uang jalan trip agar tidak dobel di laporan.' },
+            { status: 409 }
+        );
+    }
+    if (!isWorkflowLinkedExpense && !isManualExpenseCategory(category)) {
+        return NextResponse.json(
+            { error: 'Kategori ini khusus workflow. Gunakan kategori Pengeluaran Umum untuk input manual.' },
             { status: 409 }
         );
     }
@@ -1783,6 +1795,8 @@ export async function handleExpenseCreate(
         _type: 'expense',
         categoryRef,
         categoryName: category.name,
+        categoryScope: inferExpenseCategoryScope(category),
+        accountSystemKey: resolveExpenseCategoryAccountKey(category),
         date: expenseDate,
         amount,
         note: expenseNote,
@@ -1997,6 +2011,9 @@ export async function handleFreightNotaCreate(
                     : deliveryOrderItemRef
                         ? [deliveryOrderItemRef]
                         : [];
+                if (normalizedDeliveryOrderItemRefs.length > 0 && !doRef) {
+                    throw new Error('Baris invoice dari DO wajib punya referensi DO');
+                }
                 const doNumber = normalizeOptionalText(row.doNumber);
                 const noSJ = normalizeText(row.noSJ);
                 const tujuan = normalizeText(row.tujuan);
@@ -2819,6 +2836,9 @@ export async function handleFreightNotaUpdate(
                     : deliveryOrderItemRef
                         ? [deliveryOrderItemRef]
                         : [];
+                if (normalizedDeliveryOrderItemRefs.length > 0 && !doRef) {
+                    throw new Error('Baris invoice dari DO wajib punya referensi DO');
+                }
                 const collie = parseOptionalStrictNotaRowNumber(
                     row.collie,
                 'Collie pada baris invoice tidak valid',

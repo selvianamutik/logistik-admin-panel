@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { buildDriverVoucherRouteLabel } from '@/lib/driver-voucher-route';
+import {
+    inferExpenseCategoryScope,
+    resolveExpenseCategoryAccountKey,
+} from '@/lib/expense-category-scope';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     createDocument,
@@ -90,6 +94,9 @@ type ExpenseCategoryOption = {
     _id: string;
     name?: string;
     active?: boolean;
+    scope?: 'GENERAL' | 'TRIP' | 'MAINTENANCE' | 'INCIDENT' | 'DRIVER_FEE';
+    allowManual?: boolean;
+    accountSystemKey?: string;
 };
 
 type VoucherPostedExpense = {
@@ -124,8 +131,7 @@ function resolveExpenseCategory(
     );
     return (
         byName.get(getExpenseCategoryKey(requestedName)) ||
-        byName.get('lain-lain') ||
-        activeCategories[0] ||
+        activeCategories.find(category => inferExpenseCategoryScope({ ...category, name: category.name || requestedName }) === (/borongan|upah/i.test(requestedName) ? 'DRIVER_FEE' : 'TRIP')) ||
         null
     );
 }
@@ -702,6 +708,8 @@ export async function handleBoronganPayment(
         _type: 'expense',
         categoryRef: 'driver-borongan',
         categoryName: 'Borongan Supir',
+        categoryScope: 'DRIVER_FEE',
+        accountSystemKey: 'driver_fee_expense',
         date: paidDate,
         amount: derivedTotalAmount,
         description: `Upah borongan supir ${borongan.driverName} - ${borongan.boronganNumber}`,
@@ -1935,6 +1943,8 @@ export async function handleDriverVoucherSettlement(
             _type: 'expense',
             categoryRef: expenseCategory._id,
             categoryName: expenseCategory.name || item.category,
+            categoryScope: inferExpenseCategoryScope({ ...expenseCategory, name: expenseCategory.name || item.category }),
+            accountSystemKey: resolveExpenseCategoryAccountKey({ ...expenseCategory, name: expenseCategory.name || item.category }),
             date: item.expenseDate || settledDate,
             amount: expenseAmount,
             description: expenseDescription,
@@ -1961,6 +1971,8 @@ export async function handleDriverVoucherSettlement(
                 _type: 'expense',
                 categoryRef: driverFeeCategory._id,
                 categoryName: driverFeeCategory.name || 'Borongan Supir',
+                categoryScope: 'DRIVER_FEE',
+                accountSystemKey: 'driver_fee_expense',
                 date: settledDate,
                 amount: driverFeeAmount,
                 description: driverFeeDescription,

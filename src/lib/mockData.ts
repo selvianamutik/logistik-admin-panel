@@ -135,13 +135,17 @@ const seedData: DataStore = {
     ],
 
     expenseCategories: [
-        { _id: 'expcat-001', _type: 'expenseCategory', name: 'BBM / Solar', active: true },
-        { _id: 'expcat-002', _type: 'expenseCategory', name: 'Tol & Parkir', active: true },
-        { _id: 'expcat-003', _type: 'expenseCategory', name: 'Perawatan Kendaraan', active: true },
-        { _id: 'expcat-004', _type: 'expenseCategory', name: 'Ban', active: true },
-        { _id: 'expcat-005', _type: 'expenseCategory', name: 'Gaji & Upah', active: true },
-        { _id: 'expcat-006', _type: 'expenseCategory', name: 'Operasional Kantor', active: true },
-        { _id: 'expcat-007', _type: 'expenseCategory', name: 'Perbaikan Insiden', active: true }
+        { _id: 'expcat-001', _type: 'expenseCategory', name: 'BBM / Solar', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
+        { _id: 'expcat-002', _type: 'expenseCategory', name: 'Tol & Parkir', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
+        { _id: 'expcat-003', _type: 'expenseCategory', name: 'Perawatan Kendaraan', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', active: true },
+        { _id: 'expcat-004', _type: 'expenseCategory', name: 'Ban', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', active: true },
+        { _id: 'expcat-005', _type: 'expenseCategory', name: 'Gaji & Upah', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true },
+        { _id: 'expcat-006', _type: 'expenseCategory', name: 'Operasional Kantor', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true },
+        { _id: 'expcat-007', _type: 'expenseCategory', name: 'Perbaikan Insiden', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', active: true },
+        { _id: 'expcat-008', _type: 'expenseCategory', name: 'Borongan Supir', scope: 'DRIVER_FEE', allowManual: false, accountSystemKey: 'driver_fee_expense', active: true },
+        { _id: 'expcat-009', _type: 'expenseCategory', name: 'Bongkar Muat', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
+        { _id: 'expcat-010', _type: 'expenseCategory', name: 'Santunan Kecelakaan', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', active: true },
+        { _id: 'expcat-011', _type: 'expenseCategory', name: 'Administrasi Bank', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true }
     ],
 
     drivers: [
@@ -307,8 +311,10 @@ const seedData: DataStore = {
         {
             _id: 'exp-001',
             _type: 'expense',
-            categoryRef: 'expcat-004',
-            categoryName: 'Ban',
+            categoryRef: 'expcat-007',
+            categoryName: 'Perbaikan Insiden',
+            categoryScope: 'INCIDENT',
+            accountSystemKey: 'incident_expense',
             date: '2026-02-23',
             amount: 850000,
             note: 'Ganti ban depan kiri - ban meletus di tol',
@@ -320,20 +326,23 @@ const seedData: DataStore = {
         {
             _id: 'exp-002',
             _type: 'expense',
-            categoryRef: 'expcat-001',
-            categoryName: 'BBM / Solar',
+            categoryRef: 'expcat-006',
+            categoryName: 'Operasional Kantor',
+            categoryScope: 'GENERAL',
+            accountSystemKey: 'operational_expense',
             date: '2026-02-21',
             amount: 450000,
-            note: 'Solar perjalanan Jakarta-Semarang',
-            description: 'Pengisian solar untuk DO-202602-0001',
-            privacyLevel: 'internal',
-            relatedVehicleRef: 'veh-001'
+            note: 'Internet dan ATK kantor',
+            description: 'Biaya operasional kantor',
+            privacyLevel: 'internal'
         },
         {
             _id: 'exp-003',
             _type: 'expense',
             categoryRef: 'expcat-005',
             categoryName: 'Gaji & Upah',
+            categoryScope: 'GENERAL',
+            accountSystemKey: 'operational_expense',
             date: '2026-02-28',
             amount: 5000000,
             note: 'Gaji driver bulan Februari',

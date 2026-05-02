@@ -117,12 +117,19 @@ function resolveCashBankAccount(bankAccount?: Pick<BankAccount, 'accountType' | 
         : 'bank';
 }
 
-function resolveExpenseAccount(expense: Pick<Expense, 'categoryName' | 'relatedIncidentRef' | 'relatedMaintenanceRef' | 'voucherRef' | 'boronganRef'>): AccountingSystemKey {
+function isAccountingSystemKey(value: unknown): value is AccountingSystemKey {
+    return typeof value === 'string' && DEFAULT_CHART_OF_ACCOUNTS.some(account => account.systemKey === value);
+}
+
+function resolveExpenseAccount(expense: Pick<Expense, 'categoryName' | 'accountSystemKey' | 'relatedIncidentRef' | 'relatedMaintenanceRef' | 'voucherRef' | 'boronganRef'>): AccountingSystemKey {
+    if (isAccountingSystemKey(expense.accountSystemKey)) {
+        return expense.accountSystemKey;
+    }
     const category = String(expense.categoryName || '').toLowerCase();
     if (expense.relatedIncidentRef || /insiden|kecelakaan|santunan/.test(category)) return 'incident_expense';
     if (expense.relatedMaintenanceRef || /maintenance|servis|service|oli|ban|sparepart/.test(category)) return 'maintenance_expense';
-    if (expense.voucherRef || /uang jalan|trip|solar|tol|parkir|makan|lain-lain/.test(category)) return 'trip_misc_expense';
     if (expense.boronganRef || /borongan|upah supir|upah driver/.test(category)) return 'driver_fee_expense';
+    if (expense.voucherRef || /uang jalan|trip|solar|tol|parkir|makan/.test(category)) return 'trip_misc_expense';
     return 'operational_expense';
 }
 

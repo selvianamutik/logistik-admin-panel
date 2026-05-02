@@ -24,6 +24,7 @@ import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/pr
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import { isManualExpenseCategory } from '@/lib/expense-category-scope';
 
 type ExpenseCategoryTotal = {
     name: string;
@@ -37,7 +38,6 @@ const DEFAULT_EXPENSE_FORM = () => ({
     note: '',
     description: '',
     privacyLevel: 'internal' as 'internal' | 'ownerOnly',
-    relatedVehicleRef: '',
     bankAccountRef: '',
     bankAccountName: '',
 });
@@ -79,6 +79,10 @@ export default function ExpensesPage() {
     const canOpenBankAccountPage = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
+    const manualCategories = useMemo(
+        () => categories.filter(isManualExpenseCategory),
+        [categories]
+    );
     const yearOptions = useMemo(() => getInventoryReportYearOptions(year), [year]);
     const dateRange = useMemo(
         () => getInventoryReportDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
@@ -110,6 +114,7 @@ export default function ExpensesPage() {
                 : 'Semua privasi';
     const isFormValid = Boolean(
         form.categoryRef
+        && manualCategories.some(category => category._id === form.categoryRef)
         && form.date
         && /^\d{4}-\d{2}-\d{2}$/.test(form.date)
         && Number(form.amount) > 0
@@ -290,9 +295,9 @@ export default function ExpensesPage() {
             addToast('error', 'Tanggal pengeluaran wajib valid');
             return;
         }
-        const category = categories.find(item => item._id === form.categoryRef);
+        const category = manualCategories.find(item => item._id === form.categoryRef);
         if (!category) {
-            addToast('error', 'Kategori pengeluaran tidak valid');
+            addToast('error', 'Kategori ini tidak boleh dipakai untuk pengeluaran manual');
             return;
         }
         if (form.bankAccountRef && !accountMap.has(form.bankAccountRef)) {
@@ -645,7 +650,7 @@ export default function ExpensesPage() {
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kategori <span className="required">*</span></label>
                                 <select className="form-select" value={form.categoryRef} onChange={event => setForm({ ...form, categoryRef: event.target.value })} disabled={saving}>
-                                    <option value="">Pilih kategori</option>{categories.map(category => <option key={category._id} value={category._id}>{category.name}</option>)}
+                                    <option value="">Pilih kategori umum</option>{manualCategories.map(category => <option key={category._id} value={category._id}>{category.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-row">
@@ -653,12 +658,6 @@ export default function ExpensesPage() {
                                 <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><FormattedNumberInput allowDecimal={false} value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} disabled={saving} placeholder="Ketik nominal pengeluaran" /></div>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={event => setForm({ ...form, note: event.target.value })} disabled={saving} /></div>
-                            <div className="form-group"><label className="form-label">Kendaraan Terkait</label>
-                                <select className="form-select" value={form.relatedVehicleRef} onChange={event => setForm({ ...form, relatedVehicleRef: event.target.value })} disabled={saving || vehicles.length === 0}>
-                                    <option value="">-- Tidak terkait kendaraan tertentu --</option>
-                                    {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
-                                </select>
-                            </div>
                             <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas</label>
                                 <select className="form-select" value={form.bankAccountRef} onChange={event => {
                                     const account = bankAccounts.find(item => item._id === event.target.value);

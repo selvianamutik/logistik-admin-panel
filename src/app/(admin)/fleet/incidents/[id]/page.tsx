@@ -24,6 +24,7 @@ import {
 } from '@/lib/fleet-incident-detail-support';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPermission } from '@/lib/rbac';
+import { inferExpenseCategoryScope } from '@/lib/expense-category-scope';
 import type {
     BankAccount,
     ExpenseCategory,
@@ -101,7 +102,10 @@ export default function IncidentDetailPage() {
             setIncident((incidentData as Incident | null) || null);
             setLogs(sortIncidentActionLogs((actionLogs as IncidentActionLog[]) || []));
             setLines(sortIncidentSettlementLines((lineRows as IncidentSettlementLine[]) || []));
-            setExpenseCategories(canCreateExpense ? (((categoryRows as ExpenseCategory[]) || []).filter(item => item.active !== false)) : []);
+            setExpenseCategories(canCreateExpense
+                ? (((categoryRows as ExpenseCategory[]) || []).filter(item => item.active !== false && inferExpenseCategoryScope(item) === 'INCIDENT'))
+                : []
+            );
             setBankAccounts(canCreateExpense ? (((accountRows as BankAccount[]) || []).filter(item => item.active !== false)) : []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');

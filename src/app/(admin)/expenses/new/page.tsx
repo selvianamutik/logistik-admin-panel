@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
@@ -8,8 +8,8 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import { isManualExpenseCategory } from '@/lib/expense-category-scope';
+import type { ExpenseCategory, BankAccount } from '@/lib/types';
 
 export default function ExpenseNewPage() {
     const router = useRouter();
@@ -18,38 +18,39 @@ export default function ExpenseNewPage() {
     const [saving, setSaving] = useState(false);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [form, setForm] = useState({
         categoryRef: '', categoryName: '',
         date: getBusinessDateValue(),
         amount: 0, note: '',
         privacyLevel: 'internal' as 'internal' | 'ownerOnly',
-        relatedVehicleRef: '',
         bankAccountRef: '', bankAccountName: ''
     });
     const isOwner = user?.role === 'OWNER';
-    const canViewVehicles = user ? hasPermission(user.role, 'vehicles', 'view') : false;
+    const manualCategories = useMemo(
+        () => categories.filter(isManualExpenseCategory),
+        [categories]
+    );
 
     useEffect(() => {
         Promise.all([
             fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat form pengeluaran'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form pengeluaran'),
-            canViewVehicles
-                ? fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat form pengeluaran')
-                : Promise.resolve([] as Vehicle[]),
-        ]).then(([categoryRows, accountRows, vehicleRows]) => {
+        ]).then(([categoryRows, accountRows]) => {
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter((a) => a.active !== false));
-            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD'));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form pengeluaran');
         });
-    }, [addToast, canViewVehicles]);
+    }, [addToast]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.categoryRef || form.amount <= 0) {
             addToast('error', 'Kategori dan jumlah wajib diisi');
+            return;
+        }
+        if (!manualCategories.some(category => category._id === form.categoryRef)) {
+            addToast('error', 'Kategori ini tidak boleh dipakai untuk pengeluaran manual');
             return;
         }
         setSaving(true);
@@ -88,11 +89,11 @@ export default function ExpenseNewPage() {
                             <div className="form-group">
                                 <label className="form-label">Kategori <span className="required">*</span></label>
                                 <select className="form-select" value={form.categoryRef} onChange={e => {
-                                    const cat = categories.find(c => c._id === e.target.value);
+                                    const cat = manualCategories.find(c => c._id === e.target.value);
                                     setForm({ ...form, categoryRef: e.target.value, categoryName: cat?.name || '' });
                                 }}>
-                                    <option value="">Pilih Kategori</option>
-                                    {categories.filter(category => category.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    <option value="">Pilih kategori umum</option>
+                                    {manualCategories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -119,24 +120,6 @@ export default function ExpenseNewPage() {
                             <label className="form-label">Catatan / Deskripsi</label>
                             <textarea className="form-textarea" rows={3} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Keterangan pengeluaran..." />
                         </div>
-                        {canViewVehicles && <div className="form-group">
-                            <label className="form-label">Kendaraan Terkait</label>
-                            <select
-                                className="form-select"
-                                value={form.relatedVehicleRef}
-                                onChange={e => setForm({ ...form, relatedVehicleRef: e.target.value })}
-                            >
-                                <option value="">-- Tidak terkait kendaraan tertentu --</option>
-                                {vehicles.map(vehicle => (
-                                    <option key={vehicle._id} value={vehicle._id}>
-                                        {vehicle.plateNumber} - {vehicle.brandModel}
-                                    </option>
-                                ))}
-                            </select>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Isi kalau pengeluaran ini terkait kendaraan tertentu, misalnya servis, ban, atau perbaikan.
-                            </div>
-                        </div>}
                         <div className="form-group">
                             <label className="form-label">Bayar dari Rekening / Kas</label>
                             <select className="form-select" value={form.bankAccountRef} onChange={e => {
