@@ -4,6 +4,7 @@ loadScriptEnv();
 
 import { buildNotaRowsFromDeliveryOrder } from '../src/lib/invoice-create-page-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Order, Vehicle } from '../src/lib/types';
+import type { SuratJalanDocument } from '../src/lib/trip-document-types';
 
 type ApiResponse<T> = {
     data?: T;
@@ -472,6 +473,14 @@ async function provisionAuditResources(service: ServiceLike, suffix: string): Pr
 async function getDeliveryOrderItems(cookieHeader: string, deliveryOrderId: string) {
     const response = await requestJson<{ data: DeliveryOrderItem[] }>(
         `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderId }))}`,
+        cookieHeader
+    );
+    return Array.isArray(response.data) ? response.data : [];
+}
+
+async function getSuratJalanDocuments(cookieHeader: string, deliveryOrderId: string) {
+    const response = await requestJson<{ data: SuratJalanDocument[] }>(
+        `/api/data?entity=surat-jalan&filter=${encodeURIComponent(JSON.stringify({ tripRef: deliveryOrderId }))}&pageSize=50`,
         cookieHeader
     );
     return Array.isArray(response.data) ? response.data : [];
@@ -1067,6 +1076,73 @@ async function main() {
         assert(doTwoItems.length === 1, 'DO trip 2 harus tersisa 1 barang untuk realisasi hold.');
         assert(doTwoItems[0].shipperReferenceNumber === sjHold, 'Barang sisa DO trip 2 harus tetap tersambung ke SJ hold.');
 
+        auditStep('uji hapus nomor SJ harus membersihkan dokumen surat jalan stale');
+        const sjRemoved = `AUD-${suffix}-REMOVED`;
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-shipper-reference',
+            data: {
+                id: doTwoId,
+                shipperReferences: [
+                    { referenceNumber: sjHold, pickupStopKey: pickupTwoKey },
+                    { referenceNumber: sjRemoved, pickupStopKey: pickupTwoKey },
+                ],
+            },
+        });
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'append-cargo-items',
+            data: {
+                id: doTwoId,
+                cargoItems: [
+                    {
+                        description: 'Audit barang SJ dihapus',
+                        qtyKoli: 1,
+                        weightInputValue: 25,
+                        weightInputUnit: 'KG',
+                        shipperReferenceNumber: sjRemoved,
+                    },
+                ],
+            },
+        });
+        const docsAfterAddRemovedSj = await getSuratJalanDocuments(cookieHeader, doTwoId);
+        assert(
+            docsAfterAddRemovedSj.some(document => document.suratJalanNumber === sjRemoved),
+            'Setup audit harus membuat dokumen SJ tambahan sebelum dihapus.'
+        );
+        doTwoItems = await getDeliveryOrderItems(cookieHeader, doTwoId);
+        const removedSjItem = doTwoItems.find(item => item.shipperReferenceNumber === sjRemoved);
+        assert(removedSjItem, 'Item untuk SJ yang akan dihapus harus ditemukan.');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'remove-cargo-item',
+            data: {
+                id: doTwoId,
+                deliveryOrderItemId: removedSjItem._id,
+            },
+        });
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-shipper-reference',
+            data: {
+                id: doTwoId,
+                shipperReferences: [
+                    { referenceNumber: sjHold, pickupStopKey: pickupTwoKey },
+                ],
+            },
+        });
+        doTwoItems = await getDeliveryOrderItems(cookieHeader, doTwoId);
+        const docsAfterDeleteRemovedSj = await getSuratJalanDocuments(cookieHeader, doTwoId);
+        assert(
+            !docsAfterDeleteRemovedSj.some(document => document.suratJalanNumber === sjRemoved),
+            'SJ yang sudah dihapus tidak boleh tetap muncul di dokumen/status batch.'
+        );
+        assert(
+            docsAfterDeleteRemovedSj.every(document => document.suratJalanNumber !== sjRemoved) &&
+            doTwoItems.every(item => item.shipperReferenceNumber !== sjRemoved),
+            'Hapus SJ harus membersihkan dokumen dan item yang terkait nomor SJ lama.'
+        );
+
         auditStep('finalisasi DO trip 2 sebagai hold non-billable');
         await advanceDeliveryOrderToDelivered({
             cookieHeader,
@@ -1185,6 +1261,69 @@ async function main() {
             splitNotaRows[0].beratKg === 60 &&
             splitNotaRows[0].volumeM3 === 1,
             'Nota split drop/hold harus hanya memakai porsi DROP billable: 1 koli / 60 kg / 1 m3.'
+        );
+        const splitDocsAfterInitial = await getSuratJalanDocuments(cookieHeader, doSplitId);
+        const splitDocAfterInitial = splitDocsAfterInitial.find(document => document.suratJalanNumber === sjSplit);
+        assert(splitDocAfterInitial?.tripStatus === 'PARTIAL_HOLD', `SJ split harus PARTIAL_HOLD setelah 1 koli drop + 2 koli hold, sekarang ${splitDocAfterInitial?.tripStatus}.`);
+        assert(
+            normalizeNumber(splitDocAfterInitial.holdCargo?.qtyKoli) === 2 &&
+            normalizeNumber(splitDocAfterInitial.holdCargo?.weightKg) === 120,
+            'SJ split harus menyimpan sisa hold 2 koli / 120 kg.'
+        );
+
+        auditStep('finalisasi lanjutan sisa hold pada SJ split harus melepas hold dan menambah billable');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-surat-jalan-status-batch',
+            data: {
+                id: doSplitId,
+                status: 'DELIVERED',
+                targetSuratJalanRefs: [splitDocAfterInitial._id],
+                note: 'Audit lanjut kirim sisa hold',
+                podReceiverName: 'Penerima Audit Lanjutan',
+                podReceivedDate: AUDIT_DATE,
+                podNote: 'Audit POD Lanjutan',
+                actualItems: [
+                    {
+                        deliveryOrderItemRef: splitItem._id,
+                        actualQtyKoli: 2,
+                        actualWeightInputValue: 120,
+                        actualWeightInputUnit: 'KG',
+                        actualVolumeInputValue: 2,
+                        actualVolumeInputUnit: 'M3',
+                    },
+                ],
+                actualDropPoints: [
+                    {
+                        stopType: 'DROP',
+                        deliveryOrderItemRef: splitItem._id,
+                        deliveryOrderItemRefs: [splitItem._id],
+                        shipperReferenceNumber: sjSplit,
+                        locationName: 'Audit Drop Split Lanjutan',
+                        locationAddress: 'Audit Drop Split Lanjutan Address',
+                        qtyKoli: 2,
+                        weightInputValue: 120,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 2,
+                        volumeInputUnit: 'M3',
+                    },
+                ],
+            },
+        });
+        const splitDocsAfterContinuation = await getSuratJalanDocuments(cookieHeader, doSplitId);
+        const splitDocAfterContinuation = splitDocsAfterContinuation.find(document => document.suratJalanNumber === sjSplit);
+        assert(splitDocAfterContinuation?.tripStatus === 'DELIVERED', `SJ split lanjutan harus DELIVERED, sekarang ${splitDocAfterContinuation?.tripStatus}.`);
+        assert(
+            normalizeNumber(splitDocAfterContinuation.billableCargo?.qtyKoli) === 3 &&
+            normalizeNumber(splitDocAfterContinuation.billableCargo?.weightKg) === 180 &&
+            normalizeNumber(splitDocAfterContinuation.holdCargo?.qtyKoli) === 0,
+            'Lanjutan hold harus mengubah total billable jadi 3 koli / 180 kg dan hold menjadi 0.'
+        );
+        const splitItemsAfterContinuation = await getDeliveryOrderItems(cookieHeader, doSplitId);
+        assert(
+            normalizeNumber(splitItemsAfterContinuation[0]?.actualQtyKoli) === 3 &&
+            normalizeNumber(splitItemsAfterContinuation[0]?.actualWeightKg) === 180,
+            'Lanjutan hold harus tetap menyimpan aktual total item 3 koli / 180 kg.'
         );
 
         const deliveredOrder = await requestJson<{ data: Order }>(

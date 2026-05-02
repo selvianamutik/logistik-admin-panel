@@ -6250,19 +6250,6 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         }
     }
 
-    const nextActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
-        ? deliveryOrder.actualDropPoints.map(point => {
-            const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
-            const nextReference = itemRef ? itemReferencePatches.get(itemRef) : undefined;
-            return nextReference
-                ? {
-                    ...point,
-                    shipperReferenceKey: nextReference._key,
-                    shipperReferenceNumber: nextReference.referenceNumber,
-                }
-                : point;
-        })
-        : undefined;
     const addedReferences = nextShipperReferences.filter(nextReference => {
         const normalizedKey = normalizeOptionalText(nextReference._key);
         const normalizedNumber = normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase();
@@ -6271,6 +6258,63 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             (normalizedNumber && normalizeOptionalText(previousReference.referenceNumber)?.toUpperCase() === normalizedNumber)
         );
     });
+    const removedReferences = previousReferences.filter(previousReference => {
+        const normalizedKey = normalizeOptionalText(previousReference._key);
+        const normalizedNumber = normalizeOptionalText(previousReference.referenceNumber)?.toUpperCase();
+        return !nextShipperReferences.some(nextReference =>
+            (normalizedKey && normalizeOptionalText(nextReference._key) === normalizedKey) ||
+            (normalizedNumber && normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase() === normalizedNumber)
+        );
+    });
+    const removedReferenceKeys = new Set(
+        removedReferences
+            .map(reference => normalizeOptionalText(reference._key))
+            .filter((value): value is string => Boolean(value))
+    );
+    const removedReferenceNumbers = new Set(
+        removedReferences
+            .map(reference => normalizeOptionalText(reference.referenceNumber)?.toUpperCase())
+            .filter((value): value is string => Boolean(value))
+    );
+    const itemStillUsesRemovedReference = deliveryOrderItems.some(item => {
+        if (itemReferencePatches.has(item._id)) {
+            return false;
+        }
+        const itemReferenceKey = normalizeOptionalText(item.shipperReferenceKey);
+        const itemReferenceNumber = normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase();
+        return Boolean(
+            (itemReferenceKey && removedReferenceKeys.has(itemReferenceKey)) ||
+            (itemReferenceNumber && removedReferenceNumbers.has(itemReferenceNumber))
+        );
+    });
+    if (itemStillUsesRemovedReference) {
+        return NextResponse.json(
+            { error: 'SJ pengirim yang masih punya barang tidak bisa dihapus. Hapus atau pindahkan barangnya dulu.' },
+            { status: 409 }
+        );
+    }
+    const nextActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
+        ? deliveryOrder.actualDropPoints
+            .filter(point => {
+                const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+                const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
+                return !(
+                    (pointReferenceKey && removedReferenceKeys.has(pointReferenceKey)) ||
+                    (pointReferenceNumber && removedReferenceNumbers.has(pointReferenceNumber))
+                );
+            })
+            .map(point => {
+                const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
+                const nextReference = itemRef ? itemReferencePatches.get(itemRef) : undefined;
+                return nextReference
+                    ? {
+                        ...point,
+                        shipperReferenceKey: nextReference._key,
+                        shipperReferenceNumber: nextReference.referenceNumber,
+                    }
+                    : point;
+            })
+        : undefined;
 
     let updatedDeliveryOrder: unknown;
     try {
@@ -6341,6 +6385,21 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                     holdCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
                     returnCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
                 });
+            }
+        }
+        if (removedReferences.length > 0) {
+            const existingSuratJalanRecords = await listDocumentsByFilter<{ _id: string }>('suratJalan', { tripRef: id });
+            const existingSuratJalanRecordIds = new Set(existingSuratJalanRecords.map(record => record._id));
+            for (const removedReference of removedReferences) {
+                const targetRecordId = getDeliveryOrderSuratJalanIdentity({
+                    deliveryOrderId: id,
+                    shipperReferenceKey: removedReference._key,
+                    shipperReferenceNumber: removedReference.referenceNumber,
+                });
+                if (!existingSuratJalanRecordIds.has(targetRecordId)) {
+                    continue;
+                }
+                await deleteDocument(targetRecordId, 'suratJalan');
             }
         }
         if ((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD') && nextShipperReferences.length > previousReferences.length) {

@@ -2124,6 +2124,23 @@ export default function TripDetailPage() {
             shipperReferenceKey: cargoItem.shipperReferenceKey || drop.shipperReferenceKey,
             shipperReferenceNumber: cargoItem.shipperReferenceNumber || drop.shipperReferenceNumber,
         };
+        const dropReferenceKey = drop.shipperReferenceKey.trim();
+        const dropReferenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
+        const cargoReferenceKey = cargoItem.shipperReferenceKey.trim();
+        const cargoReferenceNumber = cargoItem.shipperReferenceNumber.trim().toUpperCase();
+        const hasDropReferenceTarget = Boolean(dropReferenceKey || dropReferenceNumber);
+        const dropReferenceMatchesCargo =
+            !hasDropReferenceTarget ||
+            (dropReferenceKey && cargoReferenceKey === dropReferenceKey) ||
+            (dropReferenceNumber && cargoReferenceNumber === dropReferenceNumber);
+        if (!drop.deliveryOrderItemRef && !dropReferenceMatchesCargo) {
+            return {
+                ...baseDrop,
+                qtyKoli: '',
+                weightInputValue: '',
+                volumeInputValue: '',
+            };
+        }
         if (cachedValues && hasActualDropItemValues(cachedValues)) {
             return { ...baseDrop, ...cachedValues };
         }
@@ -3732,28 +3749,28 @@ export default function TripDetailPage() {
         if (!showAdvancedDropEditor) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
-        const itemRealizationDrops = selectedEffectiveActualDropPoints.filter(point =>
-            point.deliveryOrderItemRef === item.deliveryOrderItemRef
-        );
-        const actualQtyKoli = itemRealizationDrops.reduce(
-            (sum, point) => sum + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
+        const itemRealizationAllocations = selectedActualDropPoints
+            .map(point => pickActualDropItemValues(getActualDropAllocationForItem(point, item)))
+            .filter(values => hasActualDropItemValues(values));
+        const actualQtyKoli = itemRealizationAllocations.reduce(
+            (sum, values) => sum + parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),
             0
         );
-        const actualWeightKg = itemRealizationDrops.reduce(
-            (sum, point) => sum + convertWeightToKg(
-                parseFormattedNumberish(point.weightInputValue || 0, {
-                    maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
+        const actualWeightKg = itemRealizationAllocations.reduce(
+            (sum, values) => sum + convertWeightToKg(
+                parseFormattedNumberish(values.weightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
                 }),
-                point.weightInputUnit
+                values.weightInputUnit
             ),
             0
         );
-        const actualVolumeM3 = itemRealizationDrops.reduce(
-            (sum, point) => sum + convertVolumeToM3(
-                parseFormattedNumberish(point.volumeInputValue || 0, {
-                    maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+        const actualVolumeM3 = itemRealizationAllocations.reduce(
+            (sum, values) => sum + convertVolumeToM3(
+                parseFormattedNumberish(values.volumeInputValue || 0, {
+                    maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
                 }),
-                point.volumeInputUnit
+                values.volumeInputUnit
             ),
             0
         );
