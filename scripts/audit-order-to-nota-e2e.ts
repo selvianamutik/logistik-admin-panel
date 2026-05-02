@@ -572,6 +572,7 @@ async function main() {
     const sjB = `AUD-${suffix}-B`;
     const sjSplit = `AUD-${suffix}-SPLIT`;
     const sjOver = `AUD-${suffix}-OVER`;
+    const sjAfterDelivered = `AUD-${suffix}-AFTER-DELIVERED`;
     const sjHold = `AUD-${suffix}-HOLD`;
     const sjCancel = `AUD-${suffix}-CANCEL`;
 
@@ -1238,10 +1239,10 @@ async function main() {
                 actualItems: [
                     {
                         deliveryOrderItemRef: splitItem._id,
-                        actualQtyKoli: 3,
-                        actualWeightInputValue: 180,
+                        actualQtyKoli: 1,
+                        actualWeightInputValue: 70,
                         actualWeightInputUnit: 'KG',
-                        actualVolumeInputValue: 3,
+                        actualVolumeInputValue: 1,
                         actualVolumeInputUnit: 'M3',
                     },
                 ],
@@ -1254,7 +1255,7 @@ async function main() {
                         locationName: 'Audit Drop Split',
                         locationAddress: 'Audit Drop Split Address',
                         qtyKoli: 1,
-                        weightInputValue: 60,
+                        weightInputValue: 70,
                         weightInputUnit: 'KG',
                         volumeInputValue: 1,
                         volumeInputUnit: 'M3',
@@ -1278,8 +1279,22 @@ async function main() {
         const finalizedSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
         assert(
             normalizeNumber(finalizedSplitItems[0]?.actualQtyKoli) === 3 &&
-            normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 180,
-            'Batch split drop/hold satu item harus menyimpan aktual total 3 koli / 180 kg, bukan hanya bagian drop.'
+            normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 190,
+            'Batch split drop/hold satu item harus menyimpan aktual total 3 koli / 190 kg, bukan hanya bagian drop.'
+        );
+        const splitOrderItemResponse = await requestJson<{ data: Array<{ _id: string; qtyKoli?: number; weight?: number; deliveredQtyKoli?: number; deliveredWeight?: number; heldQtyKoli?: number; heldWeight?: number }> }>(
+            `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ sourceDeliveryOrderRef: doSplitId }))}`,
+            cookieHeader
+        );
+        const splitOrderItem = splitOrderItemResponse.data?.[0];
+        assert(
+            normalizeNumber(splitOrderItem?.qtyKoli) === 3 &&
+            normalizeNumber(splitOrderItem?.weight) === 190 &&
+            normalizeNumber(splitOrderItem?.deliveredQtyKoli) === 1 &&
+            normalizeNumber(splitOrderItem?.deliveredWeight) === 70 &&
+            normalizeNumber(splitOrderItem?.heldQtyKoli) === 2 &&
+            normalizeNumber(splitOrderItem?.heldWeight) === 120,
+            'Order item split tidak boleh menghitung hold sebagai sisa berat aktual DROP; progress harus 1/70 terkirim + 2/120 hold dari total 3/190.'
         );
         const doSplitState = await requestJson<{ data: DeliveryOrder }>(
             `/api/data?entity=delivery-orders&id=${encodeURIComponent(doSplitId)}`,
@@ -1294,9 +1309,9 @@ async function main() {
         assert(
             splitNotaRows[0].noSJ === sjSplit &&
             splitNotaRows[0].collie === 1 &&
-            splitNotaRows[0].beratKg === 60 &&
+            splitNotaRows[0].beratKg === 70 &&
             splitNotaRows[0].volumeM3 === 1,
-            'Nota split drop/hold harus hanya memakai porsi DROP billable: 1 koli / 60 kg / 1 m3.'
+            'Nota split drop/hold harus hanya memakai porsi DROP billable: 1 koli / 70 kg / 1 m3.'
         );
         const splitDocsAfterInitial = await getSuratJalanDocuments(cookieHeader, doSplitId);
         const splitDocAfterInitial = splitDocsAfterInitial.find(document => document.suratJalanNumber === sjSplit);
@@ -1308,6 +1323,18 @@ async function main() {
         );
 
         auditStep('finalisasi lanjutan sisa hold pada SJ split harus melepas hold dan menambah billable');
+        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+            await postData(cookieHeader, {
+                entity: 'delivery-orders',
+                action: 'set-surat-jalan-status-batch',
+                data: {
+                    id: doSplitId,
+                    status,
+                    targetSuratJalanRefs: [splitDocAfterInitial._id],
+                    note: `Audit lanjut hold ${status}`,
+                },
+            });
+        }
         await postData(cookieHeader, {
             entity: 'delivery-orders',
             action: 'set-surat-jalan-status-batch',
@@ -1351,15 +1378,15 @@ async function main() {
         assert(splitDocAfterContinuation?.tripStatus === 'DELIVERED', `SJ split lanjutan harus DELIVERED, sekarang ${splitDocAfterContinuation?.tripStatus}.`);
         assert(
             normalizeNumber(splitDocAfterContinuation.billableCargo?.qtyKoli) === 3 &&
-            normalizeNumber(splitDocAfterContinuation.billableCargo?.weightKg) === 180 &&
+            normalizeNumber(splitDocAfterContinuation.billableCargo?.weightKg) === 190 &&
             normalizeNumber(splitDocAfterContinuation.holdCargo?.qtyKoli) === 0,
-            'Lanjutan hold harus mengubah total billable jadi 3 koli / 180 kg dan hold menjadi 0.'
+            'Lanjutan hold harus mengubah total billable jadi 3 koli / 190 kg dan hold menjadi 0.'
         );
         const splitItemsAfterContinuation = await getDeliveryOrderItems(cookieHeader, doSplitId);
         assert(
             normalizeNumber(splitItemsAfterContinuation[0]?.actualQtyKoli) === 3 &&
-            normalizeNumber(splitItemsAfterContinuation[0]?.actualWeightKg) === 180,
-            'Lanjutan hold harus tetap menyimpan aktual total item 3 koli / 180 kg.'
+            normalizeNumber(splitItemsAfterContinuation[0]?.actualWeightKg) === 190,
+            'Lanjutan hold harus tetap menyimpan aktual total item 3 koli / 190 kg.'
         );
 
         auditStep('create DO trip 4 untuk memastikan aktual lebih besar dari estimasi tidak dipotong');
@@ -1467,6 +1494,25 @@ async function main() {
             overNotaRows[0].collie === 1 &&
             overNotaRows[0].beratKg === 20,
             'Nota row over aktual harus memakai berat aktual drop 20 kg, bukan estimasi 15 kg.'
+        );
+
+        auditStep('tambah SJ baru setelah trip terkirim harus mulai dari CREATED');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-shipper-reference',
+            data: {
+                id: doSplitId,
+                shipperReferences: [
+                    { referenceNumber: sjSplit, pickupStopKey: pickupTwoKey },
+                    { referenceNumber: sjAfterDelivered, pickupStopKey: pickupTwoKey },
+                ],
+            },
+        });
+        const splitDocsAfterAddingDeliveredSj = await getSuratJalanDocuments(cookieHeader, doSplitId);
+        const newDocAfterDelivered = splitDocsAfterAddingDeliveredSj.find(document => document.suratJalanNumber === sjAfterDelivered);
+        assert(
+            newDocAfterDelivered?.tripStatus === 'CREATED',
+            `SJ baru pada trip terkirim harus mulai CREATED/dibuat, sekarang ${newDocAfterDelivered?.tripStatus}.`
         );
 
         const deliveredOrder = await requestJson<{ data: Order }>(

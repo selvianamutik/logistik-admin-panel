@@ -215,7 +215,7 @@ export const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
     ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
     ARRIVED: ['DELIVERED', 'CANCELLED'],
-    PARTIAL_HOLD: ['DELIVERED', 'CANCELLED'],
+    PARTIAL_HOLD: ['HEADING_TO_PICKUP', 'CANCELLED'],
     DELIVERED: [],
     CANCELLED: [],
 };
@@ -975,15 +975,27 @@ export function normalizeDeliveryActualDropPoints(
             }),
             { qtyKoli: 0, weightKg: 0, volumeM3: 0 }
         );
+    const billableAggregated = normalized
+        .filter(point => point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP')
+        .reduce<ActualCargoTotals>(
+            (sum, point) => ({
+                qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(point.qtyKoli ?? 0)),
+                weightKg: roundQuantity(sum.weightKg + normalizeNumber(point.weightKg ?? 0)),
+                volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(point.volumeM3 ?? 0), 3),
+            }),
+            { qtyKoli: 0, weightKg: 0, volumeM3: 0 }
+        );
+    const actualMatchesAllDropPoints =
+        (actualTotals.qtyKoli <= 0 || Math.abs(aggregated.qtyKoli - actualTotals.qtyKoli) <= 0.01) &&
+        (actualTotals.weightKg <= 0 || Math.abs(aggregated.weightKg - actualTotals.weightKg) <= 0.01) &&
+        (actualTotals.volumeM3 <= 0 || Math.abs(aggregated.volumeM3 - actualTotals.volumeM3) <= 0.001);
+    const actualMatchesBillableDropPoints =
+        (actualTotals.qtyKoli <= 0 || Math.abs(billableAggregated.qtyKoli - actualTotals.qtyKoli) <= 0.01) &&
+        (actualTotals.weightKg <= 0 || Math.abs(billableAggregated.weightKg - actualTotals.weightKg) <= 0.01) &&
+        (actualTotals.volumeM3 <= 0 || Math.abs(billableAggregated.volumeM3 - actualTotals.volumeM3) <= 0.001);
 
-    if (actualTotals.qtyKoli > 0 && Math.abs(aggregated.qtyKoli - actualTotals.qtyKoli) > 0.01) {
-        throw new Error('Total qty titik realisasi harus sama dengan qty aktual DO');
-    }
-    if (actualTotals.weightKg > 0 && Math.abs(aggregated.weightKg - actualTotals.weightKg) > 0.01) {
-        throw new Error('Total berat titik realisasi harus sama dengan berat aktual DO');
-    }
-    if (actualTotals.volumeM3 > 0 && Math.abs(aggregated.volumeM3 - actualTotals.volumeM3) > 0.001) {
-        throw new Error('Total volume titik realisasi harus sama dengan volume aktual DO');
+    if (!actualMatchesAllDropPoints && !actualMatchesBillableDropPoints) {
+        throw new Error('Total titik DROP harus sama dengan aktual barang SJ, atau total semua titik realisasi harus sama dengan aktual DO');
     }
 
     return normalized;

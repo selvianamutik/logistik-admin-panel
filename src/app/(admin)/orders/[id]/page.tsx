@@ -1907,9 +1907,9 @@ export default function OrderDetailPage() {
                                         volumeM3: progressInfo.pendingVolume,
                                     }),
                                     formatProgressLine('Sisa siap kirim', {
-                                        qtyKoli: progressInfo.assignableQtyKoli,
-                                        weightKg: progressInfo.assignableWeight,
-                                        volumeM3: progressInfo.assignableVolume,
+                                        qtyKoli: progressInfo.pendingQtyKoli,
+                                        weightKg: progressInfo.pendingWeight,
+                                        volumeM3: progressInfo.pendingVolume,
                                     }),
                                 ].filter((line): line is string => Boolean(line));
                                 return (
@@ -2944,8 +2944,8 @@ export default function OrderDetailPage() {
                                                     ? selectedNonKoliCargo
                                                     : {
                                                         qtyKoli: 0,
-                                                        weightKg: progressInfo.assignableWeight,
-                                                        volumeM3: progressInfo.assignableVolume,
+                                                        weightKg: progressInfo.pendingWeight,
+                                                        volumeM3: progressInfo.pendingVolume,
                                                     };
                                                 const remainingAfterShipment = roundQuantity(Math.max(progressInfo.pendingQtyKoli - selectedQty, 0));
                                                 const remainingNonKoliCargo = {
@@ -2981,7 +2981,7 @@ export default function OrderDetailPage() {
                                                             <div className="font-medium">{item.description}</div>
                                                             {hasHeldCargo && (
                                                                 <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                                                    <span className="badge badge-warning"><span className="badge-dot" /> Hold / Inap siap lanjut</span>
+                                                                    <span className="badge badge-warning"><span className="badge-dot" /> Hold / Inap di SJ asal</span>
                                                                     {item.holdLocation && <span className="text-muted text-sm">{item.holdLocation}</span>}
                                                                 </div>
                                                             )}
@@ -3021,16 +3021,16 @@ export default function OrderDetailPage() {
                                                                     })}
                                                                 </div>
                                                                 <div>
-                                                                    Siap kirim:{' '}
+                                                                    Pending siap trip:{' '}
                                                                     {formatCargoSummary({
-                                                                        qtyKoli: progressInfo.assignableQtyKoli,
-                                                                        weightKg: progressInfo.assignableWeight,
-                                                                        volumeM3: progressInfo.assignableVolume,
+                                                                        qtyKoli: progressInfo.pendingQtyKoli,
+                                                                        weightKg: progressInfo.pendingWeight,
+                                                                        volumeM3: progressInfo.pendingVolume,
                                                                     })}
                                                                 </div>
                                                                 {hasHeldCargo && (
                                                                     <div>
-                                                                        Sumber lanjutan:{' '}
+                                                                        Terkunci di SJ asal:{' '}
                                                                         {formatCargoSummary({
                                                                             qtyKoli: progressInfo.heldQtyKoli,
                                                                             weightKg: progressInfo.heldWeight,
@@ -3076,7 +3076,7 @@ export default function OrderDetailPage() {
                                                                 <div style={{ display: 'grid', gap: '0.35rem' }}>
                                                                     {selection ? (
                                                                         <>
-                                                                            {progressInfo.assignableWeight > 0 && (
+                                                                            {progressInfo.pendingWeight > 0 && (
                                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                                     <label className="form-label">Berat Kirim</label>
                                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
@@ -3116,7 +3116,7 @@ export default function OrderDetailPage() {
                                                                                     </div>
                                                                                 </div>
                                                                             )}
-                                                                            {progressInfo.assignableVolume > 0 && (
+                                                                            {progressInfo.pendingVolume > 0 && (
                                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                                     <label className="form-label">Volume Kirim</label>
                                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
@@ -3230,7 +3230,7 @@ export default function OrderDetailPage() {
                                                                                 </>
                                                                             )}
                                                                             {!selection.holdRemaining && remainingAfterShipment > 0 && (
-                                                                                <span className="text-muted text-sm">Biarkan kosong kalau seluruh sisa bisa lanjut di trip berikutnya tanpa hold.</span>
+                                                                                <span className="text-muted text-sm">Biarkan kosong kalau seluruh sisa pending tetap belum ditugaskan.</span>
                                                                             )}
                                                                         </>
                                                                     ) : (
@@ -3291,7 +3291,7 @@ export default function OrderDetailPage() {
                                                                                 </>
                                                                             )}
                                                                             {!selection.holdRemaining && hasNonKoliRemaining && (
-                                                                                <span className="text-muted text-sm">Biarkan kosong kalau sisa berat/volume lanjut di trip berikutnya tanpa hold.</span>
+                                                                                <span className="text-muted text-sm">Biarkan kosong kalau sisa berat/volume pending tetap belum ditugaskan.</span>
                                                                             )}
                                                                         </>
                                                                     )}

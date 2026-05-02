@@ -1549,7 +1549,7 @@ function getSortPresetComparator(
     }
 
     if (docType === 'deliveryOrder') {
-        const ranks = { ARRIVED: 0, PARTIAL_HOLD: 0, ON_DELIVERY: 1, HEADING_TO_PICKUP: 2, CREATED: 3, DELIVERED: 4, CANCELLED: 5 };
+        const ranks = { PARTIAL_HOLD: 0, CREATED: 1, HEADING_TO_PICKUP: 2, ON_DELIVERY: 3, ARRIVED: 4, DELIVERED: 5, CANCELLED: 6 };
         return (left, right) => {
             const leftPendingRank = hasMeaningfulValue(left.pendingDriverStatus) ? 0 : 1;
             const rightPendingRank = hasMeaningfulValue(right.pendingDriverStatus) ? 0 : 1;

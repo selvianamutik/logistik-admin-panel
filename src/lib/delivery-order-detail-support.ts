@@ -706,7 +706,7 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
         HEADING_TO_PICKUP: ['ON_DELIVERY'],
         ON_DELIVERY: ['ARRIVED'],
         ARRIVED: ['DELIVERED'],
-        PARTIAL_HOLD: ['DELIVERED'],
+        PARTIAL_HOLD: ['HEADING_TO_PICKUP'],
         DELIVERED: [],
     };
     return transitions[current] || [];

@@ -569,7 +569,14 @@ export default function SuratJalanDetailPage() {
         return <div className="empty-state"><div className="empty-state-title">Surat jalan tidak ditemukan</div></div>;
     }
 
-    const effectiveSuratJalanStatus = suratJalanDocument.tripStatus || deriveSuratJalanDocumentStatus(deliveryOrder.status || 'CREATED', suratJalanDocument);
+    const hasSuratJalanHoldCargo =
+        (suratJalanDocument.holdCargo?.qtyKoli || 0) > 0 ||
+        (suratJalanDocument.holdCargo?.weightKg || 0) > 0 ||
+        (suratJalanDocument.holdCargo?.volumeM3 || 0) > 0;
+    const rawSuratJalanStatus = suratJalanDocument.tripStatus || deriveSuratJalanDocumentStatus(deliveryOrder.status || 'CREATED', suratJalanDocument);
+    const effectiveSuratJalanStatus = hasSuratJalanHoldCargo && rawSuratJalanStatus === 'DELIVERED'
+        ? 'PARTIAL_HOLD'
+        : rawSuratJalanStatus;
     const tripStatusMeta = DO_STATUS_MAP[effectiveSuratJalanStatus] || getDeliveryOrderDisplayStatusMeta(deliveryOrder);
     const availableStatuses = getNextDeliveryOrderStatuses(effectiveSuratJalanStatus).filter(status =>
         status === 'CREATED' ||
@@ -851,15 +858,7 @@ export default function SuratJalanDetailPage() {
         selectedActualDropPoints.every(item => Boolean(item.locationName.trim() || item.locationAddress.trim())) &&
         !selectedDetailState.actualDropAmbiguityMessage;
 
-    const canContinueHeldCargoOnSameSj =
-        canManageDeliveryStatus &&
-        (effectiveSuratJalanStatus === 'DELIVERED' || effectiveSuratJalanStatus === 'PARTIAL_HOLD') &&
-        !deliveryOrder.pendingDriverStatus &&
-        (
-            (suratJalanDocument.holdCargo?.qtyKoli || 0) > 0 ||
-            (suratJalanDocument.holdCargo?.weightKg || 0) > 0 ||
-            (suratJalanDocument.holdCargo?.volumeM3 || 0) > 0
-        );
+    const suratJalanDisplayNumber = `${suratJalanDocument.suratJalanNumber}${(effectiveSuratJalanStatus === 'PARTIAL_HOLD' || hasSuratJalanHoldCargo) ? ' (HOLD)' : ''}`;
 
     const buildPartialHoldContinuationDrafts = (
         sourceDOData: DeliveryOrder | null,
@@ -867,7 +866,7 @@ export default function SuratJalanDetailPage() {
         baseCargoItems: ActualCargoDraft[]
     ) => {
         const actualDropPointSource = sourceDOData?.actualDropPoints || [];
-        if (effectiveSuratJalanStatus !== 'PARTIAL_HOLD' || !sourceDOData?._id || actualDropPointSource.length === 0) {
+        if (!hasSuratJalanHoldCargo || !sourceDOData?._id || actualDropPointSource.length === 0) {
             return {
                 actualCargoItems: baseCargoItems,
                 sourceDropPoints: undefined as DeliveryOrder['actualDropPoints'] | undefined,
@@ -1338,7 +1337,11 @@ export default function SuratJalanDetailPage() {
         setPodDate(deliveryOrder.podReceivedDate?.trim()?.slice(0, 10) || getBusinessDateValue());
         setPodNote(deliveryOrder.podNote || '');
         const baseActualCargoItems = buildActualCargoDrafts(selectedDeliveryOrderItems);
-        const continuationDrafts = continuationHold
+        const shouldPrepareHoldContinuation =
+            continuationHold ||
+            requestedStatus === 'DELIVERED' ||
+            (!requestedStatus && availableStatuses.includes('DELIVERED'));
+        const continuationDrafts = shouldPrepareHoldContinuation
             ? buildPartialHoldContinuationDrafts(deliveryOrder, selectedDeliveryOrderItems, baseActualCargoItems)
             : {
                 actualCargoItems: baseActualCargoItems,
@@ -1348,7 +1351,7 @@ export default function SuratJalanDetailPage() {
                 itemRefs: [] as string[],
             };
         const nextActualCargoItems = continuationDrafts.actualCargoItems;
-        const isPartialHoldContinuation = continuationHold && continuationDrafts.itemRefs.length > 0;
+        const isPartialHoldContinuation = shouldPrepareHoldContinuation && continuationDrafts.itemRefs.length > 0;
         const nextActualDropPoints = isPartialHoldContinuation
             ? []
             : buildDefaultActualDropDrafts(deliveryOrder, nextActualCargoItems, continuationDrafts.sourceDropPoints);
@@ -1451,7 +1454,7 @@ export default function SuratJalanDetailPage() {
                     <PageBackButton href="/surat-jalan" />
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                            {suratJalanDocument.suratJalanNumber}
+                            {suratJalanDisplayNumber}
                             <span className={`badge badge-${tripStatusMeta.color}`}>
                                 <span className="badge-dot" /> {tripStatusMeta.label}
                             </span>
@@ -1469,11 +1472,6 @@ export default function SuratJalanDetailPage() {
                             <Truck size={16} /> Update SJ Ini
                         </button>
                     )}
-                    {canContinueHeldCargoOnSameSj && (
-                        <button className="btn btn-secondary" onClick={() => openStatusModal('DELIVERED', true)}>
-                            <Truck size={16} /> Finalisasi Sisa Hold
-                        </button>
-                    )}
                 </div>
             </div>
 
@@ -1484,7 +1482,7 @@ export default function SuratJalanDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. Surat Jalan</div><div className="detail-value font-mono"><Link href={`/surat-jalan/${encodeURIComponent(suratJalanDocument._id)}`}>{suratJalanDocument.suratJalanNumber}</Link></div></div>
+                            <div className="detail-item"><div className="detail-label">No. Surat Jalan</div><div className="detail-value font-mono"><Link href={`/surat-jalan/${encodeURIComponent(suratJalanDocument._id)}`}>{suratJalanDisplayNumber}</Link></div></div>
                             <div className="detail-item"><div className="detail-label">Trip</div><div className="detail-value">{canOpenTripPage ? <Link href={withReturnTo(`/trips/${deliveryOrder._id}`)}>{suratJalanDocument.tripNumber}</Link> : suratJalanDocument.tripNumber}</div></div>
                         </div>
                         <div className="detail-row">
@@ -1811,13 +1809,13 @@ export default function SuratJalanDetailPage() {
                                 <>
                                     <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
                                         {continuingHeldCargo
-                                            ? <>Lanjutan hold ini hanya berlaku untuk <strong>{suratJalanDocument.suratJalanNumber}</strong>. Muatan aktual diisi otomatis dari sisa hold SJ ini, lalu Anda bisa membagi ulang drop lanjutan seperti finalisasi hold di Trip Detail.</>
-                                            : <>Finalisasi ini hanya berlaku untuk <strong>{suratJalanDocument.suratJalanNumber}</strong>. Flow, hitungan, dan review-nya sama seperti finalisasi batch SJ di Trip Detail, hanya tanpa pilih batch karena di sini fokusnya satu SJ.</>}
+                                            ? <>Lanjutan hold ini hanya berlaku untuk <strong>{suratJalanDisplayNumber}</strong>. Muatan aktual diisi otomatis dari sisa hold SJ ini, lalu Anda bisa membagi ulang drop lanjutan seperti finalisasi hold di Trip Detail.</>
+                                            : <>Finalisasi ini hanya berlaku untuk <strong>{suratJalanDisplayNumber}</strong>. Flow, hitungan, dan review-nya sama seperti finalisasi batch SJ di Trip Detail, hanya tanpa pilih batch karena di sini fokusnya satu SJ.</>}
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">SJ yang difinalkan</div>
-                                            <div className="font-semibold" style={{ fontSize: '1.05rem', marginTop: '0.2rem' }}>{suratJalanDocument.suratJalanNumber}</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.05rem', marginTop: '0.2rem' }}>{suratJalanDisplayNumber}</div>
                                         </div>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Item dalam batch SJ</div>
@@ -2026,7 +2024,7 @@ export default function SuratJalanDetailPage() {
                             <div>
                                 <h3 className="modal-title">{activeFinalizationDrop ? 'Tentukan Barang Titik Drop' : 'Aktual Barang SJ'}</h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
-                                    {activeFinalizationDrop ? 'Alokasi titik drop' : 'Langkah 2 dari 2'} | {selectedDerivedActualCargoItems.length} item di {suratJalanDocument.suratJalanNumber}
+                                    {activeFinalizationDrop ? 'Alokasi titik drop' : 'Langkah 2 dari 2'} | {selectedDerivedActualCargoItems.length} item di {suratJalanDisplayNumber}
                                     {activeFinalizationDrop ? ` | ${activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'Titik Drop'}` : ''}
                                 </div>
                             </div>
@@ -2080,7 +2078,7 @@ export default function SuratJalanDetailPage() {
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                                         <div>
-                                            <div className="text-muted text-sm">{suratJalanDocument.suratJalanNumber}</div>
+                                            <div className="text-muted text-sm">{suratJalanDisplayNumber}</div>
                                             <div style={{ fontWeight: 700, marginTop: '0.2rem' }}>{activeFinalizationCargoItem.description}</div>
                                         </div>
                                         <div className="text-muted text-sm">

@@ -74,6 +74,7 @@ import {
     aggregateTripStatusFromSuratJalanStatuses,
     mapDeliveryOrderToSuratJalanRecords,
     mapDeliveryOrderToTripRecord,
+    parseSuratJalanDocumentId,
 } from '@/lib/trip-document-mappers';
 
 const MANUAL_DO_STATUSES = ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
@@ -376,22 +377,35 @@ function hasDeliveryCargoSummary(summary: { qtyKoli: number; weightKg: number; v
 function summarizeSuratJalanActualCargo(
     deliveryOrder: DeliveryOrder,
     allDeliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>,
-    record: { _id: string; suratJalanNumber?: string },
+    record: { _id: string; referenceKey?: string; suratJalanNumber?: string },
     summarizeReference: (
         deliveryOrder: DeliveryOrder,
         shipperReferenceNumber?: string,
         deliveryOrderItemRef?: string
     ) => { qtyKoli: number; weightKg: number; volumeM3: number }
 ) {
+    const parsedReferenceKey = (() => {
+        try {
+            return parseSuratJalanDocumentId(record._id).referenceKey;
+        } catch {
+            return '';
+        }
+    })();
+    const recordNumber = normalizeOptionalText(record.suratJalanNumber)?.toUpperCase();
     const recordItems = allDeliveryOrderItems.filter(item =>
         getDeliveryOrderSuratJalanIdentity({
             deliveryOrderId: deliveryOrder._id,
             shipperReferenceKey: item.shipperReferenceKey,
             shipperReferenceNumber: item.shipperReferenceNumber,
-        }) === record._id
+        }) === record._id ||
+        Boolean(
+            (record.referenceKey && item.shipperReferenceKey === record.referenceKey) ||
+            (parsedReferenceKey && parsedReferenceKey !== 'primary' && item.shipperReferenceKey === parsedReferenceKey) ||
+            (recordNumber && normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase() === recordNumber)
+        )
     );
     const itemSpecificSummary = recordItems.reduce(
-        (sum, item) => addDeliveryCargoSummary(sum, summarizeReference(deliveryOrder, record.suratJalanNumber, item._id)),
+        (sum, item) => addDeliveryCargoSummary(sum, summarizeReference(deliveryOrder, undefined, item._id)),
         createDeliveryCargoSummary()
     );
 
@@ -2806,6 +2820,15 @@ export async function handleDeliveryOrderContinueHeldCargo(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    void session;
+    void data;
+    void addAuditLog;
+    return NextResponse.json(
+        { error: 'Finalisasi sisa hold sekarang diproses dari Update Batch SJ pada trip/SJ asal.' },
+        { status: 410 }
+    );
+
+    /*
     const id = typeof data.id === 'string' ? data.id : '';
     const note = normalizeOptionalText(data.note);
     if (!id) {
@@ -3014,6 +3037,8 @@ export async function handleDeliveryOrderContinueHeldCargo(
             cargoFinalizedByName: session.name,
         },
     });
+}
+    */
 }
 
 export async function handleDeliveryOrderCancelTrip(
@@ -3239,6 +3264,11 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         tripStatus?: DOStatus;
         referenceKey?: string;
         suratJalanNumber?: string;
+        holdCargo?: {
+            qtyKoli?: number;
+            weightKg?: number;
+            volumeM3?: number;
+        };
     }>('suratJalan', { tripRef: id });
 
     const missingTargetSuratJalanRefs = targetSuratJalanRefs.filter(
@@ -3278,6 +3308,11 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             tripStatus?: DOStatus;
             referenceKey?: string;
             suratJalanNumber?: string;
+            holdCargo?: {
+                qtyKoli?: number;
+                weightKg?: number;
+                volumeM3?: number;
+            };
         }>('suratJalan', { tripRef: id });
     }
 
@@ -3286,21 +3321,154 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         HEADING_TO_PICKUP: ['ON_DELIVERY'],
         ON_DELIVERY: ['ARRIVED'],
         ARRIVED: ['DELIVERED'],
-        PARTIAL_HOLD: ['DELIVERED'],
+        PARTIAL_HOLD: ['HEADING_TO_PICKUP'],
         DELIVERED: [],
         CANCELLED: [],
     };
 
+    const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const deliveryOrderItemsForDerivedRecords = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
+    const derivedSuratJalanRecordById = new Map(
+        mapDeliveryOrderToSuratJalanRecords(deliveryOrder, deliveryOrderItemsForDerivedRecords)
+            .map(record => [record._id, record] as const)
+    );
+    const derivedSuratJalanRecords = Array.from(derivedSuratJalanRecordById.values());
+    const currentDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> = (
+        Array.isArray(deliveryOrder.actualDropPoints)
+            ? deliveryOrder.actualDropPoints
+            : []
+    ).map((point, index) => ({
+        ...point,
+        _key: point._key || `existing-hold-drop-${index + 1}`,
+    }));
     const targetedRecords = suratJalanRecords.filter(item => targetSuratJalanRefs.includes(item._id));
     if (targetedRecords.length === 0) {
         return NextResponse.json({ error: 'Surat jalan yang dipilih tidak ditemukan dalam trip ini.' }, { status: 404 });
     }
+    const hasSuratJalanHoldCargo = (record: {
+        holdCargo?: {
+            qtyKoli?: number;
+            weightKg?: number;
+            volumeM3?: number;
+        };
+    }) =>
+        normalizeNumber(record.holdCargo?.qtyKoli ?? 0) > 0 ||
+        normalizeNumber(record.holdCargo?.weightKg ?? 0) > 0 ||
+        normalizeNumber(record.holdCargo?.volumeM3 ?? 0) > 0;
+    const getParsedSuratJalanReferenceKey = (recordId: string) => {
+        try {
+            return parseSuratJalanDocumentId(recordId).referenceKey;
+        } catch {
+            return '';
+        }
+    };
+    const getDerivedSuratJalanRecord = (record: typeof targetedRecords[number]) => {
+        const parsedReferenceKey = getParsedSuratJalanReferenceKey(record._id);
+        const recordNumber = normalizeOptionalText(record.suratJalanNumber)?.toUpperCase();
+        return (
+            derivedSuratJalanRecordById.get(record._id) ||
+            derivedSuratJalanRecords.find(candidate =>
+                Boolean(
+                    (record.referenceKey && candidate.referenceKey === record.referenceKey) ||
+                    (parsedReferenceKey && parsedReferenceKey !== 'primary' && candidate.referenceKey === parsedReferenceKey) ||
+                    (recordNumber && normalizeOptionalText(candidate.suratJalanNumber)?.toUpperCase() === recordNumber)
+                )
+            ) ||
+            null
+        );
+    };
+    const hasSuratJalanContinuableHoldCargo = (record: typeof targetedRecords[number]) => {
+        const derivedRecord = getDerivedSuratJalanRecord(record);
+        if (
+            record.tripStatus === 'PARTIAL_HOLD' ||
+            derivedRecord?.tripStatus === 'PARTIAL_HOLD' ||
+            hasSuratJalanHoldCargo(record) ||
+            hasSuratJalanHoldCargo(derivedRecord || {})
+        ) {
+            return true;
+        }
+
+        const parsedReferenceKey = getParsedSuratJalanReferenceKey(record._id);
+        const recordDoItems = doItems.filter(item =>
+            getDeliveryOrderSuratJalanIdentity({
+                deliveryOrderId: id,
+                shipperReferenceKey: item.shipperReferenceKey,
+                shipperReferenceNumber: item.shipperReferenceNumber,
+            }) === record._id ||
+            Boolean(
+                (record.referenceKey && item.shipperReferenceKey === record.referenceKey) ||
+                (parsedReferenceKey && parsedReferenceKey !== 'primary' && item.shipperReferenceKey === parsedReferenceKey) ||
+                (record.suratJalanNumber && item.shipperReferenceNumber === record.suratJalanNumber)
+            )
+        );
+        const recordDoItemIds = new Set(recordDoItems.map(item => item._id));
+        const recordReferenceKeys = new Set([
+            normalizeOptionalText(record.referenceKey),
+            normalizeOptionalText(parsedReferenceKey !== 'primary' ? parsedReferenceKey : ''),
+            normalizeOptionalText(derivedRecord?.referenceKey),
+            ...recordDoItems.map(item => normalizeOptionalText(item.shipperReferenceKey)),
+        ].filter((value): value is string => Boolean(value)));
+        const recordReferenceNumbers = new Set([
+            normalizeOptionalText(record.suratJalanNumber)?.toUpperCase(),
+            normalizeOptionalText(derivedRecord?.suratJalanNumber)?.toUpperCase(),
+            ...recordDoItems.map(item => normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase()),
+        ].filter((value): value is string => Boolean(value)));
+        const holdPoints = currentDropPoints.filter(point => point.stopType === 'HOLD' || point.stopType === 'TRANSIT');
+
+        const hasMappedHoldPoint = holdPoints.some(point => {
+            const pointItemRefs = [
+                normalizeOptionalText(point.deliveryOrderItemRef),
+                ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                    .map(ref => normalizeOptionalText(ref))
+                    .filter((ref): ref is string => Boolean(ref))),
+            ].filter((ref): ref is string => Boolean(ref));
+            if (pointItemRefs.some(ref => recordDoItemIds.has(ref))) {
+                return true;
+            }
+
+            const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+            const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
+            return (
+                (pointReferenceKey && recordReferenceKeys.has(pointReferenceKey)) ||
+                (pointReferenceNumber && recordReferenceNumbers.has(pointReferenceNumber))
+            );
+        });
+
+        if (hasMappedHoldPoint) {
+            return true;
+        }
+
+        const unscopedHoldPoints = holdPoints.filter(point => {
+            const pointItemRefs = [
+                normalizeOptionalText(point.deliveryOrderItemRef),
+                ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                    .map(ref => normalizeOptionalText(ref))
+                    .filter((ref): ref is string => Boolean(ref))),
+            ].filter((ref): ref is string => Boolean(ref));
+            return (
+                pointItemRefs.length === 0 &&
+                !normalizeOptionalText(point.shipperReferenceKey) &&
+                !normalizeOptionalText(point.shipperReferenceNumber)
+            );
+        });
+        return targetSuratJalanRefs.length === 1 && suratJalanRecords.length === 1 && unscopedHoldPoints.length > 0;
+    };
     const isPartialHoldContinuationFinalize =
         status === 'DELIVERED' &&
-        targetedRecords.some(item => item.tripStatus === 'PARTIAL_HOLD');
+        targetedRecords.some(item => item.tripStatus === 'PARTIAL_HOLD' || hasSuratJalanContinuableHoldCargo(item));
+    const getEffectiveSuratJalanCurrentStatus = (item: typeof targetedRecords[number]): DOStatus => {
+        const derivedRecord = getDerivedSuratJalanRecord(item);
+        const currentStatus = item.tripStatus || derivedRecord?.tripStatus || deliveryOrder.status || 'CREATED';
+        return (
+            currentStatus === 'PARTIAL_HOLD' ||
+            (hasSuratJalanContinuableHoldCargo(item) && currentStatus === 'DELIVERED')
+        )
+            ? 'PARTIAL_HOLD'
+            : currentStatus;
+    };
 
     const ineligible = targetedRecords.filter(item => {
-        const currentStatus = item.tripStatus || deliveryOrder.status || 'CREATED';
+        const currentStatus = getEffectiveSuratJalanCurrentStatus(item);
         return !allowedStatusesByCurrent[currentStatus]?.includes(status as DOStatus);
     });
     if (ineligible.length > 0) {
@@ -3314,15 +3482,6 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     const podReceiverName = normalizeOptionalText(data.podReceiverName);
     const podReceivedDate = normalizeOptionalText(data.podReceivedDate);
     const podNote = normalizeOptionalText(data.podNote);
-    const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
-    const currentDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> = (
-        Array.isArray(deliveryOrder.actualDropPoints)
-            ? deliveryOrder.actualDropPoints
-            : []
-    ).map((point, index) => ({
-        ...point,
-        _key: point._key || `existing-hold-drop-${index + 1}`,
-    }));
     const targetSuratJalanRefSet = new Set(targetSuratJalanRefs);
     const requestedActualItemRefs = new Set(
         (Array.isArray(data.actualItems) ? data.actualItems : [])
@@ -3626,15 +3785,9 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             };
             const nextActualWeightInputUnit = actualCargo.actualWeightInputUnit || 'KG';
             const nextActualVolumeInputUnit = actualCargo.actualVolumeInputUnit || 'M3';
-            const nextActualTotalQtyKoli = isPartialHoldContinuationFinalize
-                ? roundQuantity(nextSplit.delivered.qtyKoli + nextSplit.held.qtyKoli)
-                : actualQtyKoli;
-            const nextActualTotalWeight = isPartialHoldContinuationFinalize
-                ? roundQuantity(nextSplit.delivered.weight + nextSplit.held.weight)
-                : actualWeight;
-            const nextActualTotalVolume = isPartialHoldContinuationFinalize
-                ? roundQuantity(nextSplit.delivered.volume + nextSplit.held.volume, 3)
-                : actualVolume;
+            const nextActualTotalQtyKoli = roundQuantity(nextSplit.delivered.qtyKoli + nextSplit.held.qtyKoli);
+            const nextActualTotalWeight = roundQuantity(nextSplit.delivered.weight + nextSplit.held.weight);
+            const nextActualTotalVolume = roundQuantity(nextSplit.delivered.volume + nextSplit.held.volume, 3);
             const nextActualWeightInputValue = convertKgToWeightInputValue(nextActualTotalWeight, nextActualWeightInputUnit);
             const nextActualVolumeInputValue = convertM3ToVolumeInputValue(nextActualTotalVolume, nextActualVolumeInputUnit);
 
@@ -4704,12 +4857,11 @@ export async function handleDeliveryOrderCreate(
                 if (!Number.isFinite(selection.qtyKoli) || selection.qtyKoli <= 0) {
                     return NextResponse.json({ error: 'Jumlah koli kirim harus lebih besar dari 0' }, { status: 400 });
                 }
-                if (selection.qtyKoli > progress.assignableQtyKoli) {
-                    return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi muatan yang siap ditripkan` }, { status: 409 });
+                if (selection.qtyKoli > progress.pendingQtyKoli) {
+                    return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi muatan pending. Muatan hold harus diproses dari SJ/trip asal.` }, { status: 409 });
                 }
 
-                const heldQtyUsed = roundQuantity(Math.min(progress.heldQtyKoli, selection.qtyKoli));
-                const pendingQtyUsed = roundQuantity(Math.max(selection.qtyKoli - heldQtyUsed, 0));
+                const pendingQtyUsed = roundQuantity(selection.qtyKoli);
                 const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed, 0));
                 if (selection.holdRemaining) {
                     if (remainingQtyAfterShipment <= 0) {
@@ -4728,8 +4880,8 @@ export async function handleDeliveryOrderCreate(
                 continue;
             }
 
-            if (progress.assignableWeight <= 0 && progress.assignableVolume <= 0) {
-                return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap ditripkan` }, { status: 409 });
+            if (progress.pendingWeight <= 0 && progress.pendingVolume <= 0) {
+                return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang pending untuk ditripkan. Muatan hold harus diproses dari SJ/trip asal.` }, { status: 409 });
             }
             if (selection.qtyKoli > 0) {
                 return NextResponse.json(
@@ -4749,25 +4901,23 @@ export async function handleDeliveryOrderCreate(
             const selectedVolumeM3 = selectedVolumeInputValue > 0 && selection.volumeInputUnit
                 ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
                 : 0;
-            if (progress.assignableWeight > 0 && selectedWeightKg <= 0) {
+            if (progress.pendingWeight > 0 && selectedWeightKg <= 0) {
                 return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
             }
-            if (progress.assignableVolume > 0 && selectedVolumeM3 <= 0) {
+            if (progress.pendingVolume > 0 && selectedVolumeM3 <= 0) {
                 return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
             }
             if (selectedWeightKg <= 0 && selectedVolumeM3 <= 0) {
                 return NextResponse.json({ error: `Muatan kirim untuk ${item.description || 'item order'} tidak valid` }, { status: 400 });
             }
-            if (selectedWeightKg - progress.assignableWeight > 0.00001) {
-                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi muatan berat yang siap ditripkan` }, { status: 409 });
+            if (selectedWeightKg - progress.pendingWeight > 0.00001) {
+                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi muatan pending. Muatan hold harus diproses dari SJ/trip asal.` }, { status: 409 });
             }
-            if (selectedVolumeM3 - progress.assignableVolume > 0.00001) {
-                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi muatan volume yang siap ditripkan` }, { status: 409 });
+            if (selectedVolumeM3 - progress.pendingVolume > 0.00001) {
+                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi muatan pending. Muatan hold harus diproses dari SJ/trip asal.` }, { status: 409 });
             }
-            const heldWeightUsed = roundQuantity(Math.min(progress.heldWeight, selectedWeightKg));
-            const pendingWeightUsed = roundQuantity(Math.max(selectedWeightKg - heldWeightUsed, 0));
-            const heldVolumeUsed = roundQuantity(Math.min(progress.heldVolume, selectedVolumeM3), 3);
-            const pendingVolumeUsed = roundQuantity(Math.max(selectedVolumeM3 - heldVolumeUsed, 0), 3);
+            const pendingWeightUsed = roundQuantity(selectedWeightKg);
+            const pendingVolumeUsed = roundQuantity(selectedVolumeM3, 3);
             const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed, 0));
             const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed, 0), 3);
             if (selection.holdRemaining) {
@@ -4992,12 +5142,9 @@ export async function handleDeliveryOrderCreate(
                     shippedVolumeInputValue !== undefined
                         ? (usesQtyBasis ? item.volumeInputUnit : selection.volumeInputUnit)
                         : undefined;
-                const heldQtyUsed = roundQuantity(Math.min(progress.heldQtyKoli, shippedQtyKoli));
-                const pendingQtyUsed = roundQuantity(Math.max(shippedQtyKoli - heldQtyUsed, 0));
-                const heldWeightUsed = roundQuantity(Math.min(progress.heldWeight, shippedWeight));
-                const pendingWeightUsed = roundQuantity(Math.max(shippedWeight - heldWeightUsed, 0));
-                const heldVolumeUsed = roundQuantity(Math.min(progress.heldVolume, shippedVolumeM3), 3);
-                const pendingVolumeUsed = roundQuantity(Math.max(shippedVolumeM3 - heldVolumeUsed, 0), 3);
+                const pendingQtyUsed = roundQuantity(shippedQtyKoli);
+                const pendingWeightUsed = roundQuantity(shippedWeight);
+                const pendingVolumeUsed = roundQuantity(shippedVolumeM3, 3);
                 const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed, 0));
                 const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed, 0));
                 const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed, 0), 3);
@@ -5009,9 +5156,9 @@ export async function handleDeliveryOrderCreate(
                     assignedQtyKoli: roundQuantity(progress.assignedQtyKoli + shippedQtyKoli),
                     assignedWeight: roundQuantity(progress.assignedWeight + shippedWeight),
                     assignedVolume: roundQuantity(progress.assignedVolume + shippedVolumeM3, 3),
-                    heldQtyKoli: roundQuantity(Math.max(progress.heldQtyKoli - heldQtyUsed, 0) + holdQtyToApply),
-                    heldWeight: roundQuantity(Math.max(progress.heldWeight - heldWeightUsed, 0) + holdWeightToApply),
-                    heldVolume: roundQuantity(Math.max(progress.heldVolume - heldVolumeUsed, 0) + holdVolumeToApply, 3),
+                    heldQtyKoli: roundQuantity(progress.heldQtyKoli + holdQtyToApply),
+                    heldWeight: roundQuantity(progress.heldWeight + holdWeightToApply),
+                    heldVolume: roundQuantity(progress.heldVolume + holdVolumeToApply, 3),
                     pendingQtyKoli: roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed - holdQtyToApply, 0)),
                     pendingWeight: roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed - holdWeightToApply, 0)),
                     pendingVolume: roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed - holdVolumeToApply, 0), 3),
