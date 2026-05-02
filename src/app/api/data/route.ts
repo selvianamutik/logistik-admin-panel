@@ -542,6 +542,11 @@ async function addAuditLog(
     }
 }
 
+function parseCommaSeparatedParam(value: string | null) {
+    return value
+        ? value.split(',').map(item => item.trim()).filter(Boolean)
+        : [];
+}
 
 export async function GET(request: Request) {
     const session = await getSession();
@@ -566,6 +571,10 @@ export async function GET(request: Request) {
     const orFiltersParam = searchParams.get('orFilters');
     const definedFieldsParam = searchParams.get('definedFields');
     const periodParam = searchParams.get('period');
+    const auditEntityRef = searchParams.get('entityRef');
+    const auditEntityRefs = parseCommaSeparatedParam(searchParams.get('entityRefs'));
+    const auditEntityType = searchParams.get('entityType');
+    const auditEntityTypes = parseCommaSeparatedParam(searchParams.get('entityTypes'));
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
@@ -670,6 +679,10 @@ export async function GET(request: Request) {
                 search: searchQuery || undefined,
                 searchFields,
                 period: periodParam,
+                entityRef: auditEntityRef,
+                entityRefs: auditEntityRefs,
+                entityType: auditEntityType,
+                entityTypes: auditEntityTypes,
             });
             return jsonNoStore({ data: summary });
         } catch (err) {
@@ -1128,6 +1141,10 @@ export async function GET(request: Request) {
                     sortField,
                     sortDir,
                     period: periodParam,
+                    entityRef: auditEntityRef,
+                    entityRefs: auditEntityRefs,
+                    entityType: auditEntityType,
+                    entityTypes: auditEntityTypes,
                     countOnly,
                 });
                 items = result.items as unknown as Record<string, unknown>[];

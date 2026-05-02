@@ -385,6 +385,16 @@ export async function POST(request: Request) {
                     throw error;
                 }
 
+                await addAuditLog(
+                    auth.session,
+                    'UPDATE',
+                    'delivery-orders',
+                    deliveryOrderRef,
+                    action === 'resume'
+                        ? 'Driver melanjutkan tracking live'
+                        : 'Driver memulai tracking live'
+                );
+
                 return jsonNoStore({ data: updated });
             } catch (error) {
                 try {
@@ -458,6 +468,14 @@ export async function POST(request: Request) {
                 console.warn('Failed to release driver tracking lock after pause', error);
             }
 
+            await addAuditLog(
+                auth.session,
+                'UPDATE',
+                'delivery-orders',
+                deliveryOrderRef,
+                'Driver menjeda tracking live'
+            );
+
             return jsonNoStore({ data: updated });
         }
 
@@ -504,6 +522,14 @@ export async function POST(request: Request) {
             } catch (error) {
                 console.warn('Failed to release driver tracking lock after rollback-start', error);
             }
+
+            await addAuditLog(
+                auth.session,
+                'UPDATE',
+                'delivery-orders',
+                deliveryOrderRef,
+                'Driver membatalkan tracking live setelah start gagal'
+            );
 
             return jsonNoStore({ data: updated });
         }
@@ -560,6 +586,14 @@ export async function POST(request: Request) {
             } catch (error) {
                 console.warn('Failed to release driver tracking lock', error);
             }
+
+            await addAuditLog(
+                auth.session,
+                'UPDATE',
+                'delivery-orders',
+                deliveryOrderRef,
+                'Driver menghentikan tracking live'
+            );
 
             return jsonNoStore({ data: updated });
         }

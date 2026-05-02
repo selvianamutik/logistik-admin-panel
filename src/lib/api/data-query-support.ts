@@ -284,6 +284,10 @@ async function getFilteredAuditLogs(params: {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
     period?: string | null;
+    entityRef?: string | null;
+    entityRefs?: string[];
+    entityType?: string | null;
+    entityTypes?: string[];
 }) {
     const [rawLogs, users] = await Promise.all([
         listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', {}),
@@ -297,6 +301,14 @@ async function getFilteredAuditLogs(params: {
     const today = getBusinessDateValue();
     const period = normalizeAuditLogPeriod(params.period);
     const usersById = new Map(users.map(user => [user._id, user]));
+    const entityRefs = new Set([
+        params.entityRef,
+        ...(params.entityRefs ?? []),
+    ].map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean));
+    const entityTypes = new Set([
+        params.entityType,
+        ...(params.entityTypes ?? []),
+    ].map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean));
 
     const normalizedLogs = rawLogs.map(log => {
         const actor = log.actorUserRef ? usersById.get(log.actorUserRef) : undefined;
@@ -318,6 +330,14 @@ async function getFilteredAuditLogs(params: {
     });
 
     const filtered = normalizedLogs.filter(log => {
+        if (entityRefs.size > 0 && !entityRefs.has(log.entityRef || '')) {
+            return false;
+        }
+
+        if (entityTypes.size > 0 && !entityTypes.has(log.entityType || '')) {
+            return false;
+        }
+
         if (!matchesAuditLogPeriod(log, period, today)) {
             return false;
         }
@@ -343,6 +363,10 @@ export async function getAuditLogList(params: {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
     period?: string | null;
+    entityRef?: string | null;
+    entityRefs?: string[];
+    entityType?: string | null;
+    entityTypes?: string[];
     countOnly?: boolean;
 }) {
     const filtered = await getFilteredAuditLogs(params);
@@ -367,11 +391,19 @@ export async function getAuditLogsSummary(params?: {
     search?: string;
     searchFields?: string[];
     period?: string | null;
+    entityRef?: string | null;
+    entityRefs?: string[];
+    entityType?: string | null;
+    entityTypes?: string[];
 }) {
     const logs = await getFilteredAuditLogs({
         search: params?.search,
         searchFields: params?.searchFields,
         period: params?.period,
+        entityRef: params?.entityRef,
+        entityRefs: params?.entityRefs,
+        entityType: params?.entityType,
+        entityTypes: params?.entityTypes,
     });
 
     const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;

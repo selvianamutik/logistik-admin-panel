@@ -64,6 +64,7 @@ import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Dr
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
+import AuditTrailCard from '../../_components/AuditTrailCard';
 
 function getDeliveryOrderShipperReferenceNumbers(
     deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
@@ -1465,6 +1466,14 @@ export default function OrderDetailPage() {
         return <div className="empty-state"><div className="empty-state-title">Order tidak ditemukan</div></div>;
     }
 
+    const auditTrailEntityRefs = Array.from(new Set([
+        order._id,
+        ...items.map(item => item._id),
+        ...dos.map(deliveryOrder => deliveryOrder._id),
+        ...doItems.map(item => item._id),
+        ...notas.map(nota => nota._id),
+    ].filter((ref): ref is string => Boolean(ref))));
+
     return (
         <div>
             <div className="page-header">
@@ -2141,6 +2150,12 @@ export default function OrderDetailPage() {
                     </table>
                 </div>
             </div>
+
+            <AuditTrailCard
+                title="Riwayat Perubahan Order / Trip"
+                subtitle="Mencatat perubahan order, trip, item, dan invoice terkait order ini."
+                entityRefs={auditTrailEntityRefs}
+            />
 
             {showAddTripModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingTripPlan && !deletingTripPlanKey) closeTripPlanModal(); }}>

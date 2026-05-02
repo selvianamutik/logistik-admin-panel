@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useApp, useToast } from '../layout';
 import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
+import AuditTrailCard from './AuditTrailCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import PageBackButton from '@/components/PageBackButton';
@@ -3984,6 +3985,14 @@ export default function TripDetailPage() {
         (doData.status === 'DELIVERED' || doData.status === 'PARTIAL_HOLD') &&
         !doData.pendingDriverStatus &&
         hasContinuableHoldCargo;
+    const auditTrailEntityRefs = Array.from(new Set([
+        doData._id,
+        tripData?._id,
+        linkedVoucher?._id,
+        linkedTripCashLink?.voucherId,
+        ...suratJalanDocuments.map(document => document._id),
+        ...doItems.map(item => item._id),
+    ].filter((ref): ref is string => Boolean(ref))));
 
     return (
         <div>
@@ -5030,6 +5039,12 @@ export default function TripDetailPage() {
                         </div>
                     )}
             </CollapsibleCard>
+
+            <AuditTrailCard
+                title="Riwayat Perubahan Trip / SJ"
+                subtitle="Mencatat update admin dan driver yang terkait trip ini."
+                entityRefs={auditTrailEntityRefs}
+            />
             </div>
 
             {showTripCashIssueModal && (
