@@ -1,5 +1,6 @@
 import { acknowledgeDriverWarningScore } from '@/lib/api/driver-score-workflows';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { writeAuditLog } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDataServiceErrorInfo } from '@/lib/service-errors';
 
@@ -35,6 +36,14 @@ export async function POST(request: Request) {
         if (!updated) {
             return jsonNoStore({ error: 'Warning driver tidak ditemukan' }, { status: 404 });
         }
+
+        await writeAuditLog(
+            auth.session,
+            'UPDATE',
+            'driver-scores',
+            scoreId,
+            `Driver ${auth.driver.name || auth.driver._id} mengakui warning scoring`
+        );
 
         const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
         return jsonNoStore({ data: updated, driverAccessNotice });
