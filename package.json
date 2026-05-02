@@ -30,12 +30,14 @@
     "verify:seed:trip-surat-jalan": "node scripts/verify-seed-trip-surat-jalan.mjs",
     "import:supabase": "node scripts/import-supabase.mjs",
     "reset:supabase": "node scripts/reset-supabase.mjs",
+    "reset:supabase:workflow-transactions": "node scripts/reset-supabase-workflow-transactions.mjs",
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "ensure:supabase:trip-rates": "node scripts/ensure-supabase-trip-rates.mjs",
-    "seed:supabase:safe-workflow": "node scripts/seed-supabase.mjs --derive-trip-surat-jalan --skip-doc-types=user,service,tripRouteRate",
+    "seed:supabase:safe-workflow": "node scripts/seed-supabase.mjs --derive-trip-surat-jalan --skip-doc-types=user,service,tripRouteRate --skip-workflow-transactions",
     "seed:supabase:trip-surat-jalan": "node scripts/seed-supabase.mjs --derive-trip-surat-jalan",
     "reseed:supabase": "npm run reset:supabase && npm run seed:supabase && npm run backfill:accounting",
-    "reseed:supabase:safe-workflow": "npm run reset:supabase -- --all-managed-data --preserve-users --preserve-trip-rates && npm run ensure:supabase:trip-rates && npm run seed:supabase:safe-workflow && npm run backfill:accounting",
+    "repair:supabase:bank-ledgers": "node scripts/repair-supabase-bank-ledgers.mjs",
+    "reseed:supabase:safe-workflow": "npm run reset:supabase -- --all-managed-data --preserve-users --preserve-trip-rates && npm run ensure:supabase:trip-rates && npm run seed:supabase:safe-workflow && npm run repair:supabase:bank-ledgers && npm run backfill:accounting",
     "reseed:supabase:trip-surat-jalan": "npm run reset:supabase && npm run seed:supabase:trip-surat-jalan"
   },
   "dependencies": {

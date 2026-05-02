@@ -7,6 +7,35 @@ import { deriveTripSuratJalanDocs } from './_trip-surat-jalan-seed-utils.mjs';
 
 loadScriptEnv();
 
+const WORKFLOW_TRANSACTION_DOC_TYPES = [
+    'order',
+    'orderItem',
+    'deliveryOrder',
+    'deliveryOrderItem',
+    'trip',
+    'suratJalan',
+    'suratJalanItem',
+    'trackingLog',
+    'driverVoucher',
+    'driverVoucherDisbursement',
+    'driverVoucherItem',
+    'driverBorongan',
+    'driverBoronganItem',
+    'invoice',
+    'invoiceItem',
+    'freightNota',
+    'freightNotaItem',
+    'payment',
+    'customerReceipt',
+    'invoiceAdjustment',
+    'customerOverpaymentRefund',
+    'income',
+    'maintenance',
+    'incident',
+    'incidentSettlementLine',
+    'incidentActionLog',
+];
+
 const supabaseUrl = requireAnyEnv(['SUPABASE_URL', 'SUPABASE_PROJECT_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PROJECT_URL']);
 const serviceRoleKey = requireAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE']);
 
@@ -64,7 +93,8 @@ async function main() {
         throw new Error('Seed input must be a JSON array.');
     }
 
-    const deriveTripSuratJalan = hasFlag('--derive-trip-surat-jalan');
+    const skipWorkflowTransactions = hasFlag('--skip-workflow-transactions');
+    const deriveTripSuratJalan = hasFlag('--derive-trip-surat-jalan') && !skipWorkflowTransactions;
     const seedDocuments = deriveTripSuratJalan
         ? (() => {
             const baseDocuments = parsedSeedDocuments.filter(doc =>
@@ -82,6 +112,9 @@ async function main() {
         : parsedSeedDocuments;
 
     const skipDocTypes = new Set(getCsvArgValues('--skip-doc-types'));
+    if (skipWorkflowTransactions) {
+        WORKFLOW_TRANSACTION_DOC_TYPES.forEach(type => skipDocTypes.add(type));
+    }
     const seedDocumentsToImport = skipDocTypes.size > 0
         ? seedDocuments.filter(doc => !skipDocTypes.has(doc?._type))
         : seedDocuments;

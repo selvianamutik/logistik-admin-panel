@@ -5,6 +5,35 @@ import { seedRelationalTables, summarizeUnsupportedSeedDocTypes } from './_supab
 
 loadScriptEnv();
 
+const WORKFLOW_TRANSACTION_DOC_TYPES = [
+    'order',
+    'orderItem',
+    'deliveryOrder',
+    'deliveryOrderItem',
+    'trip',
+    'suratJalan',
+    'suratJalanItem',
+    'trackingLog',
+    'driverVoucher',
+    'driverVoucherDisbursement',
+    'driverVoucherItem',
+    'driverBorongan',
+    'driverBoronganItem',
+    'invoice',
+    'invoiceItem',
+    'freightNota',
+    'freightNotaItem',
+    'payment',
+    'customerReceipt',
+    'invoiceAdjustment',
+    'customerOverpaymentRefund',
+    'income',
+    'maintenance',
+    'incident',
+    'incidentSettlementLine',
+    'incidentActionLog',
+];
+
 type SeedDoc = {
     _id: string;
     _type: string;
@@ -39,6 +68,10 @@ function getArgValue(flag: string, fallback = '') {
     return match ? match.slice(flag.length + 1) : fallback;
 }
 
+function hasFlag(flag: string) {
+    return process.argv.includes(flag);
+}
+
 function getCsvArgValues(flag: string) {
     const value = getArgValue(flag, '');
     return value
@@ -64,6 +97,9 @@ async function seed() {
     const raw = await readFile(seedFile, 'utf8');
     const seedDocuments = JSON.parse(raw) as SeedDoc[];
     const skipDocTypes = new Set(getCsvArgValues('--skip-doc-types'));
+    if (hasFlag('--skip-workflow-transactions')) {
+        WORKFLOW_TRANSACTION_DOC_TYPES.forEach(type => skipDocTypes.add(type));
+    }
     const seedDocumentsToImport = skipDocTypes.size > 0
         ? seedDocuments.filter(doc => !skipDocTypes.has(doc?._type))
         : seedDocuments;
