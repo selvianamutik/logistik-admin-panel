@@ -566,10 +566,12 @@ async function main() {
     const tripOneKey = `audit-trip-1-${suffix}`;
     const tripTwoKey = `audit-trip-2-${suffix}`;
     const tripSplitKey = `audit-trip-split-${suffix}`;
+    const tripOverKey = `audit-trip-over-${suffix}`;
     const tripCancelKey = `audit-trip-cancel-${suffix}`;
     const sjA = `AUD-${suffix}-A`;
     const sjB = `AUD-${suffix}-B`;
     const sjSplit = `AUD-${suffix}-SPLIT`;
+    const sjOver = `AUD-${suffix}-OVER`;
     const sjHold = `AUD-${suffix}-HOLD`;
     const sjCancel = `AUD-${suffix}-CANCEL`;
 
@@ -707,6 +709,16 @@ async function main() {
                         date: AUDIT_DATE,
                     },
                     {
+                        _key: tripOverKey,
+                        pickupStopKeys: [pickupTwoKey],
+                        vehicleRef: resources.vehicles[0]._id,
+                        driverRef: resources.drivers[0]._id,
+                        taripBorongan: 295000,
+                        issueBankRef: resources.bankAccount._id,
+                        cashGiven: 140000,
+                        date: AUDIT_DATE,
+                    },
+                    {
                         _key: tripCancelKey,
                         pickupStopKeys: [pickupTwoKey],
                         vehicleRef: resources.vehicles[0]._id,
@@ -727,7 +739,7 @@ async function main() {
             cookieHeader
         );
         assert(createdOrder.data.cargoEntryMode === 'DELIVERY_ORDER', 'Order header booking harus memakai mode barang di Surat Jalan.');
-        assert((createdOrder.data.tripPlans || []).length === 4, 'Order harus menyimpan 4 rencana trip termasuk split drop/hold dan 1 trip batal.');
+        assert((createdOrder.data.tripPlans || []).length === 5, 'Order harus menyimpan 5 rencana trip termasuk split drop/hold, over aktual, dan 1 trip batal.');
 
         auditStep('create DO trip 1 dengan 2 nomor SJ; SJ A berisi 2 barang dan SJ B hold');
         const doOneCreate = await postData<DeliveryOrder>(cookieHeader, {
@@ -1348,6 +1360,113 @@ async function main() {
             normalizeNumber(splitItemsAfterContinuation[0]?.actualQtyKoli) === 3 &&
             normalizeNumber(splitItemsAfterContinuation[0]?.actualWeightKg) === 180,
             'Lanjutan hold harus tetap menyimpan aktual total item 3 koli / 180 kg.'
+        );
+
+        auditStep('create DO trip 4 untuk memastikan aktual lebih besar dari estimasi tidak dipotong');
+        const doOverCreate = await postData<DeliveryOrder>(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'create-with-items',
+            data: {
+                orderRef: createdState.orderId,
+                orderTripPlanKey: tripOverKey,
+                date: AUDIT_DATE,
+                shipperReferences: [
+                    { referenceNumber: sjOver, pickupStopKey: pickupTwoKey },
+                ],
+                cargoItems: [
+                    {
+                        description: 'Audit barang aktual lebih berat',
+                        qtyKoli: 1,
+                        weightInputValue: 15,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 1,
+                        volumeInputUnit: 'M3',
+                        pickupStopKey: pickupTwoKey,
+                        shipperReferenceNumber: sjOver,
+                    },
+                ],
+            },
+        });
+        const doOverId = normalizeText(doOverCreate.data?._id) || normalizeText(doOverCreate.id);
+        assert(doOverId, 'Create DO over aktual tidak mengembalikan ID.');
+        createdState.deliveryOrderIds.push(doOverId);
+        const doOverItems = await getDeliveryOrderItems(cookieHeader, doOverId);
+        const overItem = doOverItems[0];
+        assert(doOverItems.length === 1 && overItem, 'DO over aktual harus punya tepat 1 barang.');
+        const overDocsBeforeInitial = await getSuratJalanDocuments(cookieHeader, doOverId);
+        const overDocBeforeInitial = overDocsBeforeInitial.find(document => document.suratJalanNumber === sjOver);
+        const overSuratJalanRef = overDocBeforeInitial?._id || `${doOverId}:${sjOver}`;
+        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+            await postData(cookieHeader, {
+                entity: 'delivery-orders',
+                action: 'set-surat-jalan-status-batch',
+                data: {
+                    id: doOverId,
+                    status,
+                    targetSuratJalanRefs: [overSuratJalanRef],
+                    note: `Audit batch over ${status}`,
+                },
+            });
+        }
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-surat-jalan-status-batch',
+            data: {
+                id: doOverId,
+                status: 'DELIVERED',
+                targetSuratJalanRefs: [overSuratJalanRef],
+                note: 'Audit batch over aktual 15 ke 20 kg',
+                podReceiverName: 'Penerima Audit Over',
+                podReceivedDate: AUDIT_DATE,
+                podNote: 'Audit POD Over: aktual lebih besar dari estimasi',
+                actualItems: [
+                    {
+                        deliveryOrderItemRef: overItem._id,
+                        actualQtyKoli: 1,
+                        actualWeightInputValue: 20,
+                        actualWeightInputUnit: 'KG',
+                        actualVolumeInputValue: 1,
+                        actualVolumeInputUnit: 'M3',
+                    },
+                ],
+                actualDropPoints: [
+                    {
+                        stopType: 'DROP',
+                        deliveryOrderItemRef: overItem._id,
+                        deliveryOrderItemRefs: [overItem._id],
+                        shipperReferenceNumber: sjOver,
+                        locationName: 'Audit Drop Over',
+                        locationAddress: 'Audit Drop Over Address',
+                        qtyKoli: 1,
+                        weightInputValue: 20,
+                        weightInputUnit: 'KG',
+                        volumeInputValue: 1,
+                        volumeInputUnit: 'M3',
+                    },
+                ],
+            },
+        });
+        const finalizedOverItems = await getDeliveryOrderItems(cookieHeader, doOverId);
+        assert(
+            normalizeNumber(finalizedOverItems[0]?.actualQtyKoli) === 1 &&
+            normalizeNumber(finalizedOverItems[0]?.actualWeightKg) === 20,
+            'Batch aktual lebih besar dari estimasi harus menyimpan 1 koli / 20 kg, bukan dipotong ke rencana 15 kg.'
+        );
+        const doOverState = await requestJson<{ data: DeliveryOrder }>(
+            `/api/data?entity=delivery-orders&id=${encodeURIComponent(doOverId)}`,
+            cookieHeader
+        );
+        const overNotaRows = buildNotaRowsFromDeliveryOrder({
+            deliveryOrder: doOverState.data,
+            orders: [createdOrder.data],
+            deliveryOrderItems: finalizedOverItems,
+        });
+        assert(
+            overNotaRows.length === 1 &&
+            overNotaRows[0].noSJ === sjOver &&
+            overNotaRows[0].collie === 1 &&
+            overNotaRows[0].beratKg === 20,
+            'Nota row over aktual harus memakai berat aktual drop 20 kg, bukan estimasi 15 kg.'
         );
 
         const deliveredOrder = await requestJson<{ data: Order }>(
