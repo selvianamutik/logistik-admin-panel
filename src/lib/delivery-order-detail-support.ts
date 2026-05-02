@@ -653,18 +653,6 @@ export function buildDefaultActualDropDrafts(
         };
     };
 
-    if (shipperReferences.length > 1) {
-        return shipperReferences.map(reference => {
-            const referenceCargoItems = getActualCargoDraftsForDrop({
-                shipperReferenceKey: reference._key || '',
-                shipperReferenceNumber: reference.referenceNumber || '',
-            }, cargoItems);
-            return buildDraftFromCargoItems(referenceCargoItems, '', '', {
-                key: reference._key || '',
-                number: reference.referenceNumber || '',
-            });
-        });
-    }
     const singleShipperReference = shipperReferences.length === 1 ? shipperReferences[0] : null;
     return [
         buildDraftFromCargoItems(cargoItems, defaultTarget.locationName, defaultTarget.locationAddress, {

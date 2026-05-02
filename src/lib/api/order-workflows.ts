@@ -106,14 +106,22 @@ async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string;
         throw new Error('Trip tidak ditemukan');
     }
 
-    let persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
-    if (!persistedTripRecord) {
-        await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
-        persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+        if (persistedTripRecord) {
+            return;
+        }
+        try {
+            await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+            return;
+        } catch (error) {
+            if (!isMutationConflictError(error)) {
+                throw error;
+            }
+        }
+        await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
     }
-    if (!persistedTripRecord) {
-        throw new Error('Trip relasional belum siap untuk penulisan surat jalan');
-    }
+    throw new Error('Trip relasional belum siap untuk penulisan surat jalan');
 }
 
 function buildAutoFinalizeBatchRawDropPoints(
@@ -195,7 +203,9 @@ function buildAutoFinalizeBatchRawDropPoints(
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import {
     getDeliveryOrderBillableCargoSummary,
+    getDeliveryOrderHoldCargoSummary,
     getDeliveryOrderNonBillableCargoSummary,
+    getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
 import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, OrderPickupStop, OrderTripPlan } from '@/lib/types';
 
@@ -342,6 +352,52 @@ function splitActualCargoForOrderProgress(params: {
             volume: roundQuantity(Math.max(actual.volume - delivered.volume, 0), 3),
         },
     };
+}
+
+function createDeliveryCargoSummary() {
+    return { qtyKoli: 0, weightKg: 0, volumeM3: 0 };
+}
+
+function addDeliveryCargoSummary(
+    left: { qtyKoli: number; weightKg: number; volumeM3: number },
+    right: { qtyKoli: number; weightKg: number; volumeM3: number }
+) {
+    return {
+        qtyKoli: roundQuantity(left.qtyKoli + right.qtyKoli),
+        weightKg: roundQuantity(left.weightKg + right.weightKg),
+        volumeM3: roundQuantity(left.volumeM3 + right.volumeM3, 3),
+    };
+}
+
+function hasDeliveryCargoSummary(summary: { qtyKoli: number; weightKg: number; volumeM3: number }) {
+    return summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
+}
+
+function summarizeSuratJalanActualCargo(
+    deliveryOrder: DeliveryOrder,
+    allDeliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>,
+    record: { _id: string; suratJalanNumber?: string },
+    summarizeReference: (
+        deliveryOrder: DeliveryOrder,
+        shipperReferenceNumber?: string,
+        deliveryOrderItemRef?: string
+    ) => { qtyKoli: number; weightKg: number; volumeM3: number }
+) {
+    const recordItems = allDeliveryOrderItems.filter(item =>
+        getDeliveryOrderSuratJalanIdentity({
+            deliveryOrderId: deliveryOrder._id,
+            shipperReferenceKey: item.shipperReferenceKey,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+        }) === record._id
+    );
+    const itemSpecificSummary = recordItems.reduce(
+        (sum, item) => addDeliveryCargoSummary(sum, summarizeReference(deliveryOrder, record.suratJalanNumber, item._id)),
+        createDeliveryCargoSummary()
+    );
+
+    return hasDeliveryCargoSummary(itemSpecificSummary)
+        ? itemSpecificSummary
+        : summarizeReference(deliveryOrder, record.suratJalanNumber);
 }
 
 function getActualCargoOverPlanMessages(
@@ -2756,14 +2812,7 @@ export async function handleDeliveryOrderContinueHeldCargo(
         return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
     }
 
-    const deliveryOrder = await getDocumentById<{
-        _id: string;
-        doNumber?: string;
-        status?: string;
-        orderRef?: unknown;
-        pendingDriverStatus?: string;
-        actualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
-    }>(id, 'deliveryOrder');
+    const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -2780,9 +2829,14 @@ export async function handleDeliveryOrderContinueHeldCargo(
         );
     }
 
-    const currentDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
-        ? deliveryOrder.actualDropPoints
-        : [];
+    const currentDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> = (
+        Array.isArray(deliveryOrder.actualDropPoints)
+            ? deliveryOrder.actualDropPoints
+            : []
+    ).map((point, index) => ({
+        ...point,
+        _key: point._key || `existing-hold-drop-${index + 1}`,
+    }));
     const continuableDropPoints = currentDropPoints.filter(point =>
         point.stopType === 'HOLD' || point.stopType === 'TRANSIT'
     );
@@ -2793,16 +2847,20 @@ export async function handleDeliveryOrderContinueHeldCargo(
         );
     }
 
-    const nextDropPoints = currentDropPoints.map(point =>
+    const nextDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> = currentDropPoints.map((point, index) =>
         point.stopType === 'HOLD' || point.stopType === 'TRANSIT'
             ? {
                 ...point,
+                _key: point._key || `continued-hold-drop-${index + 1}`,
                 stopType: 'DROP' as const,
                 note: normalizeOptionalText(point.note)
                     ? `${point.note} | Lanjutan hold dikirim di SJ yang sama`
                     : 'Lanjutan hold dikirim di SJ yang sama',
             }
-            : point
+            : {
+                ...point,
+                _key: point._key || `existing-hold-drop-${index + 1}`,
+            }
     );
 
     const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
@@ -2828,7 +2886,9 @@ export async function handleDeliveryOrderContinueHeldCargo(
         }
 
         const progress = getOrderItemProgress(orderItem);
-        const requiresQty = progress.totalQtyKoli > 0;
+        const requiresQty =
+            progress.totalQtyKoli > 0 ||
+            normalizeNumber(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0) > 0;
         const actualQtyKoli = requiresQty ? roundQuantity(normalizeNumber(item.actualQtyKoli ?? item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0)) : 0;
         const actualWeight = roundQuantity(normalizeNumber(item.actualWeightKg ?? item.shippedWeight ?? item.orderItemWeight ?? 0));
         const actualVolume = roundQuantity(normalizeNumber(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0), 3);
@@ -2887,9 +2947,19 @@ export async function handleDeliveryOrderContinueHeldCargo(
             cargoFinalizedByName: session.name,
         }, 'deliveryOrder');
 
-        const suratJalanRecords = await listDocumentsByFilter<{ _id: string; tripStatus?: DOStatus }>('suratJalan', { tripRef: id });
+        const suratJalanRecords = await listDocumentsByFilter<{ _id: string; tripStatus?: DOStatus; suratJalanNumber?: string }>('suratJalan', { tripRef: id });
         for (const record of suratJalanRecords.filter(item => item.tripStatus === 'PARTIAL_HOLD')) {
-            await updateDocument(record._id, { tripStatus: 'DELIVERED', syncedAt: timestamp }, 'suratJalan');
+            const summaryDeliveryOrder = {
+                ...deliveryOrder,
+                actualDropPoints: nextDropPoints,
+            };
+            await updateDocument(record._id, {
+                tripStatus: 'DELIVERED',
+                syncedAt: timestamp,
+                billableCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderBillableCargoSummary),
+                holdCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderHoldCargoSummary),
+                returnCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderReturnCargoSummary),
+            }, 'suratJalan');
         }
 
         const tripRecord = await getDocumentById<{ _id: string; _rev?: string }>(id, 'trip');
@@ -3171,7 +3241,10 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         suratJalanNumber?: string;
     }>('suratJalan', { tripRef: id });
 
-    if (suratJalanRecords.length === 0) {
+    const missingTargetSuratJalanRefs = targetSuratJalanRefs.filter(
+        ref => !suratJalanRecords.some(record => record._id === ref)
+    );
+    if (suratJalanRecords.length === 0 || missingTargetSuratJalanRefs.length > 0) {
         const deliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
         const derivedSuratJalanRecords = mapDeliveryOrderToSuratJalanRecords(deliveryOrder, deliveryOrderItems);
 
@@ -3181,8 +3254,21 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
 
         await ensureTripRecordForSuratJalanWrites(deliveryOrder);
 
-        for (const record of derivedSuratJalanRecords) {
-            await createDocument({ ...record });
+        const existingSuratJalanRecordIds = new Set(suratJalanRecords.map(record => record._id));
+        const missingTargetSuratJalanRefSet = new Set(missingTargetSuratJalanRefs);
+        const recordsToCreate = derivedSuratJalanRecords.filter(record =>
+            !existingSuratJalanRecordIds.has(record._id) &&
+            (suratJalanRecords.length === 0 || missingTargetSuratJalanRefSet.has(record._id))
+        );
+
+        for (const record of recordsToCreate) {
+            try {
+                await createDocument({ ...record });
+            } catch (error) {
+                if (!isMutationConflictError(error)) {
+                    throw error;
+                }
+            }
         }
 
         suratJalanRecords = await listDocumentsByFilter<{
@@ -3229,17 +3315,31 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     const podReceivedDate = normalizeOptionalText(data.podReceivedDate);
     const podNote = normalizeOptionalText(data.podNote);
     const doItems = await listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id });
-    const currentDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
-        ? deliveryOrder.actualDropPoints
-        : [];
+    const currentDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> = (
+        Array.isArray(deliveryOrder.actualDropPoints)
+            ? deliveryOrder.actualDropPoints
+            : []
+    ).map((point, index) => ({
+        ...point,
+        _key: point._key || `existing-hold-drop-${index + 1}`,
+    }));
     const targetSuratJalanRefSet = new Set(targetSuratJalanRefs);
-    const targetedDoItems = doItems.filter(item =>
+    const requestedActualItemRefs = new Set(
+        (Array.isArray(data.actualItems) ? data.actualItems : [])
+            .map(item => isPlainObject(item) ? normalizeOptionalText(item.deliveryOrderItemRef) : '')
+            .filter((value): value is string => Boolean(value))
+    );
+    const allTargetedDoItems = doItems.filter(item =>
         targetSuratJalanRefSet.has(getDeliveryOrderSuratJalanIdentity({
             deliveryOrderId: id,
             shipperReferenceKey: item.shipperReferenceKey,
             shipperReferenceNumber: item.shipperReferenceNumber,
         }))
     );
+    const targetedDoItems =
+        isPartialHoldContinuationFinalize && requestedActualItemRefs.size > 0
+            ? allTargetedDoItems.filter(item => requestedActualItemRefs.has(item._id))
+            : allTargetedDoItems;
     const targetedDoItemIds = new Set(targetedDoItems.map(item => item._id));
     const targetedReferenceKeys = new Set(
         targetedDoItems
@@ -3402,7 +3502,10 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                 return NextResponse.json({ error: 'Muatan aktual batch SJ tidak lengkap' }, { status: 400 });
             }
 
-            const requireQty = progress.totalQtyKoli > 0;
+            const requireQty =
+                progress.totalQtyKoli > 0 ||
+                plannedQtyKoli > 0 ||
+                normalizeNumber(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0) > 0;
             const actualQtyKoli = requireQty ? actualCargo.actualQtyKoli : 0;
             const actualWeight = roundQuantity(actualCargo.actualWeightKg);
             const actualVolume = roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3);
@@ -3634,9 +3737,20 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         await ensureTripRecordForSuratJalanWrites(deliveryOrder);
 
         for (const record of targetedRecords) {
+            const summaryDeliveryOrder = {
+                ...deliveryOrder,
+                actualDropPoints: mergedActualDropPoints,
+            };
             await updateDocument(record._id, {
                 tripStatus: getSuratJalanStatusAfterFinalize(record),
                 syncedAt: timestamp,
+                ...(status === 'DELIVERED'
+                    ? {
+                        billableCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderBillableCargoSummary),
+                        holdCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderHoldCargoSummary),
+                        returnCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, record, getDeliveryOrderReturnCargoSummary),
+                    }
+                    : {}),
                 ...(status === 'DELIVERED'
                     ? {
                         podReceiverName,

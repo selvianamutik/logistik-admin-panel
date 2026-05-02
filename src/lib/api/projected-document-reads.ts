@@ -119,7 +119,7 @@ function mergeSuratJalanDocumentWithLiveCargo(
 
     return {
         ...document,
-        tripStatus: document.tripStatus || liveDocument.tripStatus,
+        tripStatus: liveDocument.tripStatus || document.tripStatus,
         itemCount: liveDocument.itemCount,
         cargoSummary: liveDocument.cargoSummary,
         billableCargo: liveDocument.billableCargo,

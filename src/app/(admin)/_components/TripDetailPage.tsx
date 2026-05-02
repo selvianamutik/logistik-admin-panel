@@ -595,9 +595,7 @@ export default function TripDetailPage() {
             doData.pendingDriverActualDropPoints
         );
         const shouldUseAdvancedDropEditor = shouldOpenAdvancedDropEditor(doData, syncedDropDrafts);
-        const nextSyncedDropDrafts = shouldUseAdvancedDropEditor
-            ? expandActualDropDraftsBySelectedItems(syncedDropDrafts, actualCargoItems)
-            : syncedDropDrafts;
+        const nextSyncedDropDrafts = syncedDropDrafts;
 
         setActualDropPoints(current => {
             if (current.length === nextSyncedDropDrafts.length) {
@@ -621,9 +619,6 @@ export default function TripDetailPage() {
             return nextSyncedDropDrafts;
         });
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
-        // expandActualDropDraftsBySelectedItems is declared below with the same render-scope helpers used by the manual editor.
-        // Including it here would require moving a large finalization block and would not change runtime behavior.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         actualCargoItems,
         doData,
@@ -1611,21 +1606,19 @@ export default function TripDetailPage() {
             };
         const nextActualCargoItems = continuationDrafts.actualCargoItems;
         const isPartialHoldContinuation = !hydratingDriverDeliveredRequest && continuationDrafts.itemRefs.length > 0;
-        const nextActualDropPoints = isPartialHoldContinuation
-            ? []
-            : buildDefaultActualDropDrafts(
-                statusModalDOData,
-                nextActualCargoItems,
-                hydratingDriverDeliveredRequest ? pendingDriverActualDropPoints : continuationDrafts.sourceDropPoints
-            );
+        const nextActualDropPoints = buildDefaultActualDropDrafts(
+            statusModalDOData,
+            nextActualCargoItems,
+            isPartialHoldContinuation
+                ? []
+                : hydratingDriverDeliveredRequest
+                    ? pendingDriverActualDropPoints
+                    : continuationDrafts.sourceDropPoints
+        );
         const shouldUseAdvancedDropEditor = isPartialHoldContinuation || shouldOpenAdvancedDropEditor(statusModalDOData, nextActualDropPoints);
         setActualCargoItems(nextActualCargoItems);
         setPartialHoldContinuationItemRefs(continuationDrafts.itemRefs);
-        setActualDropPoints(
-            shouldUseAdvancedDropEditor
-                ? expandActualDropDraftsBySelectedItems(nextActualDropPoints, nextActualCargoItems)
-                : nextActualDropPoints
-        );
+        setActualDropPoints(nextActualDropPoints);
         setActualCargoItemValueMap({});
         setActualDropItemValueMap({});
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
@@ -2140,6 +2133,14 @@ export default function TripDetailPage() {
         ) {
             return baseDrop;
         }
+        if (drop.deliveryOrderItemRef && drop.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef) {
+            return {
+                ...baseDrop,
+                qtyKoli: '',
+                weightInputValue: '',
+                volumeInputValue: '',
+            };
+        }
         const remainingValues = getRemainingActualDropValuesForCargoItem(cargoItem, drop, drop.draftKey);
         return {
             ...baseDrop,
@@ -2403,8 +2404,20 @@ export default function TripDetailPage() {
     };
 
     const addActualDropDraft = () => {
-        const selectedReference = selectedActualDropShipperReferenceOptions[0];
         const nextDraft = createEmptyActualDropDraft();
+        const candidateCargoItems = selectedActualCargoItems.length > 0
+            ? selectedActualCargoItems
+            : actualCargoItems;
+        const firstCargoItem =
+            candidateCargoItems.find(cargoItem =>
+                hasActualDropItemValues(getRemainingActualDropValuesForCargoItem(cargoItem, nextDraft))
+            ) || candidateCargoItems[0];
+        const selectedReference = firstCargoItem
+            ? selectedActualDropShipperReferenceOptions.find(reference =>
+                (reference.referenceKey && reference.referenceKey === firstCargoItem.shipperReferenceKey) ||
+                (reference.referenceNumber && reference.referenceNumber.trim().toUpperCase() === firstCargoItem.shipperReferenceNumber.trim().toUpperCase())
+            ) || selectedActualDropShipperReferenceOptions[0]
+            : selectedActualDropShipperReferenceOptions[0];
         const baseDraft = selectedReference
             ? {
                 ...nextDraft,
@@ -2418,11 +2431,6 @@ export default function TripDetailPage() {
                 locationAddress: selectedReference.receiverAddress || nextDraft.locationAddress,
             }
             : nextDraft;
-        const itemOptions = getActualDropItemOptionsFromCargoItems(baseDraft, actualCargoItems);
-        const firstCargoItem =
-            itemOptions.find(cargoItem =>
-                hasActualDropItemValues(getRemainingActualDropValuesForCargoItem(cargoItem, baseDraft))
-            ) || itemOptions[0];
         setActualDropPoints(previous => [
             ...previous,
             firstCargoItem
@@ -3655,7 +3663,7 @@ export default function TripDetailPage() {
         return (
             selectedActualCargoItemRefs.has(drop.deliveryOrderItemRef) ||
             matchesSelectedStatusSuratJalan(drop.shipperReferenceKey, drop.shipperReferenceNumber) ||
-            (showAdvancedDropEditor && !hasDropTarget)
+            !hasDropTarget
         );
     });
     const expandActualDropPointAllocations = (drop: ActualDropDraft, cargoItems: ActualCargoDraft[]) =>
@@ -4089,7 +4097,9 @@ export default function TripDetailPage() {
                             Kelola armada, dokumen SJ, dan uang jalan dari halaman ini. Progres status operasional mengikuti batch SJ.
                         </div>
                         <div className="text-muted text-sm">
-                            {isTripClosedByAdmin
+                            {displayTripStatus === 'CANCELLED'
+                                ? 'Trip sudah dibatalkan. SJ tertaut ikut dibatalkan dan order/resi tetap aktif.'
+                                : isTripClosedByAdmin
                                 ? `Trip sudah ditutup admin${doData.tripClosedByAdminName ? ` oleh ${doData.tripClosedByAdminName}` : ''}. Tambah SJ dan edit muatan SJ dikunci sampai trip dibuka kembali.`
                                 : 'Trip masih terbuka. Admin masih bisa menambah SJ baru walaupun seluruh SJ sebelumnya sudah selesai.'}
                         </div>

@@ -265,11 +265,19 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteBySourceId('freight_notas', notaId);
         }
 
-        const [deliveryOrderItemIds, trackingLogIds, driverVoucherIds] = await Promise.all([
+        const [deliveryOrderItemIds, trackingLogIds, driverVoucherIds, suratJalanIds, suratJalanItemIds] = await Promise.all([
             listSourceIds('delivery_order_items', `delivery_order_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
             listSourceIds('tracking_logs', `ref_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
             listSourceIds('driver_vouchers', `delivery_order_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
+            listSourceIds('surat_jalan_documents', `delivery_order_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
+            listSourceIds('surat_jalan_items', `trip_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
         ]);
+        for (const itemId of suratJalanItemIds) {
+            await deleteBySourceId('surat_jalan_items', itemId);
+        }
+        for (const itemId of suratJalanIds) {
+            await deleteBySourceId('surat_jalan_documents', itemId);
+        }
         for (const itemId of deliveryOrderItemIds) {
             await deleteBySourceId('delivery_order_items', itemId);
         }
@@ -288,6 +296,7 @@ async function cleanupCreatedState(state: CreatedState) {
             await deleteJournalEntriesBySource('DRIVER_VOUCHER', itemId);
             await deleteBySourceId('driver_vouchers', itemId);
         }
+        await deleteBySourceId('trips', deliveryOrderId);
         await deleteBySourceId('delivery_orders', deliveryOrderId);
     }
 
@@ -307,6 +316,20 @@ async function cleanupCreatedState(state: CreatedState) {
     }
 }
 
+async function cleanupDeliveryOrderRelationalArtifacts(deliveryOrderId: string, tripRecordId = deliveryOrderId) {
+    const [suratJalanIds, suratJalanItemIds] = await Promise.all([
+        listSourceIds('surat_jalan_documents', `delivery_order_ref=eq.${encodeURIComponent(deliveryOrderId)}`).catch(() => []),
+        listSourceIds('surat_jalan_items', `trip_ref=eq.${encodeURIComponent(tripRecordId)}`).catch(() => []),
+    ]);
+    for (const itemId of suratJalanItemIds) {
+        await deleteBySourceId('surat_jalan_items', itemId);
+    }
+    for (const itemId of suratJalanIds) {
+        await deleteBySourceId('surat_jalan_documents', itemId);
+    }
+    await deleteBySourceId('trips', tripRecordId);
+}
+
 async function cleanupStaleAuditOrders() {
     const rows = await supabaseRest<Array<{ source_document_id: string }>>(
         'orders?select=source_document_id&notes=ilike.*Audit%20E2E*'
@@ -317,6 +340,28 @@ async function cleanupStaleAuditOrders() {
             orderId: row.source_document_id,
             deliveryOrderIds,
         });
+    }
+
+    const staleTripRows = await supabaseRest<Array<{
+        source_document_id: string;
+        delivery_order_ref?: string;
+        trip_number?: string;
+    }>>(
+        `trips?select=source_document_id,delivery_order_ref,trip_number&trip_date=eq.${encodeURIComponent(AUDIT_DATE)}`
+    ).catch(() => []);
+    for (const row of staleTripRows || []) {
+        const deliveryOrderId = row.delivery_order_ref || row.source_document_id;
+        const isAuditNumber = typeof row.trip_number === 'string' && row.trip_number.startsWith('DO-21042026-');
+        if (!deliveryOrderId || !isAuditNumber) {
+            continue;
+        }
+        const deliveryOrderRows = await supabaseRest<Array<{ source_document_id: string }>>(
+            `delivery_orders?select=source_document_id&source_document_id=eq.${encodeURIComponent(deliveryOrderId)}&limit=1`
+        ).catch(() => []);
+        if (deliveryOrderRows?.length) {
+            continue;
+        }
+        await cleanupDeliveryOrderRelationalArtifacts(deliveryOrderId, row.source_document_id);
     }
 }
 
