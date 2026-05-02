@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
 
 import CollapsibleCard from '@/components/CollapsibleCard';
+import { getAuditLogTargetHref } from '@/lib/audit-log-target-links';
 import { hasPermission } from '@/lib/rbac';
 import type { AuditLog, UserRole } from '@/lib/types';
 import { formatDateTime } from '@/lib/utils';
@@ -81,6 +83,25 @@ function inferActorRole(log: AuditLog): UserRole | undefined {
 function getActorRoleLabel(log: AuditLog) {
     const resolvedRole = log.actorUserRole || inferActorRole(log);
     return resolvedRole ? ROLE_LABELS[resolvedRole] || resolvedRole : 'Role tidak tercatat';
+}
+
+function AuditTargetLink({ log }: { log: AuditLog }) {
+    const target = log.entityRef || '-';
+    const href = getAuditLogTargetHref(log);
+
+    if (!href || target === '-') {
+        return <span>{target}</span>;
+    }
+
+    return (
+        <Link
+            href={href}
+            className="font-mono"
+            style={{ color: 'var(--color-primary)', fontWeight: 600, wordBreak: 'break-all' }}
+        >
+            {target}
+        </Link>
+    );
 }
 
 export default function AuditTrailCard({
@@ -184,7 +205,7 @@ export default function AuditTrailCard({
                                         </td>
                                         <td>
                                             <div>{log.entityType || '-'}</div>
-                                            <div className="text-muted text-xs font-mono">{log.entityRef || '-'}</div>
+                                            <div className="text-muted text-xs"><AuditTargetLink log={log} /></div>
                                         </td>
                                         <td className="text-muted" style={{ minWidth: 300, whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                             {log.changesSummary || '-'}
@@ -208,6 +229,10 @@ export default function AuditTrailCard({
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Entitas</span>
                                         <span className="mobile-record-value">{log.entityType || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Target</span>
+                                        <span className="mobile-record-value"><AuditTargetLink log={log} /></span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Ringkasan</span>

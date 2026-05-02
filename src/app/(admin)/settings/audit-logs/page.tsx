@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { Search, ScrollText } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import { getAuditLogTargetHref } from '@/lib/audit-log-target-links';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { AuditLog, UserRole } from '@/lib/types';
 import { formatDateTime } from '@/lib/utils';
@@ -71,6 +73,25 @@ function getActorRoleLabel(log: AuditLog) {
         return ROLE_LABELS[resolvedRole];
     }
     return 'Role tidak tercatat';
+}
+
+function AuditTargetLink({ log }: { log: AuditLog }) {
+    const target = log.entityRef || '-';
+    const href = getAuditLogTargetHref(log);
+
+    if (!href || target === '-') {
+        return <span>{target}</span>;
+    }
+
+    return (
+        <Link
+            href={href}
+            className="font-mono"
+            style={{ color: 'var(--color-primary)', fontWeight: 600, wordBreak: 'break-all' }}
+        >
+            {target}
+        </Link>
+    );
 }
 
 export default function AuditLogsPage() {
@@ -189,7 +210,7 @@ export default function AuditLogsPage() {
                                             </td>
                                             <td><span className={`badge badge-${actionColors[l.action] || 'gray'}`}>{l.action}</span></td>
                                             <td>{l.entityType}</td>
-                                            <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{l.entityRef || '-'}</td>
+                                            <td className="text-muted" style={{ whiteSpace: 'nowrap' }}><AuditTargetLink log={l} /></td>
                                             <td className="text-muted" style={{ minWidth: 320, whiteSpace: 'normal', wordBreak: 'break-word' }}>{l.changesSummary}</td>
                                         </tr>
                                     ))}
@@ -218,7 +239,7 @@ export default function AuditLogsPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Target</span>
-                                        <span className="mobile-record-value">{l.entityRef || '-'}</span>
+                                        <span className="mobile-record-value"><AuditTargetLink log={l} /></span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Ringkasan</span>
