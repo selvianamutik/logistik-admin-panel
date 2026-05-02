@@ -343,7 +343,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             skors: 'Skors',
             scoring: 'Skors',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
-            profile: 'Profil', password: 'Password', company: 'Perusahaan',
+            profile: 'Akun Saya', password: 'Akun Saya', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
             tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Uang Jalan Trip',
             inventory: 'Inventory', purchases: 'Pembelian', suppliers: 'Supplier', items: 'Barang Gudang',

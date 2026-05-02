@@ -107,6 +107,48 @@ type AuditLogFn = (
 const COMPANY_ASSET_DATA_URL_RE = /^data:image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);base64,[a-z0-9+/=]+$/i;
 const COMPANY_ASSET_MAX_LENGTH = 1_500_000;
 
+function buildUserUpdateAuditSummary(
+    previous: Record<string, unknown>,
+    next: Record<string, unknown>,
+    updates: Record<string, unknown>,
+    fallbackId: string
+) {
+    const previousName = normalizeOptionalText(previous.name) || fallbackId;
+    const nextName = normalizeOptionalText(next.name) || previousName;
+    const changes: string[] = [];
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'name') && previousName !== nextName) {
+        changes.push(`nama ${previousName} -> ${nextName}`);
+    }
+
+    const previousEmail = normalizeOptionalText(previous.email);
+    const nextEmail = normalizeOptionalText(next.email);
+    if (Object.prototype.hasOwnProperty.call(updates, 'email') && previousEmail !== nextEmail) {
+        changes.push(`email ${previousEmail || '-'} -> ${nextEmail || '-'}`);
+    }
+
+    const previousRole = normalizeOptionalText(previous.role);
+    const nextRole = normalizeOptionalText(next.role);
+    if (Object.prototype.hasOwnProperty.call(updates, 'role') && previousRole !== nextRole) {
+        changes.push(`role ${previousRole || '-'} -> ${nextRole || '-'}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'active') && previous.active !== next.active) {
+        changes.push(`status ${next.active === false ? 'nonaktif' : 'aktif'}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'driverRef')) {
+        const nextDriverName = normalizeOptionalText(next.driverName);
+        changes.push(nextDriverName ? `tautan supir ${nextDriverName}` : 'tautan supir dilepas');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'passwordHash')) {
+        changes.push('password diubah');
+    }
+
+    return `Perbarui akun ${nextName}: ${changes.length > 0 ? changes.join(', ') : 'data akun diperbarui'}`;
+}
+
 function sanitizeCompanyAssetUrl(value: unknown, label: string) {
     const normalized = normalizeOptionalText(value);
     if (!normalized) {
@@ -1442,9 +1484,16 @@ export async function handleGenericUpdate(
                 ? `Perbarui absensi ${buildEmployeeAttendanceSummary(updated as Record<string, unknown>, id)}`
                 : entity === 'suppliers'
                     ? `Perbarui supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                : entity === 'warehouse-items'
-                    ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                : `Updated ${entity}: ${JSON.stringify(persistedNormalizedUpdates).slice(0, 200)}`;
+                    : entity === 'warehouse-items'
+                        ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                        : entity === 'users'
+                            ? buildUserUpdateAuditSummary(
+                                currentDoc,
+                                updated as Record<string, unknown>,
+                                persistedNormalizedUpdates,
+                                id
+                            )
+                            : `Updated ${entity}: ${JSON.stringify(persistedNormalizedUpdates).slice(0, 200)}`;
     await addAuditLog(session, 'UPDATE', entity, id, updateSummary);
 
     if (entity === 'order-items' && typeof normalizedUpdates.status === 'string') {
