@@ -65,6 +65,11 @@ export function buildServiceCapacityRangeMap(
     vehicles: Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>
 ) {
     return services.reduce<Record<string, string>>((acc, service) => {
+        if (service.maxPayloadKg && service.maxPayloadKg > 0) {
+            acc[service._id] = `maks ${formatTonValue(service.maxPayloadKg / 1000)} ton`;
+            return acc;
+        }
+
         const serviceVehicles = vehicles.filter(vehicle => vehicle.serviceRef === service._id);
         const tonValues = serviceVehicles.flatMap(vehicle => {
             const range = getVehicleCapacityRange(vehicle);
@@ -77,11 +82,6 @@ export function buildServiceCapacityRangeMap(
             acc[service._id] = maxTon > minTon
                 ? `${formatTonValue(minTon)} ton - ${formatTonValue(maxTon)} ton`
                 : `${formatTonValue(maxTon)} ton`;
-            return acc;
-        }
-
-        if (service.maxPayloadKg && service.maxPayloadKg > 0) {
-            acc[service._id] = `maks ${formatTonValue(service.maxPayloadKg / 1000)} ton`;
             return acc;
         }
 
