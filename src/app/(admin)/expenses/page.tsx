@@ -22,13 +22,38 @@ import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
+import type { BankAccount, DriverBorongan, DriverVoucher, Expense, ExpenseCategory, Incident, Maintenance, Vehicle } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { isManualExpenseCategory } from '@/lib/expense-category-scope';
 
 type ExpenseCategoryTotal = {
     name: string;
     total: number;
+};
+
+type ExpenseReferenceMaps = {
+    accountMap: Map<string, BankAccount>;
+    boronganMap: Map<string, DriverBorongan>;
+    incidentMap: Map<string, Incident>;
+    maintenanceMap: Map<string, Maintenance>;
+    vehicleMap: Map<string, Vehicle>;
+    voucherMap: Map<string, DriverVoucher>;
+};
+
+type ExpenseLinkPermissions = {
+    canOpenBankAccountPage: boolean;
+    canOpenDriverBoronganPage: boolean;
+    canOpenDriverVoucherPage: boolean;
+    canOpenIncidentPage: boolean;
+    canOpenMaintenancePage: boolean;
+    canOpenVehiclePage: boolean;
+};
+
+type ExpenseRelatedDocumentLink = {
+    key: string;
+    kind: string;
+    label: string;
+    href?: string;
 };
 
 const DEFAULT_EXPENSE_FORM = () => ({
@@ -42,6 +67,150 @@ const DEFAULT_EXPENSE_FORM = () => ({
     bankAccountName: '',
 });
 
+const LINK_STYLE = { color: 'var(--color-primary)', fontWeight: 600 } as const;
+const REFERENCE_FETCH_CHUNK_SIZE = 80;
+
+function uniqueNonEmpty(values: Array<string | undefined>) {
+    return Array.from(new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value))));
+}
+
+function mapById<T extends { _id: string }>(items: T[]) {
+    return new Map(items.map(item => [item._id, item]));
+}
+
+async function fetchOptionalCollection<T>(url: string, fallbackData: T): Promise<T> {
+    try {
+        return await fetchAdminCollectionData<T>(url, 'Gagal memuat data pengeluaran');
+    } catch (error) {
+        if (error instanceof Error && /403|forbidden|akses/i.test(error.message)) {
+            return fallbackData;
+        }
+        throw error;
+    }
+}
+
+async function fetchReferencedCollection<T extends { _id: string }>(entity: string, refs: Array<string | undefined>): Promise<T[]> {
+    const ids = uniqueNonEmpty(refs);
+    if (ids.length === 0) return [];
+
+    const rows: T[] = [];
+    for (let index = 0; index < ids.length; index += REFERENCE_FETCH_CHUNK_SIZE) {
+        const chunk = ids.slice(index, index + REFERENCE_FETCH_CHUNK_SIZE);
+        const filter = encodeURIComponent(JSON.stringify({ _id: chunk }));
+        rows.push(...await fetchOptionalCollection<T[]>(`/api/data?entity=${entity}&filter=${filter}`, []));
+    }
+    return rows;
+}
+
+async function fetchExpenseReferences(expenses: Expense[]) {
+    const [voucherRows, boronganRows, incidentRows, maintenanceRows] = await Promise.all([
+        fetchReferencedCollection<DriverVoucher>('driver-vouchers', expenses.map(expense => expense.voucherRef)),
+        fetchReferencedCollection<DriverBorongan>('driver-borongans', expenses.map(expense => expense.boronganRef)),
+        fetchReferencedCollection<Incident>('incidents', expenses.map(expense => expense.relatedIncidentRef)),
+        fetchReferencedCollection<Maintenance>('maintenances', expenses.map(expense => expense.relatedMaintenanceRef)),
+    ]);
+
+    return {
+        voucherRows,
+        boronganRows,
+        incidentRows,
+        maintenanceRows,
+    };
+}
+
+function getExpenseDescriptionLabel(expense: Expense) {
+    return expense.note || expense.description || 'Pengeluaran tanpa catatan';
+}
+
+function getExpenseVehicleLabel(expense: Expense, vehicleMap: Map<string, Vehicle>) {
+    const currentVehicle = expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef) : undefined;
+    return currentVehicle?.plateNumber || expense.relatedVehiclePlate || '';
+}
+
+function getExpenseAccountLabel(expense: Expense, accountMap: Map<string, BankAccount>) {
+    const currentAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
+    if (currentAccount) {
+        return `${currentAccount.bankName} - ${currentAccount.accountNumber}${currentAccount.accountType === 'CASH' ? ' (Kas Tunai)' : ''}`;
+    }
+    if (expense.bankAccountName) {
+        return `${expense.bankAccountName}${expense.bankAccountNumber ? ` - ${expense.bankAccountNumber}` : ''}`;
+    }
+    return '';
+}
+
+function getExpenseRelatedDocuments(
+    expense: Expense,
+    maps: ExpenseReferenceMaps,
+    permissions: ExpenseLinkPermissions
+): ExpenseRelatedDocumentLink[] {
+    const links: ExpenseRelatedDocumentLink[] = [];
+    if (expense.voucherRef) {
+        const voucher = maps.voucherMap.get(expense.voucherRef);
+        links.push({
+            key: `voucher:${expense.voucherRef}`,
+            kind: 'Bon trip',
+            label: voucher?.bonNumber || expense.voucherRef,
+            href: permissions.canOpenDriverVoucherPage ? `/driver-vouchers/${expense.voucherRef}` : undefined,
+        });
+    }
+    if (expense.boronganRef) {
+        const borongan = maps.boronganMap.get(expense.boronganRef);
+        links.push({
+            key: `borongan:${expense.boronganRef}`,
+            kind: 'Borongan',
+            label: borongan?.boronganNumber || expense.boronganRef,
+            href: permissions.canOpenDriverBoronganPage ? `/borongan/${expense.boronganRef}` : undefined,
+        });
+    }
+    if (expense.relatedIncidentRef) {
+        const incident = maps.incidentMap.get(expense.relatedIncidentRef);
+        links.push({
+            key: `incident:${expense.relatedIncidentRef}`,
+            kind: 'Insiden',
+            label: incident?.incidentNumber || expense.relatedIncidentRef,
+            href: permissions.canOpenIncidentPage ? `/fleet/incidents/${expense.relatedIncidentRef}` : undefined,
+        });
+    }
+    if (expense.relatedMaintenanceRef) {
+        const maintenance = maps.maintenanceMap.get(expense.relatedMaintenanceRef);
+        links.push({
+            key: `maintenance:${expense.relatedMaintenanceRef}`,
+            kind: 'Maintenance',
+            label: maintenance?.vehiclePlate || maintenance?.type || expense.relatedMaintenanceRef,
+            href: permissions.canOpenMaintenancePage
+                ? `/fleet/maintenance${maintenance?.vehicleRef ? `?vehicleRef=${maintenance.vehicleRef}` : ''}`
+                : undefined,
+        });
+    }
+    return links;
+}
+
+function formatExpenseRelatedDocumentsForPlainText(
+    expense: Expense,
+    maps: ExpenseReferenceMaps,
+    permissions: ExpenseLinkPermissions
+) {
+    return getExpenseRelatedDocuments(expense, maps, permissions)
+        .map(doc => `${doc.kind}: ${doc.label}`)
+        .join(' | ');
+}
+
+function enrichExpensesForExport(
+    expenses: Expense[],
+    maps: ExpenseReferenceMaps,
+    permissions: ExpenseLinkPermissions
+) {
+    return expenses.map(expense => {
+        const relatedDocs = formatExpenseRelatedDocumentsForPlainText(expense, maps, permissions);
+        return {
+            ...expense,
+            accountLabel: getExpenseAccountLabel(expense, maps.accountMap),
+            descriptionLabel: [getExpenseDescriptionLabel(expense), relatedDocs].filter(Boolean).join('\n'),
+            vehicleLabel: getExpenseVehicleLabel(expense, maps.vehicleMap),
+        };
+    });
+}
+
 export default function ExpensesPage() {
     const { addToast } = useToast();
     const { user } = useApp();
@@ -50,6 +219,10 @@ export default function ExpensesPage() {
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [driverVouchers, setDriverVouchers] = useState<DriverVoucher[]>([]);
+    const [driverBorongans, setDriverBorongans] = useState<DriverBorongan[]>([]);
+    const [incidents, setIncidents] = useState<Incident[]>([]);
+    const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
@@ -77,8 +250,32 @@ export default function ExpensesPage() {
     const canPrintExpenses = user ? hasPermission(user.role, 'expenses', 'print') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenBankAccountPage = user ? hasPageAccess(user.role, 'bankAccounts') : false;
+    const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
+    const canOpenDriverBoronganPage = user ? hasPageAccess(user.role, 'driverBorongans') : false;
+    const canOpenIncidentPage = user ? hasPageAccess(user.role, 'incidents') : false;
+    const canOpenMaintenancePage = user ? hasPageAccess(user.role, 'maintenance') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
+    const voucherMap = useMemo(() => mapById(driverVouchers), [driverVouchers]);
+    const boronganMap = useMemo(() => mapById(driverBorongans), [driverBorongans]);
+    const incidentMap = useMemo(() => mapById(incidents), [incidents]);
+    const maintenanceMap = useMemo(() => mapById(maintenances), [maintenances]);
+    const referenceMaps = useMemo<ExpenseReferenceMaps>(() => ({
+        accountMap,
+        boronganMap,
+        incidentMap,
+        maintenanceMap,
+        vehicleMap,
+        voucherMap,
+    }), [accountMap, boronganMap, incidentMap, maintenanceMap, vehicleMap, voucherMap]);
+    const linkPermissions = useMemo<ExpenseLinkPermissions>(() => ({
+        canOpenBankAccountPage,
+        canOpenDriverBoronganPage,
+        canOpenDriverVoucherPage,
+        canOpenIncidentPage,
+        canOpenMaintenancePage,
+        canOpenVehiclePage,
+    }), [canOpenBankAccountPage, canOpenDriverBoronganPage, canOpenDriverVoucherPage, canOpenIncidentPage, canOpenMaintenancePage, canOpenVehiclePage]);
     const manualCategories = useMemo(
         () => categories.filter(isManualExpenseCategory),
         [categories]
@@ -228,17 +425,6 @@ export default function ExpensesPage() {
 
         setLoading(true);
         try {
-            const fetchOptionalCollection = async <T,>(url: string, fallbackData: T): Promise<T> => {
-                try {
-                    return await fetchAdminCollectionData<T>(url, 'Gagal memuat data pengeluaran');
-                } catch (error) {
-                    if (error instanceof Error && /403|forbidden|akses/i.test(error.message)) {
-                        return fallbackData;
-                    }
-                    throw error;
-                }
-            };
-
             const [listRes, summaryRes, categoryRows, accountRows, vehicleRows] = await Promise.all([
                 fetch(`/api/data?${buildExpensesQuery()}`),
                 fetch(`/api/data?${buildExpensesSummaryQuery()}`),
@@ -257,7 +443,9 @@ export default function ExpensesPage() {
                 throw new Error(summaryPayload.error || 'Gagal memuat ringkasan pengeluaran');
             }
 
-            setItems((listPayload.data || []) as Expense[]);
+            const listItems = (listPayload.data || []) as Expense[];
+            const referenceRows = await fetchExpenseReferences(listItems);
+            setItems(listItems);
             setFilteredTotalExpenses(listPayload.meta?.total || 0);
             setGrandTotal(summaryPayload.data?.grandTotal || 0);
             setTransactionCount(summaryPayload.data?.transactionCount || 0);
@@ -266,6 +454,10 @@ export default function ExpensesPage() {
             setCategories((categoryRows || []).filter(category => category.active !== false));
             setBankAccounts((accountRows || []).filter(account => account.active !== false));
             setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
+            setDriverVouchers(referenceRows.voucherRows);
+            setDriverBorongans(referenceRows.boronganRows);
+            setIncidents(referenceRows.incidentRows);
+            setMaintenances(referenceRows.maintenanceRows);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data pengeluaran');
         } finally {
@@ -341,7 +533,17 @@ export default function ExpensesPage() {
                             return;
                         }
                         try {
-                            await exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[]);
+                            const exportRows = await fetchAllMatchingExpenses();
+                            const referenceRows = await fetchExpenseReferences(exportRows);
+                            const exportReferenceMaps: ExpenseReferenceMaps = {
+                                accountMap,
+                                boronganMap: mapById(referenceRows.boronganRows),
+                                incidentMap: mapById(referenceRows.incidentRows),
+                                maintenanceMap: mapById(referenceRows.maintenanceRows),
+                                vehicleMap,
+                                voucherMap: mapById(referenceRows.voucherRows),
+                            };
+                            await exportExpenses(enrichExpensesForExport(exportRows, exportReferenceMaps, linkPermissions) as unknown as Record<string, unknown>[]);
                             addToast('success', 'Excel pengeluaran berhasil di-download');
                         } catch (error) {
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel pengeluaran');
@@ -360,23 +562,26 @@ export default function ExpensesPage() {
                         try {
                             const company = await fetchCompanyProfile().catch(() => null);
                             const printableExpenses = await fetchAllMatchingExpenses();
+                            const referenceRows = await fetchExpenseReferences(printableExpenses);
+                            const printReferenceMaps: ExpenseReferenceMaps = {
+                                accountMap,
+                                boronganMap: mapById(referenceRows.boronganRows),
+                                incidentMap: mapById(referenceRows.incidentRows),
+                                maintenanceMap: mapById(referenceRows.maintenanceRows),
+                                vehicleMap,
+                                voucherMap: mapById(referenceRows.voucherRows),
+                            };
                             const printableGrandTotal = printableExpenses.reduce(
                                 (sum, expense) => sum + Math.max(parseFormattedNumberish(expense.amount ?? 0, { maxFractionDigits: 0 }), 0),
                                 0,
                             );
                             const describeExpense = (expense: Expense) => {
-                                const vehicleLabel =
-                                    expense.relatedVehiclePlate ||
-                                    (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef)?.plateNumber : '') ||
-                                    '';
-                                const matchedAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
-                                const accountLabel = expense.bankAccountName
-                                    ? `${expense.bankAccountName}${expense.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${expense.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                    : matchedAccount
-                                        ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                        : '';
+                                const vehicleLabel = getExpenseVehicleLabel(expense, printReferenceMaps.vehicleMap);
+                                const accountLabel = getExpenseAccountLabel(expense, printReferenceMaps.accountMap);
+                                const relatedDocs = formatExpenseRelatedDocumentsForPlainText(expense, printReferenceMaps, linkPermissions);
                                 const detailLines = [
-                                    expense.note || expense.description || '-',
+                                    getExpenseDescriptionLabel(expense),
+                                    relatedDocs ? `Dokumen: ${relatedDocs}` : '',
                                     vehicleLabel ? `Kendaraan: ${vehicleLabel}` : '',
                                     accountLabel ? `Via: ${accountLabel}` : '',
                                 ].filter(Boolean);
@@ -507,49 +712,64 @@ export default function ExpensesPage() {
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{Array.from({ length: isOwner ? 5 : 4 }, (_, j) => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalExpenses === 0 ? <tr><td colSpan={isOwner ? 5 : 4}><div className="empty-state"><Wallet size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada pengeluaran</div></div></td></tr> :
-                                    items.map(expense => (
-                                        <tr key={expense._id}>
-                                            <td className="text-muted">{formatDate(expense.date)}</td>
-                                            <td><span className="badge badge-gray">{expense.categoryName}</span></td>
-                                            <td>
-                                                <div>{expense.note || expense.description}</div>
-                                                {expense.relatedVehiclePlate && (
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
-                                                        kendaraan{' '}
-                                                        {expense.relatedVehicleRef && canOpenVehiclePage ? (
-                                                            <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
-                                                                {expense.relatedVehiclePlate}
-                                                            </Link>
-                                                        ) : (
-                                                            expense.relatedVehiclePlate
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {(() => {
-                                                    const matchedAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
-                                                    const accountLabel = expense.bankAccountName
-                                                        ? `${expense.bankAccountName}${expense.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${expense.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                                        : matchedAccount
-                                                            ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                                            : '';
-                                                    return accountLabel ? (
+                                    items.map(expense => {
+                                        const relatedDocs = getExpenseRelatedDocuments(expense, referenceMaps, linkPermissions);
+                                        const vehicleLabel = getExpenseVehicleLabel(expense, vehicleMap);
+                                        const accountLabel = getExpenseAccountLabel(expense, accountMap);
+                                        return (
+                                            <tr key={expense._id}>
+                                                <td className="text-muted">{formatDate(expense.date)}</td>
+                                                <td><span className="badge badge-gray">{expense.categoryName}</span></td>
+                                                <td>
+                                                    <div>{getExpenseDescriptionLabel(expense)}</div>
+                                                    {relatedDocs.length > 0 && (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
+                                                            dokumen{' '}
+                                                            {relatedDocs.map((doc, index) => (
+                                                                <span key={doc.key}>
+                                                                    {index > 0 && <span> · </span>}
+                                                                    <span>{doc.kind}: </span>
+                                                                    {doc.href ? (
+                                                                        <Link href={doc.href} style={LINK_STYLE}>
+                                                                            {doc.label}
+                                                                        </Link>
+                                                                    ) : (
+                                                                        <span>{doc.label}</span>
+                                                                    )}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {vehicleLabel && (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
+                                                            kendaraan{' '}
+                                                            {expense.relatedVehicleRef && canOpenVehiclePage ? (
+                                                                <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={LINK_STYLE}>
+                                                                    {vehicleLabel}
+                                                                </Link>
+                                                            ) : (
+                                                                vehicleLabel
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {accountLabel && (
                                                         <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
                                                             via{' '}
                                                             {expense.bankAccountRef && canOpenBankAccountPage ? (
-                                                                <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={LINK_STYLE}>
                                                                     {accountLabel}
                                                                 </Link>
                                                             ) : (
                                                                 accountLabel
                                                             )}
                                                         </div>
-                                                    ) : null;
-                                                })()}
-                                            </td>
-                                            <td className="font-medium">{formatCurrency(expense.amount)}</td>
-                                            {isOwner && <td><span className={`badge ${expense.privacyLevel === 'ownerOnly' ? 'badge-purple' : 'badge-info'}`}>{expense.privacyLevel === 'ownerOnly' ? 'Owner Only' : 'Internal'}</span></td>}
-                                        </tr>
-                                    ))}
+                                                    )}
+                                                </td>
+                                                <td className="font-medium">{formatCurrency(expense.amount)}</td>
+                                                {isOwner && <td><span className={`badge ${expense.privacyLevel === 'ownerOnly' ? 'badge-purple' : 'badge-info'}`}>{expense.privacyLevel === 'ownerOnly' ? 'Owner Only' : 'Internal'}</span></td>}
+                                            </tr>
+                                        );
+                                    })}
                             {!loading && filteredTotalExpenses > 0 && (
                                 <tr style={{ background: 'var(--color-bg-secondary)', borderTop: '2px solid var(--color-border)' }}>
                                     <td colSpan={3} className="font-semibold" style={{ textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>TOTAL</td>
@@ -569,17 +789,14 @@ export default function ExpensesPage() {
                             </div>
                         ) : (
                             items.map(expense => {
-                                const matchedAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
-                                const accountLabel = expense.bankAccountName
-                                    ? `${expense.bankAccountName}${expense.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${expense.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                    : matchedAccount
-                                        ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                        : '';
+                                const relatedDocs = getExpenseRelatedDocuments(expense, referenceMaps, linkPermissions);
+                                const vehicleLabel = getExpenseVehicleLabel(expense, vehicleMap);
+                                const accountLabel = getExpenseAccountLabel(expense, accountMap);
                                 return (
                                     <div key={expense._id} className="mobile-record-card">
                                         <div className="mobile-record-header">
                                             <div>
-                                                <div className="mobile-record-title">{expense.note || expense.description || 'Pengeluaran tanpa catatan'}</div>
+                                                <div className="mobile-record-title">{getExpenseDescriptionLabel(expense)}</div>
                                                 <div className="mobile-record-subtitle">{formatDate(expense.date)} | {expense.categoryName || 'Tanpa kategori'}</div>
                                             </div>
                                             <div style={{ textAlign: 'right' }}>
@@ -592,16 +809,36 @@ export default function ExpensesPage() {
                                                 <span className="mobile-record-label">Kategori</span>
                                                 <span className="mobile-record-value">{expense.categoryName || '-'}</span>
                                             </div>
-                                            {expense.relatedVehiclePlate && (
+                                            {relatedDocs.length > 0 && (
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Dokumen</span>
+                                                    <span className="mobile-record-value">
+                                                        {relatedDocs.map((doc, index) => (
+                                                            <span key={doc.key}>
+                                                                {index > 0 && <span> · </span>}
+                                                                <span>{doc.kind}: </span>
+                                                                {doc.href ? (
+                                                                    <Link href={doc.href} style={LINK_STYLE}>
+                                                                        {doc.label}
+                                                                    </Link>
+                                                                ) : (
+                                                                    doc.label
+                                                                )}
+                                                            </span>
+                                                        ))}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {vehicleLabel && (
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Kendaraan</span>
                                                     <span className="mobile-record-value">
                                                         {expense.relatedVehicleRef && canOpenVehiclePage ? (
-                                                            <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
-                                                                {expense.relatedVehiclePlate}
+                                                            <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={LINK_STYLE}>
+                                                                {vehicleLabel}
                                                             </Link>
                                                         ) : (
-                                                            expense.relatedVehiclePlate
+                                                            vehicleLabel
                                                         )}
                                                     </span>
                                                 </div>
@@ -611,7 +848,7 @@ export default function ExpensesPage() {
                                                     <span className="mobile-record-label">Dibayar dari</span>
                                                     <span className="mobile-record-value">
                                                         {expense.bankAccountRef && canOpenBankAccountPage ? (
-                                                            <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                            <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={LINK_STYLE}>
                                                                 {accountLabel}
                                                             </Link>
                                                         ) : (

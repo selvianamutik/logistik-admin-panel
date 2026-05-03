@@ -940,14 +940,23 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
 export async function exportExpenses(expenses: Record<string, unknown>[]) {
     await exportToExcel(
         expenses.map((expense) => {
-            const accountLabel = expense.bankAccountName
-                ? `${String(expense.bankAccountName)}${expense.bankAccountNumber ? ` - ${String(expense.bankAccountNumber)}` : ''}`
-                : '';
-            const vehicleLabel = expense.relatedVehiclePlate ? String(expense.relatedVehiclePlate) : '';
+            const accountLabel = typeof expense.accountLabel === 'string' && expense.accountLabel
+                ? expense.accountLabel
+                : expense.bankAccountName
+                    ? `${String(expense.bankAccountName)}${expense.bankAccountNumber ? ` - ${String(expense.bankAccountNumber)}` : ''}`
+                    : '';
+            const vehicleLabel = typeof expense.vehicleLabel === 'string' && expense.vehicleLabel
+                ? expense.vehicleLabel
+                : expense.relatedVehiclePlate
+                    ? String(expense.relatedVehiclePlate)
+                    : '';
+            const descriptionLabel = typeof expense.descriptionLabel === 'string' && expense.descriptionLabel
+                ? expense.descriptionLabel
+                : expense.note || expense.description || '';
 
             return {
                 ...expense,
-                descriptionLabel: expense.note || expense.description || '',
+                descriptionLabel,
                 accountLabel,
                 vehicleLabel,
             };
