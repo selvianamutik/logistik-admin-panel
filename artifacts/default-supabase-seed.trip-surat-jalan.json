@@ -464,6 +464,9 @@
   {
     "name": "Kategori Lama",
     "active": false,
+    "scope": "GENERAL",
+    "allowManual": false,
+    "accountSystemKey": "operational_expense",
     "_id": "expcat-008",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -472,6 +475,9 @@
   {
     "name": "Lain-lain",
     "active": true,
+    "scope": "GENERAL",
+    "allowManual": true,
+    "accountSystemKey": "operational_expense",
     "_id": "expcat-007",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -480,6 +486,9 @@
   {
     "name": "Borongan Supir",
     "active": true,
+    "scope": "DRIVER_FEE",
+    "allowManual": false,
+    "accountSystemKey": "driver_fee_expense",
     "_id": "expcat-006",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -488,6 +497,9 @@
   {
     "name": "Konsumsi Driver",
     "active": true,
+    "scope": "TRIP",
+    "allowManual": false,
+    "accountSystemKey": "trip_misc_expense",
     "_id": "expcat-005",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -496,6 +508,9 @@
   {
     "name": "Operasional Kantor",
     "active": true,
+    "scope": "GENERAL",
+    "allowManual": true,
+    "accountSystemKey": "operational_expense",
     "_id": "expcat-004",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -504,6 +519,9 @@
   {
     "name": "Servis Kendaraan",
     "active": true,
+    "scope": "MAINTENANCE",
+    "allowManual": false,
+    "accountSystemKey": "maintenance_expense",
     "_id": "expcat-003",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -512,6 +530,9 @@
   {
     "name": "Tol & Parkir",
     "active": true,
+    "scope": "TRIP",
+    "allowManual": false,
+    "accountSystemKey": "trip_misc_expense",
     "_id": "expcat-002",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
@@ -520,6 +541,9 @@
   {
     "name": "BBM / Solar",
     "active": true,
+    "scope": "TRIP",
+    "allowManual": false,
+    "accountSystemKey": "trip_misc_expense",
     "_id": "expcat-001",
     "_type": "expenseCategory",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",

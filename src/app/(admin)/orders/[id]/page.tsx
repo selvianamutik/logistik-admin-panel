@@ -60,7 +60,7 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Service, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -252,6 +252,7 @@ export default function OrderDetailPage() {
     const [showDOModal, setShowDOModal] = useState(false);
     const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
     const [creatingDO, setCreatingDO] = useState(false);
+    const [orderService, setOrderService] = useState<Service | null>(null);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     // DO form
@@ -289,7 +290,7 @@ export default function OrderDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
-    const loadedReferenceCustomerRef = useRef<string>('');
+    const loadedReferenceSignatureRef = useRef<string>('');
     const loadedVehicleOptionsRef = useRef(false);
     const loadedTripPlanSupportRef = useRef(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
@@ -316,9 +317,12 @@ export default function OrderDetailPage() {
     }, [hasOpenModal]);
 
     const loadOrderReferenceData = useCallback(async (orderData: Order | null) => {
-        const [customerData, customerProductData, customerPickupData] = await Promise.all([
+        const [customerData, serviceData, customerProductData, customerPickupData] = await Promise.all([
             orderData?.customerRef
                 ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
+                : Promise.resolve(null),
+            orderData?.serviceRef
+                ? fetchAdminData<Service | null>(`/api/data?entity=services&id=${orderData.serviceRef}`, 'Gagal memuat detail order')
                 : Promise.resolve(null),
             orderData?.customerRef
                 ? fetchAdminCollectionData<CustomerProduct[]>(
@@ -335,9 +339,10 @@ export default function OrderDetailPage() {
         ]);
 
         setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
+        setOrderService(serviceData || null);
         setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
         setCustomerPickups((customerPickupData || []).filter(pickup => pickup.active !== false));
-        loadedReferenceCustomerRef.current = orderData?.customerRef || '';
+        loadedReferenceSignatureRef.current = `${orderData?.customerRef || ''}|${orderData?.serviceRef || ''}`;
     }, []);
 
     const refreshOrderCoreState = useCallback(async (fallbackMessage: string = 'Gagal memuat ulang detail order') => {
@@ -415,7 +420,7 @@ export default function OrderDetailPage() {
                 setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             }
 
-            const shouldReloadReferences = loadedReferenceCustomerRef.current !== (orderData?.customerRef || '');
+            const shouldReloadReferences = loadedReferenceSignatureRef.current !== `${orderData?.customerRef || ''}|${orderData?.serviceRef || ''}`;
             if (shouldReloadReferences) {
                 await loadOrderReferenceData(orderData);
             }
@@ -490,7 +495,7 @@ export default function OrderDetailPage() {
             }
             const shouldReloadReferences =
                 mode === 'initial' ||
-                loadedReferenceCustomerRef.current !== (orderData?.customerRef || '');
+                loadedReferenceSignatureRef.current !== `${orderData?.customerRef || ''}|${orderData?.serviceRef || ''}`;
             if (shouldReloadReferences) {
                 await loadOrderReferenceData(orderData);
             }
@@ -512,7 +517,11 @@ export default function OrderDetailPage() {
     const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(
-        order?.serviceRef ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }] : [],
+        orderService
+            ? [orderService]
+            : order?.serviceRef
+                ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }]
+                : [],
         vehicles
     );
     const requestedServiceCapacityLabel = order?.serviceRef
@@ -2649,7 +2658,7 @@ export default function OrderDetailPage() {
                                             {availableVehicles.length === 0
                                                 ? 'Tidak ada kendaraan kosong. Semua kendaraan operasional sedang dipakai DO aktif atau belum selesai.'
                                                 : order.serviceRef
-                                                    ? `Order meminta kategori ${order.serviceName || '-'} dengan kisaran muatan ${requestedServiceCapacityLabel}. Kendaraan kosong yang cocok ditampilkan lebih dulu, tetapi override tetap boleh jika alasannya dicatat.`
+                                                    ? `Order meminta kategori ${order.serviceName || '-'} dengan batas muatan ${requestedServiceCapacityLabel}. Kendaraan kosong yang cocok ditampilkan lebih dulu, tetapi override tetap boleh jika alasannya dicatat.`
                                                     : 'Hanya kendaraan yang sedang kosong yang ditampilkan. Order ini belum punya kategori armada, jadi semua kendaraan operasional yang tidak sedang dipakai tetap tersedia.'}
                                         </div>
                                         {selectedVehicleData && (

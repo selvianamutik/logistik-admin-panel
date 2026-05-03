@@ -11,7 +11,16 @@ export const DRIVER_VOUCHER_STATUS_MAP: Record<string, { label: string; cls: str
     SETTLED: { label: 'Selesai', cls: 'badge-green' },
 };
 
-export const DRIVER_VOUCHER_EXPENSE_CATEGORIES = ['BBM / Solar', 'Tol & Parkir', 'Parkir', 'Makan', 'Menginap', 'Bongkar Muat', 'Perbaikan', 'Lain-lain'];
+export const DRIVER_VOUCHER_EXPENSE_CATEGORIES = [
+    'BBM / Solar',
+    'Tol & Parkir',
+    'Konsumsi Driver',
+    'Menginap Driver',
+    'Bongkar Muat',
+    'Perbaikan Darurat Trip',
+    'Towing / Evakuasi',
+    'Lain-lain Trip',
+];
 
 export type DriverVoucherItemFormState = {
     expenseDate: string;

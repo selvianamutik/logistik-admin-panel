@@ -1,4 +1,8 @@
 import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
+import {
+    isExpenseCategoryScope,
+    resolveExpenseCategoryAccountKey,
+} from '@/lib/expense-category-scope';
 import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
     buildDefaultTireLayoutConfig,
@@ -314,6 +318,48 @@ export async function normalizeExpenseCategoryPayload(
             throw new Error('Status kategori biaya tidak valid');
         }
         next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    if (!partial || hasOwnKey(data, 'scope')) {
+        const rawScope = normalizeOptionalText(data.scope);
+        const scope = rawScope || 'GENERAL';
+        if (!isExpenseCategoryScope(scope)) {
+            throw new Error('Jenis kategori biaya tidak valid');
+        }
+        next.scope = scope;
+    }
+
+    if (!partial || hasOwnKey(data, 'allowManual')) {
+        if (data.allowManual !== undefined && typeof data.allowManual !== 'boolean') {
+            throw new Error('Akses input manual kategori biaya tidak valid');
+        }
+        const scope = isExpenseCategoryScope(next.scope)
+            ? next.scope
+            : isExpenseCategoryScope(data.scope)
+                ? data.scope
+                : 'GENERAL';
+        next.allowManual = typeof data.allowManual === 'boolean'
+            ? data.allowManual
+            : scope === 'GENERAL';
+    }
+
+    if (!partial || hasOwnKey(data, 'sortOrder')) {
+        if (data.sortOrder !== undefined && data.sortOrder !== null && data.sortOrder !== '') {
+            const sortOrder = normalizeNumber(data.sortOrder, { maxFractionDigits: 0 });
+            if (!Number.isFinite(sortOrder) || sortOrder < 0) {
+                throw new Error('Urutan kategori biaya tidak valid');
+            }
+            next.sortOrder = sortOrder;
+        }
+    }
+
+    if (next.scope || next.name || !partial || hasOwnKey(data, 'accountSystemKey')) {
+        const accountSystemKey = normalizeOptionalText(data.accountSystemKey);
+        next.accountSystemKey = accountSystemKey || resolveExpenseCategoryAccountKey({
+            name: String(next.name || data.name || ''),
+            scope: isExpenseCategoryScope(next.scope) ? next.scope : undefined,
+            accountSystemKey,
+        });
     }
 
     return next;

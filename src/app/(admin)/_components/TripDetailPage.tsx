@@ -3709,7 +3709,6 @@ export default function TripDetailPage() {
         canOpenTripCashPage ||
         canManageDeliveryStatus;
     const {
-        autoActualDropDraft,
         actualDropSummary,
         hasLiveCoordinates,
         trackingMapUrl,

@@ -457,16 +457,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             </div>
 
                             <div className="topbar-right">
-                                <div
+                                <Link
+                                    href="/settings/profile"
                                     className="topbar-user"
-                                    onClick={() => {
-                                        if (!loggingOut) {
-                                            void handleLogout();
-                                        }
-                                    }}
-                                    title={loggingOut ? 'Sedang keluar...' : 'Klik untuk keluar'}
-                                    aria-disabled={loggingOut}
-                                    style={loggingOut ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
+                                    title="Buka Akun Saya"
+                                    aria-label="Buka Akun Saya"
                                 >
                                     <div className="topbar-avatar">
                                         {user.name.charAt(0).toUpperCase()}
@@ -475,7 +470,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                         <div className="topbar-user-name">{user.name}</div>
                                         <div className="topbar-user-role">{user.role}</div>
                                     </div>
-                                </div>
+                                </Link>
                             </div>
                         </header>
 

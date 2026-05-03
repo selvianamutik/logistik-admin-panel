@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { buildDriverVoucherRouteLabel } from '@/lib/driver-voucher-route';
+import {
+    inferExpenseCategoryScope,
+    resolveExpenseCategoryAccountKey,
+} from '@/lib/expense-category-scope';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     createDocument,
@@ -90,6 +94,9 @@ type ExpenseCategoryOption = {
     _id: string;
     name?: string;
     active?: boolean;
+    scope?: 'GENERAL' | 'TRIP' | 'MAINTENANCE' | 'INCIDENT' | 'DRIVER_FEE';
+    allowManual?: boolean;
+    accountSystemKey?: string;
 };
 
 type VoucherPostedExpense = {
@@ -112,6 +119,30 @@ function getExpenseCategoryKey(value: unknown) {
     return (normalizeOptionalText(value) || '').toLowerCase();
 }
 
+const DRIVER_VOUCHER_CATEGORY_ALIASES = new Map<string, string>([
+    ['parkir', 'Tol & Parkir'],
+    ['uang parkir', 'Tol & Parkir'],
+    ['makan', 'Konsumsi Driver'],
+    ['makan driver', 'Konsumsi Driver'],
+    ['konsumsi', 'Konsumsi Driver'],
+    ['menginap', 'Menginap Driver'],
+    ['hotel', 'Menginap Driver'],
+    ['perbaikan', 'Perbaikan Darurat Trip'],
+    ['perbaikan darurat', 'Perbaikan Darurat Trip'],
+    ['mogok', 'Perbaikan Darurat Trip'],
+    ['towing', 'Towing / Evakuasi'],
+    ['evakuasi', 'Towing / Evakuasi'],
+    ['lain-lain', 'Lain-lain Trip'],
+    ['lain lain', 'Lain-lain Trip'],
+]);
+
+function inferDriverVoucherRequestedCategoryScope(requestedName: string) {
+    const key = getExpenseCategoryKey(requestedName);
+    if (/borongan|upah|overtonase/.test(key)) return 'DRIVER_FEE';
+    if (/perbaikan|darurat|mogok|towing|evakuasi|insiden|kecelakaan|santunan/.test(key)) return 'INCIDENT';
+    return 'TRIP';
+}
+
 function resolveExpenseCategory(
     categories: ExpenseCategoryOption[],
     requestedName: string
@@ -122,12 +153,20 @@ function resolveExpenseCategory(
             .map(category => [getExpenseCategoryKey(category.name), category] as const)
             .filter(([key]) => Boolean(key))
     );
-    return (
-        byName.get(getExpenseCategoryKey(requestedName)) ||
-        byName.get('lain-lain') ||
-        activeCategories[0] ||
-        null
+    const requestedKey = getExpenseCategoryKey(requestedName);
+    const aliasName = DRIVER_VOUCHER_CATEGORY_ALIASES.get(requestedKey);
+    if (aliasName) {
+        return byName.get(getExpenseCategoryKey(aliasName)) || null;
+    }
+
+    const exactMatch = byName.get(requestedKey);
+    if (exactMatch) return exactMatch;
+
+    const targetScope = inferDriverVoucherRequestedCategoryScope(requestedName);
+    const scopedCandidates = activeCategories.filter(category =>
+        inferExpenseCategoryScope({ ...category, name: category.name || requestedName }) === targetScope
     );
+    return scopedCandidates.length === 1 ? scopedCandidates[0] : null;
 }
 
 function hasMatchingVoucherExpense(
@@ -702,6 +741,8 @@ export async function handleBoronganPayment(
         _type: 'expense',
         categoryRef: 'driver-borongan',
         categoryName: 'Borongan Supir',
+        categoryScope: 'DRIVER_FEE',
+        accountSystemKey: 'driver_fee_expense',
         date: paidDate,
         amount: derivedTotalAmount,
         description: `Upah borongan supir ${borongan.driverName} - ${borongan.boronganNumber}`,
@@ -1277,7 +1318,7 @@ export async function handleDriverVoucherItemCreate(
         _type: 'driverVoucherItem',
         voucherRef,
         expenseDate,
-        category: typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Lain-lain',
+        category: typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Lain-lain Trip',
         description: typeof data.description === 'string' ? data.description.trim() : '',
         amount,
     };
@@ -1354,7 +1395,7 @@ export async function handleDriverVoucherItemUpdate(
 
     const itemPatch = {
         expenseDate,
-        category: normalizeText(updates.category) || 'Lain-lain',
+        category: normalizeText(updates.category) || 'Lain-lain Trip',
         description: normalizeText(updates.description),
         amount,
     };
@@ -1935,6 +1976,8 @@ export async function handleDriverVoucherSettlement(
             _type: 'expense',
             categoryRef: expenseCategory._id,
             categoryName: expenseCategory.name || item.category,
+            categoryScope: inferExpenseCategoryScope({ ...expenseCategory, name: expenseCategory.name || item.category }),
+            accountSystemKey: resolveExpenseCategoryAccountKey({ ...expenseCategory, name: expenseCategory.name || item.category }),
             date: item.expenseDate || settledDate,
             amount: expenseAmount,
             description: expenseDescription,
@@ -1961,6 +2004,8 @@ export async function handleDriverVoucherSettlement(
                 _type: 'expense',
                 categoryRef: driverFeeCategory._id,
                 categoryName: driverFeeCategory.name || 'Borongan Supir',
+                categoryScope: 'DRIVER_FEE',
+                accountSystemKey: 'driver_fee_expense',
                 date: settledDate,
                 amount: driverFeeAmount,
                 description: driverFeeDescription,

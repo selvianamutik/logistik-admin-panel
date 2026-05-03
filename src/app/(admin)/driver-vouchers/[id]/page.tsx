@@ -145,7 +145,7 @@ export default function DriverVoucherDetailPage() {
         setEditingItemId(item._id);
         setItemForm({
             expenseDate: item.expenseDate || getBusinessDateValue(),
-            category: item.category || 'Lain-lain',
+            category: item.category || 'Lain-lain Trip',
             description: item.description || '',
             amount: item.amount || 0,
         });

@@ -454,6 +454,10 @@ export interface ExpenseCategory {
   _id: string;
   _type: 'expenseCategory';
   name: string;
+  scope?: 'GENERAL' | 'TRIP' | 'MAINTENANCE' | 'INCIDENT' | 'DRIVER_FEE';
+  allowManual?: boolean;
+  accountSystemKey?: string;
+  sortOrder?: number;
   active: boolean;
 }
 
@@ -1118,6 +1122,8 @@ export interface Expense {
   _rev?: string;
   categoryRef: string;
   categoryName?: string;
+  categoryScope?: ExpenseCategory['scope'];
+  accountSystemKey?: string;
   date: string;
   amount: number;
   note?: string;
