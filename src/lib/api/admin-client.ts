@@ -18,6 +18,13 @@ export async function fetchAdminData<T>(url: string, fallbackMessage: string): P
     return payload.data as T;
 }
 
+export async function fetchAdminListPayload<T>(
+    url: string,
+    fallbackMessage: string
+): Promise<{ data?: T[]; meta?: { total?: number } }> {
+    return fetchAdminPayload<{ data?: T[]; meta?: { total?: number } }>(url, fallbackMessage);
+}
+
 export async function fetchAdminCollectionData<T>(
     url: string,
     fallbackMessage: string,

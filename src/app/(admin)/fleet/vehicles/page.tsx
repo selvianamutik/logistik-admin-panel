@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 
 import { useApp, useToast } from '../../layout';
 import {
@@ -14,9 +14,10 @@ import {
     getAvailableVehicleServiceOptions,
     getVehicleNextAction,
     getVehicleServiceLabel,
+    VEHICLE_OWNERSHIP_LABELS,
     type VehicleTireSummary,
 } from '@/lib/fleet-vehicle-page-support';
-import { formatQuantity, VEHICLE_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatQuantity, VEHICLE_STATUS_MAP } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -67,12 +68,10 @@ export default function VehiclesPage() {
         const allItems: Vehicle[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildCurrentVehiclesQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat data kendaraan');
-            }
-
+            const payload = await fetchAdminListPayload<Vehicle>(
+                `/api/data?${buildCurrentVehiclesQuery(currentPage, pageSize)}`,
+                'Gagal memuat data kendaraan'
+            );
             const nextItems = (payload.data || []) as Vehicle[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -86,27 +85,21 @@ export default function VehiclesPage() {
     const loadVehicles = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, serviceRes, matchingVehicles] = await Promise.all([
-                fetch(`/api/data?${buildCurrentVehiclesQuery()}`),
+            const [listPayload, serviceRes, matchingVehicles] = await Promise.all([
+                fetchAdminListPayload<Vehicle>(`/api/data?${buildCurrentVehiclesQuery()}`, 'Gagal memuat data kendaraan'),
                 fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada'),
                 fetchAllMatchingVehicles(),
             ]);
-            const listPayload = await listRes.json();
-
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat data kendaraan');
-            }
 
             const vehicles = (listPayload.data || []) as Vehicle[];
             const matchingVehicleIds = matchingVehicles.map(vehicle => vehicle._id);
             const idsParam = matchingVehicleIds.join(',');
-            const summaryRes = await fetch(`/api/data?entity=vehicles-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`);
-            const summaryPayload = await summaryRes.json();
-            if (!summaryRes.ok) {
-                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan kendaraan');
-            }
+            const summaryPayload = await fetchAdminData<{ tireSummaries?: Record<string, VehicleTireSummary> }>(
+                `/api/data?entity=vehicles-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`,
+                'Gagal memuat ringkasan kendaraan'
+            );
 
-            const nextTireSummaryByVehicle = summaryPayload.data?.tireSummaries || {};
+            const nextTireSummaryByVehicle = summaryPayload.tireSummaries || {};
             const nextActiveVehicleCount = matchingVehicles.filter(vehicle => vehicle.status === 'ACTIVE').length;
             const nextIncompleteTireCount = matchingVehicles.reduce((sum, vehicle) => {
                 const summary = nextTireSummaryByVehicle[vehicle._id];
@@ -292,6 +285,14 @@ export default function VehiclesPage() {
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Tahun</span>
                                             <span className="mobile-record-value">{vehicle.year}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tanggal Masuk</span>
+                                            <span className="mobile-record-value">{formatDate(vehicle.registeredDate)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Kepemilikan</span>
+                                            <span className="mobile-record-value">{VEHICLE_OWNERSHIP_LABELS[vehicle.ownershipType || 'COMPANY'] || '-'}</span>
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Odometer</span>

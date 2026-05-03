@@ -16,14 +16,22 @@ import { parseFormattedNumberish } from './formatted-number';
 import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
+let inFlightCompanyProfileRequest: Promise<CompanyProfile | null> | null = null;
+
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
-    try {
-        const res = await fetch('/api/data?entity=company');
-        const data = await res.json();
-        return data.data || null;
-    } catch {
-        return null;
+    if (!inFlightCompanyProfileRequest) {
+        inFlightCompanyProfileRequest = fetch('/api/data?entity=company')
+            .then(async res => {
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data.data || null;
+            })
+            .catch(() => null)
+            .finally(() => {
+                inFlightCompanyProfileRequest = null;
+            });
     }
+    return inFlightCompanyProfileRequest;
 }
 
 export type PrintableCompanyProfile = Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'>;

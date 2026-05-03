@@ -11,7 +11,7 @@ import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { Order, Service } from '@/lib/types';
 
 const getNextActionLabel = (order: Order) => {
@@ -83,12 +83,10 @@ export default function OrdersPage() {
         const allItems: Order[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildOrdersQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat order');
-            }
-
+            const payload = await fetchAdminListPayload<Order>(
+                `/api/data?${buildOrdersQuery(currentPage, pageSize)}`,
+                'Gagal memuat order'
+            );
             const nextItems = (payload.data || []) as Order[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -102,15 +100,11 @@ export default function OrdersPage() {
     const loadOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const [ordersRes, serviceRows, matchingOrders] = await Promise.all([
-                fetch(`/api/data?${buildOrdersQuery()}`),
+            const [ordersPayload, serviceRows, matchingOrders] = await Promise.all([
+                fetchAdminListPayload<Order>(`/api/data?${buildOrdersQuery()}`, 'Gagal memuat order'),
                 fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat kategori armada'),
                 fetchAllMatchingOrders(),
             ]);
-
-            const ordersPayload = await ordersRes.json();
-
-            if (!ordersRes.ok) throw new Error(ordersPayload.error || 'Gagal memuat order');
 
             const nextQueueCounts = matchingOrders.reduce(
                 (totals, order) => {

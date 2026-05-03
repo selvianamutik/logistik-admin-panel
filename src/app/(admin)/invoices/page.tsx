@@ -7,7 +7,7 @@ import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
-import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminListPayload, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
@@ -130,12 +130,10 @@ export default function NotaListPage() {
         const allItems: FreightNota[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildInvoicesQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat invoice');
-            }
-
+            const payload = await fetchAdminListPayload<FreightNota>(
+                `/api/data?${buildInvoicesQuery(currentPage, pageSize)}`,
+                'Gagal memuat invoice'
+            );
             const nextItems = (payload.data || []) as FreightNota[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -153,18 +151,14 @@ export default function NotaListPage() {
 
     const reloadData = useCallback(async () => {
         setLoading(true);
-        const [notaRes, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
-            fetch(`/api/data?${buildInvoicesQuery()}`),
+        const [notaPayload, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
+            fetchAdminListPayload<FreightNota>(`/api/data?${buildInvoicesQuery()}`, 'Gagal memuat invoice'),
             fetchAllMatchingInvoices(),
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
             fetchAllAdminCollectionData<CustomerOverpayment>('/api/data?entity=customer-overpayments&sortPreset=work-queue', 'Gagal memuat kelebihan bayar customer'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
             fetchCompanyProfile().catch(() => null),
         ]);
-
-        const notaPayload = await notaRes.json();
-
-        if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat invoice');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
         const matchingNotaIdList = matchingNotas.map(nota => nota._id).filter(Boolean);

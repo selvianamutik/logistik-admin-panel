@@ -6,6 +6,7 @@ import { Edit, Plus, RefreshCw, Save, Search, Trash2, Users, X } from 'lucide-re
 import AppPagination from '@/components/AppPagination';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminListPayload } from '@/lib/api/admin-client';
 import { hasPermission } from '@/lib/rbac';
 import type { Employee } from '@/lib/types';
 
@@ -75,26 +76,14 @@ export default function EmployeesPage() {
     const loadEmployees = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, totalRes, inactiveRes] = await Promise.all([
-                fetch(`/api/data?${buildEmployeesQuery()}`),
-                fetch('/api/data?entity=employees&countOnly=1'),
-                fetch(`/api/data?entity=employees&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
-            ]);
             const [listPayload, totalPayload, inactivePayload] = await Promise.all([
-                listRes.json(),
-                totalRes.json(),
-                inactiveRes.json(),
+                fetchAdminListPayload<Employee>(`/api/data?${buildEmployeesQuery()}`, 'Gagal memuat data karyawan'),
+                fetchAdminListPayload<Employee>('/api/data?entity=employees&countOnly=1', 'Gagal memuat total karyawan'),
+                fetchAdminListPayload<Employee>(
+                    `/api/data?entity=employees&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`,
+                    'Gagal memuat karyawan nonaktif'
+                ),
             ]);
-
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat data karyawan');
-            }
-            if (!totalRes.ok) {
-                throw new Error(totalPayload.error || 'Gagal memuat total karyawan');
-            }
-            if (!inactiveRes.ok) {
-                throw new Error(inactivePayload.error || 'Gagal memuat karyawan nonaktif');
-            }
 
             setEmployees((listPayload.data || []) as Employee[]);
             setFilteredTotalEmployees(listPayload.meta?.total || 0);

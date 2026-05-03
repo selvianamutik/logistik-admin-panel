@@ -1152,6 +1152,8 @@ export interface Expense {
 // ── Vehicle ──
 export type VehicleStatus = 'ACTIVE' | 'IN_SERVICE' | 'OUT_OF_SERVICE' | 'SOLD';
 
+export type VehicleOwnershipType = 'COMPANY' | 'PARTNER';
+
 export interface Vehicle {
   _id: string;
   _type: 'vehicle';
@@ -1173,6 +1175,11 @@ export interface Vehicle {
   engineNumber?: string;    // ownerOnly
   status: VehicleStatus;
   base?: string;
+  registeredDate?: string;
+  ownershipType?: VehicleOwnershipType;
+  partnerOwnerName?: string;
+  partnerOwnerPhone?: string;
+  partnerNotes?: string;
   vehiclePhotoUrl?: string;
   notes?: string;
   lastOdometer?: number;

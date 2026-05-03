@@ -1,7 +1,7 @@
 import { formatDate, formatQuantity, VEHICLE_STATUS_MAP } from './utils';
 import { DEFAULT_PAGE_SIZE } from './pagination';
-import { getBusinessCalendarDateParts } from './business-date';
-import type { Service, Vehicle, VehicleStatus } from './types';
+import { getBusinessCalendarDateParts, getBusinessDateValue } from './business-date';
+import type { Service, Vehicle, VehicleOwnershipType, VehicleStatus } from './types';
 
 export type VehicleTireSummary = {
     filled: number;
@@ -25,6 +25,11 @@ export type VehicleForm = {
     chassisNumber: string;
     engineNumber: string;
     base: string;
+    registeredDate: string;
+    ownershipType: VehicleOwnershipType;
+    partnerOwnerName: string;
+    partnerOwnerPhone: string;
+    partnerNotes: string;
     notes: string;
     status: VehicleStatus;
     lastOdometer: number;
@@ -33,6 +38,11 @@ export type VehicleForm = {
     oilNextServiceOdometer: number;
     oilServiceRemainingKm: number;
     oilMaintenanceIntervalKm: number;
+};
+
+export const VEHICLE_OWNERSHIP_LABELS: Record<VehicleOwnershipType, string> = {
+    COMPANY: 'Milik Perusahaan',
+    PARTNER: 'Milik Mitra / Investor',
 };
 
 function getCurrentBusinessYear() {
@@ -55,6 +65,11 @@ export const EMPTY_VEHICLE_FORM: VehicleForm = {
     chassisNumber: '',
     engineNumber: '',
     base: '',
+    registeredDate: getBusinessDateValue(),
+    ownershipType: 'COMPANY',
+    partnerOwnerName: '',
+    partnerOwnerPhone: '',
+    partnerNotes: '',
     notes: '',
     status: 'ACTIVE',
     lastOdometer: 0,
@@ -64,6 +79,24 @@ export const EMPTY_VEHICLE_FORM: VehicleForm = {
     oilServiceRemainingKm: 0,
     oilMaintenanceIntervalKm: 0,
 };
+
+export function normalizeVehicleYearInput(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    return digits ? Number(digits) : 0;
+}
+
+export function formatVehicleYearInput(year: number) {
+    return year ? String(year) : '';
+}
+
+export function isValidVehicleYear(year: number) {
+    const maxYear = getCurrentBusinessYear() + 1;
+    return Number.isInteger(year) && year >= 1900 && year <= maxYear;
+}
+
+export function hasInvalidVehicleOwnership(form: Pick<VehicleForm, 'ownershipType' | 'partnerOwnerName'>) {
+    return form.ownershipType === 'PARTNER' && !form.partnerOwnerName.trim();
+}
 
 export function buildVehiclesQuery(params: {
     page?: number;
@@ -169,6 +202,11 @@ export function buildVehicleBasePayload(form: VehicleForm, isOwner: boolean) {
         capacityVolume: form.capacityVolume,
         serviceRef: form.serviceRef || undefined,
         base: form.base,
+        registeredDate: form.registeredDate || undefined,
+        ownershipType: form.ownershipType,
+        partnerOwnerName: form.ownershipType === 'PARTNER' ? form.partnerOwnerName : '',
+        partnerOwnerPhone: form.ownershipType === 'PARTNER' ? form.partnerOwnerPhone : '',
+        partnerNotes: form.ownershipType === 'PARTNER' ? form.partnerNotes : '',
         notes: form.notes,
         lastOdometer: form.lastOdometer,
         lastOdometerAt: form.lastOdometerAt || undefined,
@@ -195,6 +233,8 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                     <th>Kategori</th>
                     <th>Tipe</th>
                     <th>Tahun</th>
+                    <th>Tanggal Masuk</th>
+                    <th>Kepemilikan</th>
                     <th>Status</th>
                             <th>Odometer</th>
                             <th>Sisa Servis Oli</th>
@@ -215,6 +255,8 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                             <td>${getVehicleServiceLabel(vehicle, services)}</td>
                             <td>${vehicle.vehicleType}</td>
                             <td>${vehicle.year}</td>
+                            <td>${formatDate(vehicle.registeredDate)}</td>
+                            <td>${VEHICLE_OWNERSHIP_LABELS[vehicle.ownershipType || 'COMPANY'] || '-'}</td>
                             <td>${VEHICLE_STATUS_MAP[vehicle.status]?.label || vehicle.status}</td>
                             <td class="r">${vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</td>
                             <td class="r">${typeof vehicle.oilServiceRemainingKm === 'number' ? `${formatQuantity(vehicle.oilServiceRemainingKm, 0)} km` : '-'}</td>
@@ -244,6 +286,11 @@ export function mapVehicleToForm(vehicle: Vehicle): VehicleForm {
         chassisNumber: vehicle.chassisNumber || '',
         engineNumber: vehicle.engineNumber || '',
         base: vehicle.base || '',
+        registeredDate: vehicle.registeredDate || getBusinessDateValue(),
+        ownershipType: vehicle.ownershipType || 'COMPANY',
+        partnerOwnerName: vehicle.partnerOwnerName || '',
+        partnerOwnerPhone: vehicle.partnerOwnerPhone || '',
+        partnerNotes: vehicle.partnerNotes || '',
         notes: vehicle.notes || '',
         status: vehicle.status || 'ACTIVE',
         lastOdometer: vehicle.lastOdometer || 0,
@@ -258,10 +305,10 @@ export function mapVehicleToForm(vehicle: Vehicle): VehicleForm {
 export function getVehicleSections(vehicleId: string, isOwner: boolean) {
     return [
         { key: 'profil', label: 'Profil', href: `/fleet/vehicles/${vehicleId}` },
-        { key: 'do', label: 'Riwayat DO', href: `/fleet/vehicles/${vehicleId}?tab=do` },
+        { key: 'do', label: 'Trip', href: `/fleet/vehicles/${vehicleId}?tab=do` },
         { key: 'maintenance', label: 'Maintenance', href: `/fleet/vehicles/${vehicleId}?tab=maintenance` },
         { key: 'ban', label: 'Ban', href: `/fleet/vehicles/${vehicleId}?tab=ban` },
         { key: 'insiden', label: 'Insiden', href: `/fleet/vehicles/${vehicleId}?tab=insiden` },
-        ...(isOwner ? [{ key: 'biaya', label: 'Biaya', href: `/fleet/vehicles/${vehicleId}?tab=biaya` }] : []),
+        ...(isOwner ? [{ key: 'biaya', label: 'Biaya Maintenance', href: `/fleet/vehicles/${vehicleId}?tab=biaya` }] : []),
     ];
 }

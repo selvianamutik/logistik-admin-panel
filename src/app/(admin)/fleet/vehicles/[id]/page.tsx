@@ -23,7 +23,7 @@ import {
     formatTireSlotLabel,
     resolveTireSlotCode,
 } from '@/lib/tire-slots';
-import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, TireHistoryLog, Expense } from '@/lib/types';
+import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, TireHistoryLog, Expense, IncidentSettlementLine } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -35,6 +35,7 @@ import {
     type VehicleTireFormState,
     VEHICLE_TIRE_TYPE_OPTIONS,
 } from '@/lib/vehicle-detail-page-support';
+import { VEHICLE_OWNERSHIP_LABELS } from '@/lib/fleet-vehicle-page-support';
 import {
     getMaintenanceMaterialOverflowCount,
     getMaintenanceMaterialPreview,
@@ -46,13 +47,57 @@ function isTripOrDriverExpense(expense: Expense) {
     return Boolean(expense.voucherRef || expense.boronganRef) || expense.categoryScope === 'TRIP' || expense.categoryScope === 'DRIVER_FEE';
 }
 
-function isVehicleUnitExpense(expense: Expense) {
-    if (isTripOrDriverExpense(expense)) return false;
-    if (expense.relatedMaintenanceRef || expense.relatedIncidentRef) return true;
-    if (expense.categoryScope === 'MAINTENANCE' || expense.categoryScope === 'INCIDENT') return true;
+function isIncidentExpense(expense: Expense) {
+    if (expense.relatedIncidentRef || expense.relatedIncidentSettlementLineRef) return true;
+    if (expense.categoryScope === 'INCIDENT') return true;
 
     const category = String(expense.categoryName || '').toLowerCase();
-    return /maintenance|servis|service|oli|ban|sparepart|insiden|kecelakaan|santunan|towing|evakuasi|darurat|mogok|klaim kerusakan/.test(category);
+    return /insiden|kecelakaan|santunan|towing|evakuasi|darurat|mogok|klaim kerusakan/.test(category);
+}
+
+function isVehicleMaintenanceExpense(expense: Expense) {
+    if (isTripOrDriverExpense(expense)) return false;
+    if (isIncidentExpense(expense)) return false;
+    if (expense.relatedMaintenanceRef) return true;
+    if (expense.categoryScope === 'MAINTENANCE') return true;
+
+    const category = String(expense.categoryName || '').toLowerCase();
+    return /maintenance|servis|service|oli|ban|sparepart/.test(category);
+}
+
+function formatDeliveryOrderTripRoute(deliveryOrder: DeliveryOrder) {
+    const origin =
+        deliveryOrder.tripOriginArea ||
+        deliveryOrder.pickupStops?.[0]?.pickupAddress ||
+        deliveryOrder.pickupAddress ||
+        '';
+    const destination =
+        deliveryOrder.tripDestinationArea ||
+        deliveryOrder.receiverAddress ||
+        '';
+
+    if (origin && destination) return `${origin} -> ${destination}`;
+    return origin || destination || '-';
+}
+
+function summarizeIncidentFinancials(lines: IncidentSettlementLine[], postedExpenseAmount: number) {
+    const activeLines = lines.filter(line => line.status !== 'VOID');
+    const costLines = activeLines.filter(line => line.lineType !== 'RECOVERY');
+    const recoveryLines = activeLines.filter(line => line.lineType === 'RECOVERY');
+    const grossCost = costLines.reduce((sum, line) => sum + line.amount, 0) || postedExpenseAmount;
+    const postedCost = costLines
+        .filter(line => line.status === 'POSTED')
+        .reduce((sum, line) => sum + line.amount, 0) || postedExpenseAmount;
+    const pendingCost = Math.max(0, grossCost - postedCost);
+    const recovery = recoveryLines.reduce((sum, line) => sum + line.amount, 0);
+
+    return {
+        grossCost,
+        postedCost,
+        pendingCost,
+        recovery,
+        netCost: Math.max(0, grossCost - recovery),
+    };
 }
 
 export default function VehicleDetailPage() {
@@ -65,6 +110,7 @@ export default function VehicleDetailPage() {
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
     const [maints, setMaints] = useState<Maintenance[]>([]);
     const [incidents, setIncidents] = useState<Incident[]>([]);
+    const [incidentSettlementLines, setIncidentSettlementLines] = useState<IncidentSettlementLine[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
@@ -102,17 +148,26 @@ export default function VehicleDetailPage() {
                 }),
                 fetchAllAdminCollectionData<Maintenance>(`/api/data?entity=maintenances&filter=${vehicleFilter}`, 'Gagal memuat maintenance'),
                 fetchAllAdminCollectionData<Incident>(`/api/data?entity=incidents&filter=${vehicleFilter}`, 'Gagal memuat insiden'),
-                fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat DO'),
+                fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat trip'),
                 fetchAllAdminCollectionData<TireEvent>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
                 fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat master ban'),
                 canViewVehicleExpenses
-                    ? fetchAllAdminCollectionData<Expense>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya kendaraan')
+                    ? fetchAllAdminCollectionData<Expense>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya maintenance unit')
                     : Promise.resolve([] as Expense[]),
             ]);
+            const sortedIncidents = [...(incidentRows || [])].sort((a, b) => `${b.dateTime || ''}-${b._id}`.localeCompare(`${a.dateTime || ''}-${a._id}`));
+            const incidentRefs = sortedIncidents.map(incident => incident._id).filter(Boolean);
+            const settlementRows = incidentRefs.length > 0
+                ? await fetchAllAdminCollectionData<IncidentSettlementLine>(
+                    `/api/data?entity=incident-settlement-lines&filter=${encodeURIComponent(JSON.stringify({ incidentRef: incidentRefs }))}`,
+                    'Gagal memuat biaya insiden'
+                )
+                : [];
 
             setVehicle(vehicleData);
             setMaints([...(maintenanceRows || [])].sort((a, b) => `${b.plannedDate || ''}-${b._id}`.localeCompare(`${a.plannedDate || ''}-${a._id}`)));
-            setIncidents([...(incidentRows || [])].sort((a, b) => `${b.dateTime || ''}-${b._id}`.localeCompare(`${a.dateTime || ''}-${a._id}`)));
+            setIncidents(sortedIncidents);
+            setIncidentSettlementLines([...(settlementRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDos([...(doRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setTireEvents(tireRows || []);
             setAllTireEvents(allTireRows || []);
@@ -140,11 +195,28 @@ export default function VehicleDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
 
-    const vehicleDirectExpenses = expenses.filter(isVehicleUnitExpense);
-    const hiddenTripSettlementExpenses = expenses.filter(isTripOrDriverExpense);
-    const totalDirectExpenses = vehicleDirectExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const totalMaintenanceCosts = maints.reduce((sum, maintenance) => sum + getMaintenanceRecordedCost(maintenance), 0);
-    const totalExpenses = totalDirectExpenses + totalMaintenanceCosts;
+    const incidentExpenses = expenses.filter(isIncidentExpense);
+    const incidentExpenseTotalByRef = incidentExpenses.reduce((map, expense) => {
+        const incidentRef = expense.relatedIncidentRef;
+        if (!incidentRef) return map;
+        map.set(incidentRef, (map.get(incidentRef) || 0) + expense.amount);
+        return map;
+    }, new Map<string, number>());
+    const incidentSettlementLinesByRef = incidentSettlementLines.reduce((map, line) => {
+        const rows = map.get(line.incidentRef) || [];
+        rows.push(line);
+        map.set(line.incidentRef, rows);
+        return map;
+    }, new Map<string, IncidentSettlementLine[]>());
+    const maintenanceRefsWithRecordedCost = new Set(
+        maints
+            .filter(maintenance => maintenance.status === 'DONE' && getMaintenanceRecordedCost(maintenance) > 0)
+            .map(maintenance => maintenance._id)
+    );
+    const vehicleMaintenanceExpenses = expenses.filter(expense =>
+        isVehicleMaintenanceExpense(expense) &&
+        (!expense.relatedMaintenanceRef || !maintenanceRefsWithRecordedCost.has(expense.relatedMaintenanceRef))
+    );
 
     const renderMaintenanceMaterialUsage = (item: Maintenance) => {
         if (item.status !== 'DONE') {
@@ -200,23 +272,15 @@ export default function VehicleDetailPage() {
             amount: getMaintenanceRecordedCost(maintenance),
         }));
     const vehicleCostRows = [
-        ...vehicleDirectExpenses.map((expense) => {
-            const source = expense.relatedIncidentRef ? (
-                <Link href={`/fleet/incidents/${expense.relatedIncidentRef}`} style={{ color: 'var(--color-primary)' }}>
-                    Insiden
-                </Link>
-            ) : expense.relatedMaintenanceRef ? (
+        ...vehicleMaintenanceExpenses.map((expense) => {
+            const source = expense.relatedMaintenanceRef ? (
                 <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
                     Maintenance
                 </Link>
             ) : (
-                expense.categoryName || 'Pengeluaran'
+                expense.categoryName || 'Maintenance'
             );
-            const documentLink = expense.relatedIncidentRef ? (
-                <Link href={`/fleet/incidents/${expense.relatedIncidentRef}`} style={{ color: 'var(--color-primary)' }}>
-                    Lihat insiden
-                </Link>
-            ) : expense.relatedMaintenanceRef ? (
+            const documentLink = expense.relatedMaintenanceRef ? (
                 <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
                     Lihat maintenance
                 </Link>
@@ -237,6 +301,28 @@ export default function VehicleDetailPage() {
         }),
         ...maintenanceCostRows,
     ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
+    const totalMaintenanceExpense = vehicleCostRows.reduce((sum, row) => sum + row.amount, 0);
+    const renderIncidentCostSummary = (incident: Incident) => {
+        const summary = summarizeIncidentFinancials(
+            incidentSettlementLinesByRef.get(incident._id) || [],
+            incidentExpenseTotalByRef.get(incident._id) || 0
+        );
+
+        if (summary.grossCost <= 0 && summary.recovery <= 0) {
+            return <span className="text-muted">-</span>;
+        }
+
+        return (
+            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                <div className="font-medium">{formatCurrency(summary.netCost)}</div>
+                <div className="text-muted text-sm">
+                    Gross {formatCurrency(summary.grossCost)}
+                    {summary.recovery > 0 ? ` | Klaim ${formatCurrency(summary.recovery)}` : ''}
+                </div>
+                {summary.pendingCost > 0 && <div className="text-muted text-sm">Belum diposting {formatCurrency(summary.pendingCost)}</div>}
+            </div>
+        );
+    };
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
     const {
         normalizedAllTireRows,
@@ -487,7 +573,7 @@ export default function VehicleDetailPage() {
             <div className="tabs">
                 {vehicleTabs.map(t => (
                     <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => handleTabChange(t)}>
-                        {t === 'profil' ? 'Profil' : t === 'do' ? 'Riwayat DO' : t === 'maintenance' ? 'Maintenance' : t === 'ban' ? 'Ban' : t === 'insiden' ? 'Insiden' : 'Biaya Kendaraan'}
+                        {t === 'profil' ? 'Profil' : t === 'do' ? 'Trip' : t === 'maintenance' ? 'Maintenance' : t === 'ban' ? 'Ban' : t === 'insiden' ? 'Insiden' : 'Biaya Maintenance'}
                     </button>
                 ))}
             </div>
@@ -502,7 +588,9 @@ export default function VehicleDetailPage() {
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{vehicle.serviceName || '-'}</div></div><div className="detail-item"><div className="detail-label">Base</div><div className="detail-value">{vehicle.base || '-'}</div></div></div>
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Merk/Model</div><div className="detail-value">{vehicle.brandModel}</div></div><div className="detail-item"><div className="detail-label">Ukuran</div><div className="detail-value">{vehicle.size || '-'}</div></div></div>
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Dimensi</div><div className="detail-value">{vehicle.dimension || '-'}</div></div><div className="detail-item"><div className="detail-label">Kapasitas (ton)</div><div className="detail-value">{vehicle.capacityMin || vehicle.capacityMax ? `${vehicle.capacityMin || '-'} - ${vehicle.capacityMax || '-'}` : '-'}</div></div></div>
-                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Kapasitas Vol (m3)</div><div className="detail-value">{vehicle.capacityVolume || '-'}</div></div><div className="detail-item"><div className="detail-label">Tanggal Update</div><div className="detail-value">{formatDate(vehicle.lastOdometerAt)}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Kapasitas Vol (m3)</div><div className="detail-value">{vehicle.capacityVolume || '-'}</div></div><div className="detail-item"><div className="detail-label">Tanggal Masuk Unit</div><div className="detail-value">{formatDate(vehicle.registeredDate)}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Kepemilikan</div><div className="detail-value">{VEHICLE_OWNERSHIP_LABELS[vehicle.ownershipType || 'COMPANY'] || '-'}</div></div><div className="detail-item"><div className="detail-label">Pemilik Mitra</div><div className="detail-value">{vehicle.ownershipType === 'PARTNER' ? vehicle.partnerOwnerName || '-' : '-'}</div></div></div>
+                                {vehicle.ownershipType === 'PARTNER' && <div className="detail-row"><div className="detail-item"><div className="detail-label">Kontak Pemilik</div><div className="detail-value">{vehicle.partnerOwnerPhone || '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan Kepemilikan</div><div className="detail-value">{vehicle.partnerNotes || '-'}</div></div></div>}
                                 {isOwner && <div className="detail-row"><div className="detail-item"><div className="detail-label">No. Rangka</div><div className="detail-value font-mono">{vehicle.chassisNumber || '-'}</div></div><div className="detail-item"><div className="detail-label">No. Mesin</div><div className="detail-value font-mono">{vehicle.engineNumber || '-'}</div></div></div>}
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Jarak Trip Terakhir</div><div className="detail-value">{typeof vehicle.lastTripOdometerDeltaKm === 'number' ? `${formatQuantity(vehicle.lastTripOdometerDeltaKm, 0)} km` : '-'}</div></div></div>
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Servis Oli Berikutnya</div><div className="detail-value">{vehicle.oilNextServiceOdometer ? `${formatQuantity(vehicle.oilNextServiceOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Sisa Servis Oli</div><div className="detail-value">{typeof vehicle.oilServiceRemainingKm === 'number' ? `${formatQuantity(vehicle.oilServiceRemainingKm, 0)} km` : '-'}</div></div></div>
@@ -528,11 +616,11 @@ export default function VehicleDetailPage() {
                                     </div>
                                 )}
                                 <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                                    <div className="kpi-card"><div className="kpi-icon info"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Total DO</div><div className="kpi-value">{dos.length}</div></div></div>
+                                    <div className="kpi-card"><div className="kpi-icon info"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Trip</div><div className="kpi-value">{dos.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Maintenance</div><div className="kpi-value">{maints.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Insiden</div><div className="kpi-value">{incidents.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon success"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Ban Terisi</div><div className="kpi-value">{filledSlotCount}/{layout.allSlots.length}</div></div></div>
-                                    {isOwner && <div className="kpi-card"><div className="kpi-icon primary"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Biaya Kendaraan</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalExpenses)}</div></div></div>}
+                                    {isOwner && <div className="kpi-card"><div className="kpi-icon primary"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Biaya Maintenance</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalMaintenanceExpense)}</div></div></div>}
                                 </div>
                             </div>
                         </div>
@@ -549,9 +637,9 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
-                            <tbody>{dos.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO</td></tr> : dos.map(d => (
-                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{getShipperReferenceCount(d) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
+                            <thead><tr><th>Trip / DO</th><th>Tanggal</th><th>Supir</th><th>Rute Trip</th><th>Customer</th><th>Status</th></tr></thead>
+                            <tbody>{dos.length === 0 ? <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat trip</td></tr> : dos.map(d => (
+                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{getShipperReferenceCount(d) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.driverName || '-'}</td><td>{formatDeliveryOrderTripRoute(d)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
                             ))}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
@@ -582,6 +670,10 @@ export default function VehicleDetailPage() {
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Driver</span>
                                             <span className="mobile-record-value">{d.driverName || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Rute Trip</span>
+                                            <span className="mobile-record-value">{formatDeliveryOrderTripRoute(d)}</span>
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
@@ -737,9 +829,9 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>No.</th><th>Tanggal</th><th>Tipe</th><th>Lokasi</th><th>Status</th></tr></thead>
-                            <tbody>{incidents.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Tidak ada insiden</td></tr> : incidents.map(i => (
-                                <tr key={i._id}><td><a href={`/fleet/incidents/${i._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{i.incidentNumber}</a></td><td>{formatDate(i.dateTime)}</td><td>{i.incidentType}</td><td>{i.locationText}</td><td><span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>{INCIDENT_STATUS_MAP[i.status]?.label}</span></td></tr>
+                            <thead><tr><th>No.</th><th>Tanggal</th><th>Tipe</th><th>Lokasi</th><th>Biaya Insiden</th><th>Status</th></tr></thead>
+                            <tbody>{incidents.length === 0 ? <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Tidak ada insiden</td></tr> : incidents.map(i => (
+                                <tr key={i._id}><td><a href={`/fleet/incidents/${i._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{i.incidentNumber}</a></td><td>{formatDate(i.dateTime)}</td><td>{i.incidentType}</td><td>{i.locationText}</td><td>{renderIncidentCostSummary(i)}</td><td><span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>{INCIDENT_STATUS_MAP[i.status]?.label}</span></td></tr>
                             ))}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
@@ -765,6 +857,10 @@ export default function VehicleDetailPage() {
                                             <span className="mobile-record-label">DO Terkait</span>
                                             <span className="mobile-record-value">{i.relatedDONumber || '-'}</span>
                                         </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Biaya Insiden</span>
+                                            <div className="mobile-record-value">{renderIncidentCostSummary(i)}</div>
+                                        </div>
                                     </div>
                                     <div className="mobile-record-actions">
                                         <button className="btn btn-secondary" onClick={() => router.push(`/fleet/incidents/${i._id}`)}>Lihat Insiden</button>
@@ -780,24 +876,13 @@ export default function VehicleDetailPage() {
                 <div className="card">
                     <div className="card-header">
                         <div>
-                            <span className="card-header-title">Biaya Kendaraan Langsung</span>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                Halaman kendaraan menampilkan pengeluaran langsung ke unit dan biaya material gudang yang dipakai saat maintenance. Uang jalan trip dan upah supir tetap dilihat dari detail supir atau Uang Jalan Trip.
-                            </div>
+                            <span className="card-header-title">Biaya Maintenance Unit</span>
                         </div>
                     </div>
                     <div className="card-body">
-                        {hiddenTripSettlementExpenses.length > 0 && (
-                            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)' }}>
-                                <div className="font-medium">Riwayat bon/upah supir tidak ditampilkan di sini</div>
-                                <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                    Ada {hiddenTripSettlementExpenses.length} pengeluaran trip atau upah driver yang disembunyikan dari biaya kendaraan agar biaya unit tidak tercampur dengan hak driver.
-                                </div>
-                            </div>
-                        )}
                         <div className="table-wrapper"><table>
                             <thead><tr><th>Tanggal</th><th>Sumber</th><th>Deskripsi</th><th>Jumlah</th></tr></thead>
-                            <tbody>{vehicleCostRows.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada biaya kendaraan langsung</td></tr> : vehicleCostRows.map(row => (
+                            <tbody>{vehicleCostRows.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada biaya maintenance</td></tr> : vehicleCostRows.map(row => (
                                 <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.source}</td><td>{row.description}</td><td className="font-medium">{formatCurrency(row.amount)}</td></tr>
                             ))}</tbody>
                         </table></div>

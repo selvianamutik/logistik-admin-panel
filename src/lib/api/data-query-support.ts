@@ -423,6 +423,39 @@ export async function getAuditLogsSummary(params?: {
     };
 }
 
+export async function getUsersSummary() {
+    const rows = await listDocumentsByFilter<{
+        role?: UserRole;
+        active?: boolean;
+    }>('user', {});
+    const internalRows = rows.filter(row =>
+        row.role === 'OWNER' ||
+        row.role === 'OPERASIONAL' ||
+        row.role === 'FINANCE' ||
+        row.role === 'ARMADA'
+    );
+
+    return internalRows.reduce(
+        (summary, row) => {
+            summary.total += 1;
+            if (row.active === false) summary.inactive += 1;
+            if (row.role === 'OWNER') summary.owner += 1;
+            if (row.role === 'OPERASIONAL') summary.operational += 1;
+            if (row.role === 'FINANCE') summary.finance += 1;
+            if (row.role === 'ARMADA') summary.armada += 1;
+            return summary;
+        },
+        {
+            total: 0,
+            inactive: 0,
+            owner: 0,
+            operational: 0,
+            finance: 0,
+            armada: 0,
+        }
+    );
+}
+
 type EmployeeAttendanceListParams = {
     search?: string;
     searchFields?: string[];

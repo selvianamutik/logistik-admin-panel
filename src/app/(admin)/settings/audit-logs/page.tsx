@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Search, ScrollText } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { getAuditLogTargetHref } from '@/lib/audit-log-target-links';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { AuditLog, UserRole } from '@/lib/types';
@@ -24,6 +25,36 @@ const PERIOD_OPTIONS: Array<{ value: AuditLogPeriod; label: string }> = [
     { value: 'thisYear', label: 'Tahun Ini' },
     { value: 'all', label: 'Semua Waktu' },
 ];
+
+const AUDIT_SEARCH_FIELDS = 'changesSummary,actorUserName,actorUserRole,actorUserEmail,actorUserRef,entityType,entityRef,action';
+
+function buildAuditLogsQuery(page: number, pageSize: number, period: AuditLogPeriod, search: string) {
+    const params = new URLSearchParams({
+        entity: 'audit-logs',
+        page: String(page),
+        pageSize: String(pageSize),
+        sortField: 'timestamp',
+        sortDir: 'desc',
+        period,
+    });
+    if (search) {
+        params.set('q', search);
+        params.set('searchFields', AUDIT_SEARCH_FIELDS);
+    }
+    return params.toString();
+}
+
+function buildAuditSummaryQuery(period: AuditLogPeriod, search: string) {
+    const params = new URLSearchParams({
+        entity: 'audit-logs-summary',
+        period,
+    });
+    if (search) {
+        params.set('q', search);
+        params.set('searchFields', AUDIT_SEARCH_FIELDS);
+    }
+    return params.toString();
+}
 
 const ROLE_LABELS: Record<UserRole, string> = {
     OWNER: 'Owner',
@@ -98,6 +129,7 @@ export default function AuditLogsPage() {
     const { addToast } = useToast();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchInput, setSearchInput] = useState('');
     const [search, setSearch] = useState('');
     const [period, setPeriod] = useState<AuditLogPeriod>('today');
     const [page, setPage] = useState(1);
@@ -107,58 +139,67 @@ export default function AuditLogsPage() {
     const [mutationLogs, setMutationLogs] = useState(0);
     const [actorCount, setActorCount] = useState(0);
 
-    const buildAuditLogsQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'audit-logs',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortField: 'timestamp',
-            sortDir: 'desc',
-            period,
-        });
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'changesSummary,actorUserName,actorUserRole,actorUserEmail,actorUserRef,entityType,entityRef,action');
-        }
-        return params.toString();
-    }, [page, period, search]);
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            setSearch(searchInput.trim());
+        }, 350);
+        return () => window.clearTimeout(timeoutId);
+    }, [searchInput]);
 
     useEffect(() => {
+        let cancelled = false;
         const loadAuditLogs = async () => {
             setLoading(true);
             try {
-                const [listRes, summaryRes] = await Promise.all([
-                    fetch(`/api/data?${buildAuditLogsQuery()}`),
-                    fetch(`/api/data?entity=audit-logs-summary&period=${encodeURIComponent(period)}${
-                        search.trim()
-                            ? `&q=${encodeURIComponent(search.trim())}&searchFields=${encodeURIComponent('changesSummary,actorUserName,actorUserRole,actorUserEmail,actorUserRef,entityType,entityRef,action')}`
-                            : ''
-                    }`),
-                ]);
-                const listPayload = await listRes.json();
-                const summaryPayload = await summaryRes.json();
-                if (!listRes.ok) {
-                    throw new Error(listPayload.error || 'Gagal memuat audit log');
-                }
-                if (!summaryRes.ok) {
-                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan audit log');
-                }
+                const listPayload = await fetchAdminListPayload<AuditLog>(
+                    `/api/data?${buildAuditLogsQuery(page, DEFAULT_PAGE_SIZE, period, search)}`,
+                    'Gagal memuat audit log'
+                );
+                if (cancelled) return;
 
                 setLogs(((listPayload.data || []) as AuditLog[]).map(applyAuditLogActorFallback));
                 setFilteredTotalLogs(listPayload.meta?.total || 0);
-                setTotalLogs(summaryPayload.data?.totalLogs || 0);
-                setLoginLogs(summaryPayload.data?.loginLogs || 0);
-                setMutationLogs(summaryPayload.data?.mutationLogs || 0);
-                setActorCount(summaryPayload.data?.actorCount || 0);
             } catch (error) {
+                if (cancelled) return;
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat audit log');
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         };
 
         void loadAuditLogs();
-    }, [addToast, buildAuditLogsQuery, period, search]);
+        return () => { cancelled = true; };
+    }, [addToast, page, period, search]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadAuditSummary = async () => {
+            try {
+                const summaryPayload = await fetchAdminData<{
+                    totalLogs?: number;
+                    loginLogs?: number;
+                    mutationLogs?: number;
+                    actorCount?: number;
+                }>(
+                    `/api/data?${buildAuditSummaryQuery(period, search)}`,
+                    'Gagal memuat ringkasan audit log'
+                );
+                if (cancelled) return;
+                setTotalLogs(summaryPayload.totalLogs || 0);
+                setLoginLogs(summaryPayload.loginLogs || 0);
+                setMutationLogs(summaryPayload.mutationLogs || 0);
+                setActorCount(summaryPayload.actorCount || 0);
+            } catch (error) {
+                if (cancelled) return;
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat ringkasan audit log');
+            }
+        };
+
+        void loadAuditSummary();
+        return () => { cancelled = true; };
+    }, [addToast, period, search]);
 
     useEffect(() => {
         setPage(1);
@@ -179,7 +220,7 @@ export default function AuditLogsPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nama, aksi, entitas, ringkasan..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nama, aksi, entitas, ringkasan..." value={searchInput} onChange={e => setSearchInput(e.target.value)} /></div>
                         <select
                             className="filter-select"
                             value={period}

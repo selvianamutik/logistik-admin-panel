@@ -133,6 +133,7 @@ import {
     getFreightNotaById,
     getFreightNotaList,
     getDriverVoucherById,
+    getUsersSummary,
     getVehiclesSummary,
     applyDerivedDriverBoronganTotals,
     applyDerivedDriverVoucherLedger,
@@ -688,6 +689,19 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Audit Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'users-summary') {
+        if (session.role !== 'OWNER') {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getUsersSummary();
+            return jsonNoStore({ data: summary });
+        } catch (err) {
+            console.error('API GET Users Summary Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }

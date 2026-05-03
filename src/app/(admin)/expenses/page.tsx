@@ -7,7 +7,7 @@ import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
@@ -394,12 +394,10 @@ export default function ExpensesPage() {
         const allItems: Expense[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildExpensesQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat data pengeluaran');
-            }
-
+            const payload = await fetchAdminListPayload<Expense>(
+                `/api/data?${buildExpensesQuery(currentPage, pageSize)}`,
+                'Gagal memuat data pengeluaran'
+            );
             const nextItems = (payload.data || []) as Expense[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -425,9 +423,14 @@ export default function ExpensesPage() {
 
         setLoading(true);
         try {
-            const [listRes, summaryRes, categoryRows, accountRows, vehicleRows] = await Promise.all([
-                fetch(`/api/data?${buildExpensesQuery()}`),
-                fetch(`/api/data?${buildExpensesSummaryQuery()}`),
+            const [listPayload, summaryPayload, categoryRows, accountRows, vehicleRows] = await Promise.all([
+                fetchAdminListPayload<Expense>(`/api/data?${buildExpensesQuery()}`, 'Gagal memuat data pengeluaran'),
+                fetchAdminData<{
+                    grandTotal?: number;
+                    transactionCount?: number;
+                    avgAmount?: number;
+                    categoryTotals?: ExpenseCategoryTotal[];
+                }>(`/api/data?${buildExpensesSummaryQuery()}`, 'Gagal memuat ringkasan pengeluaran'),
                 fetchOptionalCollection<ExpenseCategory[]>('/api/data?entity=expense-categories', []),
                 fetchOptionalCollection<BankAccount[]>('/api/data?entity=bank-accounts', []),
                 user.role === 'FINANCE'
@@ -435,22 +438,14 @@ export default function ExpensesPage() {
                     : fetchOptionalCollection<Vehicle[]>('/api/data?entity=vehicles', []),
             ]);
 
-            const [listPayload, summaryPayload] = await Promise.all([listRes.json(), summaryRes.json()]);
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat data pengeluaran');
-            }
-            if (!summaryRes.ok) {
-                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan pengeluaran');
-            }
-
             const listItems = (listPayload.data || []) as Expense[];
             const referenceRows = await fetchExpenseReferences(listItems);
             setItems(listItems);
             setFilteredTotalExpenses(listPayload.meta?.total || 0);
-            setGrandTotal(summaryPayload.data?.grandTotal || 0);
-            setTransactionCount(summaryPayload.data?.transactionCount || 0);
-            setAvgAmount(summaryPayload.data?.avgAmount || 0);
-            setCategoryTotals(summaryPayload.data?.categoryTotals || []);
+            setGrandTotal(summaryPayload.grandTotal || 0);
+            setTransactionCount(summaryPayload.transactionCount || 0);
+            setAvgAmount(summaryPayload.avgAmount || 0);
+            setCategoryTotals(summaryPayload.categoryTotals || []);
             setCategories((categoryRows || []).filter(category => category.active !== false));
             setBankAccounts((accountRows || []).filter(account => account.active !== false));
             setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));

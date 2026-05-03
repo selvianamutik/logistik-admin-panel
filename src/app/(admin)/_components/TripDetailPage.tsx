@@ -2491,27 +2491,6 @@ export default function TripDetailPage() {
         ) || cargoItems[0]
     )?.deliveryOrderItemRef || '';
 
-    const getActualDropItemOptionsFromCargoItems = (
-        drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>,
-        cargoItems: ActualCargoDraft[]
-    ) => {
-        const deliveryOrderItemRef = drop.deliveryOrderItemRef.trim();
-        if (deliveryOrderItemRef) {
-            return cargoItems.filter(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
-        }
-
-        const shipperReferenceKey = drop.shipperReferenceKey.trim();
-        const shipperReferenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
-        if (!shipperReferenceKey && !shipperReferenceNumber) {
-            return cargoItems;
-        }
-
-        return cargoItems.filter(item => (
-            (shipperReferenceKey && item.shipperReferenceKey.trim() === shipperReferenceKey) ||
-            (shipperReferenceNumber && item.shipperReferenceNumber.trim().toUpperCase() === shipperReferenceNumber)
-        ));
-    };
-
     const getRemainingActualDropValuesForCargoItem = (
         cargoItem: ActualCargoDraft,
         fallback: Pick<ActualDropDraft, 'weightInputUnit' | 'volumeInputUnit'>,

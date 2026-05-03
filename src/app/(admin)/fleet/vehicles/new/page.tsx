@@ -10,8 +10,13 @@ import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildVehicleBasePayload,
     EMPTY_VEHICLE_FORM,
+    formatVehicleYearInput,
     getSelectableVehicleServiceOptions,
     hasInvalidCapacityRange,
+    hasInvalidVehicleOwnership,
+    isValidVehicleYear,
+    normalizeVehicleYearInput,
+    VEHICLE_OWNERSHIP_LABELS,
     type VehicleForm,
 } from '@/lib/fleet-vehicle-page-support';
 import { buildDefaultTireLayoutConfig, buildTireSlotCodesFromLayoutConfig, formatTireSlotLabel, normalizeTireLayoutConfig } from '@/lib/tire-slots';
@@ -56,6 +61,18 @@ export default function VehicleNewPage() {
         }
         if (hasInvalidCapacityRange(form)) {
             addToast('error', 'Kapasitas maks tidak boleh lebih kecil dari kapasitas min');
+            return;
+        }
+        if (!isValidVehicleYear(form.year)) {
+            addToast('error', 'Tahun kendaraan wajib 4 digit dan masih masuk akal');
+            return;
+        }
+        if (!form.registeredDate) {
+            addToast('error', 'Tanggal masuk unit wajib diisi');
+            return;
+        }
+        if (hasInvalidVehicleOwnership(form)) {
+            addToast('error', 'Nama pemilik mitra wajib diisi untuk kendaraan milik mitra');
             return;
         }
         setSaving(true);
@@ -141,12 +158,64 @@ export default function VehicleNewPage() {
                                 </div>
                             )}
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tahun</label><FormattedNumberInput allowDecimal={false} value={form.year} onValueChange={value => setForm({ ...form, year: value })} /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Tahun</label>
+                                    <input
+                                        className="form-input"
+                                        inputMode="numeric"
+                                        maxLength={4}
+                                        value={formatVehicleYearInput(form.year)}
+                                        onChange={event => setForm({ ...form, year: normalizeVehicleYearInput(event.target.value) })}
+                                        placeholder="2016"
+                                    />
+                                </div>
                                 <div className="form-group"><label className="form-label">Odometer Saat Ini</label><FormattedNumberInput allowDecimal={false} value={form.lastOdometer} onValueChange={value => setForm({ ...form, lastOdometer: value, oilServiceRemainingKm: form.oilNextServiceOdometer ? form.oilNextServiceOdometer - value : form.oilServiceRemainingKm })} /></div>
                             </div>
                             <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Tanggal Masuk Unit <span className="required">*</span></label>
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={form.registeredDate}
+                                        onChange={event => setForm({ ...form, registeredDate: event.target.value })}
+                                    />
+                                </div>
                                 <div className="form-group"><label className="form-label">Tanggal Update Odometer</label><input type="date" className="form-input" value={form.lastOdometerAt} onChange={e => setForm({ ...form, lastOdometerAt: e.target.value })} /></div>
                             </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kepemilikan</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.ownershipType}
+                                        onChange={event => {
+                                            const ownershipType = event.target.value as VehicleForm['ownershipType'];
+                                            setForm({
+                                                ...form,
+                                                ownershipType,
+                                                ...(ownershipType === 'COMPANY' ? { partnerOwnerName: '', partnerOwnerPhone: '', partnerNotes: '' } : {}),
+                                            });
+                                        }}
+                                    >
+                                        {Object.entries(VEHICLE_OWNERSHIP_LABELS).map(([value, label]) => (
+                                            <option key={value} value={value}>{label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {form.ownershipType === 'PARTNER' && (
+                                    <div className="form-group">
+                                        <label className="form-label">Nama Pemilik Mitra <span className="required">*</span></label>
+                                        <input className="form-input" value={form.partnerOwnerName} onChange={event => setForm({ ...form, partnerOwnerName: event.target.value })} placeholder="Nama pemilik truk" />
+                                    </div>
+                                )}
+                            </div>
+                            {form.ownershipType === 'PARTNER' && (
+                                <div className="form-row">
+                                    <div className="form-group"><label className="form-label">Kontak Pemilik Mitra</label><input className="form-input" value={form.partnerOwnerPhone} onChange={event => setForm({ ...form, partnerOwnerPhone: event.target.value })} placeholder="Nomor telepon" /></div>
+                                    <div className="form-group"><label className="form-label">Catatan Kepemilikan</label><input className="form-input" value={form.partnerNotes} onChange={event => setForm({ ...form, partnerNotes: event.target.value })} placeholder="Catatan sewa / titipan unit" /></div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="card">

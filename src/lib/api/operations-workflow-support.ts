@@ -55,6 +55,7 @@ export type NormalizedTireEventPayload = {
 
 const SERVICE_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,11}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
+const VEHICLE_OWNERSHIP_TYPES = new Set(['COMPANY', 'PARTNER']);
 const TIRE_HOLDER_TYPES = new Set(['INTERNAL_VEHICLE', 'EXTERNAL_VEHICLE', 'WAREHOUSE']);
 const TIRE_EVENT_STATUSES = new Set(['IN_USE', 'SPARE', 'IN_WAREHOUSE', 'LOANED_OUT', 'SCRAPPED']);
 const TIRE_TYPES = new Set(['Tubeless', 'Tube Type', 'Solid']);
@@ -525,7 +526,19 @@ export async function normalizeVehiclePayload(
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
     const existingVehicle = options?.excludeId
-        ? await getDocumentById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string; capacityMin?: string; capacityMax?: string }>(options.excludeId, 'vehicle')
+        ? await getDocumentById<{
+            _id: string;
+            lastOdometer?: number;
+            serviceRef?: string;
+            unitCode?: string;
+            vehicleType?: string;
+            capacityMin?: string;
+            capacityMax?: string;
+            ownershipType?: string;
+            partnerOwnerName?: string;
+            partnerOwnerPhone?: string;
+            partnerNotes?: string;
+        }>(options.excludeId, 'vehicle')
         : null;
 
     if (options?.excludeId && !existingVehicle) {
@@ -675,6 +688,37 @@ export async function normalizeVehiclePayload(
 
     if (!partial || hasOwnKey(data, 'base')) {
         next.base = normalizeOptionalText(data.base);
+    }
+
+    if (!partial || hasOwnKey(data, 'registeredDate')) {
+        const registeredDate = normalizeOptionalText(data.registeredDate) || getBusinessDateValue();
+        assertIsoDate(registeredDate, 'Tanggal masuk unit');
+        next.registeredDate = registeredDate;
+    }
+
+    if (!partial || hasOwnKey(data, 'ownershipType')) {
+        const ownershipType = normalizeText(data.ownershipType) || 'COMPANY';
+        if (!VEHICLE_OWNERSHIP_TYPES.has(ownershipType)) {
+            throw new Error('Kepemilikan kendaraan tidak valid');
+        }
+        next.ownershipType = ownershipType;
+    }
+
+    const resolvedOwnershipType = normalizeText(String(next.ownershipType ?? existingVehicle?.ownershipType ?? 'COMPANY'));
+    if (
+        !partial ||
+        hasOwnKey(data, 'ownershipType') ||
+        hasOwnKey(data, 'partnerOwnerName') ||
+        hasOwnKey(data, 'partnerOwnerPhone') ||
+        hasOwnKey(data, 'partnerNotes')
+    ) {
+        const partnerOwnerName = normalizeOptionalText(data.partnerOwnerName ?? existingVehicle?.partnerOwnerName);
+        if (resolvedOwnershipType === 'PARTNER' && !partnerOwnerName) {
+            throw new Error('Nama pemilik mitra wajib diisi');
+        }
+        next.partnerOwnerName = resolvedOwnershipType === 'PARTNER' ? partnerOwnerName : '';
+        next.partnerOwnerPhone = resolvedOwnershipType === 'PARTNER' ? normalizeOptionalText(data.partnerOwnerPhone ?? existingVehicle?.partnerOwnerPhone) : '';
+        next.partnerNotes = resolvedOwnershipType === 'PARTNER' ? normalizeOptionalText(data.partnerNotes ?? existingVehicle?.partnerNotes) : '';
     }
 
     if (!partial || hasOwnKey(data, 'notes')) {

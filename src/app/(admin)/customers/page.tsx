@@ -11,6 +11,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { Customer } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
@@ -62,12 +63,10 @@ export default function CustomersPage() {
         const allItems: Customer[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildCustomersQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat customer');
-            }
-
+            const payload = await fetchAdminListPayload<Customer>(
+                `/api/data?${buildCustomersQuery(currentPage, pageSize)}`,
+                'Gagal memuat customer'
+            );
             const nextItems = (payload.data || []) as Customer[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -81,24 +80,18 @@ export default function CustomersPage() {
     const loadCustomers = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, matchingCustomers] = await Promise.all([
-                fetch(`/api/data?${buildCustomersQuery()}`),
+            const [listPayload, matchingCustomers] = await Promise.all([
+                fetchAdminListPayload<Customer>(`/api/data?${buildCustomersQuery()}`, 'Gagal memuat customer'),
                 fetchAllMatchingCustomers(),
             ]);
-            const listPayload = await listRes.json();
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat customer');
-            }
 
             const customers = (listPayload.data || []) as Customer[];
             const idsParam = matchingCustomers.map(customer => customer._id).join(',');
-            const summaryRes = await fetch(`/api/data?entity=customers-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`);
-            const summaryPayload = await summaryRes.json();
-            if (!summaryRes.ok) {
-                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
-            }
+            const summaryPayload = await fetchAdminData<{
+                productCounts?: Record<string, number>;
+            }>(`/api/data?entity=customers-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`, 'Gagal memuat ringkasan customer');
 
-            const nextProductCounts = (summaryPayload.data?.productCounts || {}) as Record<string, number>;
+            const nextProductCounts = (summaryPayload.productCounts || {}) as Record<string, number>;
             const nextCustomersWithCustomPrefix = matchingCustomers.reduce((sum, customer) => (
                 customer.deliveryOrderPrefix &&
                 customer.deliveryOrderPrefix.trim() !== '' &&

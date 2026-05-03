@@ -5,6 +5,7 @@ import { useToast } from '../../layout';
 import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { User } from '@/lib/types';
 import { INTERNAL_USER_ROLE_OPTIONS, type InternalUserRole } from '@/lib/rbac';
 
@@ -48,65 +49,25 @@ export default function UsersPage() {
     const loadUsers = useCallback(async () => {
         setLoading(true);
         try {
-            const [
-                listRes,
-                totalRes,
-                inactiveRes,
-                ownerRes,
-                operationalRes,
-                financeRes,
-                armadaRes,
-            ] = await Promise.all([
-                fetch(`/api/data?entity=users&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&filter=${encodeURIComponent(internalRoleFilter)}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(internalRoleFilter)}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: INTERNAL_USER_ROLE_OPTIONS, active: false }))}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'OWNER' }))}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'OPERASIONAL' }))}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'FINANCE' }))}`),
-                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'ARMADA' }))}`),
+            const [listPayload, summaryPayload] = await Promise.all([
+                fetchAdminListPayload<User>(`/api/data?entity=users&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&filter=${encodeURIComponent(internalRoleFilter)}`, 'Gagal memuat data user'),
+                fetchAdminData<{
+                    total?: number;
+                    inactive?: number;
+                    owner?: number;
+                    operational?: number;
+                    finance?: number;
+                    armada?: number;
+                }>('/api/data?entity=users-summary', 'Gagal memuat ringkasan user'),
             ]);
-
-            const [
-                listPayload,
-                totalPayload,
-                inactivePayload,
-                ownerPayload,
-                operationalPayload,
-                financePayload,
-                armadaPayload,
-            ] = await Promise.all([
-                listRes.json(),
-                totalRes.json(),
-                inactiveRes.json(),
-                ownerRes.json(),
-                operationalRes.json(),
-                financeRes.json(),
-                armadaRes.json(),
-            ]);
-
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat data user');
-            }
-            for (const [res, payload, message] of [
-                [totalRes, totalPayload, 'Gagal memuat total user'],
-                [inactiveRes, inactivePayload, 'Gagal memuat user nonaktif'],
-                [ownerRes, ownerPayload, 'Gagal memuat total owner'],
-                [operationalRes, operationalPayload, 'Gagal memuat total operasional'],
-                [financeRes, financePayload, 'Gagal memuat total finance'],
-                [armadaRes, armadaPayload, 'Gagal memuat total armada'],
-            ] as const) {
-                if (!res.ok) {
-                    throw new Error(payload.error || message);
-                }
-            }
 
             setUsers((listPayload.data || []).filter((item: User): item is InternalUser => item.role !== 'DRIVER'));
-            setTotalUsers(totalPayload.meta?.total || 0);
-            setInactiveUsers(inactivePayload.meta?.total || 0);
-            setOwnerUsers(ownerPayload.meta?.total || 0);
-            setOperationalUsers(operationalPayload.meta?.total || 0);
-            setFinanceUsers(financePayload.meta?.total || 0);
-            setArmadaUsers(armadaPayload.meta?.total || 0);
+            setTotalUsers(summaryPayload.total || 0);
+            setInactiveUsers(summaryPayload.inactive || 0);
+            setOwnerUsers(summaryPayload.owner || 0);
+            setOperationalUsers(summaryPayload.operational || 0);
+            setFinanceUsers(summaryPayload.finance || 0);
+            setArmadaUsers(summaryPayload.armada || 0);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
         } finally {

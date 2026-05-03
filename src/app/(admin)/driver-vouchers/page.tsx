@@ -10,6 +10,7 @@ import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/
 import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { DriverVoucher } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 import { useApp, useToast } from '../layout';
@@ -81,12 +82,10 @@ export default function DriverVouchersPage() {
         const allItems: DriverVoucher[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildVoucherQuery(currentPage, pageSize)}`);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat uang jalan trip');
-            }
-
+            const payload = await fetchAdminListPayload<DriverVoucher>(
+                `/api/data?${buildVoucherQuery(currentPage, pageSize)}`,
+                'Gagal memuat uang jalan trip'
+            );
             const nextItems = (payload.data || []) as DriverVoucher[];
             total = payload.meta?.total || nextItems.length;
             allItems.push(...nextItems);
@@ -100,14 +99,10 @@ export default function DriverVouchersPage() {
     const loadVouchers = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, matchingVouchers] = await Promise.all([
-                fetch(`/api/data?${buildVoucherQuery()}`),
+            const [listPayload, matchingVouchers] = await Promise.all([
+                fetchAdminListPayload<DriverVoucher>(`/api/data?${buildVoucherQuery()}`, 'Gagal memuat uang jalan trip'),
                 fetchAllMatchingVouchers(),
             ]);
-
-            const listPayload = await listRes.json();
-
-            if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat uang jalan trip');
 
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);

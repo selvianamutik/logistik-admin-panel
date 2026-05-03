@@ -243,7 +243,7 @@ export default function TiresPage() {
         setShowModal(true);
     };
 
-    const openEdit = (event: TireEvent) => {
+    const openEdit = useCallback((event: TireEvent) => {
         if (!canManageTires) return;
         const resolvedEvent = resolvedEvents.find(item => item._id === event._id);
         const holderType = resolvedEvent?.holderType || 'INTERNAL_VEHICLE';
@@ -276,7 +276,7 @@ export default function TiresPage() {
             externalPlateNumber: event.externalPlateNumber || '',
         });
         setShowModal(true);
-    };
+    }, [canManageTires, resolvedEvents, vehicles]);
 
     useEffect(() => {
         const editId = searchParams.get('edit');
@@ -288,7 +288,7 @@ export default function TiresPage() {
             setOpenedEditParam(editId);
             openEdit(target);
         }
-    }, [allTireEvents, events, loading, openedEditParam, searchParams, showModal]);
+    }, [allTireEvents, events, loading, openEdit, openedEditParam, searchParams, showModal]);
 
     const openHistory = async (event: ResolvedFleetTireEvent) => {
         setHistoryTarget(event);

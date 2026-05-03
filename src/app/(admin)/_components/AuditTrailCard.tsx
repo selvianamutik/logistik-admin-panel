@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
 
 import CollapsibleCard from '@/components/CollapsibleCard';
+import { fetchAdminListPayload } from '@/lib/api/admin-client';
 import { getAuditLogTargetHref } from '@/lib/audit-log-target-links';
 import { hasPermission } from '@/lib/rbac';
 import type { AuditLog, UserRole } from '@/lib/types';
@@ -40,6 +41,10 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 function uniqueCleanValues(values: Array<string | null | undefined>) {
     return Array.from(new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value))));
+}
+
+function buildValuesKey(values: Array<string | null | undefined>) {
+    return uniqueCleanValues(values).join(',');
 }
 
 function buildAuditTrailQuery(entityRefs: string[], entityTypes: string[], limit: number) {
@@ -114,35 +119,40 @@ export default function AuditTrailCard({
 }: AuditTrailCardProps) {
     const { user } = useApp();
     const { addToast } = useToast();
+    const lastLoadedQueryRef = useRef('');
     const [auditData, setAuditData] = useState<{ queryKey: string; logs: AuditLog[]; total: number }>({
         queryKey: '',
         logs: [],
         total: 0,
     });
+    const [shouldLoad, setShouldLoad] = useState(defaultOpen);
 
-    const cleanedEntityRefs = useMemo(() => uniqueCleanValues(entityRefs), [entityRefs]);
-    const cleanedEntityTypes = useMemo(() => uniqueCleanValues(entityTypes), [entityTypes]);
-    const entityRefsKey = cleanedEntityRefs.join(',');
-    const entityTypesKey = cleanedEntityTypes.join(',');
+    const entityRefsKey = buildValuesKey(entityRefs);
+    const entityTypesKey = buildValuesKey(entityTypes);
     const queryKey = `${entityRefsKey}|${entityTypesKey}|${limit}`;
     const canViewAuditLogs = user ? hasPermission(user.role, 'auditLogs', 'view') : false;
+    const auditTrailUrl = shouldLoad && canViewAuditLogs && entityRefsKey
+        ? buildAuditTrailQuery(
+            entityRefsKey.split(',').filter(Boolean),
+            entityTypesKey.split(',').filter(Boolean),
+            limit
+        )
+        : '';
     const visibleLogs = auditData.queryKey === queryKey ? auditData.logs : [];
     const visibleTotal = auditData.queryKey === queryKey ? auditData.total : 0;
 
     useEffect(() => {
-        if (!canViewAuditLogs || cleanedEntityRefs.length === 0) {
+        if (!auditTrailUrl) {
+            lastLoadedQueryRef.current = '';
+            return;
+        }
+        if (lastLoadedQueryRef.current === queryKey) {
             return;
         }
 
         let cancelled = false;
-        fetch(buildAuditTrailQuery(cleanedEntityRefs, cleanedEntityTypes, limit), { cache: 'no-store' })
-            .then(async response => {
-                const payload = await response.json();
-                if (!response.ok) {
-                    throw new Error(payload.error || 'Gagal memuat riwayat perubahan');
-                }
-                return payload as { data?: AuditLog[]; meta?: { total?: number } };
-            })
+        lastLoadedQueryRef.current = queryKey;
+        fetchAdminListPayload<AuditLog>(auditTrailUrl, 'Gagal memuat riwayat perubahan')
             .then(payload => {
                 if (cancelled) return;
                 const items = payload.data || [];
@@ -154,15 +164,16 @@ export default function AuditTrailCard({
             })
             .catch(error => {
                 if (cancelled) return;
+                lastLoadedQueryRef.current = '';
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat riwayat perubahan');
             });
 
         return () => {
             cancelled = true;
         };
-    }, [addToast, canViewAuditLogs, cleanedEntityRefs, cleanedEntityTypes, limit, queryKey]);
+    }, [addToast, auditTrailUrl, queryKey]);
 
-    if (!canViewAuditLogs || cleanedEntityRefs.length === 0) {
+    if (!canViewAuditLogs || !entityRefsKey) {
         return null;
     }
 
@@ -171,6 +182,11 @@ export default function AuditTrailCard({
             title={visibleTotal > 0 ? `${title} (${visibleTotal})` : title}
             subtitle={subtitle}
             defaultOpen={defaultOpen}
+            onOpenChange={open => {
+                if (open) {
+                    setShouldLoad(true);
+                }
+            }}
         >
             {visibleLogs.length === 0 ? (
                 <div className="empty-state" style={{ padding: '1rem 0' }}>
