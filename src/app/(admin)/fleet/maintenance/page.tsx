@@ -26,7 +26,7 @@ import {
 } from '@/lib/maintenance';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
-import type { Maintenance, Vehicle } from '@/lib/types';
+import type { BankAccount, Maintenance, Vehicle } from '@/lib/types';
 import { formatCurrency, formatDate, formatQuantity, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { useApp, useToast } from '../../layout';
 
@@ -56,10 +56,13 @@ export default function MaintenancePage() {
     const [completeForm, setCompleteForm] = useState<MaintenanceCompletionFormState>(createDefaultMaintenanceCompletionForm());
     const [materialOptions, setMaterialOptions] = useState<MaintenanceMaterialOption[]>([]);
     const [loadingMaterialOptions, setLoadingMaterialOptions] = useState(false);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [loadingBankAccounts, setLoadingBankAccounts] = useState(false);
     const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
     const canUpdateMaintenance = user ? hasPermission(user.role, 'maintenance', 'update') : false;
     const canViewMaintenanceCost = user?.role === 'OWNER';
     const canOpenWarehouseItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
+    const canViewBankAccounts = user ? hasPermission(user.role, 'bankAccounts', 'view') : false;
 
     useEffect(() => {
         setPage(1);
@@ -151,6 +154,27 @@ export default function MaintenancePage() {
         }
     }, [addToast]);
 
+    const loadBankAccounts = useCallback(async () => {
+        if (!canViewBankAccounts) {
+            setBankAccounts([]);
+            return;
+        }
+        setLoadingBankAccounts(true);
+        try {
+            const rows = await fetchAdminCollectionData<BankAccount[]>(
+                '/api/data?entity=bank-accounts&pageSize=200&sortField=bankName&sortDir=asc',
+                'Gagal memuat rekening/kas',
+                200
+            );
+            setBankAccounts((rows || []).filter(account => account.active !== false));
+        } catch (error) {
+            setBankAccounts([]);
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat rekening/kas');
+        } finally {
+            setLoadingBankAccounts(false);
+        }
+    }, [addToast, canViewBankAccounts]);
+
     useEffect(() => {
         void loadMaintenance();
     }, [loadMaintenance]);
@@ -195,8 +219,9 @@ export default function MaintenancePage() {
         setCompleteTarget(item);
         setCompleteForm(createDefaultMaintenanceCompletionForm(vehicle));
         setMaterialOptions([]);
+        setBankAccounts([]);
         setShowCompleteModal(true);
-        await loadMaterialOptions();
+        await Promise.all([loadMaterialOptions(), loadBankAccounts()]);
     };
 
     const resetCompleteModalState = () => {
@@ -204,6 +229,7 @@ export default function MaintenancePage() {
         setCompleteTarget(null);
         setCompleteForm(createDefaultMaintenanceCompletionForm());
         setMaterialOptions([]);
+        setBankAccounts([]);
     };
 
     const closeCompleteModal = () => {
@@ -301,6 +327,8 @@ export default function MaintenancePage() {
                         completedDate: completeForm.completedDate,
                         odometerAtService: completeForm.odometerAtService || undefined,
                         vendor: completeForm.vendor.trim() || undefined,
+                        laborCost: completeForm.laborCost,
+                        laborBankAccountRef: completeForm.laborBankAccountRef || undefined,
                         completionNotes: completeForm.completionNotes.trim() || undefined,
                         materials: cleanedMaterials,
                     },
@@ -518,34 +546,39 @@ export default function MaintenancePage() {
                             </div>
 
                             <div className="form-group"><label className="form-label">Vendor / Bengkel</label><input className="form-input" value={completeForm.vendor} onChange={event => setCompleteForm(current => ({ ...current, vendor: event.target.value }))} placeholder="Opsional" disabled={savingCompletion} /></div>
-                            <div className="form-group"><label className="form-label">Catatan Penyelesaian</label><textarea className="form-textarea" rows={3} value={completeForm.completionNotes} onChange={event => setCompleteForm(current => ({ ...current, completionNotes: event.target.value }))} placeholder="Contoh: ganti oli mesin dan filter, unit kembali siap jalan." disabled={savingCompletion} /></div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Ongkos Jasa / Tukang</label><FormattedNumberInput allowDecimal={false} value={completeForm.laborCost} onValueChange={(value) => setCompleteForm(current => ({ ...current, laborCost: value }))} disabled={savingCompletion} zeroAsEmpty /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Kas / Bank Pembayaran Jasa</label>
+                                    <select className="form-select" value={completeForm.laborBankAccountRef} onChange={event => setCompleteForm(current => ({ ...current, laborBankAccountRef: event.target.value }))} disabled={savingCompletion || loadingBankAccounts || completeForm.laborCost <= 0}>
+                                        <option value="">{completeForm.laborCost > 0 ? 'Belum dibayar / hutang biaya' : 'Isi ongkos jasa dulu'}</option>
+                                        {bankAccounts.map(account => (
+                                            <option key={account._id} value={account._id}>{account.bankName} {account.accountNumber ? `- ${account.accountNumber}` : ''}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-group"><label className="form-label">Catatan Penyelesaian</label><textarea className="form-textarea" rows={3} value={completeForm.completionNotes} onChange={event => setCompleteForm(current => ({ ...current, completionNotes: event.target.value }))} placeholder="Opsional" disabled={savingCompletion} /></div>
 
                             <div className="form-section-title" style={{ marginBottom: '0.75rem' }}>Material Gudang Terpakai</div>
-                            <div className="info-banner" style={{ marginBottom: '1rem' }}>
-                                <div className="info-banner-title">Aturan Biaya Maintenance</div>
-                                <div className="info-banner-text">Material gudang akan mengurangi stok saat maintenance diselesaikan. Saldo bank tidak berubah di sini karena cashflow supplier sudah dicatat saat pembayaran pembelian.</div>
-                            </div>
 
                             {loadingMaterialOptions ? (
                                 <div className="text-muted">Memuat opsi material gudang...</div>
                             ) : (
                                 <>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                                        <div className="text-muted text-sm">Pilih barang umum aktif yang stoknya tersedia. Ban tertracking tetap dikelola dari modul Ban.</div>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                                         <button type="button" className="btn btn-secondary" onClick={addCompletionLine} disabled={savingCompletion || materialOptions.length === 0}><Plus size={16} /> Tambah Material</button>
                                     </div>
 
                                     {materialOptions.length === 0 && (
-                                        <div className="info-banner" style={{ marginBottom: '1rem' }}>
-                                            <div className="info-banner-title">Belum Ada Material Gudang Aktif</div>
-                                            <div className="info-banner-text">Maintenance tetap bisa diselesaikan tanpa material gudang jika memang pengerjaan ini tidak memakai stok.</div>
+                                        <div style={{ border: '1px dashed var(--color-gray-300)', borderRadius: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', marginBottom: '1rem' }}>
+                                            <div className="font-medium">Belum ada material gudang aktif</div>
                                         </div>
                                     )}
 
                                     {completeForm.materials.length === 0 ? (
                                         <div style={{ border: '1px dashed var(--color-gray-300)', borderRadius: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)' }}>
                                             <div className="font-medium">Belum ada material gudang</div>
-                                            <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>Simpan langsung jika maintenance ini hanya mencatat penyelesaian tanpa pemakaian stok.</div>
                                         </div>
                                     ) : (
                                         <div style={{ display: 'grid', gap: '0.85rem' }}>

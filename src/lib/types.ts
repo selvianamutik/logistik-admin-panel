@@ -1227,6 +1227,11 @@ export interface Maintenance {
   materialUsages?: MaintenanceMaterialUsage[];
   materialUsageCount?: number;
   materialCostTotal?: number;
+  laborCost?: number;
+  laborExpenseRef?: string;
+  laborBankAccountRef?: string;
+  laborBankAccountName?: string;
+  laborBankAccountNumber?: string;
   totalCost?: number;
   relatedExpenseRef?: string;
   cost?: number;

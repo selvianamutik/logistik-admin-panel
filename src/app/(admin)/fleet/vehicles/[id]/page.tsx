@@ -253,14 +253,25 @@ export default function VehicleDetailPage() {
         );
     };
 
-    const renderMaintenanceCostDescription = (maintenance: Maintenance) => (
-        <div style={{ display: 'grid', gap: '0.2rem' }}>
-            <div>{maintenance.type}</div>
-            {maintenance.materialUsageCount ? (
-                <div className="text-muted text-sm">{renderMaintenanceMaterialUsage(maintenance)}</div>
-            ) : null}
-        </div>
-    );
+    const renderMaintenanceCostDescription = (maintenance: Maintenance) => {
+        const materialCost = typeof maintenance.materialCostTotal === 'number' ? maintenance.materialCostTotal : 0;
+        const laborCost = typeof maintenance.laborCost === 'number' ? maintenance.laborCost : 0;
+        return (
+            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                <div>{maintenance.type}</div>
+                {maintenance.materialUsageCount ? (
+                    <div className="text-muted text-sm">{renderMaintenanceMaterialUsage(maintenance)}</div>
+                ) : null}
+                {(materialCost > 0 || laborCost > 0) && (
+                    <div className="text-muted text-sm">
+                        {materialCost > 0 ? `Material ${formatCurrency(materialCost)}` : ''}
+                        {materialCost > 0 && laborCost > 0 ? ' | ' : ''}
+                        {laborCost > 0 ? `Jasa ${formatCurrency(laborCost)}` : ''}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const maintenanceCostRows = maints
         .filter((maintenance) => maintenance.status === 'DONE' && getMaintenanceRecordedCost(maintenance) > 0)

@@ -26,6 +26,8 @@ export type MaintenanceCompletionFormState = {
   completedDate: string;
   odometerAtService: number;
   vendor: string;
+  laborCost: number;
+  laborBankAccountRef: string;
   completionNotes: string;
   materials: MaintenanceCompletionMaterialLine[];
 };
@@ -35,6 +37,8 @@ export function createDefaultMaintenanceCompletionForm(vehicle?: Vehicle | null)
     completedDate: getBusinessDateValue(),
     odometerAtService: typeof vehicle?.lastOdometer === 'number' ? vehicle.lastOdometer : 0,
     vendor: '',
+    laborCost: 0,
+    laborBankAccountRef: '',
     completionNotes: '',
     materials: [],
   };
@@ -50,7 +54,9 @@ export function createEmptyMaintenanceMaterialLine(): MaintenanceCompletionMater
 
 export function getMaintenanceRecordedCost(item: Maintenance) {
   if (typeof item.totalCost === 'number') return item.totalCost;
-  if (typeof item.materialCostTotal === 'number') return item.materialCostTotal;
+  const materialCost = typeof item.materialCostTotal === 'number' ? item.materialCostTotal : 0;
+  const laborCost = typeof item.laborCost === 'number' ? item.laborCost : 0;
+  if (materialCost > 0 || laborCost > 0) return materialCost + laborCost;
   if (typeof item.cost === 'number') return item.cost;
   return 0;
 }

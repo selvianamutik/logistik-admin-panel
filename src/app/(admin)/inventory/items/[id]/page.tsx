@@ -257,13 +257,26 @@ export default function WarehouseItemDetailPage() {
   const purchaseSummary = useMemo(() => {
     const uniquePurchases = new Set(purchaseRows.map((row) => row.purchase?._id).filter(Boolean));
     const totalReceivedQty = purchaseRows.reduce((sum, row) => sum + Number(row.purchaseItem.receivedQty || 0), 0);
+    const totalReceivedValue = purchaseRows.reduce((sum, row) => {
+      const qty = Number(row.purchaseItem.receivedQty || 0);
+      const unitPrice = Number(row.purchaseItem.unitPrice || 0);
+      return sum + (qty > 0 && unitPrice > 0 ? qty * unitPrice : 0);
+    }, 0);
+    const fallbackUnitCost = Number(item?.defaultPurchasePrice || 0);
+    const averageUnitCost = totalReceivedQty > 0
+      ? Math.round(totalReceivedValue / totalReceivedQty)
+      : Math.max(fallbackUnitCost, 0);
+    const stockValueEstimate = Math.round(Number(item?.currentStockQty || 0) * averageUnitCost);
     const lastPurchaseDate = purchaseRows[0]?.purchase?.orderDate || '';
     return {
       purchaseCount: uniquePurchases.size,
       totalReceivedQty,
+      totalReceivedValue,
+      averageUnitCost,
+      stockValueEstimate,
       lastPurchaseDate,
     };
-  }, [purchaseRows]);
+  }, [item?.currentStockQty, item?.defaultPurchasePrice, purchaseRows]);
 
   const maintenanceUsageRows = useMemo<MaintenanceUsageRow[]>(() => {
     if (!canOpenMaintenance) return [];
@@ -539,6 +552,16 @@ export default function WarehouseItemDetailPage() {
                 </span>
               </div>
               <div className="detail-row">
+                <span className="detail-label">HPP Rata-rata</span>
+                <span className="detail-value">
+                  {formatCurrency(purchaseSummary.averageUnitCost)} / {item.unit}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Nilai Stok Estimasi</span>
+                <span className="detail-value">{formatCurrency(purchaseSummary.stockValueEstimate)}</span>
+              </div>
+              <div className="detail-row">
                 <span className="detail-label">Dipakai di Maintenance</span>
                 <span className="detail-value">{maintenanceUsageSummary.usageCount} aktivitas</span>
               </div>
@@ -559,7 +582,7 @@ export default function WarehouseItemDetailPage() {
                 </span>
               </div>
               <div className="detail-row">
-                <span className="detail-label">Arah Owner</span>
+                <span className="detail-label">Laporan Pemakaian</span>
                 <span className="detail-value">
                   {canOpenMaintenance ? (
                     <Link href={`/inventory/material-usage?itemRef=${encodeURIComponent(item._id)}`} style={{ color: 'var(--color-primary)' }}>

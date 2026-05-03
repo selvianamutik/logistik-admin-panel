@@ -9,6 +9,9 @@ import {
     updateDocument,
 } from '@/lib/repositories/document-store';
 import type {
+    BankTransaction,
+    Expense,
+    ExpenseCategory,
     InventoryUnit,
     Maintenance,
     MaintenanceMaterialUsage,
@@ -21,10 +24,13 @@ import type {
 
 import {
     assertIsoDate,
+    computeLedgerDebitBalance,
+    getLedgerAccount,
     normalizeOptionalText,
     type ApiSession,
+    type BankAccountSummary,
 } from './data-helpers';
-import { postStockMovementJournal } from './accounting-posting';
+import { postExpenseJournal, postStockMovementJournal } from './accounting-posting';
 import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 
 type AuditLogFn = (
@@ -174,12 +180,129 @@ function buildMaintenanceCompletionAuditSummary(input: {
     maintenance: Pick<Maintenance, '_id' | 'vehiclePlate' | 'type'>;
     materialUsageCount: number;
     materialCostTotal: number;
+    laborCost: number;
+    totalCost: number;
 }) {
     const label = `${input.maintenance.type || 'Maintenance'} ${input.maintenance.vehiclePlate || input.maintenance._id}`;
-    if (input.materialUsageCount <= 0) {
-        return `${label} diselesaikan tanpa material gudang`;
+    const parts: string[] = [];
+    if (input.materialUsageCount > 0) {
+        parts.push(`${input.materialUsageCount} material gudang ${formatAuditMoney(input.materialCostTotal)}`);
     }
-    return `${label} diselesaikan dengan ${input.materialUsageCount} material gudang senilai ${formatAuditMoney(input.materialCostTotal)}`;
+    if (input.laborCost > 0) {
+        parts.push(`ongkos jasa ${formatAuditMoney(input.laborCost)}`);
+    }
+    if (parts.length === 0) {
+        return `${label} diselesaikan tanpa biaya internal`;
+    }
+    return `${label} diselesaikan dengan ${parts.join(' dan ')} (total ${formatAuditMoney(input.totalCost)})`;
+}
+
+type MaintenanceLaborExpensePosting = {
+    category: ExpenseCategory;
+    bankAccount: BankAccountSummary | null;
+    nextBankBalance?: number;
+};
+
+function resolveMaintenanceExpenseAccountKey(category: ExpenseCategory) {
+    return category.accountSystemKey || 'maintenance_expense';
+}
+
+async function resolveMaintenanceExpenseCategory() {
+    const rows = (await listDocumentsByFilter<ExpenseCategory>('expenseCategory', {}))
+        .filter(row => row.active !== false);
+    const exact = rows.find(row => row._id === 'expcat-003' && row.scope === 'MAINTENANCE');
+    if (exact) return exact;
+    const scopedNamed = rows.find(row => row.scope === 'MAINTENANCE' && /servis|service|maintenance|bengkel/i.test(row.name || ''));
+    if (scopedNamed) return scopedNamed;
+    const scoped = rows.find(row => row.scope === 'MAINTENANCE');
+    if (scoped) return scoped;
+    const named = rows.find(row => /servis|service|maintenance|bengkel/i.test(row.name || ''));
+    if (named) return named;
+    throw new Error('Kategori biaya maintenance belum tersedia');
+}
+
+async function prepareMaintenanceLaborExpensePosting(
+    laborCost: number,
+    bankAccountRef?: string
+): Promise<MaintenanceLaborExpensePosting | null> {
+    if (laborCost <= 0) return null;
+    const category = await resolveMaintenanceExpenseCategory();
+    if (!bankAccountRef) {
+        return { category, bankAccount: null };
+    }
+    const bankAccount = await getLedgerAccount(bankAccountRef);
+    if (!bankAccount) {
+        throw new Error('Rekening/kas pembayaran jasa tidak ditemukan');
+    }
+    const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankAccount.currentBalance, laborCost);
+    if (nextBalance < 0) {
+        throw new Error(`Saldo ${bankAccount.bankName} tidak cukup untuk ongkos jasa. Saldo tersedia ${formatAuditMoney(startingBalance)}`);
+    }
+    return { category, bankAccount, nextBankBalance: nextBalance };
+}
+
+async function createMaintenanceLaborExpense(input: {
+    session: ApiSession;
+    maintenance: Maintenance;
+    category: ExpenseCategory;
+    bankAccount: BankAccountSummary | null;
+    nextBankBalance?: number;
+    completedDate: string;
+    laborCost: number;
+    vendor?: string;
+    completionNotes?: string;
+}) {
+    const expenseId = `expense-${crypto.randomUUID()}`;
+    const vehicleLabel = input.maintenance.vehiclePlate || input.maintenance.vehicleRef || 'unit';
+    const note = input.vendor
+        ? `Ongkos jasa ${input.vendor}`
+        : `Ongkos jasa maintenance ${vehicleLabel}`;
+    const expenseDoc: Expense = {
+        _id: expenseId,
+        _type: 'expense',
+        categoryRef: input.category._id,
+        categoryName: input.category.name,
+        categoryScope: input.category.scope || 'MAINTENANCE',
+        accountSystemKey: resolveMaintenanceExpenseAccountKey(input.category),
+        date: input.completedDate,
+        amount: input.laborCost,
+        note,
+        description: [input.maintenance.type, vehicleLabel, input.completionNotes].filter(Boolean).join(' - '),
+        privacyLevel: 'internal',
+        relatedVehicleRef: input.maintenance.vehicleRef,
+        relatedVehiclePlate: input.maintenance.vehiclePlate,
+        relatedMaintenanceRef: input.maintenance._id,
+        ...(input.bankAccount
+            ? {
+                bankAccountRef: input.bankAccount._id,
+                bankAccountName: input.bankAccount.bankName,
+                bankAccountNumber: input.bankAccount.accountNumber,
+            }
+            : {}),
+    };
+
+    await createDocument(expenseDoc as unknown as { _type: string; [key: string]: unknown });
+
+    if (input.bankAccount && typeof input.nextBankBalance === 'number') {
+        const bankTransactionDoc: BankTransaction = {
+            _id: `bank-transaction-${crypto.randomUUID()}`,
+            _type: 'bankTransaction',
+            bankAccountRef: input.bankAccount._id,
+            bankAccountName: input.bankAccount.bankName,
+            bankAccountNumber: input.bankAccount.accountNumber,
+            type: 'DEBIT',
+            amount: input.laborCost,
+            date: input.completedDate,
+            description: note,
+            balanceAfter: input.nextBankBalance,
+            relatedExpenseRef: expenseDoc._id,
+        };
+        await createDocument(bankTransactionDoc as unknown as { _type: string; [key: string]: unknown });
+        await updateDocument(input.bankAccount._id, { currentBalance: input.nextBankBalance }, 'bankAccount');
+    }
+
+    await postExpenseJournal(input.session, expenseDoc, input.bankAccount);
+    return expenseId;
 }
 
 export async function getMaintenanceMaterialOptions(): Promise<MaintenanceMaterialOption[]> {
@@ -216,6 +339,8 @@ export async function handleMaintenanceComplete(
         const completionNotes = normalizeOptionalText(data.completionNotes);
         const materialInputs = normalizeMaterialUsageInputs(data.materials);
         const rawOdometerAtService = data.odometerAtService;
+        const rawLaborCost = data.laborCost;
+        const laborBankAccountRef = normalizeOptionalText(data.laborBankAccountRef);
 
         if (!maintenanceRef) {
             return NextResponse.json({ error: 'Maintenance wajib dipilih' }, { status: 400 });
@@ -237,6 +362,15 @@ export async function handleMaintenanceComplete(
         if (odometerParsed !== undefined && (!Number.isFinite(odometerParsed) || odometerParsed <= 0)) {
             return NextResponse.json({ error: 'Odometer servis tidak valid' }, { status: 400 });
         }
+
+        const laborCost =
+            rawLaborCost === undefined || rawLaborCost === null || rawLaborCost === ''
+                ? 0
+                : parseWholeMoneyAmount(rawLaborCost);
+        if (!Number.isFinite(laborCost) || laborCost < 0) {
+            return NextResponse.json({ error: 'Ongkos jasa maintenance tidak valid' }, { status: 400 });
+        }
+        const laborPosting = await prepareMaintenanceLaborExpensePosting(laborCost, laborBankAccountRef);
 
         const warehouseItems = await Promise.all(materialInputs.map((input) => loadWarehouseItemSnapshot(input.warehouseItemRef)));
         const unitCostSnapshots = await Promise.all(warehouseItems.map((item) => resolveWarehouseItemUnitCost(item)));
@@ -305,13 +439,28 @@ export async function handleMaintenanceComplete(
         }
 
         const materialCostTotal = materialUsages.reduce((sum, usage) => sum + Math.max(parseWholeMoneyAmount(usage.subtotalCost), 0), 0);
+        const laborExpenseRef = laborPosting
+            ? await createMaintenanceLaborExpense({
+                session,
+                maintenance,
+                category: laborPosting.category,
+                bankAccount: laborPosting.bankAccount,
+                nextBankBalance: laborPosting.nextBankBalance,
+                completedDate,
+                laborCost,
+                vendor,
+                completionNotes,
+            })
+            : undefined;
+        const totalCost = materialCostTotal + laborCost;
         const setPayload: Record<string, unknown> = {
             status: 'DONE',
             completedDate,
             materialUsageCount: materialUsages.length,
             materialCostTotal,
-            totalCost: materialCostTotal,
-            cost: materialCostTotal,
+            laborCost,
+            totalCost,
+            cost: totalCost,
         };
         const unsetFields: string[] = [];
 
@@ -337,6 +486,25 @@ export async function handleMaintenanceComplete(
             setPayload.materialUsages = materialUsages;
         } else {
             unsetFields.push('materialUsages');
+        }
+
+        if (laborExpenseRef) {
+            setPayload.laborExpenseRef = laborExpenseRef;
+            setPayload.relatedExpenseRef = laborExpenseRef;
+        } else {
+            unsetFields.push('laborExpenseRef', 'relatedExpenseRef');
+        }
+
+        if (laborPosting?.bankAccount) {
+            setPayload.laborBankAccountRef = laborPosting.bankAccount._id;
+            setPayload.laborBankAccountName = laborPosting.bankAccount.bankName;
+            setPayload.laborBankAccountNumber = laborPosting.bankAccount.accountNumber;
+        } else {
+            unsetFields.push('laborBankAccountRef', 'laborBankAccountName', 'laborBankAccountNumber');
+        }
+
+        if (laborCost <= 0) {
+            unsetFields.push('laborCost');
         }
 
         const maintenanceUpdates = {
@@ -391,6 +559,8 @@ export async function handleMaintenanceComplete(
                 maintenance,
                 materialUsageCount: materialUsages.length,
                 materialCostTotal,
+                laborCost,
+                totalCost,
             })
         );
 
@@ -401,6 +571,9 @@ export async function handleMaintenanceComplete(
                 completedDate,
                 materialUsageCount: materialUsages.length,
                 materialCostTotal,
+                laborCost,
+                totalCost,
+                laborExpenseRef,
                 stockMovements: movementDocs,
             },
         });
