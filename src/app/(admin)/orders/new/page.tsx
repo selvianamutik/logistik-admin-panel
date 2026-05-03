@@ -80,7 +80,7 @@ export default function NewOrderPage() {
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
     const selectedService = services.find(service => service._id === serviceRef) || null;
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
-    const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services, vehicles);
+    const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services);
     const selectedServiceCapacityLabel = selectedService ? serviceCapacityRangeMap[selectedService._id] || 'Kapasitas belum diisi' : 'Belum dipilih';
     const pickupSummary = summarizePickupStopList(pickupStops);
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);

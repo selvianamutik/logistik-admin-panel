@@ -578,38 +578,6 @@
     "_updatedAt": "2026-04-19T15:24:41.709+00:00"
   },
   {
-    "code": "LEG",
-    "name": "Kategori Lama",
-    "active": false,
-    "description": "Kategori armada lama yang sudah tidak dipakai.",
-    "_id": "svc-004",
-    "_type": "service",
-    "_createdAt": "2026-04-19T15:24:41.709+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.709+00:00"
-  },
-  {
-    "code": "FUS",
-    "name": "Fuso / Heavy",
-    "active": false,
-    "description": "Kategori legacy; unitnya dipetakan ke Tronton / Trailer agar mengikuti tarif trip aktif.",
-    "maxPayloadKg": 25000,
-    "_id": "svc-003",
-    "_type": "service",
-    "_createdAt": "2026-04-19T15:24:41.709+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.709+00:00"
-  },
-  {
-    "code": "CDB",
-    "name": "CDD Box / Canter",
-    "active": false,
-    "description": "Kategori legacy; unitnya dipetakan ke CDD / Engkel agar mengikuti tarif trip aktif.",
-    "maxPayloadKg": 4200,
-    "_id": "svc-002",
-    "_type": "service",
-    "_createdAt": "2026-04-19T15:24:41.709+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.709+00:00"
-  },
-  {
     "code": "CDD",
     "name": "CDD / Engkel",
     "active": true,
@@ -618,7 +586,14 @@
     "_id": "svc-001",
     "_type": "service",
     "_createdAt": "2026-04-19T15:24:41.709+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.709+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.709+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "label": "Yard Mojokerto",
@@ -4339,68 +4314,92 @@
   {
     "base": "Tuban",
     "year": 2022,
-    "notes": "Armada heavy tambahan untuk FTL dan muatan besar.",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-007",
-    "brandModel": "Hino Dutro 130 HD",
-    "capacityKg": 5200,
+    "unitCode": "TR-006",
+    "brandModel": "Isuzu Giga Trailer",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "S 6824 XA",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGFUS015",
+    "engineNumber": "ENGTR006",
     "lastOdometer": 39420,
-    "chassisNumber": "HINOFUS015",
-    "capacityVolume": 23,
+    "chassisNumber": "TRAILER006",
+    "capacityVolume": 65,
     "lastOdometerAt": "2026-03-18",
     "_id": "veh-015",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "base": "Jombang",
     "year": 2023,
-    "notes": "Armada heavy tambahan untuk rute pabrik dan proyek.",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-006",
-    "brandModel": "Mitsubishi Fuso Fighter FM 65",
-    "capacityKg": 6000,
+    "unitCode": "TR-005",
+    "brandModel": "Mitsubishi Fuso FJ Trailer",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "W 3579 VB",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGFUS014",
+    "engineNumber": "ENGTR005",
     "lastOdometer": 24630,
-    "chassisNumber": "MTSFUS014",
-    "capacityVolume": 24,
+    "chassisNumber": "TRAILER005",
+    "capacityVolume": 65,
     "lastOdometerAt": "2026-03-18",
     "_id": "veh-014",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "base": "Lamongan",
     "year": 2021,
-    "notes": "Armada heavy tambahan untuk muatan berat jarak menengah.",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-005",
-    "brandModel": "Hino Dutro 110 SDL",
-    "capacityKg": 5000,
+    "unitCode": "TR-004",
+    "brandModel": "Hino Profia Trailer",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "S 2491 KT",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGFUS013",
+    "engineNumber": "ENGTR004",
     "lastOdometer": 48210,
-    "chassisNumber": "HNODUTRO013",
-    "capacityVolume": 22,
+    "chassisNumber": "TRAILER004",
+    "capacityVolume": 65,
     "lastOdometerAt": "2026-03-18",
     "_id": "veh-013",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "base": "Mojokerto",
@@ -4427,24 +4426,32 @@
   {
     "base": "Kediri",
     "year": 2023,
-    "notes": "Armada heavy cadangan untuk kategori Tronton / Trailer.",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-003",
-    "brandModel": "Mitsubishi Fuso Fighter FM 65",
-    "capacityKg": 6000,
+    "unitCode": "TR-003",
+    "brandModel": "Isuzu Giga Tronton",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "AG 6655 UV",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGFUS011",
+    "engineNumber": "ENGTR003",
     "lastOdometer": 21980,
-    "chassisNumber": "MTSFUS011",
-    "capacityVolume": 24,
+    "chassisNumber": "TRONTON003",
+    "capacityVolume": 60,
     "lastOdometerAt": "2026-03-16",
     "_id": "veh-011",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "orderItemRef": "oi-002",
@@ -4468,24 +4475,32 @@
   {
     "base": "Gresik",
     "year": 2022,
-    "notes": "Armada heavy standby untuk muatan berat dan backfill DO baru.",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-002",
-    "brandModel": "Hino Dutro 130 HD",
-    "capacityKg": 5200,
+    "unitCode": "TR-002",
+    "brandModel": "Mitsubishi Fuso FJ Tronton",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "W 9012 ST",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGFUS010",
+    "engineNumber": "ENGTR002",
     "lastOdometer": 47220,
-    "chassisNumber": "HINOFUS010",
-    "capacityVolume": 23,
+    "chassisNumber": "TRONTON002",
+    "capacityVolume": 60,
     "lastOdometerAt": "2026-03-16",
     "_id": "veh-010",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "base": "Gresik",
@@ -4644,24 +4659,32 @@
   {
     "base": "Gresik",
     "year": 2021,
-    "notes": "Armada heavy-duty untuk FTL dan pabrik",
+    "notes": "Unit Tronton / Trailer untuk rute borongan aktif.",
     "status": "ACTIVE",
-    "unitCode": "FUS-001",
-    "brandModel": "Hino Dutro 110 SDL",
-    "capacityKg": 5000,
+    "unitCode": "TR-001",
+    "brandModel": "Hino Profia Tronton",
+    "capacityKg": 30000,
     "serviceRef": "svc-006",
     "plateNumber": "L 9456 AB",
     "serviceName": "Tronton / Trailer",
     "vehicleType": "TRUCK",
-    "engineNumber": "ENGDUTRO002",
+    "engineNumber": "ENGTR001",
     "lastOdometer": 120300,
-    "chassisNumber": "HNODUTRO002",
-    "capacityVolume": 22,
+    "chassisNumber": "TRONTON001",
+    "capacityVolume": 60,
     "lastOdometerAt": "2026-03-04",
     "_id": "veh-002",
     "_type": "vehicle",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "base": "Sidoarjo",
@@ -6144,17 +6167,6 @@
     "_updatedAt": "2026-04-19T15:24:41.709+00:00"
   },
   {
-    "_id": "svc-005",
-    "_type": "service",
-    "code": "ENG",
-    "name": "Engkel",
-    "description": "Kategori foto Engkel digabung ke kategori existing CDD / Engkel agar pilihan truck tetap sinkron.",
-    "maxPayloadKg": 0,
-    "active": false,
-    "_createdAt": "2026-04-26T00:00:00.000+00:00",
-    "_updatedAt": "2026-04-26T00:00:00.000+00:00"
-  },
-  {
     "_id": "svc-006",
     "_type": "service",
     "code": "TR",
@@ -6163,7 +6175,15 @@
     "maxPayloadKg": 30000,
     "active": true,
     "_createdAt": "2026-04-26T00:00:00.000+00:00",
-    "_updatedAt": "2026-04-26T00:00:00.000+00:00"
+    "_updatedAt": "2026-04-26T00:00:00.000+00:00",
+    "tireLayoutConfig": {
+      "axleLayouts": [
+        "SINGLE",
+        "DUAL",
+        "DUAL"
+      ],
+      "spareCount": 1
+    }
   },
   {
     "_id": "trip-rate-engkel-jatim-001",

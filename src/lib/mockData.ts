@@ -128,10 +128,26 @@ const seedData: DataStore = {
     ],
 
     services: [
-        { _id: 'svc-001', _type: 'service', code: 'CDD', name: 'CDD / Engkel', description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah', maxPayloadKg: 4500, active: true },
-        { _id: 'svc-002', _type: 'service', code: 'CDB', name: 'CDD Box / Canter', description: 'Kategori legacy; unitnya dipetakan ke CDD / Engkel agar mengikuti tarif trip aktif', maxPayloadKg: 4200, active: false },
-        { _id: 'svc-003', _type: 'service', code: 'FUS', name: 'Fuso / Heavy', description: 'Kategori legacy; unitnya dipetakan ke Tronton / Trailer agar mengikuti tarif trip aktif', maxPayloadKg: 25000, active: false },
-        { _id: 'svc-006', _type: 'service', code: 'TR', name: 'Tronton / Trailer', description: 'Kategori armada tronton/trailer untuk muatan berat yang memakai master tarif borongan aktif', maxPayloadKg: 30000, active: true }
+        {
+            _id: 'svc-001',
+            _type: 'service',
+            code: 'CDD',
+            name: 'CDD / Engkel',
+            description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah',
+            maxPayloadKg: 4500,
+            tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL'], spareCount: 1 },
+            active: true
+        },
+        {
+            _id: 'svc-006',
+            _type: 'service',
+            code: 'TR',
+            name: 'Tronton / Trailer',
+            description: 'Kategori armada tronton/trailer untuk muatan berat yang memakai master tarif borongan aktif',
+            maxPayloadKg: 30000,
+            tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL', 'DUAL'], spareCount: 1 },
+            active: true
+        }
     ],
 
     expenseCategories: [

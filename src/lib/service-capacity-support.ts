@@ -60,32 +60,14 @@ export function formatCapacityRangeLabel(source: CapacityRangeSource) {
     return 'Kapasitas belum diisi';
 }
 
-export function buildServiceCapacityRangeMap(
-    services: Service[],
-    vehicles: Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>
-) {
+export function buildServiceCapacityRangeMap(services: Service[]) {
     return services.reduce<Record<string, string>>((acc, service) => {
         if (service.maxPayloadKg && service.maxPayloadKg > 0) {
             acc[service._id] = `maks ${formatTonValue(service.maxPayloadKg / 1000)} ton`;
             return acc;
         }
 
-        const serviceVehicles = vehicles.filter(vehicle => vehicle.serviceRef === service._id);
-        const tonValues = serviceVehicles.flatMap(vehicle => {
-            const range = getVehicleCapacityRange(vehicle);
-            return [range.minTon, range.maxTon].filter((value): value is number => value !== undefined);
-        });
-
-        if (tonValues.length > 0) {
-            const minTon = Math.min(...tonValues);
-            const maxTon = Math.max(...tonValues);
-            acc[service._id] = maxTon > minTon
-                ? `${formatTonValue(minTon)} ton - ${formatTonValue(maxTon)} ton`
-                : `${formatTonValue(maxTon)} ton`;
-            return acc;
-        }
-
-        acc[service._id] = 'Kapasitas belum diisi';
+        acc[service._id] = 'Kapasitas layanan belum diisi';
         return acc;
     }, {});
 }

@@ -521,8 +521,7 @@ export default function OrderDetailPage() {
             ? [orderService]
             : order?.serviceRef
                 ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }]
-                : [],
-        vehicles
+                : []
     );
     const requestedServiceCapacityLabel = order?.serviceRef
         ? serviceCapacityRangeMap[order.serviceRef] || 'Kapasitas belum diisi'

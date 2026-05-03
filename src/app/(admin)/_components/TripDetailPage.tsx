@@ -3676,8 +3676,7 @@ export default function TripDetailPage() {
     const totalTripFee = doData.taripBorongan || 0;
     const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
     const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
-    const effectiveOvertonaseLimitKg = doData.serviceMaxPayloadKg || doData.vehicleCapacityKg || 0;
-    const effectiveOvertonaseLimitSource = doData.serviceMaxPayloadKg ? 'Batas layanan' : 'Kapasitas kendaraan';
+    const effectiveOvertonaseLimitKg = doData.serviceMaxPayloadKg || 0;
     const overtonaseDriverRatePerTon = doData.overtonaseDriverRatePerKg
         ? Math.round(doData.overtonaseDriverRatePerKg * 1000)
         : 0;
@@ -4982,7 +4981,7 @@ export default function TripDetailPage() {
                                     <div className="detail-value">
                                         {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
                                     </div>
-                                    <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? effectiveOvertonaseLimitSource : ''}</div>
+                                    <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? 'Batas layanan' : 'Batas layanan belum diisi'}</div>
                                 </div>
                                 <div className="detail-item">
                                     <div className="detail-label">Referensi Layanan</div>
