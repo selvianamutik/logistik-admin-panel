@@ -434,7 +434,7 @@ export default function VehicleDetailPage() {
             {event ? (
                 <>
                     <div>
-                        <div className="font-medium">{event.tireCodeLabel}</div>
+                        <Link href={`/fleet/tires/${event._id}`} className="font-medium" style={{ color: 'var(--color-primary)' }}>{event.tireCodeLabel}</Link>
                         <div className="text-muted text-sm">{event.tireBrand} • {event.tireSize}</div>
                         <div className="text-muted text-sm">{event.tireType} • dicatat {formatDate(event.installDate)}</div>
                     </div>
@@ -504,7 +504,9 @@ export default function VehicleDetailPage() {
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Dimensi</div><div className="detail-value">{vehicle.dimension || '-'}</div></div><div className="detail-item"><div className="detail-label">Kapasitas (ton)</div><div className="detail-value">{vehicle.capacityMin || vehicle.capacityMax ? `${vehicle.capacityMin || '-'} - ${vehicle.capacityMax || '-'}` : '-'}</div></div></div>
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Kapasitas Vol (m3)</div><div className="detail-value">{vehicle.capacityVolume || '-'}</div></div><div className="detail-item"><div className="detail-label">Tanggal Update</div><div className="detail-value">{formatDate(vehicle.lastOdometerAt)}</div></div></div>
                                 {isOwner && <div className="detail-row"><div className="detail-item"><div className="detail-label">No. Rangka</div><div className="detail-value font-mono">{vehicle.chassisNumber || '-'}</div></div><div className="detail-item"><div className="detail-label">No. Mesin</div><div className="detail-value font-mono">{vehicle.engineNumber || '-'}</div></div></div>}
-                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan</div><div className="detail-value">{vehicle.notes || '-'}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Jarak Trip Terakhir</div><div className="detail-value">{typeof vehicle.lastTripOdometerDeltaKm === 'number' ? `${formatQuantity(vehicle.lastTripOdometerDeltaKm, 0)} km` : '-'}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Servis Oli Berikutnya</div><div className="detail-value">{vehicle.oilNextServiceOdometer ? `${formatQuantity(vehicle.oilNextServiceOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Sisa Servis Oli</div><div className="detail-value">{typeof vehicle.oilServiceRemainingKm === 'number' ? `${formatQuantity(vehicle.oilServiceRemainingKm, 0)} km` : '-'}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Servis Oli Terakhir</div><div className="detail-value">{vehicle.oilLastServiceOdometer ? `${formatQuantity(vehicle.oilLastServiceOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan</div><div className="detail-value">{vehicle.notes || '-'}</div></div></div>
                             </div>
                             <div>
                                 {activeDeliveryOrder && (

@@ -13,7 +13,9 @@ import type {
     Maintenance,
     MaintenanceMaterialUsage,
     PurchaseItem,
+    Service,
     StockMovement,
+    Vehicle,
     WarehouseItem,
 } from '@/lib/types';
 
@@ -58,6 +60,20 @@ type MaterialUsageInput = {
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
+function isOilMaintenanceType(value: unknown) {
+    const text = typeof value === 'string' ? value.toLowerCase() : '';
+    return text.includes('oli') || text.includes('oil');
+}
+
+function resolveOilStatus(remainingKm: number | undefined) {
+    if (typeof remainingKm !== 'number' || !Number.isFinite(remainingKm)) {
+        return undefined;
+    }
+    if (remainingKm <= 0) return 'DUE';
+    if (remainingKm <= 1000) return 'DUE_SOON';
+    return 'OK';
 }
 
 function normalizeMaterialUsageInputs(value: unknown) {
@@ -328,6 +344,43 @@ export async function handleMaintenanceComplete(
             ...Object.fromEntries(unsetFields.map(field => [field, null])),
         };
         await updateDocument(maintenance._id, maintenanceUpdates);
+
+        if (isOilMaintenanceType(maintenance.type)) {
+            const vehicle = await getDocumentById<Vehicle>(maintenance.vehicleRef, 'vehicle');
+            if (vehicle) {
+                const service = vehicle.serviceRef
+                    ? await getDocumentById<Service>(vehicle.serviceRef, 'service')
+                    : null;
+                const currentOdometer = typeof vehicle.lastOdometer === 'number' ? vehicle.lastOdometer : 0;
+                const serviceOdometer = odometerParsed ?? currentOdometer;
+                const oilIntervalKm = typeof service?.oilMaintenanceKm === 'number' && service.oilMaintenanceKm > 0
+                    ? service.oilMaintenanceKm
+                    : typeof vehicle.oilMaintenanceIntervalKm === 'number'
+                        ? vehicle.oilMaintenanceIntervalKm
+                        : 0;
+                const nextOilServiceOdometer = oilIntervalKm > 0 ? serviceOdometer + oilIntervalKm : undefined;
+                const oilServiceRemainingKm = typeof nextOilServiceOdometer === 'number'
+                    ? nextOilServiceOdometer - currentOdometer
+                    : undefined;
+                const vehicleUpdates: Record<string, unknown> = {
+                    oilMaintenanceIntervalKm: oilIntervalKm,
+                    oilLastServiceOdometer: serviceOdometer,
+                };
+                if (typeof nextOilServiceOdometer === 'number') {
+                    vehicleUpdates.oilNextServiceOdometer = nextOilServiceOdometer;
+                    vehicleUpdates.oilServiceRemainingKm = oilServiceRemainingKm;
+                }
+                const oilMaintenanceStatus = resolveOilStatus(oilServiceRemainingKm);
+                if (oilMaintenanceStatus) {
+                    vehicleUpdates.oilMaintenanceStatus = oilMaintenanceStatus;
+                }
+                if (odometerParsed !== undefined && odometerParsed > currentOdometer) {
+                    vehicleUpdates.lastOdometer = odometerParsed;
+                    vehicleUpdates.lastOdometerAt = completedDate;
+                }
+                await updateDocument(vehicle._id, vehicleUpdates, 'vehicle');
+            }
+        }
 
         await addAuditLog(
             session,

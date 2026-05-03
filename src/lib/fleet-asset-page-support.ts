@@ -27,6 +27,7 @@ export type TireFormState = {
     tireBrand: string;
     tireSize: string;
     installDate: string;
+    accumulatedKm: number;
     notes: string;
     externalPartyName: string;
     externalPlateNumber: string;
@@ -69,6 +70,7 @@ export function createDefaultTireForm(): TireFormState {
         tireBrand: '',
         tireSize: '',
         installDate: getBusinessDateValue(),
+        accumulatedKm: 0,
         notes: '',
         externalPartyName: '',
         externalPlateNumber: '',

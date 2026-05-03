@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink, History } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
@@ -20,7 +22,7 @@ import {
     type TireFormState,
 } from '@/lib/fleet-asset-page-support';
 import { isTireTrackedWarehouseItem, WAREHOUSE_ITEM_TRACKING_MODE_LABELS } from '@/lib/inventory';
-import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatQuantity, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import {
     formatTireSlotLabel,
@@ -39,6 +41,7 @@ import { formatDateTime } from '@/lib/utils';
 export default function TiresPage() {
     const { user } = useApp();
     const { addToast } = useToast();
+    const searchParams = useSearchParams();
     const [events, setEvents] = useState<TireEvent[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -60,6 +63,7 @@ export default function TiresPage() {
     const [historyTarget, setHistoryTarget] = useState<ResolvedFleetTireEvent | null>(null);
     const [historyRows, setHistoryRows] = useState<TireHistoryLog[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [openedEditParam, setOpenedEditParam] = useState('');
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const [vehicleCategoryFilter, setVehicleCategoryFilter] = useState('');
     const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
@@ -266,12 +270,25 @@ export default function TiresPage() {
             tireBrand: event.tireBrand,
             tireSize: event.tireSize,
             installDate: event.installDate,
+            accumulatedKm: event.accumulatedKm || 0,
             notes: event.notes || '',
             externalPartyName: event.externalPartyName || '',
             externalPlateNumber: event.externalPlateNumber || '',
         });
         setShowModal(true);
     };
+
+    useEffect(() => {
+        const editId = searchParams.get('edit');
+        if (!editId || editId === openedEditParam || loading || showModal) {
+            return;
+        }
+        const target = allTireEvents.find(event => event._id === editId) || events.find(event => event._id === editId);
+        if (target) {
+            setOpenedEditParam(editId);
+            openEdit(target);
+        }
+    }, [allTireEvents, events, loading, openedEditParam, searchParams, showModal]);
 
     const openHistory = async (event: ResolvedFleetTireEvent) => {
         setHistoryTarget(event);
@@ -473,7 +490,7 @@ export default function TiresPage() {
                                 ) : resolvedEvents.map(event => (
                                     <tr key={event._id}>
                                         <td>
-                                            <div className="font-medium">{event.tireCodeLabel}</div>
+                                            <Link href={`/fleet/tires/${event._id}`} className="font-medium" style={{ color: 'var(--color-primary)' }}>{event.tireCodeLabel}</Link>
                                             <div className="text-muted text-sm">{event.tireType}</div>
                                         </td>
                                         <td>
@@ -512,9 +529,15 @@ export default function TiresPage() {
                                             )}
                                         </td>
                                         <td className="text-muted">{formatDate(event.installDate)}</td>
-                                        <td className="text-muted">{event.notes || '-'}</td>
+                                        <td className="text-muted">
+                                            <div>{event.notes || '-'}</div>
+                                            <div className="text-sm">{formatQuantity(event.accumulatedKm || 0, 0)} km</div>
+                                        </td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                <Link className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} href={`/fleet/tires/${event._id}`}>
+                                                    Detail
+                                                </Link>
                                                 <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openHistory(event)}>
                                                     <History size={13} /> Riwayat
                                                 </button>
@@ -536,7 +559,7 @@ export default function TiresPage() {
                             <div key={event._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{event.tireCodeLabel}</div>
+                                        <Link href={`/fleet/tires/${event._id}`} className="mobile-record-title" style={{ color: 'var(--color-primary)' }}>{event.tireCodeLabel}</Link>
                                         <div className="mobile-record-subtitle">{event.tireBrand} | {event.tireSize}</div>
                                     </div>
                                     <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray'}`}>
@@ -557,6 +580,10 @@ export default function TiresPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tanggal Catat</span>
                                         <span className="mobile-record-value">{formatDate(event.installDate)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Km Ban</span>
+                                        <span className="mobile-record-value">{formatQuantity(event.accumulatedKm || 0, 0)} km</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Sumber</span>
@@ -860,6 +887,13 @@ export default function TiresPage() {
                                     <label className="form-label">Tanggal Catat</label>
                                     <input type="date" className="form-input" value={form.installDate} onChange={e => updateForm('installDate', e.target.value)} disabled={saving} />
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">Kilometer Pemakaian Ban</label>
+                                    <FormattedNumberInput allowDecimal={false} value={form.accumulatedKm} onValueChange={value => updateForm('accumulatedKm', value)} disabled={saving} />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Catatan</label>
                                     <input className="form-input" value={form.notes} onChange={e => updateForm('notes', e.target.value)} disabled={saving} />

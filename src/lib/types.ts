@@ -445,6 +445,7 @@ export interface Service {
   name: string;
   description: string;
   maxPayloadKg?: number;
+  oilMaintenanceKm?: number;
   tireLayoutConfig?: TireLayoutConfig;
   active: boolean;
 }
@@ -755,6 +756,12 @@ export interface DeliveryOrder {
   tripClosedByAdminAt?: string;
   tripClosedByAdminRef?: string;
   tripClosedByAdminName?: string;
+  tripStartOdometerKm?: number;
+  tripEndOdometerKm?: number;
+  tripDistanceKm?: number;
+  odometerConfirmedAt?: string;
+  odometerConfirmedByRef?: string;
+  odometerConfirmedByName?: string;
   pendingDriverStatusRequestedAt?: string;
   pendingDriverStatusRequestedBy?: string;
   pendingDriverStatusRequestedByName?: string;
@@ -1170,6 +1177,12 @@ export interface Vehicle {
   notes?: string;
   lastOdometer?: number;
   lastOdometerAt?: string;
+  oilMaintenanceIntervalKm?: number;
+  oilLastServiceOdometer?: number;
+  oilNextServiceOdometer?: number;
+  oilServiceRemainingKm?: number;
+  oilMaintenanceStatus?: 'OK' | 'DUE_SOON' | 'DUE';
+  lastTripOdometerDeltaKm?: number;
 }
 
 // ── Maintenance ──
@@ -1210,6 +1223,9 @@ export interface Maintenance {
   totalCost?: number;
   relatedExpenseRef?: string;
   cost?: number;
+  source?: 'MANUAL' | 'ODOMETER_AUTO';
+  relatedDeliveryOrderRef?: string;
+  triggerOdometer?: number;
 }
 
 // ── Tire Event ──
@@ -1246,12 +1262,16 @@ export interface TireEvent {
   installDate: string;
   replaceDate?: string;
   notes?: string;
+  accumulatedKm?: number;
+  lastOdometerKm?: number;
+  lastKmUpdateAt?: string;
 }
 
 export type TireHistoryActionType =
   | 'CREATED'
   | 'MOVED'
   | 'STATUS_CHANGED'
+  | 'ODOMETER_UPDATED'
   | 'SCRAPPED'
   | 'UPDATED';
 
@@ -1279,6 +1299,9 @@ export interface TireHistoryLog {
   toVehiclePlate?: string;
   toSlotCode?: string;
   toPlacementLabel?: string;
+  odometerBeforeKm?: number;
+  odometerAfterKm?: number;
+  distanceKm?: number;
 }
 
 // ── Incident ──

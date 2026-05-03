@@ -49,6 +49,7 @@ export type NormalizedTireEventPayload = {
     tireSize: string;
     installDate: string;
     replaceDate?: string;
+    accumulatedKm?: number;
     notes?: string;
 };
 
@@ -276,6 +277,11 @@ export async function normalizeServicePayload(
     if (!partial || hasOwnKey(data, 'maxPayloadKg')) {
         const maxPayloadKg = normalizeOptionalNonNegativeNumber(data.maxPayloadKg, 'Batas muatan normal');
         next.maxPayloadKg = maxPayloadKg ?? 0;
+    }
+
+    if (!partial || hasOwnKey(data, 'oilMaintenanceKm')) {
+        const oilMaintenanceKm = normalizeOptionalNonNegativeNumber(data.oilMaintenanceKm, 'Interval servis oli');
+        next.oilMaintenanceKm = oilMaintenanceKm ?? 0;
     }
 
     if (!partial || hasOwnKey(data, 'tireLayoutConfig')) {
@@ -609,7 +615,7 @@ export async function normalizeVehiclePayload(
         if (!serviceRef) {
             throw new Error('Kategori armada kendaraan wajib dipilih');
         }
-        const service = await getDocumentById<{ _id: string; name?: string; code?: string; active?: boolean; tireLayoutConfig?: Record<string, unknown> }>(
+        const service = await getDocumentById<{ _id: string; name?: string; code?: string; active?: boolean; tireLayoutConfig?: Record<string, unknown>; oilMaintenanceKm?: number }>(
             serviceRef,
             'service'
         );
@@ -632,6 +638,7 @@ export async function normalizeVehiclePayload(
         if (!partial || hasOwnKey(data, 'serviceRef')) {
             next.serviceRef = serviceRef;
             next.serviceName = service.name || '';
+            next.oilMaintenanceIntervalKm = typeof service.oilMaintenanceKm === 'number' ? service.oilMaintenanceKm : 0;
         }
     }
 
@@ -695,6 +702,21 @@ export async function normalizeVehiclePayload(
             assertIsoDate(lastOdometerAt, 'Tanggal update odometer');
         }
         next.lastOdometerAt = lastOdometerAt;
+    }
+
+    if (!partial || hasOwnKey(data, 'oilLastServiceOdometer')) {
+        const value = normalizeOptionalWholeNumber(data.oilLastServiceOdometer, 'Odometer servis oli terakhir') ?? 0;
+        next.oilLastServiceOdometer = value;
+    }
+
+    if (!partial || hasOwnKey(data, 'oilNextServiceOdometer')) {
+        const value = normalizeOptionalWholeNumber(data.oilNextServiceOdometer, 'Odometer servis oli berikutnya') ?? 0;
+        next.oilNextServiceOdometer = value;
+    }
+
+    if (!partial || hasOwnKey(data, 'oilServiceRemainingKm')) {
+        const value = normalizeOptionalWholeNumber(data.oilServiceRemainingKm, 'Sisa km servis oli') ?? 0;
+        next.oilServiceRemainingKm = value;
     }
 
     if (!partial || hasOwnKey(data, 'chassisNumber')) {
@@ -802,6 +824,8 @@ export async function normalizeTireEventPayload(
     const tireSize = normalizeText(data.tireSize);
     const installDate = normalizeText(data.installDate);
     const replaceDate = normalizeOptionalText(data.replaceDate);
+    const parsedAccumulatedKm = normalizeNumber(data.accumulatedKm, { maxFractionDigits: 0 });
+    const accumulatedKm = Number.isFinite(parsedAccumulatedKm) ? Math.max(parsedAccumulatedKm, 0) : 0;
     const notes = normalizeOptionalText(data.notes);
     const externalPartyName = normalizeOptionalText(data.externalPartyName);
     const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
@@ -920,6 +944,7 @@ export async function normalizeTireEventPayload(
         tireSize,
         installDate,
         replaceDate,
+        accumulatedKm,
         notes,
     };
 }

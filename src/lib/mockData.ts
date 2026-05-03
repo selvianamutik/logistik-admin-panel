@@ -128,26 +128,10 @@ const seedData: DataStore = {
     ],
 
     services: [
-        {
-            _id: 'svc-001',
-            _type: 'service',
-            code: 'CDD',
-            name: 'CDD / Engkel',
-            description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah',
-            maxPayloadKg: 4500,
-            tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL'], spareCount: 1 },
-            active: true
-        },
-        {
-            _id: 'svc-006',
-            _type: 'service',
-            code: 'TR',
-            name: 'Tronton / Trailer',
-            description: 'Kategori armada tronton/trailer untuk muatan berat yang memakai master tarif borongan aktif',
-            maxPayloadKg: 30000,
-            tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL', 'DUAL'], spareCount: 1 },
-            active: true
-        }
+        { _id: 'svc-001', _type: 'service', code: 'CDD', name: 'CDD / Engkel', description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah', maxPayloadKg: 4500, oilMaintenanceKm: 10000, tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL'], spareCount: 1 }, active: true },
+        { _id: 'svc-002', _type: 'service', code: 'CDB', name: 'CDD Box / Canter', description: 'Kategori legacy; unitnya dipetakan ke CDD / Engkel agar mengikuti tarif trip aktif', maxPayloadKg: 4200, oilMaintenanceKm: 10000, tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL'], spareCount: 1 }, active: false },
+        { _id: 'svc-003', _type: 'service', code: 'FUS', name: 'Fuso / Heavy', description: 'Kategori legacy; unitnya dipetakan ke Tronton / Trailer agar mengikuti tarif trip aktif', maxPayloadKg: 25000, oilMaintenanceKm: 15000, tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL', 'DUAL'], spareCount: 1 }, active: false },
+        { _id: 'svc-006', _type: 'service', code: 'TR', name: 'Tronton / Trailer', description: 'Kategori armada tronton/trailer untuk muatan berat yang memakai master tarif borongan aktif', maxPayloadKg: 30000, oilMaintenanceKm: 15000, tireLayoutConfig: { axleLayouts: ['SINGLE', 'DUAL', 'DUAL'], spareCount: 1 }, active: true }
     ],
 
     expenseCategories: [
@@ -393,7 +377,13 @@ const seedData: DataStore = {
             base: 'Jakarta',
             notes: 'Unit utama rute Jawa',
             lastOdometer: 45200,
-            lastOdometerAt: '2026-02-22'
+            lastOdometerAt: '2026-05-03',
+            oilMaintenanceIntervalKm: 10000,
+            oilLastServiceOdometer: 35700,
+            oilNextServiceOdometer: 45700,
+            oilServiceRemainingKm: 500,
+            oilMaintenanceStatus: 'DUE_SOON',
+            lastTripOdometerDeltaKm: 0
         }
     ],
 
@@ -429,6 +419,9 @@ const seedData: DataStore = {
             installDate: '2026-02-23',
             replaceDate: '2027-02-23',
             notes: 'Ban meletus di tol Cikampek KM 45. Diganti ban baru Bridgestone.',
+            accumulatedKm: 12100,
+            lastOdometerKm: 45200,
+            lastKmUpdateAt: '2026-05-03T00:00:00.000Z',
         }
     ],
 

@@ -63,7 +63,6 @@ export default function VehicleNewPage() {
             const payload = {
                 ...buildVehicleBasePayload(form, isOwner),
                 status: 'ACTIVE',
-                lastOdometer: 0,
             };
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -111,7 +110,17 @@ export default function VehicleNewPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Kategori Truk / Armada</label>
-                                    <select className="form-select" value={form.serviceRef} onChange={e => setForm({ ...form, serviceRef: e.target.value })}>
+                                    <select className="form-select" value={form.serviceRef} onChange={e => {
+                                        const service = services.find(item => item._id === e.target.value);
+                                        const interval = service?.oilMaintenanceKm || 0;
+                                        setForm({
+                                            ...form,
+                                            serviceRef: e.target.value,
+                                            oilMaintenanceIntervalKm: interval,
+                                            oilNextServiceOdometer: interval > 0 && !form.oilNextServiceOdometer ? form.lastOdometer + interval : form.oilNextServiceOdometer,
+                                            oilServiceRemainingKm: interval > 0 && !form.oilNextServiceOdometer ? interval : form.oilServiceRemainingKm,
+                                        });
+                                    }}>
                                         <option value="">Pilih kategori armada</option>
                                         {services.map(service => <option key={service._id} value={service._id}>{service.code} - {service.name}</option>)}
                                     </select>
@@ -133,6 +142,23 @@ export default function VehicleNewPage() {
                             )}
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Tahun</label><FormattedNumberInput allowDecimal={false} value={form.year} onValueChange={value => setForm({ ...form, year: value })} /></div>
+                                <div className="form-group"><label className="form-label">Odometer Saat Ini</label><FormattedNumberInput allowDecimal={false} value={form.lastOdometer} onValueChange={value => setForm({ ...form, lastOdometer: value, oilServiceRemainingKm: form.oilNextServiceOdometer ? form.oilNextServiceOdometer - value : form.oilServiceRemainingKm })} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Tanggal Update Odometer</label><input type="date" className="form-input" value={form.lastOdometerAt} onChange={e => setForm({ ...form, lastOdometerAt: e.target.value })} /></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div className="card-header"><span className="card-header-title">Odometer & Servis Oli</span></div>
+                        <div className="card-body">
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Interval dari Kategori (km)</label><FormattedNumberInput allowDecimal={false} value={form.oilMaintenanceIntervalKm || selectedService?.oilMaintenanceKm || 0} onValueChange={value => setForm({ ...form, oilMaintenanceIntervalKm: value })} /></div>
+                                <div className="form-group"><label className="form-label">Servis Oli Terakhir di Odometer</label><FormattedNumberInput allowDecimal={false} value={form.oilLastServiceOdometer} onValueChange={value => setForm({ ...form, oilLastServiceOdometer: value, oilNextServiceOdometer: form.oilMaintenanceIntervalKm ? value + form.oilMaintenanceIntervalKm : form.oilNextServiceOdometer })} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Servis Oli Berikutnya</label><FormattedNumberInput allowDecimal={false} value={form.oilNextServiceOdometer} onValueChange={value => setForm({ ...form, oilNextServiceOdometer: value, oilServiceRemainingKm: value ? value - form.lastOdometer : 0 })} /></div>
+                                <div className="form-group"><label className="form-label">Sisa Sampai Servis</label><FormattedNumberInput allowDecimal={false} value={form.oilServiceRemainingKm} onValueChange={value => setForm({ ...form, oilServiceRemainingKm: value })} /></div>
                             </div>
                         </div>
                     </div>

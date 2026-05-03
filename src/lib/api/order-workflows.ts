@@ -235,7 +235,7 @@ import {
     getDeliveryOrderNonBillableCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
-import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, OrderPickupStop, OrderTripPlan } from '@/lib/types';
+import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Maintenance, OrderPickupStop, OrderTripPlan, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -244,6 +244,182 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
+
+function parseOdometerValue(value: unknown) {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+    const parsed = typeof value === 'number' ? value : Number(String(value).replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(parsed) ? Math.round(parsed) : undefined;
+}
+
+function isOilMaintenanceType(value: unknown) {
+    const text = typeof value === 'string' ? value.toLowerCase() : '';
+    return text.includes('oli') || text.includes('oil');
+}
+
+function resolveOilStatus(remainingKm: number | undefined) {
+    if (typeof remainingKm !== 'number' || !Number.isFinite(remainingKm)) {
+        return undefined;
+    }
+    if (remainingKm <= 0) return 'DUE';
+    if (remainingKm <= 1000) return 'DUE_SOON';
+    return 'OK';
+}
+
+async function applyTripClosureOdometerUpdates(params: {
+    session: ApiSession;
+    deliveryOrder: DeliveryOrder;
+    data: Record<string, unknown>;
+    timestamp: string;
+}) {
+    const { session, deliveryOrder, data, timestamp } = params;
+    const vehicleRef = typeof deliveryOrder.vehicleRef === 'string' ? deliveryOrder.vehicleRef : '';
+    if (!vehicleRef) {
+        return {
+            odometerFields: {},
+            auditSuffix: '',
+        };
+    }
+
+    const vehicle = await getDocumentById<Vehicle>(vehicleRef, 'vehicle');
+    if (!vehicle) {
+        throw new Error('Kendaraan trip tidak ditemukan untuk konfirmasi odometer');
+    }
+
+    const newOdometer = parseOdometerValue(data.newOdometer ?? data.endOdometerKm ?? data.tripEndOdometerKm);
+    if (newOdometer === undefined || newOdometer < 0) {
+        throw new Error('Odometer akhir trip wajib diisi');
+    }
+
+    const oldOdometer = Math.max(parseOdometerValue(vehicle.lastOdometer) ?? 0, 0);
+    if (newOdometer < oldOdometer) {
+        throw new Error('Odometer akhir trip tidak boleh lebih kecil dari odometer kendaraan terakhir');
+    }
+
+    const distanceKm = newOdometer - oldOdometer;
+    const service = vehicle.serviceRef
+        ? await getDocumentById<Service>(vehicle.serviceRef, 'service')
+        : null;
+    const oilIntervalKm = Math.max(parseOdometerValue(service?.oilMaintenanceKm) ?? parseOdometerValue(vehicle.oilMaintenanceIntervalKm) ?? 0, 0);
+    const lastOilServiceOdometer = Math.max(parseOdometerValue(vehicle.oilLastServiceOdometer) ?? oldOdometer, 0);
+    const nextOilServiceOdometer = oilIntervalKm > 0
+        ? Math.max(parseOdometerValue(vehicle.oilNextServiceOdometer) ?? lastOilServiceOdometer + oilIntervalKm, lastOilServiceOdometer + oilIntervalKm)
+        : parseOdometerValue(vehicle.oilNextServiceOdometer);
+    const rawOilRemainingKm = typeof nextOilServiceOdometer === 'number' ? nextOilServiceOdometer - newOdometer : undefined;
+    const oilRemainingKm = typeof rawOilRemainingKm === 'number' ? Math.max(rawOilRemainingKm, 0) : undefined;
+    const oilMaintenanceStatus = resolveOilStatus(rawOilRemainingKm);
+
+    const vehicleUpdates: Record<string, unknown> = {
+        lastOdometer: newOdometer,
+        lastOdometerAt: getBusinessDateValue(),
+        lastTripOdometerDeltaKm: distanceKm,
+        oilMaintenanceIntervalKm: oilIntervalKm,
+    };
+    if (typeof nextOilServiceOdometer === 'number') {
+        vehicleUpdates.oilLastServiceOdometer = lastOilServiceOdometer;
+        vehicleUpdates.oilNextServiceOdometer = nextOilServiceOdometer;
+        vehicleUpdates.oilServiceRemainingKm = oilRemainingKm;
+    }
+    if (oilMaintenanceStatus) {
+        vehicleUpdates.oilMaintenanceStatus = oilMaintenanceStatus;
+    }
+    await updateDocument(vehicle._id, vehicleUpdates, 'vehicle');
+
+    if (distanceKm > 0) {
+        const tires = await listDocumentsByFilter<TireEvent>('tireEvent', {
+            vehicleRef: vehicle._id,
+            holderType: 'INTERNAL_VEHICLE',
+        });
+        await Promise.all(tires.map(async (tire) => {
+            const beforeKm = Math.max(parseOdometerValue(tire.accumulatedKm) ?? 0, 0);
+            const tireDistanceKm = tire.status === 'IN_USE' ? distanceKm : 0;
+            const afterKm = beforeKm + tireDistanceKm;
+            await updateDocument(tire._id, {
+                accumulatedKm: afterKm,
+                lastOdometerKm: newOdometer,
+                lastKmUpdateAt: timestamp,
+            }, 'tireEvent');
+            const history: TireHistoryLog = {
+                _id: `tire-history-${crypto.randomUUID()}`,
+                _type: 'tireHistoryLog',
+                tireEventRef: tire._id,
+                tireCode: tire.tireCode,
+                tireBrand: tire.tireBrand,
+                tireSize: tire.tireSize,
+                actionType: 'ODOMETER_UPDATED',
+                timestamp,
+                actorUserRef: session._id,
+                actorUserName: session.name,
+                note: tireDistanceKm > 0
+                    ? `Trip ${deliveryOrder.doNumber || deliveryOrder._id}: +${tireDistanceKm.toLocaleString('id-ID')} km`
+                    : `Trip ${deliveryOrder.doNumber || deliveryOrder._id}: ban tercatat di unit tanpa penambahan km`,
+                fromHolderType: tire.holderType,
+                fromStatus: tire.status,
+                fromVehicleRef: tire.vehicleRef,
+                fromVehiclePlate: tire.vehiclePlate,
+                fromSlotCode: tire.slotCode,
+                fromPlacementLabel: tire.slotLabel || tire.posisi,
+                toHolderType: tire.holderType,
+                toStatus: tire.status,
+                toVehicleRef: tire.vehicleRef,
+                toVehiclePlate: tire.vehiclePlate,
+                toSlotCode: tire.slotCode,
+                toPlacementLabel: tire.slotLabel || tire.posisi,
+                odometerBeforeKm: oldOdometer,
+                odometerAfterKm: newOdometer,
+                distanceKm: tireDistanceKm,
+            };
+            await createDocument(history as unknown as { _type: string; [key: string]: unknown });
+        }));
+    }
+
+    let scheduledMaintenance = false;
+    if (oilIntervalKm > 0 && typeof rawOilRemainingKm === 'number' && rawOilRemainingKm <= 0) {
+        const maintenances = await listDocumentsByFilter<Maintenance>('maintenance', { vehicleRef: vehicle._id });
+        const hasOpenOilMaintenance = maintenances.some(item =>
+            item.status === 'SCHEDULED' &&
+            item.scheduleType === 'ODOMETER' &&
+            isOilMaintenanceType(item.type)
+        );
+        if (!hasOpenOilMaintenance) {
+            const maintenance: Maintenance = {
+                _id: `maintenance-${crypto.randomUUID()}`,
+                _type: 'maintenance',
+                vehicleRef: vehicle._id,
+                vehiclePlate: vehicle.plateNumber,
+                type: 'Servis Oli',
+                scheduleType: 'ODOMETER',
+                plannedOdometer: nextOilServiceOdometer || newOdometer,
+                status: 'SCHEDULED',
+                notes: `Otomatis dari penutupan trip ${deliveryOrder.doNumber || deliveryOrder._id}. Odometer akhir ${newOdometer.toLocaleString('id-ID')} km.`,
+                attachmentUrls: [],
+                materialUsages: [],
+                materialUsageCount: 0,
+                materialCostTotal: 0,
+                totalCost: 0,
+                cost: 0,
+                source: 'ODOMETER_AUTO',
+                relatedDeliveryOrderRef: deliveryOrder._id,
+                triggerOdometer: newOdometer,
+            };
+            await createDocument(maintenance as unknown as { _type: string; [key: string]: unknown });
+            scheduledMaintenance = true;
+        }
+    }
+
+    return {
+        odometerFields: {
+            tripStartOdometerKm: oldOdometer,
+            tripEndOdometerKm: newOdometer,
+            tripDistanceKm: distanceKm,
+            odometerConfirmedAt: timestamp,
+            odometerConfirmedByRef: session._id,
+            odometerConfirmedByName: session.name,
+        },
+        auditSuffix: `; odometer ${oldOdometer.toLocaleString('id-ID')} -> ${newOdometer.toLocaleString('id-ID')} km${scheduledMaintenance ? '; servis oli dijadwalkan' : ''}`,
+    };
+}
 
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
     const driverId = extractRefId(driverRef);
@@ -5841,19 +6017,34 @@ export async function handleDeliveryOrderTripClosureSet(
     }
 
     const timestamp = new Date().toISOString();
+    let odometerResult: Awaited<ReturnType<typeof applyTripClosureOdometerUpdates>> = {
+        odometerFields: {},
+        auditSuffix: '',
+    };
     try {
-        await updateDocument(id, {
+        if (closed) {
+            odometerResult = await applyTripClosureOdometerUpdates({
+                session,
+                deliveryOrder,
+                data,
+                timestamp,
+            });
+        }
+
+        const closureFields = {
             tripClosedByAdminAt: closed ? timestamp : null,
             tripClosedByAdminRef: closed ? session._id : null,
             tripClosedByAdminName: closed ? session.name : null,
+            ...(closed ? odometerResult.odometerFields : {}),
+        };
+        await updateDocument(id, {
+            ...closureFields,
         }, 'deliveryOrder');
 
         const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
         if (tripRecord) {
             await updateDocument(id, {
-                tripClosedByAdminAt: closed ? timestamp : null,
-                tripClosedByAdminRef: closed ? session._id : null,
-                tripClosedByAdminName: closed ? session.name : null,
+                ...closureFields,
             }, 'trip');
         }
     } catch (error) {
@@ -5863,7 +6054,10 @@ export async function handleDeliveryOrderTripClosureSet(
                 { status: 409 }
             );
         }
-        throw error;
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Gagal memperbarui status penutupan trip' },
+            { status: 400 }
+        );
     }
 
     await addAuditLog(
@@ -5872,7 +6066,7 @@ export async function handleDeliveryOrderTripClosureSet(
         'delivery-orders',
         id,
         closed
-            ? `Tutup trip ${deliveryOrder.doNumber || id} dengan konfirmasi admin`
+            ? `Tutup trip ${deliveryOrder.doNumber || id} dengan konfirmasi admin${odometerResult.auditSuffix}`
             : `Buka kembali trip ${deliveryOrder.doNumber || id}`
     );
 

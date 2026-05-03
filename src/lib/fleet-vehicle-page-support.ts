@@ -29,6 +29,10 @@ export type VehicleForm = {
     status: VehicleStatus;
     lastOdometer: number;
     lastOdometerAt: string;
+    oilLastServiceOdometer: number;
+    oilNextServiceOdometer: number;
+    oilServiceRemainingKm: number;
+    oilMaintenanceIntervalKm: number;
 };
 
 function getCurrentBusinessYear() {
@@ -55,6 +59,10 @@ export const EMPTY_VEHICLE_FORM: VehicleForm = {
     status: 'ACTIVE',
     lastOdometer: 0,
     lastOdometerAt: '',
+    oilLastServiceOdometer: 0,
+    oilNextServiceOdometer: 0,
+    oilServiceRemainingKm: 0,
+    oilMaintenanceIntervalKm: 0,
 };
 
 export function buildVehiclesQuery(params: {
@@ -162,6 +170,12 @@ export function buildVehicleBasePayload(form: VehicleForm, isOwner: boolean) {
         serviceRef: form.serviceRef || undefined,
         base: form.base,
         notes: form.notes,
+        lastOdometer: form.lastOdometer,
+        lastOdometerAt: form.lastOdometerAt || undefined,
+        oilLastServiceOdometer: form.oilLastServiceOdometer,
+        oilNextServiceOdometer: form.oilNextServiceOdometer,
+        oilServiceRemainingKm: form.oilServiceRemainingKm,
+        oilMaintenanceIntervalKm: form.oilMaintenanceIntervalKm,
         ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
     };
 }
@@ -182,8 +196,9 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                     <th>Tipe</th>
                     <th>Tahun</th>
                     <th>Status</th>
-                    <th>Odometer</th>
-                    <th>Tgl Update</th>
+                            <th>Odometer</th>
+                            <th>Sisa Servis Oli</th>
+                            <th>Tgl Update</th>
                 </tr>
             </thead>
             <tbody>
@@ -202,6 +217,7 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                             <td>${vehicle.year}</td>
                             <td>${VEHICLE_STATUS_MAP[vehicle.status]?.label || vehicle.status}</td>
                             <td class="r">${vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</td>
+                            <td class="r">${typeof vehicle.oilServiceRemainingKm === 'number' ? `${formatQuantity(vehicle.oilServiceRemainingKm, 0)} km` : '-'}</td>
                             <td>${formatDate(vehicle.lastOdometerAt)}</td>
                         </tr>`
                     )
@@ -232,6 +248,10 @@ export function mapVehicleToForm(vehicle: Vehicle): VehicleForm {
         status: vehicle.status || 'ACTIVE',
         lastOdometer: vehicle.lastOdometer || 0,
         lastOdometerAt: vehicle.lastOdometerAt || '',
+        oilLastServiceOdometer: vehicle.oilLastServiceOdometer || 0,
+        oilNextServiceOdometer: vehicle.oilNextServiceOdometer || 0,
+        oilServiceRemainingKm: vehicle.oilServiceRemainingKm || 0,
+        oilMaintenanceIntervalKm: vehicle.oilMaintenanceIntervalKm || 0,
     };
 }
 
