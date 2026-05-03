@@ -45,6 +45,7 @@ type ExpenseLinkPermissions = {
     canOpenDriverBoronganPage: boolean;
     canOpenDriverVoucherPage: boolean;
     canOpenIncidentPage: boolean;
+    canOpenMaintenancePage: boolean;
     canOpenVehiclePage: boolean;
 };
 
@@ -176,6 +177,9 @@ function getExpenseRelatedDocuments(
             key: `maintenance:${expense.relatedMaintenanceRef}`,
             kind: 'Maintenance',
             label: maintenance?.vehiclePlate || maintenance?.type || expense.relatedMaintenanceRef,
+            href: permissions.canOpenMaintenancePage
+                ? `/fleet/maintenance${maintenance?.vehicleRef ? `?vehicleRef=${maintenance.vehicleRef}` : ''}`
+                : undefined,
         });
     }
     return links;
@@ -249,6 +253,7 @@ export default function ExpensesPage() {
     const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
     const canOpenDriverBoronganPage = user ? hasPageAccess(user.role, 'driverBorongans') : false;
     const canOpenIncidentPage = user ? hasPageAccess(user.role, 'incidents') : false;
+    const canOpenMaintenancePage = user ? hasPageAccess(user.role, 'maintenance') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
     const voucherMap = useMemo(() => mapById(driverVouchers), [driverVouchers]);
@@ -268,8 +273,9 @@ export default function ExpensesPage() {
         canOpenDriverBoronganPage,
         canOpenDriverVoucherPage,
         canOpenIncidentPage,
+        canOpenMaintenancePage,
         canOpenVehiclePage,
-    }), [canOpenBankAccountPage, canOpenDriverBoronganPage, canOpenDriverVoucherPage, canOpenIncidentPage, canOpenVehiclePage]);
+    }), [canOpenBankAccountPage, canOpenDriverBoronganPage, canOpenDriverVoucherPage, canOpenIncidentPage, canOpenMaintenancePage, canOpenVehiclePage]);
     const manualCategories = useMemo(
         () => categories.filter(isManualExpenseCategory),
         [categories]

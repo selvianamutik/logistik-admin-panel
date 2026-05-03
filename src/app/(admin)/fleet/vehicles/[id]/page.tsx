@@ -42,6 +42,19 @@ import {
 } from '@/lib/maintenance';
 import { getTireHistoryActionColor, getTireHistoryActionLabel } from '@/lib/tire-history';
 
+function isTripOrDriverExpense(expense: Expense) {
+    return Boolean(expense.voucherRef || expense.boronganRef) || expense.categoryScope === 'TRIP' || expense.categoryScope === 'DRIVER_FEE';
+}
+
+function isVehicleUnitExpense(expense: Expense) {
+    if (isTripOrDriverExpense(expense)) return false;
+    if (expense.relatedMaintenanceRef || expense.relatedIncidentRef) return true;
+    if (expense.categoryScope === 'MAINTENANCE' || expense.categoryScope === 'INCIDENT') return true;
+
+    const category = String(expense.categoryName || '').toLowerCase();
+    return /maintenance|servis|service|oli|ban|sparepart|insiden|kecelakaan|santunan|towing|evakuasi|darurat|mogok|klaim kerusakan/.test(category);
+}
+
 export default function VehicleDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -127,8 +140,8 @@ export default function VehicleDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
 
-    const vehicleDirectExpenses = expenses.filter(expense => !expense.voucherRef && !expense.boronganRef);
-    const hiddenTripSettlementExpenses = expenses.filter(expense => Boolean(expense.voucherRef || expense.boronganRef));
+    const vehicleDirectExpenses = expenses.filter(isVehicleUnitExpense);
+    const hiddenTripSettlementExpenses = expenses.filter(isTripOrDriverExpense);
     const totalDirectExpenses = vehicleDirectExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     const totalMaintenanceCosts = maints.reduce((sum, maintenance) => sum + getMaintenanceRecordedCost(maintenance), 0);
     const totalExpenses = totalDirectExpenses + totalMaintenanceCosts;
@@ -182,18 +195,46 @@ export default function VehicleDetailPage() {
         .map((maintenance) => ({
             id: `maintenance-${maintenance._id}`,
             date: maintenance.completedDate || maintenance.plannedDate || '',
-            source: 'Maintenance',
+            source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance</Link>,
             description: renderMaintenanceCostDescription(maintenance),
             amount: getMaintenanceRecordedCost(maintenance),
         }));
     const vehicleCostRows = [
-        ...vehicleDirectExpenses.map((expense) => ({
-            id: expense._id,
-            date: expense.date || '',
-            source: expense.categoryName || 'Pengeluaran',
-            description: expense.note || expense.description || '-',
-            amount: expense.amount,
-        })),
+        ...vehicleDirectExpenses.map((expense) => {
+            const source = expense.relatedIncidentRef ? (
+                <Link href={`/fleet/incidents/${expense.relatedIncidentRef}`} style={{ color: 'var(--color-primary)' }}>
+                    Insiden
+                </Link>
+            ) : expense.relatedMaintenanceRef ? (
+                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                    Maintenance
+                </Link>
+            ) : (
+                expense.categoryName || 'Pengeluaran'
+            );
+            const documentLink = expense.relatedIncidentRef ? (
+                <Link href={`/fleet/incidents/${expense.relatedIncidentRef}`} style={{ color: 'var(--color-primary)' }}>
+                    Lihat insiden
+                </Link>
+            ) : expense.relatedMaintenanceRef ? (
+                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                    Lihat maintenance
+                </Link>
+            ) : null;
+
+            return {
+                id: expense._id,
+                date: expense.date || '',
+                source,
+                description: (
+                    <div style={{ display: 'grid', gap: '0.2rem' }}>
+                        <div>{expense.note || expense.description || '-'}</div>
+                        {documentLink && <div className="text-muted text-sm">{documentLink}</div>}
+                    </div>
+                ),
+                amount: expense.amount,
+            };
+        }),
         ...maintenanceCostRows,
     ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
@@ -748,7 +789,7 @@ export default function VehicleDetailPage() {
                             <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)' }}>
                                 <div className="font-medium">Riwayat bon/upah supir tidak ditampilkan di sini</div>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                    Ada {hiddenTripSettlementExpenses.length} pengeluaran trip terkait voucher atau settlement driver yang disembunyikan dari biaya kendaraan agar biaya unit tidak tercampur dengan hak driver.
+                                    Ada {hiddenTripSettlementExpenses.length} pengeluaran trip atau upah driver yang disembunyikan dari biaya kendaraan agar biaya unit tidak tercampur dengan hak driver.
                                 </div>
                             </div>
                         )}
