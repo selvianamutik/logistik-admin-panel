@@ -22,9 +22,9 @@ export function inferExpenseCategoryScope(category: Pick<ExpenseCategory, 'name'
   if (isExpenseCategoryScope(category.scope)) return category.scope;
   const name = String(category.name || '').toLowerCase();
   if (/borongan|upah supir|upah driver/.test(name)) return 'DRIVER_FEE';
-  if (/insiden|kecelakaan|santunan|towing|evakuasi/.test(name)) return 'INCIDENT';
+  if (/insiden|kecelakaan|santunan|towing|evakuasi|darurat|mogok|klaim kerusakan/.test(name)) return 'INCIDENT';
   if (/maintenance|perawatan|servis|service|oli|ban|sparepart/.test(name)) return 'MAINTENANCE';
-  if (/bbm|solar|tol|parkir|bongkar|makan driver|uang jalan|trip/.test(name)) return 'TRIP';
+  if (/bbm|solar|tol|parkir|bongkar|konsumsi driver|makan driver|menginap|hotel|akomodasi|uang jalan|trip/.test(name)) return 'TRIP';
   return 'GENERAL';
 }
 

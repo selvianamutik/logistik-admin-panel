@@ -126,10 +126,10 @@ function resolveExpenseAccount(expense: Pick<Expense, 'categoryName' | 'accountS
         return expense.accountSystemKey;
     }
     const category = String(expense.categoryName || '').toLowerCase();
-    if (expense.relatedIncidentRef || /insiden|kecelakaan|santunan/.test(category)) return 'incident_expense';
+    if (expense.relatedIncidentRef || /insiden|kecelakaan|santunan|towing|evakuasi|darurat|mogok|klaim kerusakan/.test(category)) return 'incident_expense';
     if (expense.relatedMaintenanceRef || /maintenance|servis|service|oli|ban|sparepart/.test(category)) return 'maintenance_expense';
     if (expense.boronganRef || /borongan|upah supir|upah driver/.test(category)) return 'driver_fee_expense';
-    if (expense.voucherRef || /uang jalan|trip|solar|tol|parkir|makan/.test(category)) return 'trip_misc_expense';
+    if (expense.voucherRef || /uang jalan|trip|solar|tol|parkir|makan|konsumsi|menginap|bongkar/.test(category)) return 'trip_misc_expense';
     return 'operational_expense';
 }
 

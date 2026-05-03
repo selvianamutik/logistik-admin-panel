@@ -135,17 +135,26 @@ const seedData: DataStore = {
     ],
 
     expenseCategories: [
-        { _id: 'expcat-001', _type: 'expenseCategory', name: 'BBM / Solar', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
-        { _id: 'expcat-002', _type: 'expenseCategory', name: 'Tol & Parkir', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
-        { _id: 'expcat-003', _type: 'expenseCategory', name: 'Perawatan Kendaraan', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', active: true },
-        { _id: 'expcat-004', _type: 'expenseCategory', name: 'Ban', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', active: true },
-        { _id: 'expcat-005', _type: 'expenseCategory', name: 'Gaji & Upah', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true },
-        { _id: 'expcat-006', _type: 'expenseCategory', name: 'Operasional Kantor', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true },
-        { _id: 'expcat-007', _type: 'expenseCategory', name: 'Perbaikan Insiden', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', active: true },
-        { _id: 'expcat-008', _type: 'expenseCategory', name: 'Borongan Supir', scope: 'DRIVER_FEE', allowManual: false, accountSystemKey: 'driver_fee_expense', active: true },
-        { _id: 'expcat-009', _type: 'expenseCategory', name: 'Bongkar Muat', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', active: true },
-        { _id: 'expcat-010', _type: 'expenseCategory', name: 'Santunan Kecelakaan', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', active: true },
-        { _id: 'expcat-011', _type: 'expenseCategory', name: 'Administrasi Bank', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', active: true }
+        { _id: 'expcat-001', _type: 'expenseCategory', name: 'BBM / Solar', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 10, active: true },
+        { _id: 'expcat-002', _type: 'expenseCategory', name: 'Tol & Parkir', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 20, active: true },
+        { _id: 'expcat-003', _type: 'expenseCategory', name: 'Konsumsi Driver', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 30, active: true },
+        { _id: 'expcat-004', _type: 'expenseCategory', name: 'Menginap Driver', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 40, active: true },
+        { _id: 'expcat-005', _type: 'expenseCategory', name: 'Bongkar Muat', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 50, active: true },
+        { _id: 'expcat-006', _type: 'expenseCategory', name: 'Lain-lain Trip', scope: 'TRIP', allowManual: false, accountSystemKey: 'trip_misc_expense', sortOrder: 60, active: true },
+        { _id: 'expcat-007', _type: 'expenseCategory', name: 'Servis Kendaraan', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', sortOrder: 110, active: true },
+        { _id: 'expcat-008', _type: 'expenseCategory', name: 'Ban', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', sortOrder: 120, active: true },
+        { _id: 'expcat-009', _type: 'expenseCategory', name: 'Oli & Sparepart', scope: 'MAINTENANCE', allowManual: false, accountSystemKey: 'maintenance_expense', sortOrder: 130, active: true },
+        { _id: 'expcat-010', _type: 'expenseCategory', name: 'Perbaikan Darurat Trip', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', sortOrder: 210, active: true },
+        { _id: 'expcat-011', _type: 'expenseCategory', name: 'Towing / Evakuasi', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', sortOrder: 220, active: true },
+        { _id: 'expcat-012', _type: 'expenseCategory', name: 'Santunan Kecelakaan', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', sortOrder: 230, active: true },
+        { _id: 'expcat-013', _type: 'expenseCategory', name: 'Klaim Kerusakan Insiden', scope: 'INCIDENT', allowManual: false, accountSystemKey: 'incident_expense', sortOrder: 240, active: true },
+        { _id: 'expcat-014', _type: 'expenseCategory', name: 'Borongan Supir', scope: 'DRIVER_FEE', allowManual: false, accountSystemKey: 'driver_fee_expense', sortOrder: 310, active: true },
+        { _id: 'expcat-015', _type: 'expenseCategory', name: 'Tambahan Overtonase Driver', scope: 'DRIVER_FEE', allowManual: false, accountSystemKey: 'driver_fee_expense', sortOrder: 320, active: true },
+        { _id: 'expcat-016', _type: 'expenseCategory', name: 'Operasional Kantor', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 410, active: true },
+        { _id: 'expcat-017', _type: 'expenseCategory', name: 'Administrasi Bank', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 420, active: true },
+        { _id: 'expcat-018', _type: 'expenseCategory', name: 'Gaji & Upah', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 430, active: true },
+        { _id: 'expcat-019', _type: 'expenseCategory', name: 'Lain-lain Umum', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 440, active: true },
+        { _id: 'expcat-020', _type: 'expenseCategory', name: 'Kategori Lama', scope: 'GENERAL', allowManual: false, accountSystemKey: 'operational_expense', sortOrder: 999, active: false }
     ],
 
     drivers: [
