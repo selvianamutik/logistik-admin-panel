@@ -125,6 +125,7 @@ export default function SuratJalanDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [showActualEditModal, setShowActualEditModal] = useState(false);
     const [showActualCargoFinalizationModal, setShowActualCargoFinalizationModal] = useState(false);
     const [activeFinalizationCargoItemRef, setActiveFinalizationCargoItemRef] = useState('');
     const [activeFinalizationDropKey, setActiveFinalizationDropKey] = useState('');
@@ -140,6 +141,7 @@ export default function SuratJalanDetailPage() {
     const [continuingHeldCargo, setContinuingHeldCargo] = useState(false);
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
+    const [savingActualEdit, setSavingActualEdit] = useState(false);
     const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<EditSuratJalanForm>({
         referenceNumber: '',
@@ -153,6 +155,7 @@ export default function SuratJalanDetailPage() {
     });
     const [editExistingItems, setEditExistingItems] = useState<EditExistingCargoItem[]>([]);
     const [editNewItems, setEditNewItems] = useState<DeliveryOrderCargoDraftItem[]>([]);
+    const [actualEditItems, setActualEditItems] = useState<ActualCargoDraft[]>([]);
     const canOpenTripPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canOpenOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
@@ -1003,6 +1006,130 @@ export default function SuratJalanDetailPage() {
         ));
     };
 
+    const openActualEditModal = () => {
+        if (!isDeliveredStatus || deliveryOrder.tripClosedByAdminAt) return;
+        setActualEditItems(buildActualCargoDrafts(selectedDeliveryOrderItems));
+        setShowActualEditModal(true);
+    };
+
+    const updateActualEditItem = (
+        deliveryOrderItemRef: string,
+        field: keyof Pick<ActualCargoDraft, 'actualQtyKoli' | 'actualWeightInputValue' | 'actualWeightInputUnit' | 'actualVolumeInputValue' | 'actualVolumeInputUnit'>,
+        value: string
+    ) => {
+        setActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            if (field === 'actualQtyKoli') {
+                return applyActualCargoAutoWeightFromQty(item, value);
+            }
+            return { ...item, [field]: value };
+        }));
+    };
+
+    const updateActualEditWeightUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualWeightInputUnit']) => {
+        setActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            const currentWeightKg = convertWeightToKg(
+                parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                }),
+                item.actualWeightInputUnit
+            );
+            return {
+                ...item,
+                actualWeightInputUnit: nextUnit,
+                actualWeightInputValue: currentWeightKg > 0 ? String(convertKgToWeightInputValue(currentWeightKg, nextUnit)) : '',
+            };
+        }));
+    };
+
+    const updateActualEditVolumeUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualVolumeInputUnit']) => {
+        setActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            const currentVolumeM3 = convertVolumeToM3(
+                parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                item.actualVolumeInputUnit
+            );
+            return {
+                ...item,
+                actualVolumeInputUnit: nextUnit,
+                actualVolumeInputValue: currentVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit)) : '',
+            };
+        }));
+    };
+
+    const saveActualEdit = async () => {
+        if (!deliveryOrder || !suratJalanDocument || !canManageDeliveryStatus || deliveryOrder.tripClosedByAdminAt) return;
+        const invalidItemIndex = actualEditItems.findIndex(item => {
+            const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
+            const weight = convertWeightToKg(
+                parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                }),
+                item.actualWeightInputUnit
+            );
+            const volume = convertVolumeToM3(
+                parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                item.actualVolumeInputUnit
+            );
+            return qty <= 0 && weight <= 0 && volume <= 0;
+        });
+        if (invalidItemIndex >= 0) {
+            addToast('error', `Aktual item baris ${invalidItemIndex + 1} perlu isi qty, berat, atau volume.`);
+            return;
+        }
+
+        setSavingActualEdit(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-surat-jalan-actual-cargo',
+                    data: {
+                        id: deliveryOrder._id,
+                        suratJalanRef: suratJalanDocument._id,
+                        actualItems: actualEditItems.map(item => ({
+                            deliveryOrderItemRef: item.deliveryOrderItemRef,
+                            actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+                            actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                            }),
+                            actualWeightInputUnit: item.actualWeightInputUnit,
+                            actualVolumeInputValue: parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                            }),
+                            actualVolumeInputUnit: item.actualVolumeInputUnit,
+                        })),
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan aktual item SJ');
+                return;
+            }
+            setShowActualEditModal(false);
+            await loadDocument();
+            addToast('success', 'Aktual item SJ berhasil diperbarui');
+        } catch {
+            addToast('error', 'Gagal menyimpan aktual item SJ');
+        } finally {
+            setSavingActualEdit(false);
+        }
+    };
+
     const getRemainingActualDropValuesForCargoItem = (
         cargoItem: ActualCargoDraft,
         excludeDraftKey = ''
@@ -1354,7 +1481,7 @@ export default function SuratJalanDetailPage() {
         const isPartialHoldContinuation = shouldPrepareHoldContinuation && continuationDrafts.itemRefs.length > 0;
         const nextActualDropPoints = isPartialHoldContinuation
             ? []
-            : buildDefaultActualDropDrafts(deliveryOrder, nextActualCargoItems, continuationDrafts.sourceDropPoints);
+            : buildDefaultActualDropDrafts(deliveryOrder, nextActualCargoItems, continuationDrafts.sourceDropPoints || []);
         const nextShowAdvancedDropEditor = isPartialHoldContinuation || shouldOpenAdvancedDropEditor(deliveryOrder, nextActualDropPoints);
         setActualCargoItems(nextActualCargoItems);
         setActualDropPoints(nextShowAdvancedDropEditor ? expandActualDropDraftsBySelectedItems(nextActualDropPoints) : nextActualDropPoints);
@@ -1462,6 +1589,11 @@ export default function SuratJalanDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
+                    {isDeliveredStatus && canManageDeliveryStatus && !deliveryOrder.tripClosedByAdminAt && (
+                        <button className="btn btn-secondary" onClick={openActualEditModal}>
+                            <Edit size={16} /> Edit Aktual
+                        </button>
+                    )}
                     {canEditSuratJalan && !deliveryOrder.tripClosedByAdminAt && (
                         <button className="btn btn-primary" onClick={openEditModal}>
                             <Edit size={16} /> Edit SJ
@@ -1562,6 +1694,91 @@ export default function SuratJalanDetailPage() {
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. Trip Internal</div><div className="detail-value">{canOpenTripPage ? <Link href={withReturnTo(`/trips/${deliveryOrder._id}`)}>{formatInternalDeliveryOrderNumber(deliveryOrder)}</Link> : formatInternalDeliveryOrderNumber(deliveryOrder)}</div></div>
                             <div className="detail-item"><div className="detail-label">Status Order</div><div className="detail-value">{sourceOrder.status || '-'}</div></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showActualEditModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingActualEdit) setShowActualEditModal(false); }}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Aktual Item SJ</h3>
+                            <button className="modal-close" onClick={() => setShowActualEditModal(false)} disabled={savingActualEdit}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {actualEditItems.map((item, index) => (
+                                    <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
+                                        <div>
+                                            <div className="font-semibold">Item {index + 1}</div>
+                                            <div className="text-muted text-sm">{item.description || '-'}</div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Qty Aktual</label>
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={2}
+                                                    value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
+                                                    onValueChange={value => updateActualEditItem(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
+                                                    disabled={savingActualEdit}
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Berat Aktual</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                    <FormattedNumberInput
+                                                        min={0}
+                                                        maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
+                                                        value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                                                        })}
+                                                        onValueChange={value => updateActualEditItem(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
+                                                        disabled={savingActualEdit}
+                                                    />
+                                                    <select
+                                                        className="form-select"
+                                                        value={item.actualWeightInputUnit}
+                                                        onChange={event => updateActualEditWeightUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualWeightInputUnit'])}
+                                                        disabled={savingActualEdit}
+                                                    >
+                                                        {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Volume Aktual</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                    <FormattedNumberInput
+                                                        min={0}
+                                                        maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
+                                                        value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                                            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                        })}
+                                                        onValueChange={value => updateActualEditItem(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
+                                                        disabled={savingActualEdit}
+                                                    />
+                                                    <select
+                                                        className="form-select"
+                                                        value={item.actualVolumeInputUnit}
+                                                        onChange={event => updateActualEditVolumeUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualVolumeInputUnit'])}
+                                                        disabled={savingActualEdit}
+                                                    >
+                                                        {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowActualEditModal(false)} disabled={savingActualEdit}>Batal</button>
+                            <button className="btn btn-primary" onClick={() => void saveActualEdit()} disabled={savingActualEdit || actualEditItems.length === 0}>
+                                <Save size={16} /> {savingActualEdit ? 'Menyimpan...' : 'Simpan Aktual'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1855,7 +2072,7 @@ export default function SuratJalanDetailPage() {
                                                     <label className="form-label" style={{ marginBottom: 0 }}>Tentukan Realisasi Titik Drop <span className="required">*</span></label>
                                                 </div>
                                                 <button type="button" className="btn btn-secondary btn-sm" onClick={toggleAdvancedDropEditor} disabled={updatingStatus}>
-                                                    <MapPin size={14} /> {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
+                                                    <MapPin size={14} /> {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold'}
                                                 </button>
                                             </div>
                                             <div style={{ background: 'var(--color-info-light)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
@@ -1867,11 +2084,31 @@ export default function SuratJalanDetailPage() {
                                                 </div>
                                             )}
                                             {!showAdvancedDropEditor ? (
-                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>
+                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                                    <div style={{ fontWeight: 600 }}>Realisasi Default</div>
+                                                    <div className="form-row">
+                                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                                            <label className="form-label">Nama Lokasi Drop <span className="required">*</span></label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={selectedDetailState.autoActualDropDraft.locationName}
+                                                                onChange={event => updateActualDropDraft(selectedDetailState.autoActualDropDraft.draftKey, 'locationName', event.target.value)}
+                                                                disabled={updatingStatus}
+                                                                placeholder="Mis. Gudang Customer Surabaya"
+                                                            />
+                                                        </div>
+                                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                                            <label className="form-label">Alamat Drop</label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={selectedDetailState.autoActualDropDraft.locationAddress}
+                                                                onChange={event => updateActualDropDraft(selectedDetailState.autoActualDropDraft.draftKey, 'locationAddress', event.target.value)}
+                                                                disabled={updatingStatus}
+                                                                placeholder="Opsional"
+                                                            />
+                                                        </div>
+                                                    </div>
                                                     <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
-                                                        <div>Lokasi: {selectedDetailState.autoActualDropDraft.locationName || 'Tujuan Invoice'}</div>
-                                                        {selectedDetailState.autoActualDropDraft.locationAddress && <div>Alamat: {selectedDetailState.autoActualDropDraft.locationAddress}</div>}
                                                         <div>Barang: {summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(selectedDetailState.autoActualDropDraft, selectedActualCargoItems))}</div>
                                                         <div>Muatan: {formatCargoSummary(selectedActualCargoTotals)}</div>
                                                     </div>
@@ -1941,7 +2178,7 @@ export default function SuratJalanDetailPage() {
                                                                     <div className="form-group">
                                                                         <label className="form-label">Tipe Titik</label>
                                                                         <select className="form-select" value={drop.stopType} onChange={event => updateActualDropDraft(drop.draftKey, 'stopType', event.target.value)} disabled={updatingStatus}>
-                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).map(([value, meta]) => (
+                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => value !== 'EXTRA_DROP').map(([value, meta]) => (
                                                                                 <option key={value} value={value}>{meta.label}</option>
                                                                             ))}
                                                                         </select>

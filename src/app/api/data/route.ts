@@ -80,6 +80,7 @@ import {
     handleDeliveryOrderAppendCargoItems,
     handleDeliveryOrderCargoItemUpdate,
     handleDeliveryOrderCargoItemRemove,
+    handleDeliveryOrderSuratJalanActualCargoUpdate,
     handleDeliveryOrderCancelTrip,
     handleDeliveryOrderContinueHeldCargo,
     handleDeliveryOrderCreate,
@@ -1660,6 +1661,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'update-cargo-item') {
             return await handleDeliveryOrderCargoItemUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'update-surat-jalan-actual-cargo') {
+            return await handleDeliveryOrderSuratJalanActualCargoUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'remove-cargo-item') {

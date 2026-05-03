@@ -222,8 +222,19 @@ export function buildOrderDetailMetrics(
         ) {
             return acc;
         }
+        const progress = itemProgressById[doItem.orderItemRef];
+        if (!progress) {
+            return acc;
+        }
         const current = acc[doItem.orderItemRef] || createCargoAggregate();
-        acc[doItem.orderItemRef] = addCargoAggregate(current, getPlannedDoItemCargo(doItem));
+        const activeCargo = {
+            qtyKoli: progress.assignedQtyKoli,
+            weightKg: progress.assignedWeight,
+            volumeM3: progress.assignedVolume,
+        };
+        acc[doItem.orderItemRef] = hasCargoAggregate(current)
+            ? current
+            : activeCargo;
         return acc;
     }, {});
     const availableItems = items.filter(item => {

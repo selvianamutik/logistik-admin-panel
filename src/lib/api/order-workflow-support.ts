@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
     calculateWeightPortion,
+    deriveOrderItemStatusFromProgress,
+    getOrderItemProgress,
     roundQuantity,
 } from '@/lib/order-item-progress';
 import {
@@ -311,22 +313,13 @@ export function buildDriverRequestedTrackingStatus(status: string) {
 }
 
 export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
-    const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
-    const anyDelivered = items.some(
-        item =>
-            item.status === 'DELIVERED' ||
-            item.status === 'PARTIAL'
+    const derivedItemStatuses = items.map(item =>
+        deriveOrderItemStatusFromProgress(getOrderItemProgress(item))
     );
-    const anyAssigned = items.some(
-        item =>
-            item.status === 'ASSIGNED' ||
-            item.status === 'ON_DELIVERY'
-    );
-    const anyNonDeliveryResolved = items.some(
-        item =>
-            item.status === 'HOLD' ||
-            item.status === 'RETURNED'
-    );
+    const allDelivered = derivedItemStatuses.length > 0 && derivedItemStatuses.every(status => status === 'DELIVERED');
+    const anyDelivered = derivedItemStatuses.some(status => status === 'DELIVERED' || status === 'PARTIAL');
+    const anyAssigned = derivedItemStatuses.some(status => status === 'ASSIGNED' || status === 'ON_DELIVERY');
+    const anyNonDeliveryResolved = derivedItemStatuses.some(status => status === 'HOLD' || status === 'RETURNED');
 
     if (allDelivered) return 'COMPLETE';
     if (anyDelivered) return 'PARTIAL';

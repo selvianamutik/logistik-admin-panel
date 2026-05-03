@@ -445,11 +445,20 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                     const derivedItems = mapDeliveryOrderToSuratJalanDocumentItems(deliveryOrder, deliveryOrderItems)
                         .filter(item => item.suratJalanRef === suratJalanDocument._id);
                     const derivedItemById = new Map(derivedItems.map(item => [item._id, item] as const));
+                    const derivedItemByDeliveryOrderItemRef = new Map(
+                        derivedItems
+                            .filter(item => item.sourceDeliveryOrderItemRef)
+                            .map(item => [item.sourceDeliveryOrderItemRef, item] as const)
+                    );
                     const realItems = allSuratJalanItemRecords
                         .filter(item => item.suratJalanRef === suratJalanDocument._id)
                         .map(item => {
                             const realItem = mapSuratJalanItemRecordToDocumentItem(item);
-                            return mergeSuratJalanDocumentItemWithLiveCargo(realItem, derivedItemById.get(realItem._id));
+                            return mergeSuratJalanDocumentItemWithLiveCargo(
+                                realItem,
+                                derivedItemById.get(realItem._id) ||
+                                    derivedItemByDeliveryOrderItemRef.get(realItem.sourceDeliveryOrderItemRef)
+                            );
                         });
                     const realItemById = new Map(realItems.map(item => [item._id, item] as const));
                     return [
@@ -507,9 +516,18 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
 
     const derivedDocumentItems = mapDeliveryOrdersToSuratJalanDocumentItems(derivedDeliveryOrders, allDeliveryOrderItems);
     const derivedDocumentItemById = new Map(derivedDocumentItems.map(item => [item._id, item] as const));
+    const derivedDocumentItemByDeliveryOrderItemRef = new Map(
+        derivedDocumentItems
+            .filter(item => item.sourceDeliveryOrderItemRef)
+            .map(item => [`${item.suratJalanRef}:${item.sourceDeliveryOrderItemRef}`, item] as const)
+    );
     const realDocumentItems = allSuratJalanItemRecords.map(item => {
         const realItem = mapSuratJalanItemRecordToDocumentItem(item);
-        return mergeSuratJalanDocumentItemWithLiveCargo(realItem, derivedDocumentItemById.get(realItem._id));
+        return mergeSuratJalanDocumentItemWithLiveCargo(
+            realItem,
+            derivedDocumentItemById.get(realItem._id) ||
+                derivedDocumentItemByDeliveryOrderItemRef.get(`${realItem.suratJalanRef}:${realItem.sourceDeliveryOrderItemRef}`)
+        );
     });
     const realDocumentItemById = new Map(realDocumentItems.map(item => [item._id, item] as const));
     const documentItems = [

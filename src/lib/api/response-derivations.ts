@@ -1,4 +1,3 @@
-import { deriveOrderItemStatusFromProgress, getOrderItemProgress } from '@/lib/order-item-progress';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import {
     getDeliveryOrderActualDropDestinations,
@@ -92,14 +91,12 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
         ? await listDocumentsByFilter<OrderItemStatusSource>('orderItem', { orderRef: orderIds })
         : [];
 
-    const itemsByOrderRef = new Map<string, Array<{ status: string }>>();
+    const itemsByOrderRef = new Map<string, OrderItemStatusSource[]>();
     for (const item of orderItems) {
         const orderRef = normalizeOptionalText(item.orderRef);
         if (!orderRef) continue;
         const current = itemsByOrderRef.get(orderRef) || [];
-        current.push({
-            status: deriveOrderItemStatusFromProgress(getOrderItemProgress(item)),
-        });
+        current.push(item);
         itemsByOrderRef.set(orderRef, current);
     }
 

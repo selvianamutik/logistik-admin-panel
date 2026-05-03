@@ -2351,7 +2351,7 @@ export default function DriverPortalPage() {
                                         onClick={() => setShowCompletionAdvancedDropEditor(previous => !previous)}
                                         disabled={isActionInFlight}
                                     >
-                                        {showCompletionAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
+                                        {showCompletionAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold'}
                                     </button>
                                 </div>
                                 {completionDetailState.actualDropMismatchMessage && (
@@ -2497,7 +2497,6 @@ export default function DriverPortalPage() {
                                                             <option value="DROP">Drop</option>
                                                             <option value="HOLD">Hold</option>
                                                             <option value="TRANSIT">Transit</option>
-                                                            <option value="EXTRA_DROP">Extra Drop</option>
                                                             <option value="RETURN">Return</option>
                                                         </select>
                                                     </div>

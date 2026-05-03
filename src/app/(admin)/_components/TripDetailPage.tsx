@@ -1404,18 +1404,6 @@ export default function TripDetailPage() {
         )));
     };
 
-    const getSelectedProductRefsForCargoDraftGroup = (groupId: string, currentItemIndex: number) => {
-        const selectedGroup = cargoDraftGroups.find(group => group.id === groupId);
-        if (!selectedGroup) {
-            return new Set<string>();
-        }
-        return new Set(
-            selectedGroup.items
-                .map((item, index) => index === currentItemIndex ? '' : item.customerProductRef.trim())
-                .filter(Boolean)
-        );
-    };
-
     const removeCargoDraftItem = (groupId: string, itemIndex: number) => {
         setCargoDraftGroups(previous => previous.map(group => {
             if (group.id !== groupId) {
@@ -1621,8 +1609,8 @@ export default function TripDetailPage() {
             isPartialHoldContinuation
                 ? []
                 : hydratingDriverDeliveredRequest
-                    ? pendingDriverActualDropPoints
-                    : continuationDrafts.sourceDropPoints
+                    ? pendingDriverActualDropPoints || []
+                    : continuationDrafts.sourceDropPoints || []
         );
         const shouldUseAdvancedDropEditor = !isPartialHoldContinuation && shouldOpenAdvancedDropEditor(statusModalDOData, nextActualDropPoints);
         setActualCargoItems(nextActualCargoItems);
@@ -1715,6 +1703,20 @@ export default function TripDetailPage() {
         setSavingCargo(true);
         try {
             const action = editingCargoItemId ? 'update-cargo-item' : 'append-cargo-items';
+            const existingShipperReferences = Array.isArray(doData.shipperReferences)
+                ? doData.shipperReferences
+                : [];
+            const existingReferenceNumbers = new Set(
+                existingShipperReferences
+                    .map(reference => reference.referenceNumber?.trim().toUpperCase() || '')
+                    .filter(Boolean)
+            );
+            const appendedShipperReferences = normalizedGroups
+                .filter(group => !existingReferenceNumbers.has(group.resolvedShipperReferenceNumber))
+                .map(group => ({
+                    referenceNumber: group.resolvedShipperReferenceNumber,
+                    pickupStopKey: group.resolvedPickupStopKey || undefined,
+                }));
             const payloadData = editingCargoItemId
                 ? {
                     id: doData._id,
@@ -1727,6 +1729,10 @@ export default function TripDetailPage() {
                 }
                 : {
                     id: doData._id,
+                    shipperReferences: [
+                        ...existingShipperReferences,
+                        ...appendedShipperReferences,
+                    ],
                     cargoItems: normalizedGroups.flatMap(group =>
                         group.draftItems.map(item => ({
                             ...item,
@@ -3536,18 +3542,6 @@ export default function TripDetailPage() {
         const selectedReference = actualDropShipperReferenceOptions.find(reference => reference.optionValue === selectedReferenceValue);
         return drop.billingCustomerRef || selectedReference?.billingCustomerRef || doData?.customerRef || '';
     };
-    const updateActualDropBillingCustomer = (draftKey: string, customerRef: string) => {
-        const nextCustomer = billingCustomers.find(customer => customer._id === customerRef);
-        setActualDropPoints(previous => previous.map(item => (
-            item.draftKey === draftKey
-                ? {
-                    ...item,
-                    billingCustomerRef: customerRef,
-                    billingCustomerName: nextCustomer?.name || '',
-                }
-                : item
-        )));
-    };
     const resolveActualDropRecipientValue = (
         drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef' | 'locationName' | 'locationAddress'>
     ) => {
@@ -3974,9 +3968,56 @@ export default function TripDetailPage() {
         actualDropPoints: selectedEffectiveActualDropPoints,
         showAdvancedDropEditor,
     });
+    const selectedActualDropBillingCustomerRef = (() => {
+        if (!showAdvancedDropEditor) {
+            return getActualDropBillingCustomerValue(selectedAutoActualDropDraft);
+        }
+        const selectedRefs = Array.from(new Set(
+            selectedActualDropPoints.map(drop => getActualDropBillingCustomerValue(drop)).filter(Boolean)
+        ));
+        return selectedRefs.length === 1 ? selectedRefs[0] : '';
+    })();
+    const updateSelectedActualDropBillingCustomer = (customerRef: string) => {
+        const nextCustomer = billingCustomers.find(customer => customer._id === customerRef);
+        const selectedDropKeys = new Set(
+            showAdvancedDropEditor
+                ? selectedActualDropPoints.map(drop => drop.draftKey)
+                : [selectedAutoActualDropDraft.draftKey]
+        );
+        setActualDropPoints(previous => previous.map(item => (
+            selectedDropKeys.has(item.draftKey)
+                ? {
+                    ...item,
+                    billingCustomerRef: customerRef,
+                    billingCustomerName: nextCustomer?.name || '',
+                }
+                : item
+        )));
+    };
     const selectedSubmissionActualDropPoints = (() => {
         if (!showAdvancedDropEditor) {
-            return [selectedAutoActualDropDraft];
+            const selectedItemRefs = selectedDerivedActualCargoItems.map(item => item.deliveryOrderItemRef).filter(Boolean);
+            const selectedReferenceKeys = Array.from(new Set(
+                selectedDerivedActualCargoItems
+                    .map(item => item.shipperReferenceKey)
+                    .filter(Boolean)
+            ));
+            const selectedReferenceNumbers = Array.from(new Set(
+                selectedDerivedActualCargoItems
+                    .map(item => item.shipperReferenceNumber)
+                    .filter(Boolean)
+            ));
+
+            const scopedAutoDrop = {
+                ...selectedAutoActualDropDraft,
+                deliveryOrderItemRef: selectedItemRefs.length === 1 ? selectedItemRefs[0] : selectedAutoActualDropDraft.deliveryOrderItemRef,
+                shipperReferenceKey: selectedReferenceKeys.length === 1 ? selectedReferenceKeys[0] : selectedAutoActualDropDraft.shipperReferenceKey,
+                shipperReferenceNumber: selectedReferenceNumbers.length === 1 ? selectedReferenceNumbers[0] : selectedAutoActualDropDraft.shipperReferenceNumber,
+            } as ActualDropDraft & { deliveryOrderItemRefs?: string[] };
+            if (selectedItemRefs.length > 1) {
+                scopedAutoDrop.deliveryOrderItemRefs = selectedItemRefs;
+            }
+            return [scopedAutoDrop];
         }
 
         const adjustedDropPoints = [...selectedEffectiveActualDropPoints];
@@ -5907,6 +5948,27 @@ export default function TripDetailPage() {
                                             <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>{selectedDropOutcomeSummary}</div>
                                         </div>
                                     </div>
+                                    {billingCustomers.length > 0 && (
+                                        <div className="form-group">
+                                            <label className="form-label">Customer Invoice</label>
+                                            <select
+                                                className="form-select"
+                                                value={selectedActualDropBillingCustomerRef}
+                                                onChange={event => updateSelectedActualDropBillingCustomer(event.target.value)}
+                                                disabled={updatingStatus}
+                                            >
+                                                <option value={doData?.customerRef || ''}>Ikuti customer order / resi</option>
+                                                {selectedActualDropBillingCustomerRef === '' && (
+                                                    <option value="" disabled>Pilih customer invoice</option>
+                                                )}
+                                                {billingCustomers.map(customer => (
+                                                    <option key={customer._id} value={customer._id}>
+                                                        {customer.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                     <div className="form-group">
                                         <label className="form-label">Nama Penerima POD <span className="required">*</span></label>
                                         <input className="form-input" value={podName} onChange={e => setPodName(e.target.value)} disabled={updatingStatus} />
@@ -5932,11 +5994,11 @@ export default function TripDetailPage() {
                                                     onClick={toggleAdvancedDropEditor}
                                                     disabled={updatingStatus}
                                                 >
-                                                    {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
+                                                    {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold'}
                                                 </button>
                                             </div>
                                             <div style={{ background: 'var(--color-info-light)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
-                                                Pilih dulu barang batch SJ ini turun ke mana. Kalau semua selesai di satu tujuan, sistem otomatis pakai <strong>{selectedAutoActualDropDraft.locationName || 'Tujuan Invoice'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
+                                                Pilih dulu barang batch SJ ini turun ke mana. Kalau semua selesai di satu tujuan, sistem otomatis pakai <strong>{selectedAutoActualDropDraft.locationName || 'Tujuan Invoice'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, atau return.
                                             </div>
                                             {selectedActualDropMismatchMessage && (
                                                 <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
@@ -5952,27 +6014,8 @@ export default function TripDetailPage() {
                                                 (() => {
                                                     const recipientOptions = getActualDropRecipientOptions(selectedAutoActualDropDraft);
                                                     const selectedRecipientId = resolveActualDropRecipientValue(selectedAutoActualDropDraft);
-                                                    const selectedBillingCustomerRef = getActualDropBillingCustomerValue(selectedAutoActualDropDraft);
                                                     return (
                                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
-                                                            {billingCustomers.length > 0 && (
-                                                                <div className="form-group" style={{ marginBottom: 0 }}>
-                                                                    <label className="form-label">Customer Invoice</label>
-                                                                    <select
-                                                                        className="form-select"
-                                                                        value={selectedBillingCustomerRef}
-                                                                        onChange={event => updateActualDropBillingCustomer(selectedAutoActualDropDraft.draftKey, event.target.value)}
-                                                                        disabled={updatingStatus}
-                                                                    >
-                                                                        <option value={doData?.customerRef || ''}>Ikuti customer order / resi</option>
-                                                                        {billingCustomers.map(customer => (
-                                                                            <option key={customer._id} value={customer._id}>
-                                                                                {customer.name}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                </div>
-                                                            )}
                                                             {recipientOptions.length > 0 && (
                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                     <label className="form-label">Tujuan dari Master Customer</label>
@@ -6036,7 +6079,6 @@ export default function TripDetailPage() {
                                                                 const allocationSummaryRows = getActualDropAllocationSummaryRows(item);
                                                                 const recipientOptions = getActualDropRecipientOptions(item);
                                                                 const selectedRecipientId = resolveActualDropRecipientValue(item);
-                                                                const selectedBillingCustomerRef = getActualDropBillingCustomerValue(item);
                                                                 return (
                                                             <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
@@ -6117,29 +6159,11 @@ export default function TripDetailPage() {
                                                                             onChange={e => updateActualDropDraft(item.draftKey, 'stopType', e.target.value)}
                                                                             disabled={updatingStatus}
                                                                         >
-                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).map(([value, meta]) => (
+                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => value !== 'EXTRA_DROP').map(([value, meta]) => (
                                                                                 <option key={value} value={value}>{meta.label}</option>
                                                                             ))}
                                                                         </select>
                                                                     </div>
-                                                                    {billingCustomers.length > 0 && (
-                                                                        <div className="form-group">
-                                                                            <label className="form-label">Customer Invoice</label>
-                                                                            <select
-                                                                                className="form-select"
-                                                                                value={selectedBillingCustomerRef}
-                                                                                onChange={e => updateActualDropBillingCustomer(item.draftKey, e.target.value)}
-                                                                                disabled={updatingStatus}
-                                                                            >
-                                                                                <option value={doData?.customerRef || ''}>Ikuti customer order / resi</option>
-                                                                                {billingCustomers.map(customer => (
-                                                                                    <option key={customer._id} value={customer._id}>
-                                                                                        {customer.name}
-                                                                                    </option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                    )}
                                                                     {recipientOptions.length > 0 && (
                                                                         <div className="form-group">
                                                                             <label className="form-label">Tujuan Master Customer</label>
@@ -7075,9 +7099,6 @@ export default function TripDetailPage() {
 
                                             <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                 {group.items.map((item, itemIndex) => (
-                                                    (() => {
-                                                        const selectedProductRefsInGroup = getSelectedProductRefsForCargoDraftGroup(group.id, itemIndex);
-                                                        return (
                                                     <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
                                                         <div style={{ flex: '1 1 240px' }}>
                                                             <label className="form-label">Barang Customer</label>
@@ -7089,11 +7110,7 @@ export default function TripDetailPage() {
                                                             >
                                                                 <option value="">{deliveryOrderCustomerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
                                                                 {deliveryOrderCustomerProducts.map(product => (
-                                                                    <option
-                                                                        key={product._id}
-                                                                        value={product._id}
-                                                                        disabled={selectedProductRefsInGroup.has(product._id)}
-                                                                    >
+                                                                    <option key={product._id} value={product._id}>
                                                                         {product.code ? `${product.code} - ` : ''}{product.name}
                                                                     </option>
                                                                 ))}
@@ -7197,8 +7214,6 @@ export default function TripDetailPage() {
                                                             </button>
                                                         )}
                                                     </div>
-                                                        );
-                                                    })()
                                                 ))}
                                             </div>
 
