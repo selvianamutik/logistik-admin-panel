@@ -10,6 +10,7 @@ export const TIRE_HISTORY_ACTION_LABELS: Record<TireHistoryLog['actionType'], st
     CREATED: 'Pencatatan Awal',
     MOVED: 'Pindah Lokasi',
     STATUS_CHANGED: 'Ubah Status',
+    ODOMETER_UPDATED: 'Update Odometer',
     SCRAPPED: 'Afkir',
     UPDATED: 'Update Data',
 };
@@ -22,6 +23,7 @@ export function getTireHistoryActionColor(actionType: TireHistoryLog['actionType
     if (actionType === 'CREATED') return 'success';
     if (actionType === 'MOVED') return 'primary';
     if (actionType === 'STATUS_CHANGED') return 'warning';
+    if (actionType === 'ODOMETER_UPDATED') return 'info';
     if (actionType === 'SCRAPPED') return 'danger';
     return 'gray';
 }

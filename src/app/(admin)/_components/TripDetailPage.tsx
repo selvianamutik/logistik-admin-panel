@@ -57,6 +57,7 @@ import {
     formatDate,
     formatDateTime,
     formatInternalDeliveryOrderNumber,
+    formatQuantity,
     formatShipperDeliveryOrderNumber,
     getDriverVoucherFinancialSummary,
 } from '@/lib/utils';
@@ -92,7 +93,7 @@ import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -431,6 +432,9 @@ export default function TripDetailPage() {
     const [savingCargo, setSavingCargo] = useState(false);
     const [togglingTripClosure, setTogglingTripClosure] = useState(false);
     const [pendingTripClosure, setPendingTripClosure] = useState<boolean | null>(null);
+    const [tripClosureOdometer, setTripClosureOdometer] = useState(0);
+    const [tripClosureTires, setTripClosureTires] = useState<TireEvent[]>([]);
+    const [loadingTripClosureTires, setLoadingTripClosureTires] = useState(false);
     const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
     const [deletingShipperReferenceKey, setDeletingShipperReferenceKey] = useState<string | null>(null);
     const [pendingDeleteAction, setPendingDeleteAction] = useState<
@@ -1772,9 +1776,63 @@ export default function TripDetailPage() {
         }
     };
 
-    const toggleTripClosure = () => {
+    const toggleTripClosure = async () => {
         if (!canManageDeliveryStatus || !doData?._id) return;
-        setPendingTripClosure(!isTripClosedByAdmin);
+        const nextClosed = !isTripClosedByAdmin;
+        setPendingTripClosure(nextClosed);
+        if (!nextClosed) {
+            setTripClosureTires([]);
+            return;
+        }
+        let vehicle = vehicles.find(item => item._id === doData.vehicleRef) || null;
+        if (!vehicle && doData.vehicleRef) {
+            try {
+                vehicle = await fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${doData.vehicleRef}`, 'Gagal memuat odometer kendaraan');
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat odometer kendaraan');
+            }
+        }
+        if (vehicle && !vehicle.oilNextServiceOdometer && vehicle.serviceRef) {
+            try {
+                const service = await fetchAdminData<Service | null>(`/api/data?entity=services&id=${vehicle.serviceRef}`, 'Gagal memuat interval servis oli');
+                const interval = service?.oilMaintenanceKm || vehicle.oilMaintenanceIntervalKm || 0;
+                if (interval > 0) {
+                    const lastOilServiceOdometer = vehicle.oilLastServiceOdometer || vehicle.lastOdometer || 0;
+                    vehicle = {
+                        ...vehicle,
+                        oilMaintenanceIntervalKm: interval,
+                        oilLastServiceOdometer: lastOilServiceOdometer,
+                        oilNextServiceOdometer: lastOilServiceOdometer + interval,
+                    };
+                }
+            } catch {
+                // Keep the odometer modal usable even if the category interval cannot be loaded.
+            }
+        }
+        if (vehicle) {
+            const resolvedVehicle = vehicle;
+            setVehicles(current =>
+                current.some(item => item._id === resolvedVehicle._id)
+                    ? current.map(item => item._id === resolvedVehicle._id ? { ...item, ...resolvedVehicle } : item)
+                    : [...current, resolvedVehicle]
+            );
+        }
+        setTripClosureOdometer(vehicle?.lastOdometer || doData.tripEndOdometerKm || 0);
+        if (!doData.vehicleRef) {
+            setTripClosureTires([]);
+            return;
+        }
+        setLoadingTripClosureTires(true);
+        try {
+            const filter = encodeURIComponent(JSON.stringify({ vehicleRef: doData.vehicleRef }));
+            const tires = await fetchAdminCollectionData<TireEvent[]>(`/api/data?entity=tire-events&filter=${filter}&sortField=slotCode&sortDir=asc`, 'Gagal memuat ban unit');
+            setTripClosureTires(tires || []);
+        } catch (error) {
+            setTripClosureTires([]);
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat ban unit');
+        } finally {
+            setLoadingTripClosureTires(false);
+        }
     };
 
     const confirmTripClosure = async () => {
@@ -1791,6 +1849,7 @@ export default function TripDetailPage() {
                     data: {
                         id: doData._id,
                         closed: nextClosed,
+                        newOdometer: nextClosed ? tripClosureOdometer : undefined,
                     },
                 }),
             });
@@ -3387,6 +3446,19 @@ export default function TripDetailPage() {
     });
     const resolvedShipperReferenceEntries = buildResolvedShipperReferenceEntries(doData, doItems);
     const selectedTripVehicle = assignableVehicles.find(vehicle => vehicle._id === tripVehicleRef) || null;
+    const currentTripVehicle = vehicles.find(vehicle => vehicle._id === doData.vehicleRef) || null;
+    const tripClosureOldOdometer = currentTripVehicle?.lastOdometer || doData.tripEndOdometerKm || 0;
+    const tripClosureDistanceKm = Math.max((tripClosureOdometer || 0) - tripClosureOldOdometer, 0);
+    const tripClosureOdometerInvalid = pendingTripClosure === true && Boolean(currentTripVehicle) && tripClosureOdometer < tripClosureOldOdometer;
+    const tripClosureOilIntervalKm = currentTripVehicle?.oilMaintenanceIntervalKm || 0;
+    const tripClosureOilTargetOdometer = currentTripVehicle?.oilNextServiceOdometer ||
+        (tripClosureOilIntervalKm > 0
+            ? (currentTripVehicle?.oilLastServiceOdometer || tripClosureOldOdometer) + tripClosureOilIntervalKm
+            : 0);
+    const tripClosureOilRemainingAfterTrip = tripClosureOilTargetOdometer > 0
+        ? Math.max(tripClosureOilTargetOdometer - (tripClosureOdometer || 0), 0)
+        : 0;
+    const tripClosureNeedsOilMaintenance = tripClosureOilTargetOdometer > 0 && tripClosureOilRemainingAfterTrip <= 0;
     const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
     const selectedTripCashIssueVehicle = assignableVehicles.find(vehicle => vehicle._id === tripCashIssueForm.vehicleRef) || null;
     const requiresTripCashIssueVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripCashIssueVehicle);
@@ -6913,6 +6985,77 @@ export default function TripDetailPage() {
                                     ? 'Setelah trip ditutup admin, tambah SJ dan edit muatan SJ akan dikunci sampai trip dibuka kembali.'
                                     : 'Setelah trip dibuka kembali, admin bisa menambah SJ baru dan mengubah muatan SJ lagi.'}
                             </div>
+                            {pendingTripClosure && (
+                                <div style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Odometer Sebelum Trip</label>
+                                            <div className="form-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--color-gray-50)' }}>
+                                                {formatQuantity(tripClosureOldOdometer, 0)} km
+                                            </div>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Odometer Akhir Trip</label>
+                                            <FormattedNumberInput
+                                                allowDecimal={false}
+                                                value={tripClosureOdometer}
+                                                onValueChange={value => setTripClosureOdometer(Math.max(value, tripClosureOldOdometer))}
+                                                onBlur={() => setTripClosureOdometer(current => Math.max(current, tripClosureOldOdometer))}
+                                                disabled={togglingTripClosure}
+                                            />
+                                            {tripClosureOdometerInvalid && (
+                                                <div className="text-danger text-sm" style={{ marginTop: '0.35rem' }}>Odometer akhir tidak boleh lebih kecil dari odometer sebelumnya.</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                                            <div className="text-muted text-sm">Jarak Trip</div>
+                                            <div className="font-semibold">{formatQuantity(tripClosureDistanceKm, 0)} km</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                                            <div className="text-muted text-sm">Sisa Servis Oli Setelah Trip</div>
+                                            <div className="font-semibold">{tripClosureOilTargetOdometer ? `${formatQuantity(tripClosureOilRemainingAfterTrip, 0)} km` : '-'}</div>
+                                        </div>
+                                        <div style={{ border: `1px solid ${tripClosureNeedsOilMaintenance ? 'var(--color-danger)' : 'var(--color-success)'}`, borderRadius: '0.5rem', padding: '0.75rem', background: tripClosureNeedsOilMaintenance ? 'var(--color-danger-light)' : 'var(--color-success-light)' }}>
+                                            <div className="text-muted text-sm">Status Servis Oli</div>
+                                            <div className="font-semibold" style={{ color: tripClosureNeedsOilMaintenance ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                                                {tripClosureOilIntervalKm > 0
+                                                    ? tripClosureNeedsOilMaintenance ? 'Perlu maintenance' : 'Aman'
+                                                    : 'Interval belum diset'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="font-medium" style={{ marginBottom: '0.5rem' }}>Ban Unit Sebelum / Setelah Trip</div>
+                                        {loadingTripClosureTires ? (
+                                            <div className="skeleton skeleton-text" />
+                                        ) : tripClosureTires.length === 0 ? (
+                                            <div className="text-muted text-sm">Belum ada ban yang tercatat pada unit ini.</div>
+                                        ) : (
+                                            <div className="table-wrapper">
+                                                <table>
+                                                    <thead><tr><th>Ban</th><th>Posisi</th><th>Sebelum</th><th>Setelah</th></tr></thead>
+                                                    <tbody>
+                                                        {tripClosureTires.map(tire => {
+                                                            const beforeKm = tire.accumulatedKm || 0;
+                                                            const afterKm = beforeKm + (tire.status === 'IN_USE' ? tripClosureDistanceKm : 0);
+                                                            return (
+                                                                <tr key={tire._id}>
+                                                                    <td className="font-mono">{tire.tireCode}</td>
+                                                                    <td>{tire.slotLabel || tire.posisi || '-'}</td>
+                                                                    <td>{formatQuantity(beforeKm, 0)} km</td>
+                                                                    <td>{formatQuantity(afterKm, 0)} km</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button
@@ -6925,7 +7068,7 @@ export default function TripDetailPage() {
                             <button
                                 className={pendingTripClosure ? 'btn btn-danger' : 'btn btn-primary'}
                                 onClick={() => void confirmTripClosure()}
-                                disabled={togglingTripClosure}
+                                disabled={togglingTripClosure || loadingTripClosureTires || tripClosureOdometerInvalid}
                             >
                                 {togglingTripClosure ? 'Menyimpan...' : (pendingTripClosure ? 'Tutup Trip' : 'Buka Kembali')}
                             </button>
