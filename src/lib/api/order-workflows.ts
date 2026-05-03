@@ -564,6 +564,8 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
         : [];
 
     const seenReferenceNumbers = new Set<string>();
+    const usedExistingReferenceIndexes = new Set<number>();
+    const usedReferenceKeys = new Set<string>();
     const normalizedReferences = requestedReferences
         .filter(isPlainObject)
         .map((reference, index) => {
@@ -576,11 +578,51 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
             }
             seenReferenceNumbers.add(referenceNumber);
 
-            const requestedPickupStopKey = normalizeOptionalText(reference.pickupStopKey);
-            const existingReference =
-                existingReferences.find(item =>
+            const requestedReferenceKey = normalizeOptionalText(reference._key);
+            const findExistingReference = () => {
+                const byRequestedKeyIndex = requestedReferenceKey
+                    ? existingReferences.findIndex((item, candidateIndex) =>
+                        !usedExistingReferenceIndexes.has(candidateIndex) &&
+                        normalizeOptionalText(item._key) === requestedReferenceKey &&
+                        (
+                            normalizeOptionalText(item.referenceNumber)?.toUpperCase() === referenceNumber ||
+                            !normalizeOptionalText(item.referenceNumber)
+                        )
+                    )
+                    : -1;
+                if (byRequestedKeyIndex >= 0) {
+                    return { reference: existingReferences[byRequestedKeyIndex], index: byRequestedKeyIndex };
+                }
+
+                const byNumberIndex = existingReferences.findIndex((item, candidateIndex) =>
+                    !usedExistingReferenceIndexes.has(candidateIndex) &&
                     normalizeOptionalText(item.referenceNumber)?.toUpperCase() === referenceNumber
-                ) || existingReferences[index];
+                );
+                if (byNumberIndex >= 0) {
+                    return { reference: existingReferences[byNumberIndex], index: byNumberIndex };
+                }
+
+                if (existingReferences[index] && !usedExistingReferenceIndexes.has(index)) {
+                    return { reference: existingReferences[index], index };
+                }
+
+                return { reference: undefined, index: -1 };
+            };
+            const existingReferenceMatch = findExistingReference();
+            const existingReference = existingReferenceMatch.reference;
+            if (existingReferenceMatch.index >= 0) {
+                usedExistingReferenceIndexes.add(existingReferenceMatch.index);
+            }
+            let resolvedReferenceKey =
+                requestedReferenceKey ||
+                normalizeOptionalText(existingReference?._key) ||
+                crypto.randomUUID();
+            if (usedReferenceKeys.has(resolvedReferenceKey)) {
+                resolvedReferenceKey = crypto.randomUUID();
+            }
+            usedReferenceKeys.add(resolvedReferenceKey);
+
+            const requestedPickupStopKey = normalizeOptionalText(reference.pickupStopKey);
             const resolvedPickupStopKey =
                 requestedPickupStopKey
                 || normalizeOptionalText(existingReference?.pickupStopKey)
@@ -591,7 +633,7 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
             const hasReferenceField = (field: string) => Object.prototype.hasOwnProperty.call(reference, field);
 
             return {
-                _key: normalizeOptionalText(existingReference?._key) || crypto.randomUUID(),
+                _key: resolvedReferenceKey,
                 sequence: index + 1,
                 referenceNumber,
                 pickupStopKey: resolvedPickupStopKey,
@@ -6386,6 +6428,15 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
     );
     const nextReferenceByKey = new Map(nextShipperReferences.map(reference => [reference._key, reference]));
+    const nextSuratJalanRecordIds = new Set(
+        nextShipperReferences.map(reference =>
+            getDeliveryOrderSuratJalanIdentity({
+                deliveryOrderId: id,
+                shipperReferenceKey: reference._key,
+                shipperReferenceNumber: reference.referenceNumber,
+            })
+        )
+    );
     const singleNextReference = nextShipperReferences.length === 1 ? nextShipperReferences[0] : null;
     const itemReferencePatches = new Map<string, NonNullable<typeof singleNextReference>>();
 
@@ -6421,6 +6472,15 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             (normalizedNumber && normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase() === normalizedNumber)
         );
     });
+    const addedSuratJalanRecordIds = new Set(
+        addedReferences.map(reference =>
+            getDeliveryOrderSuratJalanIdentity({
+                deliveryOrderId: id,
+                shipperReferenceKey: reference._key,
+                shipperReferenceNumber: reference.referenceNumber,
+            })
+        )
+    );
     const removedReferenceKeys = new Set(
         removedReferences
             .map(reference => normalizeOptionalText(reference._key))
@@ -6551,11 +6611,68 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                     shipperReferenceKey: removedReference._key,
                     shipperReferenceNumber: removedReference.referenceNumber,
                 });
+                if (nextSuratJalanRecordIds.has(targetRecordId)) {
+                    continue;
+                }
                 if (!existingSuratJalanRecordIds.has(targetRecordId)) {
                     continue;
                 }
                 await deleteDocument(targetRecordId, 'suratJalan');
             }
+        }
+        const deliveryOrderForSyncedRecords: DeliveryOrder = {
+            ...(deliveryOrder as DeliveryOrder),
+            customerDoNumber,
+            shipperReferences: nextShipperReferences,
+            status: (
+                (deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD')
+                && nextShipperReferences.length > previousReferences.length
+            )
+                ? 'ARRIVED'
+                : (deliveryOrder.status || 'CREATED'),
+            actualDropPoints: nextActualDropPoints as DeliveryOrder['actualDropPoints'],
+        };
+        const deliveryOrderItemsForSyncedRecords = deliveryOrderItems.map(item => {
+            const nextReference = itemReferencePatches.get(item._id);
+            return {
+                ...(item as DeliveryOrderItem),
+                shipperReferenceKey: nextReference?._key || item.shipperReferenceKey,
+                shipperReferenceNumber: nextReference?.referenceNumber || item.shipperReferenceNumber,
+                pickupStopKey: nextReference?.pickupStopKey || item.pickupStopKey,
+                pickupAddress: nextReference?.pickupAddress || item.pickupAddress,
+            };
+        });
+        const syncedSuratJalanRecords = mapDeliveryOrderToSuratJalanRecords(
+            deliveryOrderForSyncedRecords,
+            deliveryOrderItemsForSyncedRecords
+        );
+        const syncedSuratJalanRecordIds = new Set(syncedSuratJalanRecords.map(record => record._id));
+        const existingSuratJalanRecords = await listDocumentsByFilter<{ _id: string }>('suratJalan', { tripRef: id });
+        const existingSuratJalanRecordIds = new Set(existingSuratJalanRecords.map(record => record._id));
+        for (const record of syncedSuratJalanRecords) {
+            const recordForWrite = addedSuratJalanRecordIds.has(record._id)
+                ? {
+                    ...record,
+                    tripStatus: 'CREATED' as const,
+                    billableCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                    holdCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                    returnCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                }
+                : record;
+            if (!existingSuratJalanRecordIds.has(record._id)) {
+                await createDocument({ ...recordForWrite });
+                continue;
+            }
+            const recordPatch = Object.fromEntries(
+                Object.entries(recordForWrite).filter(([key]) => key !== '_id' && key !== '_type')
+            );
+            await updateDocument(record._id, recordPatch, 'suratJalan');
+        }
+        for (const existingRecord of existingSuratJalanRecords) {
+            if (syncedSuratJalanRecordIds.has(existingRecord._id)) {
+                continue;
+            }
+            await deleteDocument(existingRecord._id, 'suratJalan');
         }
         if ((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD') && nextShipperReferences.length > previousReferences.length) {
             const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
