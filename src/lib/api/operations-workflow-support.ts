@@ -30,6 +30,8 @@ export type MaintenanceCreatePayload = {
     plannedDate?: string;
     plannedOdometer?: number;
     notes?: string;
+    attachmentUrls: string[];
+    materialUsages: unknown[];
 };
 
 export type NormalizedTireEventPayload = {
@@ -830,6 +832,8 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
             scheduleType,
             plannedDate,
             notes,
+            attachmentUrls: [],
+            materialUsages: [],
         };
     }
 
@@ -845,6 +849,8 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
         scheduleType,
         plannedOdometer,
         notes,
+        attachmentUrls: [],
+        materialUsages: [],
     };
 }
 

@@ -311,6 +311,7 @@ export async function handleIncidentCreate(
         issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
         status: 'OPEN',
         dateTime: incidentDateTime,
+        attachmentUrls: [],
     };
 
     await createDocument(incidentDoc);
