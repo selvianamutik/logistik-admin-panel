@@ -672,10 +672,10 @@ export function buildPaymentReceiptPrintDocument(opts: {
     company: CompanyProfile | null;
     customer?: Pick<Customer, 'name' | 'address' | 'contactPerson' | 'phone'> | null;
 }) {
-    const { payment, nota, company, customer } = opts;
+    const { payment, nota, company } = opts;
     const issuerProfile = resolveFreightNotaIssuerProfile(nota, company);
     const invoiceNumber = formatFreightNotaDisplayNumber(nota, company);
-    const receiptNumber = payment.receiptNumber?.trim() || `KW-${payment._id.slice(0, 8).toUpperCase()}`;
+    const receiptNumber = invoiceNumber;
     const amount = parseFormattedNumberish(payment.amount || 0);
     const amountInWords = terbilang(Math.max(Math.round(amount), 0))
         .replace(/\s+/g, ' ')
@@ -686,10 +686,6 @@ export function buildPaymentReceiptPrintDocument(opts: {
         payment.bankAccountName,
         payment.bankAccountNumber ? `No. ${payment.bankAccountNumber}` : '',
     ].filter(Boolean).join(' | ') || (payment.method === 'CASH' ? 'Kas Tunai' : '-');
-    const customerAddressLabel = nota.customerAddress?.trim() || customer?.address?.trim() || '';
-    const customerContactLabel = [nota.customerContactPerson || customer?.contactPerson, nota.customerPhone || customer?.phone]
-        .filter(Boolean)
-        .join(' | ');
     const companyLogo = resolveCompanyLogoUrl({ logoUrl: issuerProfile.logoUrl });
     const logoHtml = `<img src="${escapePrintAttribute(companyLogo)}" alt="${escapePrintAttribute(issuerProfile.name || 'Logo perusahaan')}" class="receipt-logo" />`;
     const paymentNote = payment.note?.trim();
@@ -726,8 +722,6 @@ export function buildPaymentReceiptPrintDocument(opts: {
                         <td>Telah Terima Dari</td>
                         <td>
                             <strong>${escapePrintHtml(nota.customerName)}</strong>
-                            ${customerAddressLabel ? `<div class="receipt-muted">${escapePrintHtml(customerAddressLabel)}</div>` : ''}
-                            ${customerContactLabel ? `<div class="receipt-muted">${escapePrintHtml(customerContactLabel)}</div>` : ''}
                         </td>
                     </tr>
                     <tr>
@@ -737,10 +731,6 @@ export function buildPaymentReceiptPrintDocument(opts: {
                     <tr>
                         <td>Terbilang</td>
                         <td class="receipt-words"># ${escapePrintHtml(amountInWords)} Rupiah #</td>
-                    </tr>
-                    <tr>
-                        <td>Untuk Pembayaran</td>
-                        <td>Invoice Ongkos ${escapePrintHtml(invoiceNumber)}</td>
                     </tr>
                     <tr>
                         <td>Metode</td>
@@ -765,7 +755,7 @@ export function buildPaymentReceiptPrintDocument(opts: {
                 </div>
                 <div class="receipt-signature">
                     <div>${escapePrintHtml(issuerProfile.name)}</div>
-                    <div class="receipt-signature-space"></div>
+                    <div class="receipt-stamp-box">Materai</div>
                     <div class="receipt-signature-name">Bagian Administrasi</div>
                 </div>
             </div>
@@ -791,8 +781,8 @@ export function buildPaymentReceiptPrintDocument(opts: {
         .receipt-words { font-style: italic; font-weight: 700; }
         .receipt-footer-grid { display: grid; grid-template-columns: 1fr 0.34fr; gap: 1rem; margin-top: 1rem; align-items: start; }
         .receipt-note { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 74px; color: #374151; }
-        .receipt-signature { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; text-align: center; min-height: 116px; display: flex; flex-direction: column; justify-content: space-between; }
-        .receipt-signature-space { min-height: 52px; }
+        .receipt-signature { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; text-align: center; min-height: 158px; display: flex; flex-direction: column; justify-content: space-between; }
+        .receipt-stamp-box { width: 4.5cm; height: 3.2cm; max-width: 100%; margin: 0.45rem auto; border: 1px dashed #6b7280; display: flex; align-items: center; justify-content: center; color: #6b7280; font-size: 0.78rem; }
         .receipt-signature-name { border-top: 1px solid #111827; padding-top: 0.25rem; font-weight: 700; text-transform: uppercase; }
         @page { size: A4 portrait; margin: 10mm; }
         @media print { body { padding: 0; } .receipt-sheet { page-break-inside: avoid; } }
