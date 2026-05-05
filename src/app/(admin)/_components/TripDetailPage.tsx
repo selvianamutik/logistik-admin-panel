@@ -605,6 +605,7 @@ export default function TripDetailPage() {
     const [tripCashIssueForm, setTripCashIssueForm] = useState<TripCashIssueFormState>(createDefaultTripCashIssueForm);
     const [tripCashTopUpForm, setTripCashTopUpForm] = useState(createDefaultDriverVoucherTopUpForm);
     const [tripCashExpenseForm, setTripCashExpenseForm] = useState(createDefaultDriverVoucherItemForm);
+    const [cancelTripExpenseForm, setCancelTripExpenseForm] = useState(createDefaultDriverVoucherItemForm);
     const [tripCashSettlementDate, setTripCashSettlementDate] = useState(getBusinessDateValue());
     const [tripCashSettlementBankRef, setTripCashSettlementBankRef] = useState('');
     const editingTaripRef = useRef(false);
@@ -2918,6 +2919,10 @@ export default function TripDetailPage() {
 
     const cancelTrip = async () => {
         if (!doData?._id || !canManageDeliveryStatus) return;
+        const shouldSubmitCancelExpense = canRecordCancelTripExpense && cancelTripExpenseForm.amount > 0;
+        const cancelExpenseDescription =
+            cancelTripExpenseForm.description.trim() ||
+            `Biaya pembatalan trip ${displayTripNumber}`;
         setCancellingTrip(true);
         try {
             const res = await fetch('/api/data', {
@@ -2929,6 +2934,14 @@ export default function TripDetailPage() {
                     data: {
                         id: doData._id,
                         note: cancelTripNote,
+                        ...(shouldSubmitCancelExpense
+                            ? {
+                                cancelExpenseDate: cancelTripExpenseForm.expenseDate,
+                                cancelExpenseCategory: cancelTripExpenseForm.category,
+                                cancelExpenseDescription,
+                                cancelExpenseAmount: cancelTripExpenseForm.amount,
+                            }
+                            : {}),
                     },
                 }),
             });
@@ -2939,9 +2952,14 @@ export default function TripDetailPage() {
             }
             setShowCancelTripModal(false);
             setCancelTripNote('');
+            setCancelTripExpenseForm(createDefaultDriverVoucherItemForm());
             await refreshTripDetail();
             const cancelledCount = Number(result.data?.cancelledSuratJalanCount || 0);
-            addToast('success', `Trip dibatalkan${cancelledCount > 0 ? `, ${cancelledCount} SJ ikut batal` : ''}`);
+            const cancelExpenseAmount = Number(result.data?.cancelExpenseAmount || 0);
+            addToast(
+                'success',
+                `Trip dibatalkan${cancelledCount > 0 ? `, ${cancelledCount} SJ ikut batal` : ''}${cancelExpenseAmount > 0 ? `, biaya batal ${formatCurrency(cancelExpenseAmount)} tercatat` : ''}`
+            );
         } catch {
             addToast('error', 'Gagal membatalkan trip');
         } finally {
@@ -3936,6 +3954,7 @@ export default function TripDetailPage() {
     const hasLinkedTripCash = Boolean(linkedTripCashVoucherId || linkedTripCashBonNumber);
     const canTopUpLinkedTripCash = Boolean(linkedVoucher && linkedVoucher.status !== 'SETTLED' && canManageTripCashCosts);
     const canAddLinkedTripCashExpense = canTopUpLinkedTripCash;
+    const canRecordCancelTripExpense = canTopUpLinkedTripCash;
     const canSettleLinkedTripCash = Boolean(
         linkedVoucher &&
         linkedVoucher.status !== 'SETTLED' &&
@@ -4891,7 +4910,18 @@ export default function TripDetailPage() {
                                 </button>
                             )}
                             {canCancelTripFromDetail && (
-                                <button className="btn btn-secondary btn-sm" onClick={() => { setCancelTripNote(''); setShowCancelTripModal(true); }}>
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                        setCancelTripNote('');
+                                        setCancelTripExpenseForm({
+                                            ...createDefaultDriverVoucherItemForm(),
+                                            category: 'BBM / Solar',
+                                            description: `Biaya pembatalan trip ${displayTripNumber}`,
+                                        });
+                                        setShowCancelTripModal(true);
+                                    }}
+                                >
                                     Batalkan Trip
                                 </button>
                             )}
@@ -6316,6 +6346,57 @@ export default function TripDetailPage() {
                                     disabled={cancellingTrip}
                                 />
                             </div>
+                            {canRecordCancelTripExpense && (
+                                <div style={{ borderTop: '1px solid var(--color-gray-200)', paddingTop: '1rem', marginTop: '1rem' }}>
+                                    <div className="font-semibold" style={{ marginBottom: '0.75rem' }}>Biaya Batal Opsional</div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Tanggal</label>
+                                            <input
+                                                type="date"
+                                                className="form-input"
+                                                value={cancelTripExpenseForm.expenseDate}
+                                                onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, expenseDate: event.target.value }))}
+                                                disabled={cancellingTrip}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Kategori</label>
+                                            <select
+                                                className="form-select"
+                                                value={cancelTripExpenseForm.category}
+                                                onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, category: event.target.value }))}
+                                                disabled={cancellingTrip}
+                                            >
+                                                {DRIVER_VOUCHER_EXPENSE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Deskripsi</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={cancelTripExpenseForm.description}
+                                            onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, description: event.target.value }))}
+                                            placeholder="Mis. solar ke lokasi pickup"
+                                            disabled={cancellingTrip}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Nominal</label>
+                                        <FormattedNumberInput
+                                            allowDecimal={false}
+                                            min={0}
+                                            className="form-input"
+                                            value={cancelTripExpenseForm.amount}
+                                            onValueChange={value => setCancelTripExpenseForm(prev => ({ ...prev, amount: value }))}
+                                            placeholder="Isi jika ada biaya keluar"
+                                            disabled={cancellingTrip}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowCancelTripModal(false)} disabled={cancellingTrip}>Batal</button>

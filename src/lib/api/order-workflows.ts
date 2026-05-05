@@ -69,7 +69,7 @@ import {
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
-import { computeDriverVoucherTotals } from './driver-workflow-support';
+import { computeDriverVoucherTotals, getDriverVoucherIssuedAmount } from './driver-workflow-support';
 import {
     aggregateTripStatusFromSuratJalanStatuses,
     mapDeliveryOrderToSuratJalanItemRecords,
@@ -235,7 +235,7 @@ import {
     getDeliveryOrderNonBillableCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
-import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Maintenance, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
+import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, DriverVoucher, DriverVoucherItem, Maintenance, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -3350,8 +3350,26 @@ export async function handleDeliveryOrderCancelTrip(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     const note = normalizeOptionalText(data.note);
+    const cancelExpenseAmountRaw = normalizeCurrencyNumber(data.cancelExpenseAmount ?? 0);
+    const cancelExpenseAmount = Number.isFinite(cancelExpenseAmountRaw) ? cancelExpenseAmountRaw : Number.NaN;
+    const shouldRecordCancelExpense = cancelExpenseAmount > 0;
+    const cancelExpenseCategory = normalizeOptionalText(data.cancelExpenseCategory) || 'Lain-lain Trip';
+    const cancelExpenseDescription =
+        normalizeOptionalText(data.cancelExpenseDescription) ||
+        `Biaya pembatalan trip${note ? `: ${note}` : ''}`;
+    const cancelExpenseDate = normalizeOptionalText(data.cancelExpenseDate) || getBusinessDateValue();
     if (!id) {
         return NextResponse.json({ error: 'Trip tidak valid' }, { status: 400 });
+    }
+    if (data.cancelExpenseAmount !== undefined && !Number.isFinite(cancelExpenseAmountRaw)) {
+        return NextResponse.json({ error: 'Nominal biaya batal trip tidak valid' }, { status: 400 });
+    }
+    if (shouldRecordCancelExpense) {
+        try {
+            assertIsoDate(cancelExpenseDate, 'Tanggal biaya batal trip');
+        } catch {
+            return NextResponse.json({ error: 'Tanggal biaya batal trip tidak valid' }, { status: 400 });
+        }
     }
 
     const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
@@ -3424,6 +3442,34 @@ export async function handleDeliveryOrderCancelTrip(
         return NextResponse.json(
             { error: `Ada SJ yang sudah final/partial hold dan tidak bisa dibatalkan: ${finalizedRecords.map(record => record.suratJalanNumber || record._id).join(', ')}` },
             { status: 409 }
+        );
+    }
+
+    let cancellationVoucher: Pick<
+        DriverVoucher,
+        '_id' | 'bonNumber' | 'status' | 'cashGiven' | 'totalIssuedAmount' | 'driverFeeAmount'
+    > | null = null;
+    let cancellationVoucherItems: Array<Pick<DriverVoucherItem, 'amount'>> = [];
+    if (shouldRecordCancelExpense) {
+        cancellationVoucher = (await listDocumentsByFilter<Pick<
+            DriverVoucher,
+            '_id' | 'bonNumber' | 'status' | 'cashGiven' | 'totalIssuedAmount' | 'driverFeeAmount'
+        >>('driverVoucher', { deliveryOrderRef: id }))[0] || null;
+        if (!cancellationVoucher) {
+            return NextResponse.json(
+                { error: 'Biaya batal trip hanya bisa dicatat jika trip sudah punya uang jalan / bon.' },
+                { status: 409 }
+            );
+        }
+        if (cancellationVoucher.status === 'SETTLED') {
+            return NextResponse.json(
+                { error: `Bon ${cancellationVoucher.bonNumber || ''} sudah selesai. Biaya batal tidak bisa ditambahkan.` },
+                { status: 409 }
+            );
+        }
+        cancellationVoucherItems = await listDocumentsByFilter<Pick<DriverVoucherItem, 'amount'>>(
+            'driverVoucherItem',
+            { voucherRef: cancellationVoucher._id }
         );
     }
 
@@ -3510,6 +3556,53 @@ export async function handleDeliveryOrderCancelTrip(
         throw error;
     }
 
+    let cancelExpenseItemRef: string | undefined;
+    if (shouldRecordCancelExpense && cancellationVoucher) {
+        cancelExpenseItemRef = crypto.randomUUID();
+        const nextOperationalSpent = cancellationVoucherItems.reduce(
+            (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
+            0
+        ) + cancelExpenseAmount;
+        const nextTotals = computeDriverVoucherTotals(
+            getDriverVoucherIssuedAmount(cancellationVoucher),
+            nextOperationalSpent,
+            normalizeNumber(cancellationVoucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
+        );
+
+        try {
+            await createDocument({
+                _id: cancelExpenseItemRef,
+                _type: 'driverVoucherItem',
+                voucherRef: cancellationVoucher._id,
+                expenseDate: cancelExpenseDate,
+                category: cancelExpenseCategory,
+                description: cancelExpenseDescription,
+                amount: cancelExpenseAmount,
+            });
+            await updateDocument(cancellationVoucher._id, {
+                totalSpent: nextTotals.totalSpent,
+                totalClaimAmount: nextTotals.totalClaimAmount,
+                balance: nextTotals.balance,
+            }, 'driverVoucher');
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Trip sudah dibatalkan, tetapi pencatatan biaya batal gagal karena bon berubah. Tambahkan biaya lain-lain dari detail bon.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+
+        await addAuditLog(
+            session,
+            'CREATE',
+            'driver-voucher-items',
+            cancelExpenseItemRef,
+            `Biaya pembatalan trip ${deliveryOrder.doNumber || id} dicatat ke ${cancellationVoucher.bonNumber || 'bon trip'}: ${cancelExpenseCategory} (${cancelExpenseAmount})`
+        );
+    }
+
     try {
         await releaseDriverTrackingLockIfOwned(deliveryOrder.driverRef, id, timestamp);
     } catch (error) {
@@ -3526,7 +3619,7 @@ export async function handleDeliveryOrderCancelTrip(
         'UPDATE',
         'delivery-orders',
         id,
-        `Trip dibatalkan: ${deliveryOrder.doNumber || id}. ${suratJalanRecords.length} SJ ikut batal.${note ? ` | ${note}` : ''}`
+        `Trip dibatalkan: ${deliveryOrder.doNumber || id}. ${suratJalanRecords.length} SJ ikut batal.${note ? ` | ${note}` : ''}${shouldRecordCancelExpense ? ` | Biaya batal: ${cancelExpenseCategory} (${cancelExpenseAmount})` : ''}`
     );
 
     return NextResponse.json({
@@ -3534,6 +3627,8 @@ export async function handleDeliveryOrderCancelTrip(
             tripRef: id,
             status: 'CANCELLED',
             cancelledSuratJalanCount: suratJalanRecords.length,
+            cancelExpenseItemRef,
+            cancelExpenseAmount: shouldRecordCancelExpense ? cancelExpenseAmount : 0,
         },
     });
 }

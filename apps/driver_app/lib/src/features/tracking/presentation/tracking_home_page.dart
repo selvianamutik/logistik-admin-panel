@@ -44,6 +44,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   bool _updatingStatus = false;
   bool _submittingManifest = false;
   bool _acknowledgingWarning = false;
+  bool _reportingIncident = false;
   String? _loadError;
   String? _locationError;
   String? _pingError;
@@ -937,6 +938,203 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
   }
 
+  Future<void> _openIncidentReport(DeliveryTrip trip) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+
+    final locationController = TextEditingController(
+      text: _latestLocation == null
+          ? ''
+          : '${_latestLocation!.latitude.toStringAsFixed(6)}, ${_latestLocation!.longitude.toStringAsFixed(6)}',
+    );
+    final odometerController = TextEditingController(
+      text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
+          ? trip.tripEndOdometerKm!.round().toString()
+          : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
+                ? trip.vehicleLastOdometer!.round().toString()
+                : '',
+    );
+    final descriptionController = TextEditingController();
+
+    final result = await showDialog<_IncidentReportSubmitResult>(
+      context: context,
+      builder: (context) {
+        var incidentType = 'OTHER';
+        var urgency = 'MEDIUM';
+        String? errorText;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void submit() {
+              final locationText = locationController.text.trim();
+              final description = descriptionController.text.trim();
+              final odometer = _parseOdometerInput(odometerController.text);
+              if (locationText.isEmpty) {
+                setDialogState(() => errorText = 'Lokasi insiden wajib diisi.');
+                return;
+              }
+              if (odometer == null || odometer <= 0) {
+                setDialogState(() => errorText = 'Odometer insiden wajib diisi.');
+                return;
+              }
+              if (description.isEmpty) {
+                setDialogState(() => errorText = 'Kronologi insiden wajib diisi.');
+                return;
+              }
+              Navigator.of(context).pop(
+                _IncidentReportSubmitResult(
+                  incidentType: incidentType,
+                  urgency: urgency,
+                  locationText: locationText,
+                  odometer: odometer,
+                  description: description,
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: Text('Lapor Insiden ${trip.doNumber}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (errorText != null) ...[
+                      Text(
+                        errorText!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    DropdownButtonFormField<String>(
+                      initialValue: incidentType,
+                      decoration: const InputDecoration(labelText: 'Tipe Insiden'),
+                      items: const [
+                        DropdownMenuItem(value: 'OTHER', child: Text('Lainnya')),
+                        DropdownMenuItem(value: 'ENGINE_TROUBLE', child: Text('Mesin bermasalah')),
+                        DropdownMenuItem(value: 'BLOWOUT_TIRE', child: Text('Ban pecah')),
+                        DropdownMenuItem(value: 'ACCIDENT_MINOR', child: Text('Kecelakaan ringan')),
+                        DropdownMenuItem(value: 'ACCIDENT_MAJOR', child: Text('Kecelakaan berat')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => incidentType = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: urgency,
+                      decoration: const InputDecoration(labelText: 'Urgensi'),
+                      items: const [
+                        DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
+                        DropdownMenuItem(value: 'MEDIUM', child: Text('Sedang')),
+                        DropdownMenuItem(value: 'HIGH', child: Text('Tinggi')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => urgency = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: locationController,
+                      minLines: 1,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Lokasi Insiden',
+                        hintText: 'Koordinat / nama jalan / lokasi kejadian',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: odometerController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Odometer Saat Insiden',
+                        suffixText: 'km',
+                      ),
+                      onSubmitted: (_) => submit(),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descriptionController,
+                      minLines: 4,
+                      maxLines: 6,
+                      decoration: const InputDecoration(
+                        labelText: 'Kronologi',
+                        hintText: 'Jelaskan kejadian dan kondisi kendaraan/barang',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: submit,
+                  icon: const Icon(Icons.report_problem_outlined),
+                  label: const Text('Kirim Laporan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    locationController.dispose();
+    odometerController.dispose();
+    descriptionController.dispose();
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _reportingIncident = true);
+    try {
+      await _deliveryOrderService.reportIncident(
+        sessionToken: sessionToken,
+        deliveryOrderId: trip.deliveryOrderId,
+        incidentType: result.incidentType,
+        urgency: result.urgency,
+        locationText: result.locationText,
+        odometer: result.odometer,
+        description: result.description,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Laporan insiden dikirim ke admin.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _reportingIncident = false);
+      }
+    }
+  }
+
   String _statusNoteForUpdate(TripStatus status) {
     return switch (status) {
       TripStatus.headingToPickup =>
@@ -1123,6 +1321,25 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         _selectedTrip!.allowsDirectCargoInput
                             ? 'Kelola SJ & Barang'
                             : 'Kelola SJ',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _reportingIncident
+                          ? null
+                          : () => unawaited(_openIncidentReport(_selectedTrip!)),
+                      icon: _reportingIncident
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.report_problem_outlined),
+                      label: Text(
+                        _reportingIncident ? 'Mengirim laporan...' : 'Lapor Insiden',
                       ),
                     ),
                   ),
@@ -1352,6 +1569,22 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 }
 
 // ── Driver card ────────────────────────────────────────────
+class _IncidentReportSubmitResult {
+  const _IncidentReportSubmitResult({
+    required this.incidentType,
+    required this.urgency,
+    required this.locationText,
+    required this.odometer,
+    required this.description,
+  });
+
+  final String incidentType;
+  final String urgency;
+  final String locationText;
+  final double odometer;
+  final String description;
+}
+
 class _TripClosureSubmitResult {
   const _TripClosureSubmitResult({
     required this.odometerKm,

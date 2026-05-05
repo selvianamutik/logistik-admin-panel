@@ -173,6 +173,42 @@ class DeliveryOrderService {
     }
   }
 
+  Future<void> reportIncident({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required String incidentType,
+    required String urgency,
+    required String locationText,
+    required double odometer,
+    required String description,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/incidents'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'relatedDeliveryOrderRef': deliveryOrderId,
+        'incidentType': incidentType,
+        'urgency': urgency,
+        'locationText': locationText.trim(),
+        'odometer': odometer,
+        'description': description.trim(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal mengirim laporan insiden';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   Future<void> createDeliveryOrderFromTripPlan({
     required String sessionToken,
     required String orderRef,
