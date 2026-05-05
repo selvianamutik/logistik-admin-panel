@@ -14,8 +14,8 @@ import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
 import { buildPph23Label, calculatePph23Summary } from './pph23';
 import { resolveCompanyLogoUrl } from './branding';
 import { parseFormattedNumberish } from './formatted-number';
-import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem } from './types';
-import { getReceivableNetAmount, terbilang } from './utils';
+import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem, Payment } from './types';
+import { getReceivableNetAmount, PAYMENT_METHOD_MAP, terbilang } from './utils';
 
 let inFlightCompanyProfileRequest: Promise<CompanyProfile | null> | null = null;
 
@@ -659,6 +659,148 @@ export function buildFreightNotaPrintDocument(opts: {
     return {
         title: 'Invoice Ongkos Angkut',
         subtitle: displayNumber,
+        bodyHtml,
+        extraStyles,
+        showCompanyHeader: false,
+        showFooter: false,
+    };
+}
+
+export function buildPaymentReceiptPrintDocument(opts: {
+    payment: Payment;
+    nota: FreightNota;
+    company: CompanyProfile | null;
+    customer?: Pick<Customer, 'name' | 'address' | 'contactPerson' | 'phone'> | null;
+}) {
+    const { payment, nota, company, customer } = opts;
+    const issuerProfile = resolveFreightNotaIssuerProfile(nota, company);
+    const invoiceNumber = formatFreightNotaDisplayNumber(nota, company);
+    const receiptNumber = payment.receiptNumber?.trim() || `KW-${payment._id.slice(0, 8).toUpperCase()}`;
+    const amount = parseFormattedNumberish(payment.amount || 0);
+    const amountInWords = terbilang(Math.max(Math.round(amount), 0))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^./, character => character.toUpperCase());
+    const paymentMethodLabel = PAYMENT_METHOD_MAP[payment.method] || payment.method || '-';
+    const accountLabel = [
+        payment.bankAccountName,
+        payment.bankAccountNumber ? `No. ${payment.bankAccountNumber}` : '',
+    ].filter(Boolean).join(' | ') || (payment.method === 'CASH' ? 'Kas Tunai' : '-');
+    const customerAddressLabel = nota.customerAddress?.trim() || customer?.address?.trim() || '';
+    const customerContactLabel = [nota.customerContactPerson || customer?.contactPerson, nota.customerPhone || customer?.phone]
+        .filter(Boolean)
+        .join(' | ');
+    const companyLogo = resolveCompanyLogoUrl({ logoUrl: issuerProfile.logoUrl });
+    const logoHtml = `<img src="${escapePrintAttribute(companyLogo)}" alt="${escapePrintAttribute(issuerProfile.name || 'Logo perusahaan')}" class="receipt-logo" />`;
+    const paymentNote = payment.note?.trim();
+
+    const bodyHtml = `
+        <div class="receipt-sheet">
+            <div class="receipt-header">
+                <div class="receipt-brand">
+                    ${logoHtml}
+                    <div>
+                        <div class="receipt-company">${escapePrintHtml(issuerProfile.name)}</div>
+                        ${issuerProfile.address ? `<div class="receipt-company-line">${escapePrintHtml(issuerProfile.address)}</div>` : ''}
+                        ${issuerProfile.phone ? `<div class="receipt-company-line">Tel. ${escapePrintHtml(issuerProfile.phone)}</div>` : ''}
+                        ${issuerProfile.email ? `<div class="receipt-company-line">${escapePrintHtml(issuerProfile.email)}</div>` : ''}
+                    </div>
+                </div>
+                <div class="receipt-title-box">
+                    <div class="receipt-title">KWITANSI</div>
+                    <div class="receipt-number">${escapePrintHtml(receiptNumber)}</div>
+                </div>
+            </div>
+
+            <table class="receipt-main-table">
+                <tbody>
+                    <tr>
+                        <td>No Kwitansi</td>
+                        <td>${escapePrintHtml(receiptNumber)}</td>
+                    </tr>
+                    <tr>
+                        <td>Tanggal Terima</td>
+                        <td>${escapePrintHtml(fmtLongPrintDate(payment.date))}</td>
+                    </tr>
+                    <tr>
+                        <td>Telah Terima Dari</td>
+                        <td>
+                            <strong>${escapePrintHtml(nota.customerName)}</strong>
+                            ${customerAddressLabel ? `<div class="receipt-muted">${escapePrintHtml(customerAddressLabel)}</div>` : ''}
+                            ${customerContactLabel ? `<div class="receipt-muted">${escapePrintHtml(customerContactLabel)}</div>` : ''}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Uang Sejumlah</td>
+                        <td class="receipt-amount">${escapePrintHtml(fmtCurrency(amount))}</td>
+                    </tr>
+                    <tr>
+                        <td>Terbilang</td>
+                        <td class="receipt-words"># ${escapePrintHtml(amountInWords)} Rupiah #</td>
+                    </tr>
+                    <tr>
+                        <td>Untuk Pembayaran</td>
+                        <td>Invoice Ongkos ${escapePrintHtml(invoiceNumber)}</td>
+                    </tr>
+                    <tr>
+                        <td>Metode</td>
+                        <td>${escapePrintHtml(paymentMethodLabel)}</td>
+                    </tr>
+                    <tr>
+                        <td>Rekening / Kas</td>
+                        <td>${escapePrintHtml(accountLabel)}</td>
+                    </tr>
+                    ${paymentNote ? `
+                        <tr>
+                            <td>Catatan</td>
+                            <td>${escapePrintHtml(paymentNote)}</td>
+                        </tr>
+                    ` : ''}
+                </tbody>
+            </table>
+
+            <div class="receipt-footer-grid">
+                <div class="receipt-note">
+                    Kwitansi ini adalah bukti penerimaan pembayaran untuk invoice terkait. Simpan bersama dokumen invoice dan mutasi kas/bank.
+                </div>
+                <div class="receipt-signature">
+                    <div>${escapePrintHtml(issuerProfile.name)}</div>
+                    <div class="receipt-signature-space"></div>
+                    <div class="receipt-signature-name">Bagian Administrasi</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const extraStyles = `
+        body { font-family: "Times New Roman", Arial, serif; padding: 0.7rem; color: #111827; background: #fff; max-width: 820px; }
+        .receipt-sheet { border: 1px solid #111827; padding: 1rem 1.1rem; font-size: 12px; line-height: 1.35; background: #fff; }
+        .receipt-header { display: grid; grid-template-columns: 1fr 0.42fr; gap: 1rem; align-items: start; padding-bottom: 0.8rem; border-bottom: 2px solid #111827; margin-bottom: 0.85rem; }
+        .receipt-brand { display: flex; align-items: flex-start; gap: 0.75rem; }
+        .receipt-logo { width: 58px; height: 58px; object-fit: contain; }
+        .receipt-company { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; margin-bottom: 0.15rem; }
+        .receipt-company-line { font-size: 0.82rem; }
+        .receipt-title-box { border: 1px solid #111827; text-align: center; padding: 0.55rem 0.65rem; }
+        .receipt-title { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.08em; }
+        .receipt-number { margin-top: 0.25rem; font-weight: 700; font-size: 0.92rem; }
+        .receipt-main-table { width: 100%; border-collapse: collapse; }
+        .receipt-main-table td { border: 1px solid #4b5563; padding: 0.42rem 0.55rem; vertical-align: top; }
+        .receipt-main-table td:first-child { width: 28%; font-weight: 700; background: #f8fafc; }
+        .receipt-muted { margin-top: 0.1rem; color: #374151; font-size: 0.9em; }
+        .receipt-amount { font-size: 1.15rem; font-weight: 800; }
+        .receipt-words { font-style: italic; font-weight: 700; }
+        .receipt-footer-grid { display: grid; grid-template-columns: 1fr 0.34fr; gap: 1rem; margin-top: 1rem; align-items: start; }
+        .receipt-note { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 74px; color: #374151; }
+        .receipt-signature { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; text-align: center; min-height: 116px; display: flex; flex-direction: column; justify-content: space-between; }
+        .receipt-signature-space { min-height: 52px; }
+        .receipt-signature-name { border-top: 1px solid #111827; padding-top: 0.25rem; font-weight: 700; text-transform: uppercase; }
+        @page { size: A4 portrait; margin: 10mm; }
+        @media print { body { padding: 0; } .receipt-sheet { page-break-inside: avoid; } }
+    `;
+
+    return {
+        title: 'Kwitansi Pembayaran',
+        subtitle: receiptNumber,
         bodyHtml,
         extraStyles,
         showCompanyHeader: false,

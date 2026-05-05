@@ -666,10 +666,12 @@ export async function handlePaymentCreate(
     const nextTotalPaid = loaded.totalPaid + amount;
     const paymentNote = normalizeOptionalText(data.note);
     const paymentAttachmentUrl = normalizeOptionalText(data.attachmentUrl);
+    const receiptNumber = await getNextNumber('receipt', paymentDate);
     const paymentDoc: Payment & { [key: string]: unknown } = {
         _id: paymentId,
         _type: 'payment',
         invoiceRef,
+        receiptNumber,
         date: paymentDate,
         amount,
         method: paymentMethod,
@@ -698,7 +700,7 @@ export async function handlePaymentCreate(
         paymentRef: paymentId,
         date: paymentDate,
         amount,
-            note: loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice',
+        note: loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice',
     });
     await updateReceivableSnapshot(loaded, nextTotalPaid, loaded.totalAdjustmentAmount);
 
@@ -717,7 +719,7 @@ export async function handlePaymentCreate(
                 bankAcc.accountType === 'CASH'
                     ? 'Pembayaran tunai masuk'
                     : loaded.doc._type === 'freightNota'
-            ? 'Pembayaran invoice masuk'
+                        ? 'Pembayaran invoice masuk'
                         : 'Pembayaran arsip invoice masuk',
             balanceAfter: nextBankBalance,
             relatedPaymentRef: paymentId,
@@ -732,7 +734,7 @@ export async function handlePaymentCreate(
         'CREATE',
         'payments',
         paymentId,
-        `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'invoice' : 'arsip invoice'} ${invoiceRef}`
+        `Pembayaran ${receiptNumber} dicatat untuk ${loaded.doc._type === 'freightNota' ? 'invoice' : 'arsip invoice'} ${loaded.label || invoiceRef}`
     );
     return NextResponse.json({ data: paymentDoc, id: paymentId });
 }

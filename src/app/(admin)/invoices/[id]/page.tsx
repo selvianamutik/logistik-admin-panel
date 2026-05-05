@@ -24,7 +24,7 @@ import {
     sortInvoiceAdjustments,
 } from '@/lib/invoice-detail-page-support';
 import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
-import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
+import { buildFreightNotaPrintDocument, buildPaymentReceiptPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
@@ -488,6 +488,42 @@ export default function NotaDetailPage() {
         }
     };
 
+    const handlePrintPaymentReceipt = async (payment: Payment) => {
+        if (!nota) return;
+        const printWindow = openPrintWindow('Menyiapkan cetak kwitansi...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
+        try {
+            const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
+            const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
+            setCompany(resolvedCompany);
+            const doc = buildPaymentReceiptPrintDocument({
+                payment,
+                nota,
+                company: resolvedCompany,
+                customer,
+            });
+            openBrandedPrint({
+                title: doc.title,
+                subtitle: doc.subtitle,
+                company: issuerBranding,
+                bodyHtml: doc.bodyHtml,
+                extraStyles: doc.extraStyles,
+                showCompanyHeader: doc.showCompanyHeader,
+                showFooter: doc.showFooter,
+                targetWindow: printWindow,
+                autoPrint: false,
+            });
+        } catch {
+            try {
+                printWindow.close();
+            } catch {}
+            addToast('error', 'Gagal menyiapkan kwitansi');
+        }
+    };
+
     const handleDelete = async () => {
         if (deleting) return;
         if (!confirm('Hapus invoice ini?')) return;
@@ -686,7 +722,7 @@ export default function NotaDetailPage() {
                                             <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(p.date)}</div>
                                             <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-success)' }}>+{formatCurrency(p.amount)}</div>
                                         </div>
-                                        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
+                                        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)', flexWrap: 'wrap' }}>
                                             <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_MAP[p.method] || p.method}</span>
                                             {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Penerimaan {p.receiptNumber}</span>}
                                             {accountLabel && (
@@ -703,6 +739,13 @@ export default function NotaDetailPage() {
                                             )}
                                             {p.note && <span>| {p.note}</span>}
                                         </div>
+                                        {canPrintInvoice && (
+                                            <div style={{ marginTop: '0.5rem' }}>
+                                                <button className="table-action-btn" onClick={() => void handlePrintPaymentReceipt(p)}>
+                                                    <Printer size={13} /> Kwitansi
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                         );
                                     })()
