@@ -766,12 +766,34 @@ export interface DeliveryOrder {
   pendingDriverStatusRequestedBy?: string;
   pendingDriverStatusRequestedByName?: string;
   pendingDriverStatusNote?: string;
+  pendingDriverStatusSuratJalanRefs?: string[];
+  pendingDriverPodReceiverName?: string;
+  pendingDriverPodReceivedDate?: string;
+  pendingDriverPodNote?: string;
   pendingDriverActualCargoItems?: PendingDriverActualCargoItem[];
   pendingDriverActualDropPoints?: DeliveryActualDropPoint[];
+  pendingDriverRequests?: PendingDriverStatusRequest[];
   cargoFinalizedAt?: string;
   cargoFinalizedBy?: string;
   cargoFinalizedByName?: string;
   actualDropPoints?: DeliveryActualDropPoint[];
+}
+
+export interface PendingDriverStatusRequest {
+  requestId: string;
+  status: DOStatus;
+  requestedAt?: string;
+  requestedBy?: string;
+  requestedByName?: string;
+  note?: string;
+  targetSuratJalanRefs?: string[];
+  podReceiverName?: string;
+  podReceivedDate?: string;
+  podNote?: string;
+  actualCargoItems?: PendingDriverActualCargoItem[];
+  actualDropPoints?: DeliveryActualDropPoint[];
+  tripEndOdometerKm?: number;
+  closeTripOnly?: boolean;
 }
 
 export interface DeliveryOrderItem {

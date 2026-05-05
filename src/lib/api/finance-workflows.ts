@@ -163,7 +163,7 @@ function findBuiltNotaRowMatch(params: {
     const { row, deliveryOrder, builtRows } = params;
     const rowItemRefs = normalizeFreightNotaRowItemRefs(row);
     if (rowItemRefs.length > 0) {
-        return builtRows.find(candidate =>
+        const candidates = builtRows.filter(candidate =>
             haveSameFreightNotaRowItemRefs(
                 normalizeFreightNotaRowItemRefs({
                     deliveryOrderItemRef: candidate.deliveryOrderItemRef,
@@ -171,7 +171,14 @@ function findBuiltNotaRowMatch(params: {
                 }),
                 rowItemRefs
             )
-        ) || null;
+        );
+        if (candidates.length <= 1) {
+            return candidates[0] || null;
+        }
+        const normalizedDestination = normalizeOptionalText(row.tujuan);
+        return candidates.find(candidate => normalizeOptionalText(candidate.tujuan) === normalizedDestination)
+            || candidates[0]
+            || null;
     }
 
     const rowCoverageKeys = buildFreightNotaCoverageRowKeys({
@@ -2632,7 +2639,7 @@ export async function handleFreightNotaCreate(
                 ? [row.deliveryOrderItemRef]
                 : [];
         const rowCoverageKeys = rowItemRefs.length > 0
-            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
+            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
             : deliveryOrder
                 ? buildFreightNotaCoverageRowKeys({
                     deliveryOrder: deliveryOrder as DeliveryOrder,
@@ -2654,7 +2661,8 @@ export async function handleFreightNotaCreate(
             );
         }
         for (const itemRef of rowItemRefs) {
-            if (coverage.deliveryOrderItemRefs.has(itemRef)) {
+            const itemDestinationKey = `${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`;
+            if (coverage.deliveryOrderItemRefs.has(itemDestinationKey)) {
                 return NextResponse.json(
                     {
                         error: `Item DO ${itemRef} duplikat dalam payload invoice`,
@@ -2664,7 +2672,7 @@ export async function handleFreightNotaCreate(
             }
         }
         rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
-        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
+        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
 
@@ -2703,6 +2711,7 @@ export async function handleFreightNotaCreate(
             doRef?: string;
             doNumber?: string;
             noSJ?: string;
+            tujuan?: string;
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
             status?: string;
@@ -2720,21 +2729,25 @@ export async function handleFreightNotaCreate(
             if (existingDoRef && existingNoSJ) {
                 const matchedDeliveryOrder = deliveryOrderMap.get(existingDoRef);
                 if (matchedDeliveryOrder) {
-                    buildFreightNotaCoverageRowKeys({
-                        deliveryOrder: matchedDeliveryOrder,
-                        noSJ: existingNoSJ,
-                        deliveryOrderItemRefs: existingItemRefs,
-                    }).forEach(rowKey => existingRowKeys.add(rowKey));
+                    const existingDestination = normalizeOptionalText(item.tujuan) || '-';
+                    const rowKeys = existingItemRefs.length > 0
+                        ? existingItemRefs.map(itemRef => `${existingDoRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${existingDestination}`)
+                        : buildFreightNotaCoverageRowKeys({
+                            deliveryOrder: matchedDeliveryOrder,
+                            noSJ: existingNoSJ,
+                            deliveryOrderItemRefs: existingItemRefs,
+                        });
+                    rowKeys.forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
                     if (existingItemRefs.length > 0) {
-                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}`));
+                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}::tujuan::${normalizeOptionalText(item.tujuan) || '-'}`));
                     } else {
                         existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
                     }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
-                existingItemUsage.set(itemRef, {
+                existingItemUsage.set(`${itemRef}::${normalizeOptionalText(item.tujuan) || '-'}`, {
                     doRef: existingDoRef,
                     doNumber: normalizeOptionalText(item.doNumber) || undefined,
                     noSJ: normalizeOptionalText(item.noSJ) || undefined,
@@ -2752,11 +2765,13 @@ export async function handleFreightNotaCreate(
             if (!rowDeliveryOrder) {
         return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
             }
-            const rowKeys = buildFreightNotaCoverageRowKeys({
-                deliveryOrder: rowDeliveryOrder,
-                noSJ: row.noSJ,
-                deliveryOrderItemRefs: rowItemRefs,
-            });
+            const rowKeys = rowItemRefs.length > 0
+                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+                : buildFreightNotaCoverageRowKeys({
+                    deliveryOrder: rowDeliveryOrder,
+                    noSJ: row.noSJ,
+                    deliveryOrderItemRefs: rowItemRefs,
+                });
             if (rowKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
                     { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah masuk invoice lain` },
@@ -2764,7 +2779,7 @@ export async function handleFreightNotaCreate(
                 );
             }
             for (const itemRef of rowItemRefs) {
-                const existingUsage = existingItemUsage.get(itemRef);
+                const existingUsage = existingItemUsage.get(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`);
                 if (existingUsage) {
                     return NextResponse.json(
                     { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },
@@ -3348,11 +3363,13 @@ export async function handleFreightNotaUpdate(
         if (!rowDeliveryOrder) {
             return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
-        const rowKeys = buildFreightNotaCoverageRowKeys({
-            deliveryOrder: rowDeliveryOrder,
-            noSJ: row.noSJ,
-            deliveryOrderItemRefs: rowItemRefs,
-        });
+        const rowKeys = rowItemRefs.length > 0
+            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+            : buildFreightNotaCoverageRowKeys({
+                deliveryOrder: rowDeliveryOrder,
+                noSJ: row.noSJ,
+                deliveryOrderItemRefs: rowItemRefs,
+            });
         const coverage = payloadCoverageByDoRef.get(row.doRef) || {
             deliveryOrderItemRefs: new Set<string>(),
             rowKeys: new Set<string>(),
@@ -3364,12 +3381,13 @@ export async function handleFreightNotaUpdate(
             );
         }
         for (const itemRef of rowItemRefs) {
-            if (coverage.deliveryOrderItemRefs.has(itemRef)) {
+            const itemDestinationKey = `${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`;
+            if (coverage.deliveryOrderItemRefs.has(itemDestinationKey)) {
             return NextResponse.json({ error: `Item DO ${itemRef} duplikat dalam payload invoice` }, { status: 400 });
             }
         }
         rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
-        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
+        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
 
@@ -3378,6 +3396,7 @@ export async function handleFreightNotaUpdate(
             doRef?: string;
             doNumber?: string;
             noSJ?: string;
+            tujuan?: string;
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
             notaRef?: string;
@@ -3400,21 +3419,25 @@ export async function handleFreightNotaUpdate(
             if (existingDoRef && existingNoSJ) {
                 const matchedDeliveryOrder = deliveryOrderMap.get(existingDoRef);
                 if (matchedDeliveryOrder) {
-                    buildFreightNotaCoverageRowKeys({
-                        deliveryOrder: matchedDeliveryOrder,
-                        noSJ: existingNoSJ,
-                        deliveryOrderItemRefs: existingItemRefs,
-                    }).forEach(rowKey => existingRowKeys.add(rowKey));
+                    const existingDestination = normalizeOptionalText(item.tujuan) || '-';
+                    const rowKeys = existingItemRefs.length > 0
+                        ? existingItemRefs.map(itemRef => `${existingDoRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${existingDestination}`)
+                        : buildFreightNotaCoverageRowKeys({
+                            deliveryOrder: matchedDeliveryOrder,
+                            noSJ: existingNoSJ,
+                            deliveryOrderItemRefs: existingItemRefs,
+                        });
+                    rowKeys.forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
                     if (existingItemRefs.length > 0) {
-                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}`));
+                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}::tujuan::${normalizeOptionalText(item.tujuan) || '-'}`));
                     } else {
                         existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
                     }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
-                existingItemUsage.set(itemRef, {
+                existingItemUsage.set(`${itemRef}::${normalizeOptionalText(item.tujuan) || '-'}`, {
                     doRef: existingDoRef,
                     doNumber: normalizeOptionalText(item.doNumber) || undefined,
                     noSJ: existingNoSJ || undefined,
@@ -3432,11 +3455,13 @@ export async function handleFreightNotaUpdate(
             if (!rowDeliveryOrder) {
                 return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
             }
-            const rowCoverageKeys = buildFreightNotaCoverageRowKeys({
-                deliveryOrder: rowDeliveryOrder,
-                noSJ: row.noSJ,
-                deliveryOrderItemRefs: rowItemRefs,
-            });
+            const rowCoverageKeys = rowItemRefs.length > 0
+                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+                : buildFreightNotaCoverageRowKeys({
+                    deliveryOrder: rowDeliveryOrder,
+                    noSJ: row.noSJ,
+                    deliveryOrderItemRefs: rowItemRefs,
+                });
             if (rowCoverageKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
                     { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah masuk invoice lain` },
@@ -3444,7 +3469,7 @@ export async function handleFreightNotaUpdate(
                 );
             }
             for (const itemRef of rowItemRefs) {
-                const existingUsage = existingItemUsage.get(itemRef);
+                const existingUsage = existingItemUsage.get(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`);
                 if (existingUsage) {
                     return NextResponse.json(
                     { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },

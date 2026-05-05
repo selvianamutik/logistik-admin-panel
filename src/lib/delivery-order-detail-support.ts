@@ -178,7 +178,7 @@ export function buildActualCargoDraft(
         requireVolume: plannedVolumeM3 > 0,
     };
 
-    return applyActualCargoAutoWeightFromQty(initialDraft, initialDraft.actualQtyKoli);
+    return pendingDraft ? initialDraft : applyActualCargoAutoWeightFromQty(initialDraft, initialDraft.actualQtyKoli);
 }
 
 export function buildActualCargoDrafts(

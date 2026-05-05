@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { FileText, Search } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatCargoSummary } from '@/lib/measurement';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -37,13 +38,19 @@ export default function SuratJalanPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection>('desc');
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
 
     const loadSuratJalan = useCallback(async () => {
         setLoading(true);
         try {
+            const params = new URLSearchParams({
+                entity: 'surat-jalan',
+                sortField: 'tripDate',
+                sortDir: dateSortDir,
+            });
             const documents = await fetchAllAdminCollectionData<SuratJalanDocument>(
-                '/api/data?entity=surat-jalan&sortField=tripDate&sortDir=desc',
+                `/api/data?${params.toString()}`,
                 'Gagal memuat surat jalan'
             );
             setRows(documents || []);
@@ -52,7 +59,7 @@ export default function SuratJalanPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast]);
+    }, [addToast, dateSortDir]);
 
     useEffect(() => {
         void loadSuratJalan();
@@ -125,6 +132,13 @@ export default function SuratJalanPage() {
                         <thead>
                             <tr>
                                 <th>No. SJ</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Tanggal"
+                                        direction={dateSortDir}
+                                        onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')}
+                                    />
+                                </th>
                                 <th>Trip</th>
                                 <th>Order / Resi</th>
                                 <th>Customer</th>
@@ -133,7 +147,6 @@ export default function SuratJalanPage() {
                                 <th>Muatan</th>
                                 <th>Invoice</th>
                                 <th>Hold</th>
-                                <th>Retur</th>
                                 <th>Status Operasional</th>
                                 <th>Aksi</th>
                             </tr>
@@ -156,7 +169,8 @@ export default function SuratJalanPage() {
                                 return (
                                     <tr key={row._id}>
                                         <td className="font-semibold"><Link href={`/surat-jalan/${encodeURIComponent(row._id)}`} style={{ color: 'var(--color-primary)' }}>{row.suratJalanNumber || '-'}</Link></td>
-                                        <td><Link href={`/trips/${row.tripRef}`} style={{ color: 'var(--color-primary)' }}>{row.tripNumber}</Link><div className="text-muted text-sm">{formatDate(row.tripDate)}</div></td>
+                                        <td>{formatDate(row.tripDate)}</td>
+                                        <td><Link href={`/trips/${row.tripRef}`} style={{ color: 'var(--color-primary)' }}>{row.tripNumber}</Link></td>
                                         <td>{canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}</td>
                                         <td>{row.customerName || '-'}</td>
                                         <td>{row.pickupAddress || '-'}</td>
@@ -164,7 +178,6 @@ export default function SuratJalanPage() {
                                         <td>{row.itemCount} item<div className="text-muted text-sm">{formatCargoSummary(row.cargoSummary)}</div></td>
                                         <td>{formatCargoSummary(row.billableCargo)}</td>
                                         <td>{formatCargoSummary(row.holdCargo)}</td>
-                                        <td>{formatCargoSummary(row.returnCargo)}</td>
                                         <td>{statusMeta ? <span className={`badge badge-${statusMeta.color}`}><span className="badge-dot" /> {statusMeta.label}</span> : '-'}</td>
                                         <td><Link className="table-action-btn" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link></td>
                                     </tr>
@@ -183,6 +196,7 @@ export default function SuratJalanPage() {
                                     {statusMeta && <span className={`badge badge-${statusMeta.color}`}><span className="badge-dot" /> {statusMeta.label}</span>}
                                 </div>
                                 <div className="mobile-card-body">
+                                    <div>{formatDate(row.tripDate)}</div>
                                     <div><strong>{row.tripNumber}</strong> | {row.masterResi || '-'}</div>
                                     <div>{row.customerName || '-'}</div>
                                     <div>{row.itemCount} item | Invoice {formatCargoSummary(row.billableCargo)} | Hold {formatCargoSummary(row.holdCargo)}</div>

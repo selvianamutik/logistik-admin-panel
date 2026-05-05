@@ -8,7 +8,6 @@ import {
 } from '@/lib/api/driver-portal';
 import { extractRefId, isMutationConflictError } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, Driver } from '@/lib/types';
 
@@ -320,17 +319,7 @@ export async function POST(request: Request) {
             }
 
             try {
-                if (deliveryOrder.status === 'CREATED') {
-                    const statusResponse = await handleDeliveryOrderStatusUpdate(
-                        auth.session,
-                        { id: deliveryOrderRef, status: 'HEADING_TO_PICKUP', note: 'Tracking live dimulai via driver app' },
-                        addAuditLog
-                    );
-                    if (!statusResponse.ok) {
-                        await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
-                        return statusResponse;
-                    }
-                } else if (action === 'start') {
+                if (action === 'start') {
                     await createTrackingLog({
                         deliveryOrderRef,
                         status: deliveryOrder.status,

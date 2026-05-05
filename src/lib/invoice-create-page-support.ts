@@ -244,6 +244,30 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             billableOnly: true,
             deliveryOrderItemRef,
         }).join(', ');
+    const getActualDropDestination = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) =>
+        point.locationAddress?.trim() || point.locationName?.trim() || '';
+    const getActualDropCargoSummary = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => ({
+        qtyKoli: parseFormattedNumberish(point.qtyKoli || 0),
+        weightKg: parseFormattedNumberish(point.weightKg ?? point.weightInputValue ?? 0),
+        volumeM3: parseFormattedNumberish(point.volumeM3 ?? point.volumeInputValue ?? 0, { maxFractionDigits: 3 }),
+    });
+    const getBillableActualDropPointsForItem = (shipperReferenceNumber: string, item: DeliveryOrderItem) => {
+        const scopedReference = getDropReferenceScope(shipperReferenceNumber);
+        const normalizedReference = (scopedReference || '').trim();
+        return actualDropPoints.filter(point => {
+            if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
+                return false;
+            }
+            if (normalizedReference && (point.shipperReferenceNumber || '').trim() !== normalizedReference) {
+                return false;
+            }
+            const pointItemRefs = [
+                point.deliveryOrderItemRef,
+                ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+            ].map(value => (value || '').trim()).filter(Boolean);
+            return pointItemRefs.includes(item._id);
+        });
+    };
     const getActualDropBillingContext = (shipperReferenceNumber: string, deliveryOrderItemRef?: string) => {
         const scopedReference = getDropReferenceScope(shipperReferenceNumber);
         const normalizedReference = (scopedReference || '').trim();
@@ -366,6 +390,37 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             volumeM3: billableCargo.volumeM3,
         };
     };
+    const buildActualDropPointItemRow = (
+        shipperReferenceNumber: string,
+        item: DeliveryOrderItem,
+        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
+        pointIndex: number
+    ): NotaItemRow | null => {
+        const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+        const billableCargo = getActualDropCargoSummary(point);
+        if (!hasCargo(billableCargo)) {
+            return null;
+        }
+
+        return {
+            id: `${deliveryOrder._id}-${item._id}-${point._key || point.sequence || pointIndex}`,
+            ...baseRow,
+            deliveryOrderItemRef: item._id,
+            deliveryOrderItemRefs: [item._id],
+            customerRef: point.billingCustomerRef || matchedReference?.billingCustomerRef || baseRow.customerRef,
+            customerName: point.billingCustomerName || matchedReference?.billingCustomerName || baseRow.customerName,
+            noSJ: shipperReferenceNumber,
+            dari: matchedReference?.pickupAddress || baseRow.dari,
+            tujuan:
+                getActualDropDestination(point) ||
+                matchedReference?.receiverAddress ||
+                baseRow.tujuan,
+            barang: item.orderItemDescription?.trim() || '',
+            collie: billableCargo.qtyKoli,
+            beratKg: billableCargo.weightKg,
+            volumeM3: billableCargo.volumeM3,
+        };
+    };
 
     if (relatedItems.length === 0) {
         if (shipperReferences.length > 0) {
@@ -427,12 +482,23 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         }
 
         const itemRows = itemsForReference
-            .map(item => buildItemRow(shipperReferenceNumber, item, {
-                billableCargoOverride: hasActualDropPoints && !hasSpecificMapping && hasNonBillableOutcome && itemsForReference.length === 1
-                    ? referenceBillableCargo
-                    : undefined,
-                useSpecificBillableCargo: hasSpecificMapping,
-            }))
+            .flatMap(item => {
+                if (hasActualDropPoints && hasSpecificMapping) {
+                    const pointRows = getBillableActualDropPointsForItem(shipperReferenceNumber, item)
+                        .map((point, pointIndex) => buildActualDropPointItemRow(shipperReferenceNumber, item, point, pointIndex))
+                        .filter((row): row is NotaItemRow => Boolean(row));
+                    if (pointRows.length > 0) {
+                        return pointRows;
+                    }
+                }
+                const row = buildItemRow(shipperReferenceNumber, item, {
+                    billableCargoOverride: hasActualDropPoints && !hasSpecificMapping && hasNonBillableOutcome && itemsForReference.length === 1
+                        ? referenceBillableCargo
+                        : undefined,
+                    useSpecificBillableCargo: hasSpecificMapping,
+                });
+                return row ? [row] : [];
+            })
             .filter((row): row is NotaItemRow => Boolean(row));
 
         if (itemRows.length > 0) {
@@ -457,12 +523,23 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         }
 
         const itemRows = items
-            .map(item => buildItemRow(shipperReferenceNumber, item, {
-                billableCargoOverride: hasActualDropPoints && !hasSpecificMapping && hasNonBillableOutcome && items.length === 1
-                    ? referenceBillableCargo
-                    : undefined,
-                useSpecificBillableCargo: hasSpecificMapping,
-            }))
+            .flatMap(item => {
+                if (hasActualDropPoints && hasSpecificMapping) {
+                    const pointRows = getBillableActualDropPointsForItem(shipperReferenceNumber, item)
+                        .map((point, pointIndex) => buildActualDropPointItemRow(shipperReferenceNumber, item, point, pointIndex))
+                        .filter((row): row is NotaItemRow => Boolean(row));
+                    if (pointRows.length > 0) {
+                        return pointRows;
+                    }
+                }
+                const row = buildItemRow(shipperReferenceNumber, item, {
+                    billableCargoOverride: hasActualDropPoints && !hasSpecificMapping && hasNonBillableOutcome && items.length === 1
+                        ? referenceBillableCargo
+                        : undefined,
+                    useSpecificBillableCargo: hasSpecificMapping,
+                });
+                return row ? [row] : [];
+            })
             .filter((row): row is NotaItemRow => Boolean(row));
 
         if (itemRows.length > 0) {

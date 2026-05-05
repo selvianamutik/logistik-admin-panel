@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search, Truck } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
@@ -35,13 +36,21 @@ export default function TripsPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
 
     const loadTrips = useCallback(async () => {
         setLoading(true);
         try {
+            const params = new URLSearchParams({ entity: 'trips' });
+            if (dateSortDir) {
+                params.set('sortField', 'date');
+                params.set('sortDir', dateSortDir);
+            } else {
+                params.set('sortPreset', 'work-queue');
+            }
             const rows = await fetchAllAdminCollectionData<Trip>(
-                '/api/data?entity=trips&sortPreset=work-queue',
+                `/api/data?${params.toString()}`,
                 'Gagal memuat trip'
             );
             setItems(rows || []);
@@ -50,7 +59,7 @@ export default function TripsPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast]);
+    }, [addToast, dateSortDir]);
 
     useEffect(() => {
         void loadTrips();
@@ -124,7 +133,13 @@ export default function TripsPage() {
                                 <th>Rute</th>
                                 <th>Armada</th>
                                 <th>Driver</th>
-                                <th>Tanggal</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Tanggal"
+                                        direction={dateSortDir}
+                                        onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')}
+                                    />
+                                </th>
                                 <th>SJ</th>
                                 <th>Status</th>
                                 <th>Aksi</th>
