@@ -197,8 +197,11 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
         .toUpperCase();
     final weightPerKoliKg = _productWeightPerKoliKg(selectedProduct);
     final nextWeightValue = nextQty > 0 && weightPerKoliKg > 0
-        ? _convertKgToWeightInputValue(weightPerKoliKg * nextQty, nextWeightUnit)
-        : 0;
+        ? _convertKgToWeightInputValue(
+            weightPerKoliKg * nextQty,
+            nextWeightUnit,
+          )
+        : 0.0;
 
     _updateItem(
       groupId,

@@ -775,6 +775,168 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
   }
 
+  Future<void> _openTripClosure(DeliveryTrip trip) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+    if (trip.status != TripStatus.delivered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tutup trip hanya bisa diajukan setelah trip selesai.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (trip.isAwaitingAdminApproval) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip ini masih menunggu approval admin.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final currentOdometer = (trip.vehicleLastOdometer ?? 0).clamp(
+      0,
+      double.infinity,
+    );
+    final odometerController = TextEditingController(
+      text: trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0
+          ? trip.tripEndOdometerKm!.round().toString()
+          : '',
+    );
+    final noteController = TextEditingController();
+
+    final result = await showDialog<_TripClosureSubmitResult>(
+      context: context,
+      builder: (context) {
+        String? errorText;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void submit() {
+              final odometer = _parseOdometerInput(odometerController.text);
+              if (odometer == null || odometer <= 0) {
+                setDialogState(
+                  () => errorText = 'Odometer akhir trip wajib diisi.',
+                );
+                return;
+              }
+              if (odometer < currentOdometer) {
+                setDialogState(
+                  () => errorText =
+                      'Odometer akhir tidak boleh lebih kecil dari ${_formatKm(currentOdometer)} km.',
+                );
+                return;
+              }
+              Navigator.of(context).pop(
+                _TripClosureSubmitResult(
+                  odometerKm: odometer,
+                  note: noteController.text.trim(),
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: const Text('Tutup Trip'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Odometer kendaraan terakhir: ${_formatKm(currentOdometer)} km',
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.65),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: odometerController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Odometer Akhir Trip',
+                        suffixText: 'km',
+                        errorText: errorText,
+                      ),
+                      onSubmitted: (_) => submit(),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Catatan',
+                        hintText: 'Opsional',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: submit,
+                  icon: const Icon(Icons.lock_clock_rounded),
+                  label: const Text('Ajukan Tutup Trip'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    odometerController.dispose();
+    noteController.dispose();
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _updatingStatus = true);
+    try {
+      await _deliveryOrderService.requestTripClosure(
+        sessionToken: sessionToken,
+        deliveryOrderId: trip.deliveryOrderId,
+        tripEndOdometerKm: result.odometerKm,
+        note: result.note,
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permintaan tutup trip dikirim. Menunggu approval admin.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingStatus = false);
+      }
+    }
+  }
+
   String _statusNoteForUpdate(TripStatus status) {
     return switch (status) {
       TripStatus.headingToPickup =>
@@ -1006,6 +1168,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       onPressed:
                           (_selectedTrip!.status == TripStatus.onDelivery ||
                               _selectedTrip!.status == TripStatus.arrived ||
+                              _selectedTrip!.status == TripStatus.delivered ||
                               _selectedTrip!.isAwaitingAdminApproval)
                           ? null
                           : () => unawaited(_beginDelivery(_selectedTrip!)),
@@ -1024,6 +1187,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                           : (_updatingStatus
                                 ? null
                                 : () => unawaited(_advanceStatus())),
+                    ),
+                  ],
+                  if (_selectedTrip!.status == TripStatus.delivered &&
+                      !_selectedTrip!.isAwaitingAdminApproval) ...[
+                    const SizedBox(height: 12),
+                    _CloseTripButton(
+                      onPressed: _updatingStatus
+                          ? null
+                          : () => unawaited(_openTripClosure(_selectedTrip!)),
                     ),
                   ],
                 ],
@@ -1180,6 +1352,36 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 }
 
 // ── Driver card ────────────────────────────────────────────
+class _TripClosureSubmitResult {
+  const _TripClosureSubmitResult({
+    required this.odometerKm,
+    required this.note,
+  });
+
+  final double odometerKm;
+  final String note;
+}
+
+double? _parseOdometerInput(String value) {
+  final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
+  if (normalized.isEmpty) return null;
+  final parsed = double.tryParse(normalized);
+  return parsed == null || parsed.isNaN || parsed.isInfinite ? null : parsed;
+}
+
+String _formatKm(num value) {
+  final rounded = value.round().toString();
+  final buffer = StringBuffer();
+  for (var index = 0; index < rounded.length; index++) {
+    final remaining = rounded.length - index;
+    buffer.write(rounded[index]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+  return buffer.toString();
+}
+
 class _DriverCard extends StatelessWidget {
   const _DriverCard({required this.session, required this.tripCount});
   final DriverAppSession session;
@@ -2171,6 +2373,31 @@ class _AdvanceButton extends StatelessWidget {
 }
 
 // ── Status chip ────────────────────────────────────────────
+class _CloseTripButton extends StatelessWidget {
+  const _CloseTripButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.lock_clock_rounded, size: 18),
+        label: const Text('Tutup Trip'),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.status});
   final TripStatus status;

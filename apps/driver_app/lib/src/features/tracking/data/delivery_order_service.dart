@@ -141,6 +141,38 @@ class DeliveryOrderService {
     }
   }
 
+  Future<void> requestTripClosure({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required double tripEndOdometerKm,
+    String? note,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/delivery-orders/status'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'status': 'DELIVERED',
+        'closeTripOnly': true,
+        'tripEndOdometerKm': tripEndOdometerKm,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal mengajukan tutup trip';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   Future<void> createDeliveryOrderFromTripPlan({
     required String sessionToken,
     required String orderRef,
@@ -223,6 +255,9 @@ class DeliveryOrderService {
     final receiverAddress = (json['receiverAddress'] as String?)?.trim();
     final notes = (json['notes'] as String?)?.trim();
     final pickupStops = _mapPickupStops(json['pickupStops']);
+    final pendingDriverRequests = _mapPendingDriverRequests(
+      json['pendingDriverRequests'],
+    );
     final tripOriginArea = (json['tripOriginArea'] as String?)?.trim();
     final tripDestinationArea = (json['tripDestinationArea'] as String?)
         ?.trim();
@@ -252,6 +287,9 @@ class DeliveryOrderService {
       statusNote: defaultTripStatusNote(
         mappedStatus,
         pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
+        hasPendingTripClosureRequest: pendingDriverRequests.any(
+          (request) => request.isTripClosureRequest,
+        ),
       ),
       allowsDirectCargoInput: json['allowsDirectCargoInput'] != false,
       orderRef: _readRefId(json['orderRef']),
@@ -263,6 +301,10 @@ class DeliveryOrderService {
       itemSummary: notes?.isNotEmpty == true ? notes : null,
       trackingState: (json['trackingState'] as String?)?.trim(),
       pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
+      pendingDriverRequests: pendingDriverRequests,
+      vehicleLastOdometer: _toDouble(json['vehicleLastOdometer']),
+      vehicleLastOdometerAt: (json['vehicleLastOdometerAt'] as String?)?.trim(),
+      tripEndOdometerKm: _toDouble(json['tripEndOdometerKm']),
       pickupStops: pickupStops,
       shipperReferences: _mapShipperReferences(
         json['shipperReferences'],
@@ -455,6 +497,22 @@ class DeliveryOrderService {
           ),
         )
         .where((item) => item.deliveryOrderItemRef.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<PendingDriverRequest> _mapPendingDriverRequests(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => PendingDriverRequest(
+            requestId: (item['requestId'] as String?)?.trim() ?? '',
+            status: (item['status'] as String?)?.trim() ?? '',
+            closeTripOnly: item['closeTripOnly'] == true,
+            tripEndOdometerKm: _toDouble(item['tripEndOdometerKm']),
+          ),
+        )
+        .where((item) => item.requestId.isNotEmpty && item.status.isNotEmpty)
         .toList(growable: false);
   }
 

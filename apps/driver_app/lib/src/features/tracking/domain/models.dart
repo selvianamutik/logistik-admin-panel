@@ -307,6 +307,10 @@ class DeliveryTrip {
     this.customerRef,
     this.trackingState,
     this.pendingDriverStatus,
+    this.pendingDriverRequests = const [],
+    this.vehicleLastOdometer,
+    this.vehicleLastOdometerAt,
+    this.tripEndOdometerKm,
     this.receiverName,
     this.receiverAddress,
     this.itemSummary,
@@ -331,6 +335,10 @@ class DeliveryTrip {
   final String? customerRef;
   final String? trackingState;
   final String? pendingDriverStatus;
+  final List<PendingDriverRequest> pendingDriverRequests;
+  final double? vehicleLastOdometer;
+  final String? vehicleLastOdometerAt;
+  final double? tripEndOdometerKm;
   final String? receiverName;
   final String? receiverAddress;
   final String? itemSummary;
@@ -340,7 +348,11 @@ class DeliveryTrip {
   final List<PendingDriverActualCargoItem> pendingActualCargoItems;
   final List<DeliveryActualDropPoint> pendingActualDropPoints;
 
-  bool get isAwaitingAdminApproval => pendingDriverStatus == 'DELIVERED';
+  bool get hasPendingTripClosureRequest =>
+      pendingDriverRequests.any((request) => request.isTripClosureRequest);
+
+  bool get isAwaitingAdminApproval =>
+      pendingDriverStatus == 'DELIVERED' || pendingDriverRequests.isNotEmpty;
 
   int get shipperReferenceCount => shipperReferences.length;
 
@@ -370,9 +382,14 @@ class DeliveryTrip {
           defaultTripStatusNote(
             nextStatus,
             pendingDriverStatus: nextPendingDriverStatus,
+            hasPendingTripClosureRequest: hasPendingTripClosureRequest,
           ),
       trackingState: trackingState ?? this.trackingState,
       pendingDriverStatus: nextPendingDriverStatus,
+      pendingDriverRequests: pendingDriverRequests,
+      vehicleLastOdometer: vehicleLastOdometer,
+      vehicleLastOdometerAt: vehicleLastOdometerAt,
+      tripEndOdometerKm: tripEndOdometerKm,
       receiverName: receiverName,
       receiverAddress: receiverAddress,
       itemSummary: itemSummary,
@@ -385,7 +402,30 @@ class DeliveryTrip {
   }
 }
 
-String defaultTripStatusNote(TripStatus status, {String? pendingDriverStatus}) {
+class PendingDriverRequest {
+  const PendingDriverRequest({
+    required this.requestId,
+    required this.status,
+    this.closeTripOnly = false,
+    this.tripEndOdometerKm,
+  });
+
+  final String requestId;
+  final String status;
+  final bool closeTripOnly;
+  final double? tripEndOdometerKm;
+
+  bool get isTripClosureRequest => closeTripOnly || tripEndOdometerKm != null;
+}
+
+String defaultTripStatusNote(
+  TripStatus status, {
+  String? pendingDriverStatus,
+  bool hasPendingTripClosureRequest = false,
+}) {
+  if (hasPendingTripClosureRequest) {
+    return 'Menunggu approval tutup trip';
+  }
   if (pendingDriverStatus == 'DELIVERED') {
     return 'Menunggu approval admin';
   }
