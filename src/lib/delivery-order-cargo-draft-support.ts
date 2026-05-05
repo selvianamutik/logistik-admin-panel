@@ -1,17 +1,20 @@
 import type { DeliveryOrderPickupStop, DeliveryOrderShipperReference } from './types';
 import { createDefaultOrderItemForm, type OrderItemForm } from './order-create-page-support';
 
-export type DeliveryOrderCargoDraftItem = Omit<OrderItemForm, 'pickupStopKey' | 'shipperReferenceNumber'>;
+export type DeliveryOrderCargoDraftItem = Omit<OrderItemForm, 'pickupStopKey' | 'shipperReferenceNumber'> & {
+    deliveryOrderItemId?: string;
+};
 
 export type DeliveryOrderCargoDraftGroup = {
     id: string;
+    shipperReferenceKey?: string;
     pickupStopKey: string;
     shipperReferenceNumber: string;
     items: DeliveryOrderCargoDraftItem[];
 };
 
 type PickupStopLike = Pick<DeliveryOrderPickupStop, '_key'>;
-type ShipperReferenceLike = Pick<DeliveryOrderShipperReference, 'referenceNumber' | 'pickupStopKey'>;
+type ShipperReferenceLike = Pick<DeliveryOrderShipperReference, '_key' | 'referenceNumber' | 'pickupStopKey'>;
 
 export function toDeliveryOrderCargoDraftItem(item: DeliveryOrderCargoDraftItem | OrderItemForm): DeliveryOrderCargoDraftItem {
     return {
@@ -26,6 +29,7 @@ export function toDeliveryOrderCargoDraftItem(item: DeliveryOrderCargoDraftItem 
         volumeInputUnit: item.volumeInputUnit,
         value: item.value,
         id: item.id,
+        deliveryOrderItemId: 'deliveryOrderItemId' in item ? item.deliveryOrderItemId : undefined,
     };
 }
 
@@ -36,6 +40,7 @@ export function createDefaultDeliveryOrderCargoDraftItem(): DeliveryOrderCargoDr
 export function createDefaultDeliveryOrderCargoDraftGroup(pickupStopKey = ''): DeliveryOrderCargoDraftGroup {
     return {
         id: crypto.randomUUID(),
+        shipperReferenceKey: '',
         pickupStopKey,
         shipperReferenceNumber: '',
         items: [createDefaultDeliveryOrderCargoDraftItem()],
@@ -82,6 +87,7 @@ export function buildInitialDeliveryOrderCargoDraftGroups(params: {
     const defaultPickupStopKey = params.pickupStops?.[0]?._key || '';
     const normalizedReferences = (params.shipperReferences || [])
         .map(reference => ({
+            shipperReferenceKey: reference._key || '',
             referenceNumber: reference.referenceNumber?.trim().toUpperCase() || '',
             pickupStopKey: reference.pickupStopKey || defaultPickupStopKey,
         }))
@@ -93,6 +99,7 @@ export function buildInitialDeliveryOrderCargoDraftGroups(params: {
 
     return normalizedReferences.map(reference => ({
         id: crypto.randomUUID(),
+        shipperReferenceKey: reference.shipperReferenceKey,
         pickupStopKey: reference.pickupStopKey,
         shipperReferenceNumber: reference.referenceNumber,
         items: [createDefaultDeliveryOrderCargoDraftItem()],

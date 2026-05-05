@@ -93,7 +93,7 @@ import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -214,6 +214,139 @@ function hasActualDropItemValues(values: ActualDropItemValueDraft) {
         values.volumeInputUnit
     );
     return qtyKoli > 0 || weightKg > 0 || volumeM3 > 0;
+}
+
+function normalizeActualDropGroupText(value?: string) {
+    return (value || '').trim();
+}
+
+function buildDriverReviewActualDropHydration(
+    sourceDropPoints: DeliveryOrder['pendingDriverActualDropPoints'] | DeliveryOrder['actualDropPoints'] | undefined,
+    actualCargoItems: ActualCargoDraft[] = []
+) {
+    const points = Array.isArray(sourceDropPoints) ? sourceDropPoints : [];
+    const groupedDrafts: ActualDropDraft[] = [];
+    const itemValueMap: Record<string, ActualDropItemValueDraft> = {};
+    const groupIndexByKey = new Map<string, number>();
+
+    points.forEach((point, index) => {
+        const groupKey = [
+            point.stopType || 'DROP',
+            normalizeActualDropGroupText(point.shipperReferenceKey),
+            normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase(),
+            normalizeActualDropGroupText(point.billingCustomerRef),
+            normalizeActualDropGroupText(point.billingCustomerName),
+            normalizeActualDropGroupText(point.locationName),
+            normalizeActualDropGroupText(point.locationAddress),
+            normalizeActualDropGroupText(point.note),
+        ].join('|');
+        let groupIndex = groupIndexByKey.get(groupKey);
+        if (groupIndex === undefined) {
+            const draftKey = point._key || `driver-drop-${groupedDrafts.length + 1}`;
+            groupIndex = groupedDrafts.length;
+            groupIndexByKey.set(groupKey, groupIndex);
+            groupedDrafts.push({
+                draftKey,
+                stopType: point.stopType || 'DROP',
+                deliveryOrderItemRef: '',
+                shipperReferenceKey: point.shipperReferenceKey || '',
+                shipperReferenceNumber: point.shipperReferenceNumber || '',
+                billingCustomerRef: point.billingCustomerRef || '',
+                billingCustomerName: point.billingCustomerName || '',
+                locationName: point.locationName || '',
+                locationAddress: point.locationAddress || '',
+                qtyKoli: '',
+                weightInputValue: '',
+                weightInputUnit: point.weightInputUnit || 'KG',
+                volumeInputValue: '',
+                volumeInputUnit: point.volumeInputUnit || 'M3',
+                note: point.note || '',
+            });
+        }
+
+        const draft = groupedDrafts[groupIndex];
+        const pointValues: ActualDropItemValueDraft = {
+            qtyKoli: point.qtyKoli !== undefined ? String(point.qtyKoli) : '',
+            weightInputValue: point.weightInputValue !== undefined
+                ? String(point.weightInputValue)
+                : point.weightKg !== undefined
+                    ? String(point.weightKg)
+                    : '',
+            weightInputUnit: point.weightInputUnit || draft.weightInputUnit || 'KG',
+            volumeInputValue: point.volumeInputValue !== undefined
+                ? String(point.volumeInputValue)
+                : point.volumeM3 !== undefined
+                    ? String(point.volumeM3)
+                    : '',
+            volumeInputUnit: point.volumeInputUnit || draft.volumeInputUnit || 'M3',
+        };
+        if (point.deliveryOrderItemRef && hasActualDropItemValues(pointValues)) {
+            itemValueMap[buildActualDropItemValueKey(draft.draftKey, point.deliveryOrderItemRef)] = pointValues;
+        }
+        if (!point.deliveryOrderItemRef && hasActualDropItemValues(pointValues)) {
+            const pointReferenceKey = normalizeActualDropGroupText(point.shipperReferenceKey);
+            const pointReferenceNumber = normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase();
+            actualCargoItems
+                .filter(item => {
+                    const itemReferenceKey = normalizeActualDropGroupText(item.shipperReferenceKey);
+                    const itemReferenceNumber = normalizeActualDropGroupText(item.shipperReferenceNumber).toUpperCase();
+                    return (
+                        (!pointReferenceKey && !pointReferenceNumber) ||
+                        (pointReferenceKey && itemReferenceKey === pointReferenceKey) ||
+                        (pointReferenceNumber && itemReferenceNumber === pointReferenceNumber)
+                    );
+                })
+                .forEach(item => {
+                    const itemValues: ActualDropItemValueDraft = {
+                        qtyKoli: item.actualQtyKoli,
+                        weightInputValue: item.actualWeightInputValue,
+                        weightInputUnit: item.actualWeightInputUnit,
+                        volumeInputValue: item.actualVolumeInputValue,
+                        volumeInputUnit: item.actualVolumeInputUnit,
+                    };
+                    if (hasActualDropItemValues(itemValues)) {
+                        itemValueMap[buildActualDropItemValueKey(draft.draftKey, item.deliveryOrderItemRef)] = itemValues;
+                    }
+                });
+        }
+
+        const currentQtyKoli = parseFormattedNumberish(draft.qtyKoli || 0, { maxFractionDigits: 2 });
+        const currentWeightKg = convertWeightToKg(
+            parseFormattedNumberish(draft.weightInputValue || 0, {
+                maxFractionDigits: getWeightInputFractionDigits(draft.weightInputUnit),
+            }),
+            draft.weightInputUnit
+        );
+        const currentVolumeM3 = convertVolumeToM3(
+            parseFormattedNumberish(draft.volumeInputValue || 0, {
+                maxFractionDigits: draft.volumeInputUnit === 'LITER' ? 0 : 3,
+            }),
+            draft.volumeInputUnit
+        );
+        const nextQtyKoli = currentQtyKoli + parseFormattedNumberish(pointValues.qtyKoli || 0, { maxFractionDigits: 2 });
+        const nextWeightKg = currentWeightKg + convertWeightToKg(
+            parseFormattedNumberish(pointValues.weightInputValue || 0, {
+                maxFractionDigits: getWeightInputFractionDigits(pointValues.weightInputUnit),
+            }),
+            pointValues.weightInputUnit
+        );
+        const nextVolumeM3 = currentVolumeM3 + convertVolumeToM3(
+            parseFormattedNumberish(pointValues.volumeInputValue || 0, {
+                maxFractionDigits: pointValues.volumeInputUnit === 'LITER' ? 0 : 3,
+            }),
+            pointValues.volumeInputUnit
+        );
+        groupedDrafts[groupIndex] = {
+            ...draft,
+            qtyKoli: nextQtyKoli > 0 ? String(nextQtyKoli) : '',
+            weightInputValue: nextWeightKg > 0 ? String(convertKgToWeightInputValue(nextWeightKg, draft.weightInputUnit)) : '',
+            volumeInputValue: nextVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(nextVolumeM3, draft.volumeInputUnit)) : '',
+            deliveryOrderItemRef: draft.deliveryOrderItemRef || point.deliveryOrderItemRef || '',
+            draftKey: draft.draftKey || point._key || `${index + 1}`,
+        };
+    });
+
+    return { groupedDrafts, itemValueMap };
 }
 
 function buildResolvedShipperReferenceEntries(
@@ -393,6 +526,7 @@ export default function TripDetailPage() {
     const [statusNote, setStatusNote] = useState('');
     const [cancelTripNote, setCancelTripNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
+    const [reviewingDriverRequestId, setReviewingDriverRequestId] = useState('');
     const [rejectRequestNote, setRejectRequestNote] = useState('');
     const [podName, setPodName] = useState('');
     const [podDate, setPodDate] = useState(getBusinessDateValue());
@@ -402,6 +536,7 @@ export default function TripDetailPage() {
     const [actualCargoItemValueMap, setActualCargoItemValueMap] = useState<Record<string, ActualCargoItemValueDraft>>({});
     const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
     const [actualDropItemValueMap, setActualDropItemValueMap] = useState<Record<string, ActualDropItemValueDraft>>({});
+    const [actualCargoSetupSnapshot, setActualCargoSetupSnapshot] = useState<ActualCargoDraft[]>([]);
     const [partialHoldContinuationItemRefs, setPartialHoldContinuationItemRefs] = useState<string[]>([]);
     const [showAdvancedDropEditor, setShowAdvancedDropEditor] = useState(false);
     const [editingTarip, setEditingTarip] = useState(false);
@@ -1538,13 +1673,13 @@ export default function TripDetailPage() {
         };
     };
 
-    const openStatusModal = async (requestedStatus?: string, fromDriverRequest: boolean = false) => {
+    const openStatusModal = async (requestedStatus?: string, fromDriverRequest: boolean = false, driverRequest?: PendingDriverStatusRequest) => {
         if (!canManageDeliveryStatus) return;
         const hydratingDriverDeliveredRequest = fromDriverRequest && requestedStatus === 'DELIVERED';
         let statusModalDOData = doData;
         let statusModalDoItems = doItems;
-        let pendingDriverActualCargoItems = hydratingDriverDeliveredRequest ? doData?.pendingDriverActualCargoItems : undefined;
-        let pendingDriverActualDropPoints = hydratingDriverDeliveredRequest ? doData?.pendingDriverActualDropPoints : undefined;
+        let pendingDriverActualCargoItems = hydratingDriverDeliveredRequest ? (driverRequest?.actualCargoItems || doData?.pendingDriverActualCargoItems) : undefined;
+        let pendingDriverActualDropPoints = hydratingDriverDeliveredRequest ? (driverRequest?.actualDropPoints || doData?.pendingDriverActualDropPoints) : undefined;
 
         if (hydratingDriverDeliveredRequest && doId) {
             try {
@@ -1556,8 +1691,11 @@ export default function TripDetailPage() {
                     const snapshotState = await applyTripDetailSnapshot(latestTripDetail);
                     statusModalDOData = snapshotState.resolvedDeliveryOrder;
                     statusModalDoItems = snapshotState.deliveryOrderItems;
-                    pendingDriverActualCargoItems = latestTripDetail.deliveryOrder.pendingDriverActualCargoItems;
-                    pendingDriverActualDropPoints = latestTripDetail.deliveryOrder.pendingDriverActualDropPoints;
+                    const latestDriverRequest = driverRequest?.requestId
+                        ? (latestTripDetail.deliveryOrder.pendingDriverRequests || []).find(request => request.requestId === driverRequest.requestId)
+                        : null;
+                    pendingDriverActualCargoItems = latestDriverRequest?.actualCargoItems || latestTripDetail.deliveryOrder.pendingDriverActualCargoItems;
+                    pendingDriverActualDropPoints = latestDriverRequest?.actualDropPoints || latestTripDetail.deliveryOrder.pendingDriverActualDropPoints;
                 }
             } catch {
                 addToast('warning', 'Permintaan driver terbaru belum sempat disegarkan. Modal memakai data yang sudah terbuka.');
@@ -1565,19 +1703,27 @@ export default function TripDetailPage() {
         }
 
         const defaultPodName =
-            statusModalDOData?.podReceiverName?.trim()
+            (fromDriverRequest ? (driverRequest?.podReceiverName?.trim() || statusModalDOData?.pendingDriverPodReceiverName?.trim()) : '')
+            || statusModalDOData?.podReceiverName?.trim()
             || statusModalDOData?.receiverName?.trim()
             || statusModalDOData?.receiverCompany?.trim()
             || '';
         const defaultPodDate = statusModalDOData?.podReceivedDate?.trim()
             ? statusModalDOData.podReceivedDate.trim().slice(0, 10)
+            : fromDriverRequest && (driverRequest?.podReceivedDate?.trim() || statusModalDOData?.pendingDriverPodReceivedDate?.trim())
+                ? (driverRequest?.podReceivedDate?.trim() || statusModalDOData?.pendingDriverPodReceivedDate?.trim() || '').slice(0, 10)
             : getBusinessDateValue();
-        const defaultPodNote = statusModalDOData?.podNote || '';
+        const defaultPodNote = (fromDriverRequest ? (driverRequest?.podNote || statusModalDOData?.pendingDriverPodNote) : '') || statusModalDOData?.podNote || '';
 
         setNewStatus(requestedStatus || '');
+        const pendingDriverStatusSuratJalanRefs = fromDriverRequest
+            ? (driverRequest?.targetSuratJalanRefs || statusModalDOData?.pendingDriverStatusSuratJalanRefs || [])
+            : [];
         setSelectedStatusSuratJalanRefs(
             requestedStatus
-                ? suratJalanDocuments
+                ? pendingDriverStatusSuratJalanRefs.length > 0
+                    ? pendingDriverStatusSuratJalanRefs
+                    : suratJalanDocuments
                     .filter(document =>
                         getNextDeliveryOrderStatuses(document.tripStatus || (tripData?.status || statusModalDOData?.status || doData?.status || ''))
                             .filter(status => status === 'CREATED' || status === 'CANCELLED' || hasTripResourcesAssigned)
@@ -1586,8 +1732,9 @@ export default function TripDetailPage() {
                     .map(document => document._id)
                 : []
         );
-        setStatusNote(fromDriverRequest ? (statusModalDOData?.pendingDriverStatusNote || '') : '');
+        setStatusNote(fromDriverRequest ? (driverRequest?.note || statusModalDOData?.pendingDriverStatusNote || '') : '');
         setReviewingDriverRequest(fromDriverRequest);
+        setReviewingDriverRequestId(fromDriverRequest ? (driverRequest?.requestId || '') : '');
         setPodName(defaultPodName);
         setPodDate(defaultPodDate);
         setPodNote(defaultPodNote);
@@ -1607,21 +1754,47 @@ export default function TripDetailPage() {
             };
         const nextActualCargoItems = continuationDrafts.actualCargoItems;
         const isPartialHoldContinuation = !hydratingDriverDeliveredRequest && continuationDrafts.itemRefs.length > 0;
-        const nextActualDropPoints = buildDefaultActualDropDrafts(
-            statusModalDOData,
-            nextActualCargoItems,
-            isPartialHoldContinuation
-                ? []
-                : hydratingDriverDeliveredRequest
-                    ? pendingDriverActualDropPoints || []
+        const driverReviewDropHydration = hydratingDriverDeliveredRequest
+            ? buildDriverReviewActualDropHydration(pendingDriverActualDropPoints || [], nextActualCargoItems)
+            : { groupedDrafts: [] as ActualDropDraft[], itemValueMap: {} as Record<string, ActualDropItemValueDraft> };
+        const nextActualDropPoints = hydratingDriverDeliveredRequest
+            ? driverReviewDropHydration.groupedDrafts
+            : buildDefaultActualDropDrafts(
+                statusModalDOData,
+                nextActualCargoItems,
+                isPartialHoldContinuation
+                    ? []
                     : continuationDrafts.sourceDropPoints || []
-        );
-        const shouldUseAdvancedDropEditor = !isPartialHoldContinuation && shouldOpenAdvancedDropEditor(statusModalDOData, nextActualDropPoints);
+            );
+        const isDriverReviewDefaultDrop =
+            hydratingDriverDeliveredRequest &&
+            (pendingDriverActualDropPoints || []).length === 1 &&
+            !((pendingDriverActualDropPoints || [])[0]?.deliveryOrderItemRef || '').trim();
+        const shouldUseAdvancedDropEditor =
+            !isDriverReviewDefaultDrop &&
+            !isPartialHoldContinuation &&
+            shouldOpenAdvancedDropEditor(statusModalDOData, nextActualDropPoints);
+        const hydratedDriverDropItemValueMap = hydratingDriverDeliveredRequest
+            ? driverReviewDropHydration.itemValueMap
+            : {};
+        const hydratedDriverActualCargoItemValueMap = hydratingDriverDeliveredRequest
+            ? nextActualCargoItems.reduce<Record<string, ActualCargoItemValueDraft>>((map, item) => {
+                map[item.deliveryOrderItemRef] = {
+                    actualQtyKoli: item.actualQtyKoli,
+                    actualWeightInputValue: item.actualWeightInputValue,
+                    actualWeightInputUnit: item.actualWeightInputUnit,
+                    actualVolumeInputValue: item.actualVolumeInputValue,
+                    actualVolumeInputUnit: item.actualVolumeInputUnit,
+                };
+                return map;
+            }, {})
+            : {};
         setActualCargoItems(nextActualCargoItems);
+        setActualCargoSetupSnapshot(nextActualCargoItems);
         setPartialHoldContinuationItemRefs(continuationDrafts.itemRefs);
         setActualDropPoints(nextActualDropPoints);
-        setActualCargoItemValueMap({});
-        setActualDropItemValueMap({});
+        setActualCargoItemValueMap(hydratedDriverActualCargoItemValueMap);
+        setActualDropItemValueMap(hydratedDriverDropItemValueMap);
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
         setShowActualCargoFinalizationModal(false);
         setActiveFinalizationCargoItemRef('');
@@ -1641,6 +1814,7 @@ export default function TripDetailPage() {
                     action: 'reject-driver-status-request',
                     data: {
                         id: doData?._id,
+                        pendingDriverRequestId: reviewingDriverRequestId || undefined,
                         note: rejectRequestNote,
                     },
                 }),
@@ -1652,6 +1826,7 @@ export default function TripDetailPage() {
             }
             setShowRejectRequestModal(false);
             setRejectRequestNote('');
+            setReviewingDriverRequestId('');
             await refreshTripDetail();
             addToast('success', 'Permintaan driver ditolak');
         } catch {
@@ -1776,7 +1951,7 @@ export default function TripDetailPage() {
         }
     };
 
-    const toggleTripClosure = async () => {
+    const toggleTripClosure = async (preferredOdometer?: number) => {
         if (!canManageDeliveryStatus || !doData?._id) return;
         const nextClosed = !isTripClosedByAdmin;
         setPendingTripClosure(nextClosed);
@@ -1817,7 +1992,7 @@ export default function TripDetailPage() {
                     : [...current, resolvedVehicle]
             );
         }
-        setTripClosureOdometer(vehicle?.lastOdometer || doData.tripEndOdometerKm || 0);
+        setTripClosureOdometer(Math.max(preferredOdometer || 0, vehicle?.lastOdometer || doData.tripEndOdometerKm || 0));
         if (!doData.vehicleRef) {
             setTripClosureTires([]);
             return;
@@ -1850,6 +2025,7 @@ export default function TripDetailPage() {
                         id: doData._id,
                         closed: nextClosed,
                         newOdometer: nextClosed ? tripClosureOdometer : undefined,
+                        pendingDriverRequestId: reviewingDriverRequestId || undefined,
                     },
                 }),
             });
@@ -1859,6 +2035,7 @@ export default function TripDetailPage() {
                 return;
             }
             setPendingTripClosure(null);
+            setReviewingDriverRequestId('');
             await refreshTripDetail();
             addToast('success', nextClosed ? 'Trip ditutup oleh admin' : 'Trip dibuka kembali');
         } catch {
@@ -2249,18 +2426,6 @@ export default function TripDetailPage() {
         );
     };
 
-    function hasOtherSavedActualDropAllocationForItem(deliveryOrderItemRef: string, excludeDraftKey = '') {
-        return Object.entries(actualDropItemValueMap).some(([valueKey, cachedValues]) => {
-            const parsedKey = parseActualDropItemValueKey(valueKey);
-            return Boolean(
-                parsedKey &&
-                parsedKey.draftKey !== excludeDraftKey &&
-                parsedKey.deliveryOrderItemRef === deliveryOrderItemRef &&
-                hasActualDropItemValues(cachedValues)
-            );
-        });
-    }
-
     const getActualDropDraftIndex = (draftKey: string) =>
         actualDropPoints.findIndex(drop => drop.draftKey === draftKey);
 
@@ -2313,13 +2478,10 @@ export default function TripDetailPage() {
                 volumeInputValue: '',
             };
         }
-        if (cachedValues && hasActualDropItemValues(cachedValues)) {
+        if (Object.prototype.hasOwnProperty.call(actualDropItemValueMap, valueKey) && cachedValues) {
             return { ...baseDrop, ...cachedValues };
         }
-        if (
-            drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef &&
-            !hasOtherSavedActualDropAllocationForItem(cargoItem.deliveryOrderItemRef, drop.draftKey)
-        ) {
+        if (drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef) {
             return baseDrop;
         }
         if (drop.deliveryOrderItemRef && drop.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef) {
@@ -2669,6 +2831,9 @@ export default function TripDetailPage() {
                         status: newStatus,
                         note: statusNote,
                         targetSuratJalanRefs: selectedStatusSuratJalanRefs,
+                        approveDriverRequest: reviewingDriverRequest,
+                        pendingDriverRequestId: reviewingDriverRequestId || undefined,
+                        closeTripOnApprove: false,
                         ...(completingDelivery
                             ? {
                                 podReceiverName: podName,
@@ -2728,6 +2893,7 @@ export default function TripDetailPage() {
             setNewStatus('');
             setStatusNote('');
             setReviewingDriverRequest(false);
+            setReviewingDriverRequestId('');
             setActiveFinalizationCargoItemRef('');
             setActiveFinalizationDropKey('');
             if (completingDelivery) {
@@ -3276,6 +3442,10 @@ export default function TripDetailPage() {
             addToast('error', `Barang baru baris ${invalidSelectedItemCargoIndex + 1} perlu isi koli, berat, atau volume.`);
             return;
         }
+        if (normalizedSelectedItemDrafts.length > 0 && !selectedShipperReferenceDraft?.referenceNumber.trim()) {
+            addToast('error', 'No. SJ pengirim wajib diisi sebelum menambah barang baru.');
+            return;
+        }
         const normalizedExistingItemDrafts = (isCreatingNewShipperReference
             ? []
             : Object.entries(shipperReferenceExistingItemDraftMap))
@@ -3480,6 +3650,17 @@ export default function TripDetailPage() {
         }))
         .sort((left, right) => left.sequence - right.sequence);
     const pickupStopMap = new Map(pickupStopList.map(stop => [stop._key, stop]));
+    const formatPickupStopDisplayName = (stop: { sequence: number; pickupLabel?: string; pickupAddress?: string }) =>
+        stop.pickupLabel?.trim() || stop.pickupAddress?.trim() || `Pickup ${stop.sequence}`;
+    const pickupTripDisplayList = pickupStopList.length > 0
+        ? pickupStopList.map(stop => ({
+            key: stop._key,
+            name: formatPickupStopDisplayName(stop),
+            address: stop.pickupAddress,
+        }))
+        : doData.pickupAddress
+            ? [{ key: 'fallback-pickup', name: doData.pickupAddress, address: '' }]
+            : [];
     const isCreatingNewShipperReference = shipperReferenceModalMode === 'create';
     const selectedShipperReferenceDraft =
         shipperReferenceDrafts.find(entry => entry.draftKey === selectedShipperReferenceDraftKey)
@@ -3492,12 +3673,14 @@ export default function TripDetailPage() {
         : [];
     const shipperReferenceDisplayList = resolvedShipperReferenceEntries.map(reference => ({
         ...reference,
-        pickupLabel: reference.pickupStopKey && pickupStopMap.get(reference.pickupStopKey)
-            ? `Pickup ${pickupStopMap.get(reference.pickupStopKey)?.sequence}${pickupStopMap.get(reference.pickupStopKey)?.pickupLabel ? ` - ${pickupStopMap.get(reference.pickupStopKey)?.pickupLabel}` : ''}`
-            : reference.pickupLabel,
-        pickupAddress: reference.pickupStopKey && pickupStopMap.get(reference.pickupStopKey)
-            ? pickupStopMap.get(reference.pickupStopKey)?.pickupAddress || reference.pickupAddress
-            : reference.pickupAddress,
+        pickupLabel: (() => {
+            const pickupStop = reference.pickupStopKey ? pickupStopMap.get(reference.pickupStopKey) : null;
+            return pickupStop ? formatPickupStopDisplayName(pickupStop) : reference.pickupLabel;
+        })(),
+        pickupAddress: (() => {
+            const pickupStop = reference.pickupStopKey ? pickupStopMap.get(reference.pickupStopKey) : null;
+            return pickupStop?.pickupAddress || reference.pickupAddress;
+        })(),
     }));
     const suratJalanDocumentByReferenceKey = new Map(
         suratJalanDocuments
@@ -3536,6 +3719,40 @@ export default function TripDetailPage() {
         document?: SuratJalanDocument | null
     ) => `${number}${hasSuratJalanHoldIndicator(document) ? ' (HOLD)' : ''}`;
     const isTripClosedByAdmin = Boolean(doData.tripClosedByAdminAt);
+    const pendingDriverRequests: PendingDriverStatusRequest[] = Array.isArray(doData.pendingDriverRequests) && doData.pendingDriverRequests.length > 0
+        ? doData.pendingDriverRequests.filter(request => request && request.requestId && request.status)
+        : doData.pendingDriverStatus
+            ? [{
+                requestId: `${doData._id}:legacy-pending-driver-request`,
+                status: doData.pendingDriverStatus,
+                requestedAt: doData.pendingDriverStatusRequestedAt,
+                requestedBy: doData.pendingDriverStatusRequestedBy,
+                requestedByName: doData.pendingDriverStatusRequestedByName,
+                note: doData.pendingDriverStatusNote,
+                targetSuratJalanRefs: doData.pendingDriverStatusSuratJalanRefs || [],
+                podReceiverName: doData.pendingDriverPodReceiverName,
+                podReceivedDate: doData.pendingDriverPodReceivedDate,
+                podNote: doData.pendingDriverPodNote,
+                actualCargoItems: doData.pendingDriverActualCargoItems || [],
+                actualDropPoints: doData.pendingDriverActualDropPoints || [],
+                tripEndOdometerKm: doData.tripEndOdometerKm,
+                closeTripOnly: Boolean(doData.tripEndOdometerKm && !(doData.pendingDriverActualCargoItems || []).length),
+            }]
+            : [];
+    const activeReviewingDriverRequest = reviewingDriverRequestId
+        ? pendingDriverRequests.find(request => request.requestId === reviewingDriverRequestId) || null
+        : null;
+    const isPendingDriverTripClosureRequest = (request?: PendingDriverStatusRequest | null) =>
+        Boolean(
+            request?.status === 'DELIVERED' &&
+            (request.closeTripOnly || request.tripEndOdometerKm) &&
+            doData.status === 'DELIVERED' &&
+            suratJalanDocuments.length > 0 &&
+            suratJalanDocuments.every(document =>
+                document.tripStatus === 'DELIVERED' &&
+                !hasSuratJalanHoldIndicator(document)
+            )
+        );
     const isDeliveryOrderItemEditable = (item: Pick<DeliveryOrderItem, '_id' | 'shipperReferenceKey'>) =>
         Boolean(editableCargoItemMap[item._id]) &&
         !isTripClosedByAdmin;
@@ -3651,9 +3868,9 @@ export default function TripDetailPage() {
             const shipperReferenceNumber = item.shipperReferenceNumber?.trim() || doData.customerDoNumber || 'TANPA-SJ';
             const pickupStop = item.pickupStopKey ? pickupStopMap.get(item.pickupStopKey) : null;
             const pickupLabel = pickupStop
-                ? `Pickup ${pickupStop.sequence}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`
+                ? formatPickupStopDisplayName(pickupStop)
                 : item.pickupAddress
-                    ? 'Pickup'
+                    ? item.pickupAddress
                     : '';
             const pickupAddress = pickupStop?.pickupAddress || item.pickupAddress || '';
             const key = `${pickupStop?._key || item.pickupStopKey || 'tanpa-pickup'}::${shipperReferenceNumber}`;
@@ -3690,8 +3907,7 @@ export default function TripDetailPage() {
     const canAppendCargoToDo =
         canEditDeliveryCargo &&
         ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(doData.status) &&
-        !isTripClosedByAdmin &&
-        !doData.pendingDriverStatus;
+        !isTripClosedByAdmin;
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
     const linkedVoucherCashBreakdown = linkedVoucher && linkedVoucherSummary
         ? buildDriverVoucherCashBreakdown(linkedVoucherDisbursements, {
@@ -3865,6 +4081,7 @@ export default function TripDetailPage() {
     const selectedActualCargoItems = actualCargoItems.filter(item =>
         matchesSelectedStatusSuratJalan(item.shipperReferenceKey, item.shipperReferenceNumber) &&
         (
+            reviewingDriverRequest ||
             newStatus !== 'DELIVERED' ||
             !selectedPartialHoldSuratJalanRefSet.has(getActualCargoItemSuratJalanRef(item)) ||
             partialHoldContinuationItemRefSet.has(item.deliveryOrderItemRef)
@@ -3949,6 +4166,9 @@ export default function TripDetailPage() {
         if (manualValues) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
+        if (reviewingDriverRequest) {
+            return item;
+        }
         if (!showAdvancedDropEditor) {
             return item;
         }
@@ -4016,6 +4236,10 @@ export default function TripDetailPage() {
             point.volumeInputUnit
         ),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const selectedBatchSuratJalanCargoTotals =
+        showAdvancedDropEditor && selectedEffectiveActualDropPoints.length > 0
+            ? selectedActualDropTotals
+            : selectedActualCargoTotals;
     const selectedActualDropShipperReferenceOptions = actualDropShipperReferenceOptions.filter(reference =>
         matchesSelectedStatusSuratJalan(reference.referenceKey, reference.referenceNumber)
     );
@@ -4081,6 +4305,17 @@ export default function TripDetailPage() {
         }
 
         const adjustedDropPoints = [...selectedEffectiveActualDropPoints];
+        if (reviewingDriverRequest) {
+            return adjustedDropPoints.filter(point => (
+                parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }) > 0 ||
+                parseFormattedNumberish(point.weightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
+                }) > 0 ||
+                parseFormattedNumberish(point.volumeInputValue || 0, {
+                    maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+                }) > 0
+            ));
+        }
         for (const cargoItem of selectedDerivedActualCargoItems) {
             if (!actualCargoItemValueMap[cargoItem.deliveryOrderItemRef]) {
                 continue;
@@ -4162,7 +4397,9 @@ export default function TripDetailPage() {
             ),
         }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
     const selectedActualDropMismatchMessage =
-        selectedActualCargoTotals.qtyKoli > 0 && Math.abs(selectedSubmissionBillableActualDropTotals.qtyKoli - selectedActualCargoTotals.qtyKoli) > 0.01
+        reviewingDriverRequest
+            ? null
+            : selectedActualCargoTotals.qtyKoli > 0 && Math.abs(selectedSubmissionBillableActualDropTotals.qtyKoli - selectedActualCargoTotals.qtyKoli) > 0.01
             ? 'Total qty titik DROP harus sama dengan qty aktual barang SJ.'
             : selectedActualCargoTotals.weightKg > 0 && Math.abs(selectedSubmissionBillableActualDropTotals.weightKg - selectedActualCargoTotals.weightKg) > 0.01
                 ? 'Total berat titik DROP harus sama dengan berat aktual barang SJ.'
@@ -4255,18 +4492,18 @@ export default function TripDetailPage() {
                     ),
                 };
                 const totalSummary = {
-                    qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
-                    weightKg: convertWeightToKg(
-                        parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                            maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
+                    qtyKoli: parseFormattedNumberish(cargoItem.plannedQtyKoli || 0, { maxFractionDigits: 2 }),
+                    weightKg: cargoItem.plannedWeightKg || convertWeightToKg(
+                        parseFormattedNumberish(cargoItem.plannedWeightInputValue || 0, {
+                            maxFractionDigits: getWeightInputFractionDigits(cargoItem.plannedWeightInputUnit || 'KG'),
                         }),
-                        cargoItem.actualWeightInputUnit
+                        cargoItem.plannedWeightInputUnit || 'KG'
                     ),
-                    volumeM3: convertVolumeToM3(
-                        parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
-                            maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                    volumeM3: cargoItem.plannedVolumeM3 || convertVolumeToM3(
+                        parseFormattedNumberish(cargoItem.plannedVolumeInputValue || 0, {
+                            maxFractionDigits: (cargoItem.plannedVolumeInputUnit || 'M3') === 'LITER' ? 0 : 3,
                         }),
-                        cargoItem.actualVolumeInputUnit
+                        cargoItem.plannedVolumeInputUnit || 'M3'
                     ),
                 };
                 return {
@@ -4292,6 +4529,124 @@ export default function TripDetailPage() {
         activeFinalizationDrop && activeFinalizationCargoItem
             ? getActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem)
             : null;
+    const summarizeActualCargoDraft = (item: ActualCargoDraft) => {
+        const actualWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+        });
+        const actualVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
+        return formatCargoSummary({
+            qtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+            weightKg: convertWeightToKg(actualWeightInputValue, item.actualWeightInputUnit),
+            weightInputValue: item.actualWeightInputValue,
+            weightInputUnit: item.actualWeightInputUnit,
+            volumeM3: convertVolumeToM3(actualVolumeInputValue, item.actualVolumeInputUnit),
+            volumeInputValue: item.actualVolumeInputValue,
+            volumeInputUnit: item.actualVolumeInputUnit,
+        });
+    };
+    const summarizeActualCargoDraftAsCargoSummary = (item: ActualCargoDraft) => {
+        const actualWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+        });
+        const actualVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
+        return {
+            qtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+            weightKg: convertWeightToKg(actualWeightInputValue, item.actualWeightInputUnit),
+            volumeM3: convertVolumeToM3(actualVolumeInputValue, item.actualVolumeInputUnit),
+        };
+    };
+    const summarizeActualDropPointsForItemByType = (cargoItem: ActualCargoDraft, stopTypes: string[]) => {
+        const stopTypeSet = new Set(stopTypes);
+        const itemReferenceNumber = cargoItem.shipperReferenceNumber.trim().toUpperCase();
+        const summarySourceDropPoints = activeFinalizationDrop
+            ? selectedEffectiveActualDropPoints
+            : selectedSubmissionActualDropPoints;
+        const totals = summarySourceDropPoints
+            .filter(point => stopTypeSet.has(point.stopType))
+            .reduce((sum, point) => {
+                if (point.deliveryOrderItemRef) {
+                    if (point.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef) {
+                        return sum;
+                    }
+                    return {
+                        qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
+                        weightKg: sum.weightKg + convertWeightToKg(
+                            parseFormattedNumberish(point.weightInputValue || 0, {
+                                maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
+                            }),
+                            point.weightInputUnit
+                        ),
+                        volumeM3: sum.volumeM3 + convertVolumeToM3(
+                            parseFormattedNumberish(point.volumeInputValue || 0, {
+                                maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+                            }),
+                            point.volumeInputUnit
+                        ),
+                    };
+                }
+                const pointItemRefs = Array.isArray((point as ActualDropDraft & { deliveryOrderItemRefs?: string[] }).deliveryOrderItemRefs)
+                    ? (point as ActualDropDraft & { deliveryOrderItemRefs?: string[] }).deliveryOrderItemRefs || []
+                    : [];
+                if (pointItemRefs.length > 0) {
+                    if (!pointItemRefs.includes(cargoItem.deliveryOrderItemRef)) {
+                        return sum;
+                    }
+                    const itemSummary = summarizeActualCargoDraftAsCargoSummary(cargoItem);
+                    return {
+                        qtyKoli: sum.qtyKoli + itemSummary.qtyKoli,
+                        weightKg: sum.weightKg + itemSummary.weightKg,
+                        volumeM3: sum.volumeM3 + itemSummary.volumeM3,
+                    };
+                }
+                const matchesReference = (() => {
+                if (point.shipperReferenceKey) {
+                    return point.shipperReferenceKey === cargoItem.shipperReferenceKey;
+                }
+                return Boolean(point.shipperReferenceNumber && point.shipperReferenceNumber.trim().toUpperCase() === itemReferenceNumber);
+                })();
+                if (!matchesReference) {
+                    return sum;
+                }
+                const siblingItemCount = selectedActualCargoItems.filter(item => {
+                    const siblingReferenceNumber = item.shipperReferenceNumber.trim().toUpperCase();
+                    return (
+                        (cargoItem.shipperReferenceKey && item.shipperReferenceKey === cargoItem.shipperReferenceKey) ||
+                        (itemReferenceNumber && siblingReferenceNumber === itemReferenceNumber)
+                    );
+                }).length;
+                if (siblingItemCount > 1) {
+                    const itemSummary = summarizeActualCargoDraftAsCargoSummary(cargoItem);
+                    return {
+                        qtyKoli: sum.qtyKoli + itemSummary.qtyKoli,
+                        weightKg: sum.weightKg + itemSummary.weightKg,
+                        volumeM3: sum.volumeM3 + itemSummary.volumeM3,
+                    };
+                }
+                return {
+                    qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
+                    weightKg: sum.weightKg + convertWeightToKg(
+                        parseFormattedNumberish(point.weightInputValue || 0, {
+                            maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
+                        }),
+                        point.weightInputUnit
+                    ),
+                    volumeM3: sum.volumeM3 + convertVolumeToM3(
+                        parseFormattedNumberish(point.volumeInputValue || 0, {
+                            maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+                        }),
+                        point.volumeInputUnit
+                    ),
+                };
+            }, { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+        if (totals.qtyKoli <= 0 && totals.weightKg <= 0 && totals.volumeM3 <= 0) {
+            return '-';
+        }
+        return formatCargoSummary(totals);
+    };
     const selectedActualCargoReady = selectedDerivedActualCargoItems.length > 0 && selectedDerivedActualCargoItems.every(item => {
         const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
         const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
@@ -4365,13 +4720,13 @@ export default function TripDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {availableBatchStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
+                    {availableBatchStatuses.length > 0 && canManageDeliveryStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> Update Batch SJ
                         </button>
                     )}
                     {canManageDeliveryStatus && (
-                        <button className="btn btn-secondary" onClick={toggleTripClosure} disabled={togglingTripClosure}>
+                        <button className="btn btn-secondary" onClick={() => void toggleTripClosure()} disabled={togglingTripClosure}>
                             {togglingTripClosure
                                 ? 'Menyimpan...'
                                 : isTripClosedByAdmin
@@ -4420,45 +4775,77 @@ export default function TripDetailPage() {
                 </div>
             )}
 
-            {doData.pendingDriverStatus && (
-                <div className="card" style={{ marginBottom: 'var(--space-4)', border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
-                    <div className="card-body">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'grid', gap: '0.35rem' }}>
-                                <div className="form-section-title" style={{ marginBottom: 0 }}>Permintaan Driver Menunggu Approval</div>
-                                <div className="detail-value">
-                                    Driver mengajukan progres batch SJ ke status{' '}
-                                    <span className={`badge badge-${pendingDriverStatusMeta?.color || 'warning'}`}>
-                                        <span className="badge-dot" /> {pendingDriverStatusMeta?.label || doData.pendingDriverStatus}
-                                    </span>
+            {pendingDriverRequests.length > 0 && (
+                <div style={{ display: 'grid', gap: '0.75rem', marginBottom: 'var(--space-4)' }}>
+                    {pendingDriverRequests.map(request => {
+                        const requestMeta = DO_STATUS_MAP[request.status] || pendingDriverStatusMeta;
+                        const requestIsTripClosure = isPendingDriverTripClosureRequest(request);
+                        const requestSuratJalanNumbers = (request.targetSuratJalanRefs || [])
+                            .map(ref => suratJalanDocuments.find(document => document._id === ref)?.suratJalanNumber || ref.split(':').pop() || ref)
+                            .filter(Boolean);
+                        return (
+                            <div key={request.requestId} className="card" style={{ border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
+                                <div className="card-body">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                            <div className="form-section-title" style={{ marginBottom: 0 }}>Permintaan Driver Menunggu Approval</div>
+                                            <div className="detail-value">
+                                                {requestIsTripClosure ? 'Driver mengajukan tutup trip' : 'Driver mengajukan progres batch SJ ke status'}{' '}
+                                                {!requestIsTripClosure && (
+                                                    <span className={`badge badge-${requestMeta?.color || 'warning'}`}>
+                                                        <span className="badge-dot" /> {requestMeta?.label || request.status}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-muted text-sm">
+                                                {(request.requestedByName || doData.pendingDriverStatusRequestedByName || 'Driver')} | {formatDateTime(request.requestedAt || doData.pendingDriverStatusRequestedAt)}
+                                            </div>
+                                            {requestSuratJalanNumbers.length > 0 && (
+                                                <div className="text-muted text-sm">SJ: {requestSuratJalanNumbers.join(', ')}</div>
+                                            )}
+                                            {request.note && (
+                                                <div className="text-muted text-sm">Catatan driver: {request.note}</div>
+                                            )}
+                                            {request.tripEndOdometerKm ? (
+                                                <div className="text-muted text-sm">
+                                                    Odometer akhir diajukan: {formatQuantity(request.tripEndOdometerKm, 0)} km
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                        {canReviewDriverRequest ? (
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                <button
+                                                    className="btn btn-success"
+                                                    onClick={() => {
+                                                        setReviewingDriverRequestId(request.requestId);
+                                                        if (requestIsTripClosure) {
+                                                            void toggleTripClosure(request.tripEndOdometerKm || undefined);
+                                                            return;
+                                                        }
+                                                        openStatusModal(request.status, true, request);
+                                                    }}
+                                                >
+                                                    <Save size={16} /> {requestIsTripClosure ? 'Review Tutup Trip' : 'Review & Approve'}
+                                                </button>
+                                                <button
+                                                    className="btn btn-secondary"
+                                                    onClick={() => {
+                                                        setReviewingDriverRequestId(request.requestId);
+                                                        setRejectRequestNote('');
+                                                        setShowRejectRequestModal(true);
+                                                    }}
+                                                >
+                                                    Tolak
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="text-muted text-sm">Menunggu review owner / operasional.</div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="text-muted text-sm">
-                                    {doData.pendingDriverStatusRequestedByName || 'Driver'} | {formatDateTime(doData.pendingDriverStatusRequestedAt)}
-                                </div>
-                                {doData.pendingDriverStatusNote && (
-                                    <div className="text-muted text-sm">Catatan driver: {doData.pendingDriverStatusNote}</div>
-                                )}
                             </div>
-                            {canReviewDriverRequest ? (
-                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <button className="btn btn-success" onClick={() => openStatusModal(doData.pendingDriverStatus, true)}>
-                                        <Save size={16} /> Review & Approve
-                                    </button>
-                                    <button
-                                        className="btn btn-secondary"
-                                        onClick={() => {
-                                            setRejectRequestNote('');
-                                            setShowRejectRequestModal(true);
-                                        }}
-                                    >
-                                        Tolak
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="text-muted text-sm">Menunggu review owner / operasional.</div>
-                            )}
-                        </div>
-                    </div>
+                        );
+                    })}
                 </div>
             )}
 
@@ -4490,7 +4877,7 @@ export default function TripDetailPage() {
                                 </button>
                             )}
                             {canManageDeliveryStatus && (
-                                <button className="btn btn-secondary btn-sm" onClick={toggleTripClosure} disabled={togglingTripClosure}>
+                                <button className="btn btn-secondary btn-sm" onClick={() => void toggleTripClosure()} disabled={togglingTripClosure}>
                                     {togglingTripClosure
                                         ? 'Menyimpan...'
                                         : isTripClosedByAdmin
@@ -4716,7 +5103,34 @@ export default function TripDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Alasan Override Armada</div><div className="detail-value">{doData.vehicleCategoryOverrideReason || '-'}</div></div>
-                            <div className="detail-item"><div className="detail-label">Alamat Pickup Trip</div><div className="detail-value">{doData.pickupAddress || '-'}</div></div>
+                            <div className="detail-item detail-full">
+                                <div className="detail-label">Pickup Trip</div>
+                                {pickupTripDisplayList.length > 0 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem' }}>
+                                        {pickupTripDisplayList.map((pickup, index) => (
+                                            <div
+                                                key={pickup.key || `pickup-${index + 1}`}
+                                                style={{
+                                                    border: '1px solid var(--color-gray-200)',
+                                                    borderRadius: '0.65rem',
+                                                    padding: '0.65rem 0.75rem',
+                                                    background: 'var(--color-gray-50)',
+                                                    minWidth: 0,
+                                                }}
+                                            >
+                                                <div className="detail-value" style={{ overflowWrap: 'anywhere' }}>{pickup.name}</div>
+                                                {pickup.address && pickup.address !== pickup.name && (
+                                                    <div className="text-muted text-sm" style={{ marginTop: '0.15rem', overflowWrap: 'anywhere' }}>
+                                                        {pickup.address}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="detail-value">-</div>
+                                )}
+                            </div>
                         </div>
                         {doData.cargoFinalizedAt && (
                             <div className="detail-row">
@@ -5279,10 +5693,8 @@ export default function TripDetailPage() {
                                         <td>
                                             <div className="font-medium">
                                                 {item.pickupStopKey && pickupStopMap.get(item.pickupStopKey)
-                                                    ? `Pickup ${pickupStopMap.get(item.pickupStopKey)?.sequence}${pickupStopMap.get(item.pickupStopKey)?.pickupLabel ? ` - ${pickupStopMap.get(item.pickupStopKey)?.pickupLabel}` : ''}`
-                                                    : item.pickupAddress
-                                                        ? 'Pickup'
-                                                        : '-'}
+                                                    ? formatPickupStopDisplayName(pickupStopMap.get(item.pickupStopKey)!)
+                                                    : item.pickupAddress || '-'}
                                             </div>
                                             <div className="text-muted text-xs">{item.pickupAddress || pickupStopMap.get(item.pickupStopKey || '')?.pickupAddress || '-'}</div>
                                         </td>
@@ -5917,11 +6329,11 @@ export default function TripDetailPage() {
 
             {/* Status Modal */}
             {showStatusModal && (
-                <div className="modal-overlay" onClick={() => { if (!updatingStatus) setShowStatusModal(false); }}>
+                <div className="modal-overlay" onClick={() => { if (!updatingStatus) { setShowStatusModal(false); setReviewingDriverRequestId(''); } }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">{isCompletingDelivery ? (reviewingDriverRequest ? 'Review Finalisasi Batch SJ' : 'Finalisasi Batch SJ') : 'Update Status Batch SJ'}</h3>
-                            <button className="modal-close" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>&times;</button>
+                            <button className="modal-close" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); setReviewingDriverRequestId(''); }} disabled={updatingStatus}>&times;</button>
                         </div>
                         <div className="modal-body">
                             {newStatus && eligibleStatusSuratJalanDocuments.length > 0 && (
@@ -5967,10 +6379,10 @@ export default function TripDetailPage() {
                             )}
                             <div className="form-group">
                                 <label className="form-label">Status Tujuan</label>
-                                {reviewingDriverRequest && doData.pendingDriverStatus ? (
+                                {reviewingDriverRequest && (activeReviewingDriverRequest?.status || doData.pendingDriverStatus) ? (
                                     <div className="detail-value">
-                                        <span className={`badge badge-${pendingDriverStatusMeta?.color || 'warning'}`}>
-                                            <span className="badge-dot" /> {pendingDriverStatusMeta?.label || doData.pendingDriverStatus}
+                                        <span className={`badge badge-${DO_STATUS_MAP[activeReviewingDriverRequest?.status || doData.pendingDriverStatus || '']?.color || pendingDriverStatusMeta?.color || 'warning'}`}>
+                                            <span className="badge-dot" /> {DO_STATUS_MAP[activeReviewingDriverRequest?.status || doData.pendingDriverStatus || '']?.label || activeReviewingDriverRequest?.status || doData.pendingDriverStatus}
                                         </span>
                                     </div>
                                 ) : (
@@ -6001,12 +6413,23 @@ export default function TripDetailPage() {
                                     Belum ada SJ dalam trip ini yang bisa dipindahkan ke <strong>{DO_STATUS_MAP[newStatus]?.label || newStatus}</strong>.
                                 </div>
                             )}
-                            {reviewingDriverRequest && doData.pendingDriverStatusNote && (
+                            {reviewingDriverRequest && (activeReviewingDriverRequest?.note || doData.pendingDriverStatusNote) && (
                                 <div className="form-group">
                                     <label className="form-label">Catatan Driver</label>
-                                    <div className="detail-value">{doData.pendingDriverStatusNote}</div>
+                                    <div className="detail-value">{activeReviewingDriverRequest?.note || doData.pendingDriverStatusNote}</div>
                                 </div>
                             )}
+                            {reviewingDriverRequest && isCompletingDelivery && (activeReviewingDriverRequest?.tripEndOdometerKm || doData.tripEndOdometerKm) ? (
+                                <div className="form-group">
+                                    <label className="form-label">Odometer Akhir Driver</label>
+                                    <div className="detail-value">
+                                        {formatQuantity(activeReviewingDriverRequest?.tripEndOdometerKm || doData.tripEndOdometerKm, 0)} km
+                                    </div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                        Approval ini akan menutup trip dan mengupdate odometer kendaraan.
+                                    </div>
+                                </div>
+                            ) : null}
                             {isCompletingDelivery && (
                                 <>
                                     {isPartialSuratJalanBatchFinalize && (
@@ -6022,7 +6445,7 @@ export default function TripDetailPage() {
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Muatan batch SJ</div>
                                             <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
-                                                {selectedActualCargoItems.length > 0 ? formatCargoSummary(selectedActualCargoTotals) : 'Belum diisi'}
+                                                {selectedActualCargoItems.length > 0 ? formatCargoSummary(selectedBatchSuratJalanCargoTotals) : 'Belum diisi'}
                                             </div>
                                         </div>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
@@ -6141,9 +6564,45 @@ export default function TripDetailPage() {
                                                                     />
                                                                 </div>
                                                             </div>
-                                                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
-                                                                <div>Barang: {summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(selectedAutoActualDropDraft, selectedActualCargoItems))}</div>
-                                                                <div>Muatan: {formatCargoSummary({ qtyKoli: selectedActualCargoTotals.qtyKoli, weightKg: selectedActualCargoTotals.weightKg, volumeM3: selectedActualCargoTotals.volumeM3 })}</div>
+                                                            <div style={{ display: 'grid', gap: '0.55rem' }}>
+                                                                <div className="font-semibold">Barang Realisasi Default</div>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.55rem' }}>
+                                                                    <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.65rem 0.75rem', background: 'var(--color-white)' }}>
+                                                                        <div className="text-muted text-sm">Total akan direalisasikan</div>
+                                                                        <div className="font-semibold" style={{ marginTop: '0.15rem' }}>{formatCargoSummary(selectedActualCargoTotals)}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {selectedActualCargoItems.map(cargoItem => (
+                                                                    <div
+                                                                        key={`admin-default-drop-${cargoItem.deliveryOrderItemRef}`}
+                                                                        style={{
+                                                                            display: 'grid',
+                                                                            gap: '0.2rem',
+                                                                            padding: '0.65rem 0.75rem',
+                                                                            border: '1px solid var(--color-gray-200)',
+                                                                            borderRadius: '0.65rem',
+                                                                            background: 'var(--color-white)',
+                                                                        }}
+                                                                    >
+                                                                        <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                                        <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
+                                                                        <div className="text-muted text-sm">
+                                                                            Rencana awal SJ: {formatCargoSummary({
+                                                                                qtyKoli: cargoItem.plannedQtyKoli,
+                                                                                weightKg: cargoItem.plannedWeightKg,
+                                                                                weightInputValue: cargoItem.plannedWeightInputValue,
+                                                                                weightInputUnit: cargoItem.plannedWeightInputUnit,
+                                                                                volumeM3: cargoItem.plannedVolumeM3,
+                                                                                volumeInputValue: cargoItem.plannedVolumeInputValue,
+                                                                                volumeInputUnit: cargoItem.plannedVolumeInputUnit,
+                                                                            })}
+                                                                        </div>
+                                                                        <div className="text-muted text-sm">Akan direalisasikan: {summarizeActualCargoDraft(cargoItem)}</div>
+                                                                        <div className="text-muted text-sm">
+                                                                            Tipe realisasi: {DO_ACTUAL_DROP_TYPE_MAP[selectedAutoActualDropDraft.stopType]?.label || selectedAutoActualDropDraft.stopType}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         </div>
                                                     );
@@ -6208,8 +6667,11 @@ export default function TripDetailPage() {
                                                                                 <div key={row.key} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8rem' }}>
                                                                                     <div style={{ fontWeight: 600 }}>{row.label}</div>
                                                                                     <div style={{ display: 'grid', gap: '0.15rem', color: 'var(--color-gray-700)' }}>
-                                                                                        <div>Dialokasikan: {formatCargoSummary(row.allocatedSummary)}</div>
-                                                                                        <div>Total barang: {formatCargoSummary(row.totalSummary)}</div>
+                                                                                        <div>No SJ: {selectedActualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === row.key)?.shipperReferenceNumber || '-'}</div>
+                                                                                        <div>Rencana awal SJ: {formatCargoSummary(row.totalSummary)}</div>
+                                                                                        <div>
+                                                                                            {(item.stopType === 'HOLD' ? 'Akan di-hold di titik ini' : 'Akan dialokasikan di titik ini')}: {formatCargoSummary(row.allocatedSummary)}
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
                                                                             ))}
@@ -6227,7 +6689,7 @@ export default function TripDetailPage() {
                                                                             onChange={e => updateActualDropDraft(item.draftKey, 'stopType', e.target.value)}
                                                                             disabled={updatingStatus}
                                                                         >
-                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => value !== 'EXTRA_DROP').map(([value, meta]) => (
+                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => !['EXTRA_DROP', 'TRANSIT', 'RETURN'].includes(value)).map(([value, meta]) => (
                                                                                 <option key={value} value={value}>{meta.label}</option>
                                                                             ))}
                                                                         </select>
@@ -6297,12 +6759,46 @@ export default function TripDetailPage() {
                                 </>
                             )}
                             <div className="form-group">
+                                {isCompletingDelivery && selectedActualCargoItems.length > 0 && (
+                                    <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem', background: 'var(--color-white)', marginBottom: '1rem', display: 'grid', gap: '0.6rem' }}>
+                                        <div>
+                                            <div className="font-semibold">Ringkasan Item</div>
+                                            <div className="text-muted text-sm">
+                                                {selectedActualCargoItems.length} item | {formatCargoSummary(selectedActualCargoTotals)}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                            {selectedActualCargoItems.map(cargoItem => (
+                                                <div
+                                                    key={`admin-status-item-summary-${cargoItem.deliveryOrderItemRef}`}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gap: '0.18rem',
+                                                        padding: '0.6rem 0.7rem',
+                                                        border: '1px solid var(--color-gray-100)',
+                                                        borderRadius: '0.6rem',
+                                                        background: 'var(--color-gray-50)',
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                    <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
+                                                    {newStatus === 'DELIVERED' && (
+                                                        <>
+                                                            <div className="text-muted text-sm">Alokasi drop: {showAdvancedDropEditor ? summarizeActualDropPointsForItemByType(cargoItem, ['DROP', 'EXTRA_DROP']) : summarizeActualCargoDraft(cargoItem)}</div>
+                                                            <div className="text-muted text-sm">Alokasi hold: {summarizeActualDropPointsForItemByType(cargoItem, ['HOLD'])}</div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={3} value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder={isCompletingDelivery ? 'Catatan finalisasi batch SJ...' : 'Catatan progres batch SJ...'} disabled={updatingStatus} />
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>Batal</button>
+                            <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); setReviewingDriverRequestId(''); }} disabled={updatingStatus}>Batal</button>
                             {isCompletingDelivery ? (
                                 <button
                                     className="btn btn-primary"
@@ -6436,28 +6932,6 @@ export default function TripDetailPage() {
                                             <div className="text-muted text-sm">{activeFinalizationCargoItem.groupLabel}</div>
                                             <div style={{ fontWeight: 700, marginTop: '0.2rem' }}>{activeFinalizationCargoItem.description}</div>
                                         </div>
-                                        <div className="text-muted text-sm" style={{ display: 'grid', gap: '0.15rem', textAlign: 'right' }}>
-                                            <div>
-                                                Rencana: {formatCargoSummary({
-                                                    qtyKoli: activeFinalizationCargoItem.plannedQtyKoli,
-                                                    weightKg: activeFinalizationCargoItem.plannedWeightKg,
-                                                    weightInputValue: activeFinalizationCargoItem.plannedWeightInputValue,
-                                                    weightInputUnit: activeFinalizationCargoItem.plannedWeightInputUnit,
-                                                    volumeM3: activeFinalizationCargoItem.plannedVolumeM3,
-                                                    volumeInputValue: activeFinalizationCargoItem.plannedVolumeInputValue,
-                                                    volumeInputUnit: activeFinalizationCargoItem.plannedVolumeInputUnit,
-                                                })}
-                                            </div>
-                                            <div>
-                                                {activeFinalizationDrop ? 'Alokasi titik ini' : 'Aktual saat ini'}: {formatCargoSummary({
-                                                    qtyKoli: parseFormattedNumberish((activeFinalizationDropAllocation?.qtyKoli ?? activeFinalizationCargoItem.actualQtyKoli) || 0, { maxFractionDigits: 2 }),
-                                                    weightInputValue: activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue,
-                                                    weightInputUnit: activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit,
-                                                    volumeInputValue: activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue,
-                                                    volumeInputUnit: activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit,
-                                                })}
-                                            </div>
-                                        </div>
                                     </div>
                                     {!activeFinalizationCargoItem.requireQty && (
                                         <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
@@ -6507,7 +6981,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualWeightInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus}
+                                                    disabled={updatingStatus || Boolean(activeFinalizationDrop)}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -6519,7 +6993,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoWeightUnit(activeFinalizationCargoItem.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit']);
                                                     }}
-                                                    disabled={updatingStatus}
+                                                    disabled={updatingStatus || Boolean(activeFinalizationDrop)}
                                                 >
                                                     {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
                                                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -6566,6 +7040,52 @@ export default function TripDetailPage() {
                                             </div>
                                         </div>
                                     </div>
+                                    <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem', background: 'var(--color-white)', marginTop: '0.75rem', display: 'grid', gap: '0.55rem' }}>
+                                        <div className="font-semibold">{activeFinalizationDrop ? 'Detail Alokasi Item' : 'Detail Item Aktual'}</div>
+                                        <div
+                                            style={{
+                                                display: 'grid',
+                                                gap: '0.18rem',
+                                                padding: '0.65rem 0.75rem',
+                                                border: '1px solid var(--color-gray-100)',
+                                                borderRadius: '0.65rem',
+                                                background: 'var(--color-gray-50)',
+                                            }}
+                                        >
+                                            <div className="font-medium">{activeFinalizationCargoItem.description || 'Barang'}</div>
+                                            <div className="text-muted text-sm">No SJ: {activeFinalizationCargoItem.shipperReferenceNumber || activeFinalizationCargoItem.groupLabel || '-'}</div>
+                                            <div className="text-muted text-sm">
+                                                Rencana awal SJ: {formatCargoSummary({
+                                                    qtyKoli: activeFinalizationCargoItem.plannedQtyKoli,
+                                                    weightKg: activeFinalizationCargoItem.plannedWeightKg,
+                                                    weightInputValue: activeFinalizationCargoItem.plannedWeightInputValue,
+                                                    weightInputUnit: activeFinalizationCargoItem.plannedWeightInputUnit,
+                                                    volumeM3: activeFinalizationCargoItem.plannedVolumeM3,
+                                                    volumeInputValue: activeFinalizationCargoItem.plannedVolumeInputValue,
+                                                    volumeInputUnit: activeFinalizationCargoItem.plannedVolumeInputUnit,
+                                                })}
+                                            </div>
+                                            {activeFinalizationDrop ? (
+                                                <>
+                                                    <div className="text-muted text-sm">
+                                                        {(activeFinalizationDrop.stopType === 'HOLD' ? 'Akan di-hold di titik ini' : 'Akan dialokasikan di titik ini')}: {formatCargoSummary({
+                                                            qtyKoli: parseFormattedNumberish(activeFinalizationDropAllocation?.qtyKoli || 0, { maxFractionDigits: 2 }),
+                                                            weightInputValue: activeFinalizationDropAllocation?.weightInputValue,
+                                                            weightInputUnit: activeFinalizationDropAllocation?.weightInputUnit,
+                                                            volumeInputValue: activeFinalizationDropAllocation?.volumeInputValue,
+                                                            volumeInputUnit: activeFinalizationDropAllocation?.volumeInputUnit,
+                                                        })}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="text-muted text-sm">Akan direalisasikan: {summarizeActualCargoDraft(activeFinalizationCargoItem)}</div>
+                                                    <div className="text-muted text-sm">Total alokasi drop: {summarizeActualCargoDraft(activeFinalizationCargoItem)}</div>
+                                                    <div className="text-muted text-sm">Total alokasi hold: {summarizeActualDropPointsForItemByType(activeFinalizationCargoItem, ['HOLD'])}</div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
                                             </>
                                         );
                                     })()}
@@ -6575,11 +7095,46 @@ export default function TripDetailPage() {
                                     <div className="empty-state-title">Belum ada item barang dalam batch SJ ini</div>
                                 </div>
                             )}
+
+                            {!activeFinalizationDrop && selectedActualCargoItems.length > 0 && (
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem', background: 'var(--color-white)', marginTop: '1rem', display: 'grid', gap: '0.6rem' }}>
+                                    <div>
+                                        <div className="font-semibold">Ringkasan Item</div>
+                                        <div className="text-muted text-sm">
+                                            {selectedActualCargoItems.length} item | {formatCargoSummary(selectedActualCargoTotals)}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                        {selectedActualCargoItems.map(cargoItem => (
+                                            <div
+                                                key={`admin-actual-modal-item-summary-${cargoItem.deliveryOrderItemRef}`}
+                                                style={{
+                                                    display: 'grid',
+                                                    gap: '0.18rem',
+                                                    padding: '0.6rem 0.7rem',
+                                                    border: '1px solid var(--color-gray-100)',
+                                                    borderRadius: '0.6rem',
+                                                    background: 'var(--color-gray-50)',
+                                                }}
+                                            >
+                                                <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
+                                                <div className="text-muted text-sm">Alokasi drop: {summarizeActualDropPointsForItemByType(cargoItem, ['DROP', 'EXTRA_DROP'])}</div>
+                                                <div className="text-muted text-sm">Alokasi hold: {summarizeActualDropPointsForItemByType(cargoItem, ['HOLD'])}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button
                                 className="btn btn-secondary"
                                 onClick={() => {
+                                    if (!activeFinalizationDrop && actualCargoSetupSnapshot.length > 0) {
+                                        setActualCargoItems(actualCargoSetupSnapshot);
+                                        setActualCargoItemValueMap({});
+                                    }
                                     setShowActualCargoFinalizationModal(false);
                                     setShowStatusModal(true);
                                 }}
@@ -6619,11 +7174,11 @@ export default function TripDetailPage() {
             )}
 
             {showRejectRequestModal && (
-                <div className="modal-overlay" onClick={() => { if (!rejectingRequest) setShowRejectRequestModal(false); }}>
+                <div className="modal-overlay" onClick={() => { if (!rejectingRequest) { setShowRejectRequestModal(false); setReviewingDriverRequestId(''); } }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Tolak Permintaan Driver</h3>
-                            <button className="modal-close" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>&times;</button>
+                            <button className="modal-close" onClick={() => { setShowRejectRequestModal(false); setReviewingDriverRequestId(''); }} disabled={rejectingRequest}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
@@ -6639,7 +7194,7 @@ export default function TripDetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>Batal</button>
+                            <button className="btn btn-secondary" onClick={() => { setShowRejectRequestModal(false); setReviewingDriverRequestId(''); }} disabled={rejectingRequest}>Batal</button>
                             <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
                                 <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
                             </button>

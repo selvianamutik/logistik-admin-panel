@@ -14,7 +14,7 @@ import {
     toDeliveryOrderCargoDraftItem,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
-import { getDeliveryOrderDisplayStatusMeta, isDeliveryOrderBillableDropType, isDeliveryOrderHoldDropType, isDeliveryOrderReturnDropType } from '@/lib/delivery-order-completion';
+import { getDeliveryOrderDisplayStatusMeta, isDeliveryOrderBillableDropType, isDeliveryOrderHoldDropType } from '@/lib/delivery-order-completion';
 import {
     applyActualCargoAutoWeightFromQty,
     applyActualDropAutoWeightFromQty,
@@ -108,6 +108,14 @@ function hasActualDropItemValues(values: ActualDropItemValueDraft) {
         values.volumeInputUnit
     );
     return qtyKoli > 0 || weightKg > 0 || volumeM3 > 0;
+}
+
+function hasCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; volumeM3?: number }) {
+    return Boolean(
+        (summary?.qtyKoli || 0) > 0 ||
+        (summary?.weightKg || 0) > 0 ||
+        (summary?.volumeM3 || 0) > 0
+    );
 }
 
 export default function SuratJalanDetailPage() {
@@ -597,6 +605,50 @@ export default function SuratJalanDetailPage() {
         weightKg: sum.weightKg + (item.actualCargo?.weightKg || 0),
         volumeM3: sum.volumeM3 + (item.actualCargo?.volumeM3 || 0),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const summarizeDocumentItemActualDrops = (
+        item: SuratJalanDocumentItem,
+        predicate: (stopType: NonNullable<DeliveryOrder['actualDropPoints']>[number]['stopType']) => boolean
+    ) => {
+        const itemReferenceNumber = item.suratJalanNumber.trim().toUpperCase();
+        const summary = (deliveryOrder?.actualDropPoints || [])
+            .filter(point => predicate(point.stopType))
+            .filter(point => {
+                if (point.deliveryOrderItemRef) {
+                    return point.deliveryOrderItemRef === item.sourceDeliveryOrderItemRef;
+                }
+                if (Array.isArray(point.deliveryOrderItemRefs) && point.deliveryOrderItemRefs.length > 0) {
+                    return point.deliveryOrderItemRefs.includes(item.sourceDeliveryOrderItemRef);
+                }
+                if (point.shipperReferenceKey) {
+                    return point.shipperReferenceKey === item.referenceKey;
+                }
+                return Boolean(point.shipperReferenceNumber && point.shipperReferenceNumber.trim().toUpperCase() === itemReferenceNumber);
+            })
+            .reduce((sum, point) => ({
+                qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
+                weightKg: sum.weightKg + (
+                    point.weightInputValue !== undefined
+                        ? convertWeightToKg(
+                            parseFormattedNumberish(point.weightInputValue || 0, {
+                                maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit || 'KG'),
+                            }),
+                            point.weightInputUnit || 'KG'
+                        )
+                        : parseFormattedNumberish(point.weightKg || 0, { maxFractionDigits: 2 })
+                ),
+                volumeM3: sum.volumeM3 + (
+                    point.volumeInputValue !== undefined
+                        ? convertVolumeToM3(
+                            parseFormattedNumberish(point.volumeInputValue || 0, {
+                                maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+                            }),
+                            point.volumeInputUnit || 'M3'
+                        )
+                        : parseFormattedNumberish(point.volumeM3 || 0, { maxFractionDigits: 3 })
+                ),
+            }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+        return hasCargoSummaryValue(summary) ? formatCargoSummary(summary) : '-';
+    };
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const selectedDocumentItemRefs = new Set(
         documentItems
@@ -808,12 +860,10 @@ export default function SuratJalanDetailPage() {
                     : null;
     const selectedBillableDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
     const selectedHoldDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
-    const selectedReturnDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
     const selectedDropModeLabel = showAdvancedDropEditor ? `${selectedActualDropPoints.length} titik aktual` : 'Trip normal / 1 tujuan';
     const selectedDropOutcomeSummary = [
         selectedBillableDropCount > 0 ? `${selectedBillableDropCount} drop invoice` : null,
         selectedHoldDropCount > 0 ? `${selectedHoldDropCount} hold` : null,
-        selectedReturnDropCount > 0 ? `${selectedReturnDropCount} return` : null,
     ].filter(Boolean).join(' • ') || 'Semua muatan mengikuti tujuan default';
 
     const activeFinalizationCargoItem =
@@ -1639,16 +1689,15 @@ export default function SuratJalanDetailPage() {
                         <span className="card-header-title">Ringkasan Muatan Dokumen</span>
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '0.75rem' }}>
-                        <div className="detail-item"><div className="detail-label">Muatan Dokumen</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.cargoSummary)}</div></div>
+                        <div className="detail-item"><div className="detail-label">Total</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.cargoSummary)}</div></div>
+                        <div className="detail-item"><div className="detail-label">Hold</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.holdCargo)}</div></div>
+                        <div className="detail-item"><div className="detail-label">Masuk Invoice</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.billableCargo)}</div></div>
                         {isDeliveredStatus && (
                             <>
                                 <div className="detail-item"><div className="detail-label">Item Terkirim Aktual</div><div className="detail-value">{deliveredItemCount} item</div></div>
                                 <div className="detail-item"><div className="detail-label">Muatan Terkirim Aktual</div><div className="detail-value">{formatCargoSummary(deliveredActualCargoSummary)}</div></div>
                             </>
                         )}
-                        <div className="detail-item"><div className="detail-label">Masuk Invoice</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.billableCargo)}</div></div>
-                        <div className="detail-item"><div className="detail-label">Hold / Transit</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.holdCargo)}</div></div>
-                        <div className="detail-item"><div className="detail-label">Retur</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.returnCargo)}</div></div>
                     </div>
                 </div>
             </div>
@@ -1666,7 +1715,7 @@ export default function SuratJalanDetailPage() {
                                 <thead>
                                     <tr>
                                         <th>Deskripsi</th>
-                                        <th>Muatan Rencana</th>
+                                        <th>Ringkasan Item</th>
                                         {isDeliveredStatus && <th>Muatan Aktual Terkirim</th>}
                                     </tr>
                                 </thead>
@@ -1674,7 +1723,22 @@ export default function SuratJalanDetailPage() {
                                     {documentItems.map(item => (
                                         <tr key={item._id}>
                                             <td>{item.orderItemDescription || '-'}</td>
-                                            <td>{formatCargoSummary(item.plannedCargo)}</td>
+                                            <td>
+                                                <div
+                                                    style={{
+                                                        display: 'grid',
+                                                        gap: '0.25rem',
+                                                        padding: '0.55rem 0.65rem',
+                                                        border: '1px solid var(--color-gray-100)',
+                                                        borderRadius: '0.6rem',
+                                                        background: 'var(--color-gray-50)',
+                                                    }}
+                                                >
+                                                    <div className="text-sm"><span className="text-muted">Total: </span>{formatCargoSummary(item.plannedCargo)}</div>
+                                                    <div className="text-sm"><span className="text-muted">Drop: </span>{summarizeDocumentItemActualDrops(item, isDeliveryOrderBillableDropType)}</div>
+                                                    <div className="text-sm"><span className="text-muted">Hold: </span>{summarizeDocumentItemActualDrops(item, isDeliveryOrderHoldDropType)}</div>
+                                                </div>
+                                            </td>
                                             {isDeliveredStatus && <td>{formatCargoSummary(item.actualCargo)}</td>}
                                         </tr>
                                     ))}
@@ -2117,7 +2181,7 @@ export default function SuratJalanDetailPage() {
                                                 <>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                                                         <div className="text-muted text-sm">
-                                                            Tentukan per titik apakah barang turun, hold, return, atau lanjut ke titik lain.
+                                                            Tentukan per titik apakah barang turun atau hold.
                                                         </div>
                                                         <button type="button" className="btn btn-secondary btn-sm" onClick={addActualDropDraft} disabled={updatingStatus}>
                                                             + Tambah Titik Drop
@@ -2178,7 +2242,7 @@ export default function SuratJalanDetailPage() {
                                                                     <div className="form-group">
                                                                         <label className="form-label">Tipe Titik</label>
                                                                         <select className="form-select" value={drop.stopType} onChange={event => updateActualDropDraft(drop.draftKey, 'stopType', event.target.value)} disabled={updatingStatus}>
-                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => value !== 'EXTRA_DROP').map(([value, meta]) => (
+                                                                            {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).filter(([value]) => !['EXTRA_DROP', 'TRANSIT', 'RETURN'].includes(value)).map(([value, meta]) => (
                                                                                 <option key={value} value={value}>{meta.label}</option>
                                                                             ))}
                                                                         </select>
@@ -2190,7 +2254,7 @@ export default function SuratJalanDetailPage() {
                                                                             value={drop.locationName}
                                                                             onChange={event => updateActualDropDraft(drop.draftKey, 'locationName', event.target.value)}
                                                                             disabled={updatingStatus}
-                                                                            placeholder="Mis. Gudang Transit Malang"
+                                                                            placeholder="Mis. Gudang Hold Malang"
                                                                         />
                                                                     </div>
                                                                 </div>

@@ -4,8 +4,10 @@ import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
+import type { SuratJalanRecord } from '@/lib/trip-document-types';
 import type {
     CompanyProfile,
+    Customer,
     CustomerRecipient,
     CustomerProduct,
     DeliveryOrder,
@@ -16,6 +18,7 @@ import type {
     OrderTripPlan,
     SessionUser,
     User,
+    Vehicle,
 } from '@/lib/types';
 import { normalizeUserRole, type InternalUserRole } from '@/lib/rbac';
 
@@ -30,7 +33,10 @@ export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
 export type DriverAssignedDeliveryOrder = DeliveryOrder & {
     _createdAt?: string;
     driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
+    driverSuratJalanRecords?: SuratJalanRecord[];
     allowsDirectCargoInput?: boolean;
+    vehicleLastOdometer?: number;
+    vehicleLastOdometerAt?: string;
 };
 
 export type DriverAssignedTripPlanPickupStop = {
@@ -176,28 +182,42 @@ export async function getDriverPortalAccessNotice(driverRef: string): Promise<Dr
 }
 
 export async function getDriverAssignedDeliveryOrders(driverRef: string) {
-    const activeStatuses = new Set<DeliveryOrder['status']>(['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
+    const activeStatuses = new Set<DeliveryOrder['status']>(['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD']);
     const deliveryOrders = (await listDocumentsByFilter<DriverAssignedDeliveryOrder>('deliveryOrder', { driverRef }))
-        .filter(item => activeStatuses.has(item.status));
+        .filter(item => activeStatuses.has(item.status) && !item.tripClosedByAdminAt);
     if (deliveryOrders.length === 0) {
         return [];
     }
 
     const orderRefs = [...new Set(deliveryOrders.map(item => item.orderRef).filter((value): value is string => typeof value === 'string' && value.length > 0))];
-    const [orders, cargoItems, directCargoCapabilities] = await Promise.all([
+    const vehicleRefs = [...new Set(deliveryOrders.map(item => item.vehicleRef).filter((value): value is string => typeof value === 'string' && value.length > 0))];
+    const [orders, cargoItems, suratJalanRecords, directCargoCapabilities, vehicles] = await Promise.all([
         orderRefs.length > 0 ? listDocumentsByFilter<Array<Record<string, unknown> & { _id: string }>[number]>('order', { _id: orderRefs }) : Promise.resolve([]),
         listDocumentsByFilter<DeliveryOrderItem & { _createdAt?: string }>('deliveryOrderItem', {
             deliveryOrderRef: deliveryOrders.map(item => item._id),
         }),
+        listDocumentsByFilter<SuratJalanRecord>('suratJalan', {
+            tripRef: deliveryOrders.map(item => item._id),
+        }),
         getDriverOrderCargoCapabilities(orderRefs),
+        vehicleRefs.length > 0
+            ? listDocumentsByFilter<Pick<Vehicle, '_id' | 'lastOdometer' | 'lastOdometerAt'>>('vehicle', { _id: vehicleRefs })
+            : Promise.resolve([]),
     ]);
 
     const orderMap = new Map(orders.map(order => [order._id, order]));
+    const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
     const cargoByDeliveryOrderRef = new Map<string, DeliveryOrderItem[]>();
     for (const item of cargoItems.sort((left, right) => (left._createdAt || '').localeCompare(right._createdAt || ''))) {
         const current = cargoByDeliveryOrderRef.get(item.deliveryOrderRef) || [];
         current.push(item);
         cargoByDeliveryOrderRef.set(item.deliveryOrderRef, current);
+    }
+    const suratJalanByTripRef = new Map<string, SuratJalanRecord[]>();
+    for (const item of suratJalanRecords) {
+        const current = suratJalanByTripRef.get(item.tripRef) || [];
+        current.push(item);
+        suratJalanByTripRef.set(item.tripRef, current);
     }
 
     return deliveryOrders
@@ -208,6 +228,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         })
         .map(item => {
             const relatedOrder = typeof item.orderRef === 'string' ? orderMap.get(item.orderRef) : undefined;
+            const vehicle = typeof item.vehicleRef === 'string' ? vehicleMap.get(item.vehicleRef) : undefined;
             return {
                 ...item,
                 customerName: item.customerName || (typeof relatedOrder?.customerName === 'string' ? relatedOrder.customerName : undefined),
@@ -215,7 +236,10 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
                 receiverAddress: item.receiverAddress,
                 pickupAddress: item.pickupAddress || (typeof relatedOrder?.pickupAddress === 'string' ? relatedOrder.pickupAddress : undefined),
                 driverCargoItems: cargoByDeliveryOrderRef.get(item._id) || [],
+                driverSuratJalanRecords: suratJalanByTripRef.get(item._id) || [],
                 allowsDirectCargoInput: typeof item.orderRef === 'string' ? (directCargoCapabilities.get(item.orderRef) ?? false) : false,
+                vehicleLastOdometer: vehicle?.lastOdometer,
+                vehicleLastOdometerAt: vehicle?.lastOdometerAt,
             };
         });
 }
@@ -357,7 +381,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
             const linkedDeliveryOrder = plan.linkedDeliveryOrderRef
                 ? linkedDeliveryOrderMap.get(plan.linkedDeliveryOrderRef) || null
                 : null;
-            if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
+            if (linkedDeliveryOrder?.status === 'CANCELLED') {
                 continue;
             }
 
@@ -416,6 +440,12 @@ export async function getDriverCustomerRecipients(customerRefs: string[]) {
     }))
         .filter(item => item.active !== false)
         .sort((left, right) => `${left.label || left.receiverCompany || left.receiverName || ''}`.localeCompare(`${right.label || right.receiverCompany || right.receiverName || ''}`));
+}
+
+export async function getDriverBillingCustomers() {
+    return (await listDocumentsByFilter<Pick<Customer, '_id' | '_type' | 'name' | 'active'>>('customer', {}))
+        .filter(item => item.active !== false)
+        .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

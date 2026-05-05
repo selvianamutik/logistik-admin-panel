@@ -1,6 +1,7 @@
 import {
     getDriverCustomerRecipients,
     getDriverCustomerProducts,
+    getDriverBillingCustomers,
     getDriverAssignedDeliveryOrders,
     getDriverAssignedTripPlans,
     getDriverOrderCargoCapabilities,
@@ -37,9 +38,14 @@ export async function GET(request: Request) {
             ...deliveryOrders.map(item => item.customerRef || ''),
             ...plannedTrips.map(item => item.customerRef || ''),
         ];
+        const billingCustomers = await getDriverBillingCustomers();
+        const allCustomerRefs = [
+            ...customerRefs,
+            ...billingCustomers.map(customer => customer._id),
+        ];
         const [customerProducts, customerRecipients] = await Promise.all([
             getDriverCustomerProducts(customerRefs),
-            getDriverCustomerRecipients(customerRefs),
+            getDriverCustomerRecipients(allCustomerRefs),
         ]);
         return jsonNoStore({
             data: deliveryOrders.map(item => ({
@@ -50,6 +56,7 @@ export async function GET(request: Request) {
                 ...item,
                 allowsDirectCargoInput: cargoCapabilities.get(item.orderRef || '') ?? true,
             })),
+            billingCustomers,
             customerProducts,
             customerRecipients,
         });

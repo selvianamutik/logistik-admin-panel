@@ -477,8 +477,20 @@ export function matchesSuratJalanDocumentItem(
 
 export function mapSuratJalanDocumentItem(
     document: SuratJalanDocument,
-    item: DeliveryOrderItem
+    item: DeliveryOrderItem,
+    deliveryOrder?: DeliveryOrder
 ): SuratJalanDocumentItem {
+    const billableActualCargo = deliveryOrder
+        ? getDeliveryOrderBillableCargoSummary(deliveryOrder, document.suratJalanNumber, item._id)
+        : createCargoSummary();
+    const resolvedActualCargo = hasCargo(billableActualCargo)
+        ? billableActualCargo
+        : {
+            qtyKoli: item.actualQtyKoli || 0,
+            weightKg: item.actualWeightKg || 0,
+            volumeM3: item.actualVolumeM3 || 0,
+        };
+
     return {
         _id: `${document._id}:${item._id}`,
         _type: 'suratJalanItem',
@@ -493,11 +505,7 @@ export function mapSuratJalanDocumentItem(
             weightKg: item.orderItemWeight || item.shippedWeight || 0,
             volumeM3: item.orderItemVolumeM3 || 0,
         },
-        actualCargo: {
-            qtyKoli: item.actualQtyKoli || 0,
-            weightKg: item.actualWeightKg || 0,
-            volumeM3: item.actualVolumeM3 || 0,
-        },
+        actualCargo: resolvedActualCargo,
     };
 }
 
@@ -509,7 +517,7 @@ export function mapDeliveryOrderToSuratJalanDocumentItems(
     return documents.flatMap(document =>
         deliveryOrderItems
             .filter(item => matchesSuratJalanDocumentItem(document, item))
-            .map(item => mapSuratJalanDocumentItem(document, item))
+            .map(item => mapSuratJalanDocumentItem(document, item, deliveryOrder))
     );
 }
 

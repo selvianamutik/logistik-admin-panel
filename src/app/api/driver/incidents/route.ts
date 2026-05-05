@@ -1,9 +1,9 @@
-import { extractRefId } from '@/lib/api/data-helpers';
-import { handleDeliveryOrderAppendCargoItems } from '@/lib/api/order-workflows';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { extractRefId } from '@/lib/api/data-helpers';
+import { handleIncidentCreate } from '@/lib/api/operations-workflows';
 import { createDocument, getDocumentById } from '@/lib/repositories/document-store';
-import type { DeliveryOrder } from '@/lib/types';
+import type { DeliveryOrder, Incident } from '@/lib/types';
 
 async function addAuditLog(
     actor: { _id: string; name: string; email?: string; role?: string },
@@ -26,7 +26,7 @@ async function addAuditLog(
             timestamp: new Date().toISOString(),
         });
     } catch {
-        console.warn('Audit log write failed for driver delivery cargo update');
+        console.warn('Audit log write failed for driver incident report');
     }
 }
 
@@ -50,55 +50,52 @@ export async function POST(request: Request) {
         }
 
         const parsedBody = await parseJsonBody<{
-            id?: string;
-            shipperReferences?: Array<{
-                _key?: string;
-                referenceNumber?: string;
-                pickupStopKey?: string;
-            }>;
-            cargoItems?: Array<{
-                customerProductRef?: string;
-                description?: string;
-                qtyKoli?: number;
-                weightInputValue?: number;
-                weightInputUnit?: string;
-                volumeInputValue?: number;
-                volumeInputUnit?: string;
-                shipperReferenceNumber?: string;
-                pickupStopKey?: string;
-            }>;
+            relatedDeliveryOrderRef?: string;
+            incidentType?: Incident['incidentType'];
+            urgency?: Incident['urgency'];
+            locationText?: string;
+            odometer?: number;
+            description?: string;
         }>(request);
         if ('error' in parsedBody) {
             return parsedBody.error;
         }
 
-        const id = typeof parsedBody.data.id === 'string' ? parsedBody.data.id : '';
-        if (!id) {
-            return jsonNoStore({ error: 'Surat jalan tidak valid' }, { status: 400 });
+        const relatedDeliveryOrderRef =
+            typeof parsedBody.data.relatedDeliveryOrderRef === 'string'
+                ? parsedBody.data.relatedDeliveryOrderRef.trim()
+                : '';
+        if (!relatedDeliveryOrderRef) {
+            return jsonNoStore({ error: 'Pilih trip/SJ terkait untuk laporan insiden.' }, { status: 400 });
         }
 
-        const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
+        const deliveryOrder = await getDocumentById<DeliveryOrder>(relatedDeliveryOrderRef, 'deliveryOrder');
         if (!deliveryOrder) {
-            return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+            return jsonNoStore({ error: 'Trip/SJ terkait tidak ditemukan.' }, { status: 404 });
         }
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
-            return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
-        }
-        if (deliveryOrder.pendingDriverStatus === 'DELIVERED') {
-            return jsonNoStore({ error: 'Permintaan selesai sudah diajukan. Muatan tidak bisa diubah lagi dari portal driver.' }, { status: 409 });
+            return jsonNoStore({ error: 'Trip/SJ ini bukan milik driver yang login.' }, { status: 403 });
         }
 
-        return await handleDeliveryOrderAppendCargoItems(
+        return await handleIncidentCreate(
             auth.session,
             {
-                id,
-                shipperReferences: parsedBody.data.shipperReferences,
-                cargoItems: parsedBody.data.cargoItems,
+                relatedDeliveryOrderRef,
+                relatedDONumber: deliveryOrder.doNumber,
+                vehicleRef: extractRefId(deliveryOrder.vehicleRef),
+                vehiclePlate: deliveryOrder.vehiclePlate,
+                driverRef: auth.driver._id,
+                driverName: auth.driver.name,
+                incidentType: parsedBody.data.incidentType,
+                urgency: parsedBody.data.urgency,
+                locationText: parsedBody.data.locationText,
+                odometer: parsedBody.data.odometer,
+                description: parsedBody.data.description,
             },
             addAuditLog
         );
     } catch (error) {
-        console.error('Driver delivery cargo update error:', error);
+        console.error('Driver incident report error:', error);
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

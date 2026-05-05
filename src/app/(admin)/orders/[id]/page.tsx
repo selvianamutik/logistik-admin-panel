@@ -990,6 +990,7 @@ export default function OrderDetailPage() {
             .filter((value): value is string => Boolean(value))
     );
     const unplannedDos = dos.filter(deliveryOrder => !linkedTripDoIds.has(deliveryOrder._id));
+    const nonCancelledDos = dos.filter(deliveryOrder => deliveryOrder.status !== 'CANCELLED');
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
             setDoVehicleOverrideReason('');
@@ -1008,33 +1009,17 @@ export default function OrderDetailPage() {
             setDoVehicleOverrideReason('');
         }
     }, [busyVehicleIds, doVehicle, selectedOrderTripPlan]);
-    const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
-    const hasHeldAvailableItems = availableItems.some(item => {
-        const progressInfo = itemProgressById[item._id];
-        return progressInfo.heldQtyKoli > 0 || progressInfo.heldWeight > 0 || progressInfo.heldVolume > 0;
-    });
-    const hasPendingAvailableItems = availableItems.some(item => {
-        const progressInfo = itemProgressById[item._id];
-        return progressInfo.pendingQtyKoli > 0 || progressInfo.pendingWeight > 0 || progressInfo.pendingVolume > 0;
-    });
-    const canCreateContinuationDeliveryOrder =
-        canCreateDeliveryOrder &&
-        availableItems.length > 0 &&
-        dos.length > 0;
-    const canCreateOrderLevelContinuationDeliveryOrder =
-        canCreateContinuationDeliveryOrder &&
-        hasPendingAvailableItems &&
-        !hasHeldAvailableItems;
-    const usesExistingItemsForDeliveryOrder = !isHeaderOnlyOrder || canCreateContinuationDeliveryOrder;
-    const continuationButtonLabel = 'Buat SJ Lanjutan';
-    const primaryDeliveryOrderButtonLabel = canCreateOrderLevelContinuationDeliveryOrder
-        ? continuationButtonLabel
-        : isHeaderOnlyOrder && dos.length > 0
+    const usesExistingItemsForDeliveryOrder = !isHeaderOnlyOrder;
+    const canCreateDeliveryOrder =
+        isHeaderOnlyOrder ||
+        (!usesExistingItemsForDeliveryOrder || (availableItems.length > 0 && nonCancelledDos.length === 0));
+    const primaryDeliveryOrderButtonLabel =
+        isHeaderOnlyOrder && nonCancelledDos.length > 0
             ? 'Tambah Surat Jalan'
             : 'Buat Surat Jalan';
     const canShowPrimaryDeliveryOrderButton =
         !hasPlannedTrips &&
-        (!canCreateContinuationDeliveryOrder || canCreateOrderLevelContinuationDeliveryOrder || isHeaderOnlyOrder);
+        (isHeaderOnlyOrder || nonCancelledDos.length === 0);
     const flattenedDirectCargoItems = flattenDirectCargoGroups(directCargoGroups);
     const draftDirectCargoItems = getDraftOrderItems(flattenedDirectCargoItems);
     const draftDirectCargoGroups = directCargoGroups
@@ -1048,7 +1033,7 @@ export default function OrderDetailPage() {
     const selectedTripDraftPickupStops = selectablePickupStops.filter(stop => tripDraft.pickupStopKeys.includes(stop._key));
     const availableTripDraftPickupStops = selectablePickupStops.filter(stop => !tripDraft.pickupStopKeys.includes(stop._key));
     const headerOnlyManifestByDo = isHeaderOnlyOrder
-        ? dos.map(deliveryOrder => {
+        ? nonCancelledDos.map(deliveryOrder => {
             const pickupMap = new Map(
                 (deliveryOrder.pickupStops || []).map((pickupStop, index) => [
                     pickupStop._key || pickupStop.orderPickupStopKey || `pickup-stop-${index + 1}`,
@@ -1235,10 +1220,14 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
             return;
         }
-        if (isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder && draftDirectCargoItems.length > 0) {
+        if (isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder) {
             const invalidReferenceGroup = draftDirectCargoGroups.findIndex(group => group.draftItems.length > 0 && !group.shipperReferenceNumber.trim());
             if (invalidReferenceGroup >= 0) {
                 addToast('error', `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}`);
+                return;
+            }
+            if (draftDirectCargoItems.length === 0 && !draftDirectCargoGroups.some(group => group.shipperReferenceNumber.trim())) {
+                addToast('error', 'Isi minimal 1 No. SJ pengirim untuk barang menyusul');
                 return;
             }
             const invalidPickupGroup = draftDirectCargoGroups.findIndex(group => {
@@ -1502,16 +1491,6 @@ export default function OrderDetailPage() {
                             <Truck size={16} /> {primaryDeliveryOrderButtonLabel}
                         </button>
                     )}
-                    {hasPlannedTrips && canCreateOrderLevelContinuationDeliveryOrder && (
-                        <button
-                            className="btn btn-primary"
-                            onClick={() => openCreateDOModal()}
-                            disabled={!canCreateDeliveryOrder}
-                            title="Buat surat jalan tambahan untuk sisa order yang masih pending"
-                        >
-                            <Truck size={16} /> {continuationButtonLabel}
-                        </button>
-                    )}
                     {canCreateInvoice && (
                         <button
                             className="btn btn-secondary"
@@ -1668,22 +1647,6 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
-            {!hasPlannedTrips && canCreateOrderLevelContinuationDeliveryOrder && (
-                <div className="card mt-6">
-                    <div className="card-body" style={{ padding: '0.9rem 1rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                        <div>
-                            <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
-                            <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
-                                Ada sisa item pending yang belum masuk surat jalan berikutnya.
-                            </div>
-                        </div>
-                        <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
-                            <Truck size={14} /> {continuationButtonLabel}
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {isHeaderOnlyOrder && !hasPlannedTrips && (
                 <div className="card mt-6">
                     <div className="card-body" style={{ padding: '0.9rem 1rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -1727,19 +1690,6 @@ export default function OrderDetailPage() {
                         )}
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
-                        {canCreateOrderLevelContinuationDeliveryOrder && (
-                            <div style={{ padding: '0.9rem 1rem', borderRadius: '0.75rem', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-200)', color: 'var(--color-primary-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                <div>
-                                    <div style={{ fontWeight: 700 }}>Sisa barang masih bisa dibuat SJ lanjutan</div>
-                                    <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
-                                        Ada sisa item pending yang belum masuk trip terencana.
-                                    </div>
-                                </div>
-                                <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal()}>
-                                    <Truck size={14} /> {continuationButtonLabel}
-                                </button>
-                            </div>
-                        )}
                         {orderTripPlans.map(tripPlan => {
                             const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef) : undefined;
                             const tripPlanPickupStops = resolvedOrderPickupStops.filter(stop => tripPlan.pickupStopKeys.includes(stop._key));
@@ -1747,7 +1697,7 @@ export default function OrderDetailPage() {
                             const linkedShipperReferenceCount = linkedDeliveryOrder ? getDeliveryOrderShipperReferenceNumbers(linkedDeliveryOrder, linkedShipperReferenceItems).length : 0;
                             const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, linkedShipperReferenceItems, 3) : null;
                             const canInputSuratJalan =
-                                !linkedDeliveryOrder || linkedDeliveryOrder.status === 'CANCELLED';
+                                !linkedDeliveryOrder;
                             return (
                                 <div
                                     key={tripPlan._key}
@@ -1764,7 +1714,7 @@ export default function OrderDetailPage() {
                                         <div style={{ fontWeight: 700 }}>Trip {tripPlan.sequence}</div>
                                         {linkedDeliveryOrder ? (
                                             <span className={`badge badge-${DO_STATUS_MAP[linkedDeliveryOrder.status]?.color || 'gray'}`}>
-                                                <span className="badge-dot" /> {linkedDeliveryOrder.status === 'CANCELLED' ? 'Bisa dibuat ulang' : `Sudah jadi DO ${formatInternalDeliveryOrderNumber(linkedDeliveryOrder)}`}
+                                                <span className="badge-dot" /> {linkedDeliveryOrder.status === 'CANCELLED' ? 'Dibatalkan' : `Sudah jadi DO ${formatInternalDeliveryOrderNumber(linkedDeliveryOrder)}`}
                                             </span>
                                         ) : (
                                             <span className="badge badge-blue"><span className="badge-dot" /> Siap input Surat Jalan</span>
@@ -1826,7 +1776,7 @@ export default function OrderDetailPage() {
                                             )}
                                             {canInputSuratJalan && (
                                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal(tripPlan._key)}>
-                                                    <Truck size={14} /> {linkedDeliveryOrder?.status === 'CANCELLED' ? 'Buat Ulang Surat Jalan' : 'Input Surat Jalan'}
+                                                    <Truck size={14} /> Input Surat Jalan
                                                 </button>
                                             )}
                                         </div>
@@ -2486,7 +2436,7 @@ export default function OrderDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!creatingDO) { setShowDOModal(false); setSelectedOrderTripPlanKey(''); } }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : canCreateOrderLevelContinuationDeliveryOrder ? continuationButtonLabel : 'Buat Surat Jalan'}</h3>
+                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : 'Buat Surat Jalan'}</h3>
                             <button className="modal-close" onClick={() => { setShowDOModal(false); setSelectedOrderTripPlanKey(''); }} disabled={creatingDO}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -3331,9 +3281,7 @@ export default function OrderDetailPage() {
                                         ? (draftDirectCargoItems.length > 0 ? `Input Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Input Surat Jalan (barang menyusul)')
                                           : isHeaderOnlyOrder && !usesExistingItemsForDeliveryOrder
                                             ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
-                                            : canCreateOrderLevelContinuationDeliveryOrder
-                                                ? `${continuationButtonLabel} (${Object.keys(selectedShipments).length} item)`
-                                                : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
+                                            : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
                         </div>
                     </div>

@@ -1155,12 +1155,10 @@ class _ActualDropCard extends StatelessWidget {
               items: const [
                 DropdownMenuItem(value: 'DROP', child: Text('Drop')),
                 DropdownMenuItem(value: 'HOLD', child: Text('Hold Gudang')),
-                DropdownMenuItem(value: 'TRANSIT', child: Text('Transit')),
                 DropdownMenuItem(
                   value: 'EXTRA_DROP',
                   child: Text('Drop Tambahan'),
                 ),
-                DropdownMenuItem(value: 'RETURN', child: Text('Return')),
               ],
               onChanged: (value) =>
                   onChanged(draft.id, stopType: value ?? 'DROP'),
