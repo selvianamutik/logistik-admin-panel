@@ -763,28 +763,28 @@ export function buildPaymentReceiptPrintDocument(opts: {
     `;
 
     const extraStyles = `
-        body { font-family: "Times New Roman", Arial, serif; padding: 0.7rem; color: #111827; background: #fff; max-width: 820px; }
-        .receipt-sheet { border: 1px solid #111827; padding: 1rem 1.1rem; font-size: 12px; line-height: 1.35; background: #fff; }
-        .receipt-header { display: grid; grid-template-columns: 1fr 0.42fr; gap: 1rem; align-items: start; padding-bottom: 0.8rem; border-bottom: 2px solid #111827; margin-bottom: 0.85rem; }
-        .receipt-brand { display: flex; align-items: flex-start; gap: 0.75rem; }
-        .receipt-logo { width: 58px; height: 58px; object-fit: contain; }
-        .receipt-company { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; margin-bottom: 0.15rem; }
-        .receipt-company-line { font-size: 0.82rem; }
-        .receipt-title-box { border: 1px solid #111827; text-align: center; padding: 0.55rem 0.65rem; }
-        .receipt-title { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.08em; }
-        .receipt-number { margin-top: 0.25rem; font-weight: 700; font-size: 0.92rem; }
+        body { font-family: "Times New Roman", Arial, serif; padding: 5mm; color: #111827; background: #fff; max-width: 210mm; }
+        .receipt-sheet { width: 190mm; min-height: 88mm; box-sizing: border-box; border: 1px solid #111827; padding: 3mm 4mm; font-size: 9.2px; line-height: 1.1; background: #fff; }
+        .receipt-header { display: grid; grid-template-columns: 1fr 0.3fr; gap: 0.55rem; align-items: start; padding-bottom: 1.5mm; border-bottom: 2px solid #111827; margin-bottom: 2mm; }
+        .receipt-brand { display: flex; align-items: flex-start; gap: 0.42rem; }
+        .receipt-logo { width: 34px; height: 34px; object-fit: contain; }
+        .receipt-company { font-size: 0.82rem; font-weight: 800; text-transform: uppercase; margin-bottom: 0.06rem; }
+        .receipt-company-line { font-size: 0.62rem; }
+        .receipt-title-box { border: 1px solid #111827; text-align: center; padding: 0.25rem 0.35rem; }
+        .receipt-title { font-size: 0.95rem; font-weight: 800; letter-spacing: 0.08em; }
+        .receipt-number { margin-top: 0.1rem; font-weight: 700; font-size: 0.72rem; }
         .receipt-main-table { width: 100%; border-collapse: collapse; }
-        .receipt-main-table td { border: 1px solid #4b5563; padding: 0.42rem 0.55rem; vertical-align: top; }
+        .receipt-main-table td { border: 1px solid #4b5563; padding: 0.12rem 0.25rem; vertical-align: top; }
         .receipt-main-table td:first-child { width: 28%; font-weight: 700; background: #f8fafc; }
         .receipt-muted { margin-top: 0.1rem; color: #374151; font-size: 0.9em; }
-        .receipt-amount { font-size: 1.15rem; font-weight: 800; }
+        .receipt-amount { font-size: 0.92rem; font-weight: 800; }
         .receipt-words { font-style: italic; font-weight: 700; }
-        .receipt-footer-grid { display: grid; grid-template-columns: 1fr 0.34fr; gap: 1rem; margin-top: 1rem; align-items: start; }
-        .receipt-note { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 74px; color: #374151; }
-        .receipt-signature { border: 1px solid #4b5563; padding: 0.55rem 0.65rem; text-align: center; min-height: 158px; display: flex; flex-direction: column; justify-content: space-between; }
-        .receipt-stamp-box { width: 4.5cm; height: 3.2cm; max-width: 100%; margin: 0.45rem auto; border: 1px dashed #6b7280; display: flex; align-items: center; justify-content: center; color: #6b7280; font-size: 0.78rem; }
+        .receipt-footer-grid { display: grid; grid-template-columns: 1fr 0.26fr; gap: 0.55rem; margin-top: 2mm; align-items: start; }
+        .receipt-note { border: 1px solid #4b5563; padding: 0.25rem 0.35rem; min-height: 22mm; color: #374151; }
+        .receipt-signature { border: 1px solid #4b5563; padding: 0.25rem 0.35rem; text-align: center; min-height: 36mm; display: flex; flex-direction: column; justify-content: space-between; }
+        .receipt-stamp-box { width: 4.5cm; height: 3.2cm; max-width: 100%; margin: 0.08rem auto; border: 1px dashed #6b7280; display: flex; align-items: center; justify-content: center; color: #6b7280; font-size: 0.68rem; }
         .receipt-signature-name { border-top: 1px solid #111827; padding-top: 0.25rem; font-weight: 700; text-transform: uppercase; }
-        @page { size: A4 portrait; margin: 10mm; }
+        @page { size: A4 portrait; margin: 8mm; }
         @media print { body { padding: 0; } .receipt-sheet { page-break-inside: avoid; } }
     `;
 
