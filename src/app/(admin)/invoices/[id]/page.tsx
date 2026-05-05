@@ -48,10 +48,12 @@ export default function NotaDetailPage() {
     const [showPayModal, setShowPayModal] = useState(false);
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
     const [showPph23Modal, setShowPph23Modal] = useState(false);
+    const [showTaxInvoiceModal, setShowTaxInvoiceModal] = useState(false);
     const [showRefundModal, setShowRefundModal] = useState(false);
     const [paying, setPaying] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
     const [savingPph23, setSavingPph23] = useState(false);
+    const [savingTaxInvoice, setSavingTaxInvoice] = useState(false);
     const [refunding, setRefunding] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [voidingAdjustmentId, setVoidingAdjustmentId] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export default function NotaDetailPage() {
     const [pph23Enabled, setPph23Enabled] = useState(false);
     const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
     const [pph23BaseMode, setPph23BaseMode] = useState<'BEFORE_CLAIM' | 'AFTER_CLAIM'>('BEFORE_CLAIM');
+    const [taxInvoiceNumberDraft, setTaxInvoiceNumberDraft] = useState('');
     const [refundDate, setRefundDate] = useState(getBusinessDateValue());
     const [refundAmount, setRefundAmount] = useState(0);
     const [refundBankRef, setRefundBankRef] = useState('');
@@ -198,6 +201,11 @@ export default function NotaDetailPage() {
         setShowPph23Modal(true);
     };
 
+    const openTaxInvoiceModal = () => {
+        setTaxInvoiceNumberDraft(nota?.taxInvoiceNumber?.trim() || '');
+        setShowTaxInvoiceModal(true);
+    };
+
     const openEditAdjustmentModal = (adjustment: InvoiceAdjustment) => {
         setEditingAdjustmentId(adjustment._id);
         setAdjustAmount(Number(adjustment.amount) || 0);
@@ -285,6 +293,38 @@ export default function NotaDetailPage() {
             addToast('error', 'Gagal menyimpan pengaturan PPh 23');
         } finally {
             setSavingPph23(false);
+        }
+    };
+
+    const handleSaveTaxInvoiceNumber = async () => {
+        if (!nota) return;
+
+        setSavingTaxInvoice(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'freight-notas',
+                    action: 'update-tax-invoice',
+                    data: {
+                        id: nota._id,
+                        taxInvoiceNumber: taxInvoiceNumberDraft.trim(),
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan no faktur pajak');
+                return;
+            }
+            addToast('success', 'No faktur pajak berhasil diperbarui');
+            setShowTaxInvoiceModal(false);
+            await loadNotaDetail();
+        } catch {
+            addToast('error', 'Gagal menyimpan no faktur pajak');
+        } finally {
+            setSavingTaxInvoice(false);
         }
     };
 
@@ -535,6 +575,7 @@ export default function NotaDetailPage() {
                     {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && !isVoidedInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
                     {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
+                    {canManageInvoice && !isVoidedInvoice && <button className="btn btn-secondary btn-sm" onClick={openTaxInvoiceModal}>No Faktur Pajak</button>}
                     {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Invoice</button>}
@@ -565,15 +606,19 @@ export default function NotaDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. Invoice Internal</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No Faktur Pajak</div><div className="detail-value font-mono">{nota.taxInvoiceNumber?.trim() || '-'}</div></div>
+                        </div>
+                        <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{formatQuantity(nota.totalCollie || 0)}</div></div>
-                        </div>
-                        <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Dasar Invoice Final</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
-                            <div className="detail-item"><div className="detail-label">Berat Final Sistem (Kg)</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                         </div>
                         <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">Berat Final Sistem (Kg)</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                             <div className="detail-item"><div className="detail-label">Invoice Bruto</div><div className="detail-value font-semibold">{formatCurrency(grossAmount)}</div></div>
+                        </div>
+                        <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Invoice Transfer Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Status Invoice</div><div className="detail-value">{statusConf.label}</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">PPh 23</div><div className="detail-value">{effectivePph23Enabled ? `${buildPph23Label({ enabled: effectivePph23Enabled, ratePercent: effectivePph23RatePercent, baseMode: effectivePph23BaseMode })} • -${formatCurrency(pph23Amount)}` : 'Tidak dipotong'}</div></div>
@@ -721,8 +766,25 @@ export default function NotaDetailPage() {
                             </div>
                         </div>
                         <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                            <table style={{ minWidth: 800 }}>
-                                <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>{getFreightNotaWeightColumnLabel(billingMode)}</th><th>{getFreightNotaRateColumnLabel(billingMode)}</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
+                            <table style={{ minWidth: 1180 }}>
+                                <thead>
+                                    <tr>
+                                        <th>NO.TRUCK</th>
+                                        <th>TGL</th>
+                                        <th>NO.SJ</th>
+                                        <th>DARI</th>
+                                        <th>TUJUAN</th>
+                                        <th>BARANG</th>
+                                        <th>COLLIE</th>
+                                        <th>{getFreightNotaWeightColumnLabel(billingMode)}</th>
+                                        <th>{getFreightNotaRateColumnLabel(billingMode)}</th>
+                                        <th style={{ textAlign: 'right' }}>UANG RP</th>
+                                        <th>PLT</th>
+                                        <th>PC</th>
+                                        <th>KBL</th>
+                                        <th>TGL</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
                                     {items.map(it => (
                                         <tr key={it._id}>
@@ -736,7 +798,10 @@ export default function NotaDetailPage() {
                                             <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, volumeM3: it.volumeM3 || 0, billingMode, includeCanonical: false })}</td>
                                             <td>{formatCurrency(it.tarip || 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
-                                            <td className="text-muted">{it.ket || '-'}</td>
+                                            <td className="text-muted">{it.plt || '-'}</td>
+                                            <td className="text-muted">{it.pc || '-'}</td>
+                                            <td className="text-muted">{it.kbl || '-'}</td>
+                                            <td className="text-muted">{it.invoiceLineDate ? formatDate(it.invoiceLineDate) : '-'}</td>
                                         </tr>
                                     ))}
                                     <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
@@ -745,7 +810,7 @@ export default function NotaDetailPage() {
                                         <td>{totalBilledWeightLabel}</td>
                                         <td></td>
                                         <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(nota.totalAmount)}</td>
-                                        <td></td>
+                                        <td colSpan={4}></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -895,6 +960,34 @@ export default function NotaDetailPage() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowPph23Modal(false)} disabled={savingPph23}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSavePph23} disabled={savingPph23}>{savingPph23 ? 'Menyimpan...' : 'Simpan PPh 23'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {canManageInvoice && showTaxInvoiceModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingTaxInvoice) setShowTaxInvoiceModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">No Faktur Pajak</h3>
+                            <button className="modal-close" onClick={() => setShowTaxInvoiceModal(false)} disabled={savingTaxInvoice}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">No Faktur Pajak</label>
+                                <input
+                                    className="form-input"
+                                    value={taxInvoiceNumberDraft}
+                                    onChange={e => setTaxInvoiceNumberDraft(e.target.value)}
+                                    disabled={savingTaxInvoice}
+                                    placeholder="Ketik no faktur pajak..."
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTaxInvoiceModal(false)} disabled={savingTaxInvoice}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSaveTaxInvoiceNumber} disabled={savingTaxInvoice}>
+                                {savingTaxInvoice ? 'Menyimpan...' : 'Simpan No Faktur Pajak'}
+                            </button>
                         </div>
                     </div>
                 </div>

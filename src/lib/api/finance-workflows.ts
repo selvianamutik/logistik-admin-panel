@@ -122,6 +122,20 @@ function normalizeFreightNotaAmount(value: number) {
     return Math.round(value);
 }
 
+function normalizeFreightNotaLineMeta(row: Record<string, unknown>) {
+    const invoiceLineDate = normalizeOptionalText(row.invoiceLineDate);
+    if (invoiceLineDate) {
+        assertIsoDate(invoiceLineDate, 'Tanggal kolom TGL invoice');
+    }
+
+    return {
+        plt: normalizeOptionalText(row.plt),
+        pc: normalizeOptionalText(row.pc),
+        kbl: normalizeOptionalText(row.kbl),
+        invoiceLineDate,
+    };
+}
+
 function normalizeFreightNotaRowItemRefs(row: Pick<NormalizedFreightNotaRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
     const refs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
         ? row.deliveryOrderItemRefs
@@ -2066,6 +2080,7 @@ export async function handleFreightNotaCreate(
                     tarip,
                     uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
+                    ...normalizeFreightNotaLineMeta(row),
                 };
             });
     } catch (error) {
@@ -2767,6 +2782,10 @@ export async function handleFreightNotaCreate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
+            plt: row.plt,
+            pc: row.pc,
+            kbl: row.kbl,
+            invoiceLineDate: row.invoiceLineDate,
             status: 'ACTIVE',
         })));
     await syncFreightNotaDeliveryOrderLinks({
@@ -2884,6 +2903,7 @@ export async function handleFreightNotaUpdate(
                     tarip: Number.isFinite(tarip) && tarip > 0 ? tarip : 0,
                     uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
+                    ...normalizeFreightNotaLineMeta(row),
                 };
             });
     } catch (error) {
@@ -3432,6 +3452,10 @@ export async function handleFreightNotaUpdate(
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
+            plt: row.plt,
+            pc: row.pc,
+            kbl: row.kbl,
+            invoiceLineDate: row.invoiceLineDate,
             status: 'ACTIVE',
         })));
     await syncFreightNotaDeliveryOrderLinks({
@@ -3530,6 +3554,48 @@ export async function handleFreightNotaPph23Update(
         data: {
             _id: notaId,
             ...patch,
+        },
+    });
+}
+
+export async function handleFreightNotaTaxInvoiceUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const notaId = typeof data.id === 'string' ? data.id : '';
+    if (!notaId) {
+        return NextResponse.json({ error: 'Invoice tidak valid' }, { status: 400 });
+    }
+
+    const snapshot = await loadReceivableSnapshot(notaId);
+    if ('error' in snapshot) return snapshot.error;
+    if (snapshot.doc._type !== 'freightNota') {
+        return NextResponse.json({ error: 'No faktur pajak hanya tersedia untuk invoice ongkos' }, { status: 409 });
+    }
+    if (snapshot.doc.status === 'VOID') {
+        return NextResponse.json({ error: 'Invoice yang sudah void tidak bisa diubah' }, { status: 409 });
+    }
+
+    const taxInvoiceNumber = normalizeOptionalText(data.taxInvoiceNumber);
+    const previousTaxInvoiceNumber = normalizeOptionalText(snapshot.doc.taxInvoiceNumber);
+    await updateDocument(notaId, {
+        taxInvoiceNumber: taxInvoiceNumber || undefined,
+    }, 'freightNota');
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'freight-notas',
+        notaId,
+        `No faktur pajak ${snapshot.label}: ${previousTaxInvoiceNumber || '-'} -> ${taxInvoiceNumber || '-'}`
+    );
+
+    return NextResponse.json({
+        success: true,
+        data: {
+            _id: notaId,
+            taxInvoiceNumber: taxInvoiceNumber || undefined,
         },
     });
 }

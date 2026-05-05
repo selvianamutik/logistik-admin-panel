@@ -26,6 +26,10 @@ export type NormalizedFreightNotaRow = {
     tarip: number;
     uangRp: number;
     ket?: string;
+    plt?: string;
+    pc?: string;
+    kbl?: string;
+    invoiceLineDate?: string;
 };
 
 export type FreightNotaOrderSource = {

@@ -1032,7 +1032,6 @@ export async function exportFreightNotaDetail(
     });
     const netAmount = getReceivableNetAmount(nota);
     const groupedRows = items.reduce<Array<{
-        no: number;
         vehiclePlate: string;
         date: string;
         entries: Array<{
@@ -1044,7 +1043,10 @@ export async function exportFreightNotaDetail(
             billedWeight: string;
             tarip: string | number;
             uangRp: string | number;
-            ket: string;
+            plt: string;
+            pc: string;
+            kbl: string;
+            invoiceLineDate: string;
         }>;
     }>>((groups, item) => {
         const vehiclePlate = item.vehiclePlate || '';
@@ -1065,7 +1067,10 @@ export async function exportFreightNotaDetail(
             }),
             tarip: item.tarip ? fmtNumber(parseFormattedNumberish(item.tarip)) : '',
             uangRp: item.uangRp ? fmtNumber(parseFormattedNumberish(item.uangRp)) : '',
-            ket: item.ket || '',
+            plt: item.plt || '',
+            pc: item.pc || '',
+            kbl: item.kbl || '',
+            invoiceLineDate: item.invoiceLineDate ? fmtDate(item.invoiceLineDate) : '',
         };
 
         if (existing) {
@@ -1074,7 +1079,6 @@ export async function exportFreightNotaDetail(
         }
 
         groups.push({
-            no: groups.length + 1,
             vehiclePlate,
             date,
             entries: [entry],
@@ -1084,7 +1088,7 @@ export async function exportFreightNotaDetail(
 
     const rows: ExportValue[][] = [];
     const merges: MergeRange[] = [];
-    const totalColumns = 12;
+    const totalColumns = 14;
     const companyLine = [issuerProfile.phone ? `TELP. ${issuerProfile.phone}` : '', issuerProfile.email ? `EMAIL : ${issuerProfile.email}` : '']
         .filter(Boolean)
         .join('  ');
@@ -1098,22 +1102,21 @@ export async function exportFreightNotaDetail(
 
     rows.push(['', '', issuerProfile.address || '', '', '', 'KEPADA YANG TERHORMAT :']);
     merges.push({ startRow: 2, startCol: 3, endRow: 2, endCol: 5 });
-    merges.push({ startRow: 2, startCol: 6, endRow: 2, endCol: 12 });
+    merges.push({ startRow: 2, startCol: 6, endRow: 2, endCol: 14 });
 
     rows.push(['', '', companyLine, '', '', nota.customerName]);
     merges.push({ startRow: 3, startCol: 3, endRow: 3, endCol: 5 });
-    merges.push({ startRow: 3, startCol: 6, endRow: 3, endCol: 12 });
+    merges.push({ startRow: 3, startCol: 6, endRow: 3, endCol: 14 });
 
     rows.push([]);
 
     const headerRowIndex = rows.length + 1;
-    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', getFreightNotaWeightColumnLabel(billingMode), getFreightNotaRateColumnLabel(billingMode), 'UANG RP.', 'KET']);
+    rows.push(['NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', getFreightNotaWeightColumnLabel(billingMode), getFreightNotaRateColumnLabel(billingMode), 'UANG RP.', 'PLT', 'PC', 'KBL', 'TGL']);
 
     groupedRows.forEach((group) => {
         const groupStartRow = rows.length + 1;
         group.entries.forEach((entry, index) => {
             rows.push([
-                index === 0 ? group.no : '',
                 index === 0 ? group.vehiclePlate : '',
                 index === 0 ? group.date : '',
                 entry.noSJ,
@@ -1124,7 +1127,10 @@ export async function exportFreightNotaDetail(
                 entry.billedWeight,
                 entry.tarip,
                 entry.uangRp,
-                entry.ket,
+                entry.plt,
+                entry.pc,
+                entry.kbl,
+                entry.invoiceLineDate,
             ]);
         });
 
@@ -1132,7 +1138,6 @@ export async function exportFreightNotaDetail(
         if (groupEndRow > groupStartRow) {
             merges.push({ startRow: groupStartRow, startCol: 1, endRow: groupEndRow, endCol: 1 });
             merges.push({ startRow: groupStartRow, startCol: 2, endRow: groupEndRow, endCol: 2 });
-            merges.push({ startRow: groupStartRow, startCol: 3, endRow: groupEndRow, endCol: 3 });
         }
     });
 
@@ -1149,7 +1154,6 @@ export async function exportFreightNotaDetail(
         '',
         '',
         '',
-        '',
         parseFormattedNumberish(nota.totalCollie || 0) || 0,
         formatFreightNotaDisplayWeight({
             beratKg: nota.totalWeightKg || 0,
@@ -1160,13 +1164,16 @@ export async function exportFreightNotaDetail(
         '',
         nota.totalAmount ? fmtNumber(parseFormattedNumberish(nota.totalAmount)) : 0,
         '',
+        '',
+        '',
+        '',
     ]);
-    merges.push({ startRow: totalRowIndex, startCol: 1, endRow: totalRowIndex, endCol: 7 });
+    merges.push({ startRow: totalRowIndex, startCol: 1, endRow: totalRowIndex, endCol: 6 });
 
     if (adjustmentAmount > 0) {
         const adjustmentRowIndex = rows.length + 1;
-        rows.push(['Potongan / Klaim', '', '', '', '', '', '', '', '', '', fmtNumber(adjustmentAmount), '']);
-        merges.push({ startRow: adjustmentRowIndex, startCol: 1, endRow: adjustmentRowIndex, endCol: 10 });
+        rows.push(['Potongan / Klaim', '', '', '', '', '', '', '', '', fmtNumber(adjustmentAmount), '', '', '', '']);
+        merges.push({ startRow: adjustmentRowIndex, startCol: 1, endRow: adjustmentRowIndex, endCol: 9 });
     }
 
     if (pph23Summary.amount > 0) {
@@ -1175,13 +1182,13 @@ export async function exportFreightNotaDetail(
             enabled: pph23Summary.enabled,
             ratePercent: pph23Summary.ratePercent,
             baseMode: pph23Summary.baseMode,
-        }), '', '', '', '', '', '', '', '', '', fmtNumber(pph23Summary.amount), '']);
-        merges.push({ startRow: pph23RowIndex, startCol: 1, endRow: pph23RowIndex, endCol: 10 });
+        }), '', '', '', '', '', '', '', '', fmtNumber(pph23Summary.amount), '', '', '', '']);
+        merges.push({ startRow: pph23RowIndex, startCol: 1, endRow: pph23RowIndex, endCol: 9 });
     }
 
     const transferRowIndex = rows.length + 1;
-    rows.push(['Invoice Transfer Final', '', '', '', '', '', '', '', '', '', fmtNumber(netAmount), '']);
-    merges.push({ startRow: transferRowIndex, startCol: 1, endRow: transferRowIndex, endCol: 10 });
+    rows.push(['Invoice Transfer Final', '', '', '', '', '', '', '', '', fmtNumber(netAmount), '', '', '', '']);
+    merges.push({ startRow: transferRowIndex, startCol: 1, endRow: transferRowIndex, endCol: 9 });
 
     rows.push([]);
     rows.push(['NOTE : ONGKOS ANGKUTAN HARAP DITRANSFER KE :']);
@@ -1223,7 +1230,7 @@ export async function exportFreightNotaDetail(
         worksheet.getRow(3).height = Math.max(worksheet.getRow(3).height || 0, 20);
     }
 
-    const columnWidths = [6, 14, 12, 20, 16, 16, 14, 8, 10, 10, 14, 12];
+    const columnWidths = [14, 12, 20, 16, 16, 16, 8, 12, 12, 14, 8, 8, 8, 12];
     columnWidths.forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
     });
@@ -1233,7 +1240,7 @@ export async function exportFreightNotaDetail(
         to: { row: Math.max(headerRowIndex + Math.max(items.length, 1) - 1, headerRowIndex), column: totalColumns },
     };
 
-    const numberColumns = new Set([8, 9, 10, 11]);
+    const numberColumns = new Set([7, 10]);
     rows.forEach((row, rowIndex) => {
         row.forEach((value, colIndex) => {
             assignCellValue(worksheet, rowIndex + 1, colIndex, value);

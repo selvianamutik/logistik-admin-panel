@@ -857,6 +857,7 @@ export interface FreightNota {
   customerPhone?: string;
   issueDate: string;
   dueDate?: string;
+  taxInvoiceNumber?: string;
   status: NotaStatus;
   totalAmount: number;
   totalAdjustmentAmount?: number;
@@ -905,6 +906,10 @@ export interface FreightNotaItem {
   tarip: number;
   uangRp: number;
   ket?: string;
+  plt?: string;
+  pc?: string;
+  kbl?: string;
+  invoiceLineDate?: string;
   status?: 'ACTIVE' | 'VOID';
   voidedAt?: string;
   voidedBy?: string;

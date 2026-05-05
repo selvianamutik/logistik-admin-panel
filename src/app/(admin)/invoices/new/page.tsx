@@ -199,6 +199,10 @@ export default function NewNotaPage() {
                                 tarip: item.tarip || 0,
                                 uangRp: item.uangRp || 0,
                                 ket: item.ket || '',
+                                plt: item.plt || '',
+                                pc: item.pc || '',
+                                kbl: item.kbl || '',
+                                invoiceLineDate: item.invoiceLineDate || '',
                             }))
                             : [createEmptyNotaRow()]
                     );
@@ -913,7 +917,7 @@ export default function NewNotaPage() {
                                     </button>
                 </div>
                 <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                    <table style={{ minWidth: 900 }}>
+                    <table style={{ minWidth: 1280 }}>
                         <thead>
                             <tr>
                                 <th style={{ minWidth: 80 }}>NO.TRUCK</th>
@@ -926,6 +930,10 @@ export default function NewNotaPage() {
                                 <th style={{ minWidth: 90 }}>{getFreightNotaWeightColumnLabel(billingMode)}</th>
                                 <th style={{ minWidth: 100 }}>{getFreightNotaRateColumnLabel(billingMode)}</th>
                                 <th style={{ minWidth: 110 }}>UANG RP</th>
+                                <th style={{ minWidth: 70 }}>PLT</th>
+                                <th style={{ minWidth: 70 }}>PC</th>
+                                <th style={{ minWidth: 70 }}>KBL</th>
+                                <th style={{ minWidth: 110 }}>TGL</th>
                                 <th style={{ minWidth: 80 }}>KET</th>
                                 <th style={{ width: 96 }}>AKSI</th>
                             </tr>
@@ -1028,6 +1036,35 @@ export default function NewNotaPage() {
                                     <td>
                                         <input
                                             className="form-input"
+                                            value={row.plt}
+                                            onChange={event => updateRow(row.id, 'plt', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.pc}
+                                            onChange={event => updateRow(row.id, 'pc', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.kbl}
+                                            onChange={event => updateRow(row.id, 'kbl', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={row.invoiceLineDate}
+                                            onChange={event => updateRow(row.id, 'invoiceLineDate', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
                                             value={row.ket}
                                             onChange={event => updateRow(row.id, 'ket', event.target.value)}
                                         />
@@ -1058,7 +1095,7 @@ export default function NewNotaPage() {
                                 <td>{getFreightNotaDisplayWeightValue(totalBerat, billingMode, totalVolume).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: billingMode === 'PER_TON' || billingMode === 'PER_VOLUME' ? 3 : 2 })}</td>
                                 <td />
                                 <td style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalAmount)}</td>
-                                <td colSpan={2} />
+                                <td colSpan={6} />
                             </tr>
                         </tbody>
                     </table>
@@ -1282,6 +1319,45 @@ export default function NewNotaPage() {
                                         className="form-input"
                                         value={formatCurrency(editingRow.uangRp)}
                                         readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Plt</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.plt}
+                                        onChange={event => updateEditingRow('plt', event.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Pc</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.pc}
+                                        onChange={event => updateEditingRow('pc', event.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kbl</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.kbl}
+                                        onChange={event => updateEditingRow('kbl', event.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tgl</label>
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={editingRow.invoiceLineDate}
+                                        onChange={event => updateEditingRow('invoiceLineDate', event.target.value)}
                                     />
                                 </div>
                             </div>

@@ -46,6 +46,7 @@ import {
     handleFreightNotaCreate,
     handleFreightNotaDelete,
     handleFreightNotaPph23Update,
+    handleFreightNotaTaxInvoiceUpdate,
     handleFreightNotaUpdate,
     handleInvoiceAdjustmentCreate,
     handleInvoiceAdjustmentDelete,
@@ -248,6 +249,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'record-payment' ||
         action === 'update-with-items' ||
         action === 'update-pph23' ||
+        action === 'update-tax-invoice' ||
         action === 'update-header-booking' ||
         action === 'append-trip-plan' ||
         action === 'delete-trip-plan' ||
@@ -1643,6 +1645,10 @@ export async function POST(request: Request) {
 
         if (entity === 'freight-notas' && action === 'update-pph23') {
             return await handleFreightNotaPph23Update(session, data, addAuditLog);
+        }
+
+        if (entity === 'freight-notas' && action === 'update-tax-invoice') {
+            return await handleFreightNotaTaxInvoiceUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'freight-notas' && action === 'update-with-items') {

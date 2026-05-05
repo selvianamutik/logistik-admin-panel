@@ -30,6 +30,10 @@ export interface NotaItemRow {
     tarip: number;
     uangRp: number;
     ket: string;
+    plt: string;
+    pc: string;
+    kbl: string;
+    invoiceLineDate: string;
 }
 
 export function createEmptyNotaRow(): NotaItemRow {
@@ -51,6 +55,10 @@ export function createEmptyNotaRow(): NotaItemRow {
         tarip: 0,
         uangRp: 0,
         ket: '',
+        plt: '',
+        pc: '',
+        kbl: '',
+        invoiceLineDate: '',
     };
 }
 
@@ -66,6 +74,10 @@ export function isEmptyNotaRow(row: NotaItemRow) {
         !row.tujuan &&
         !row.barang &&
         !row.ket &&
+        !row.plt &&
+        !row.pc &&
+        !row.kbl &&
+        !row.invoiceLineDate &&
         (row.collie || 0) === 0 &&
         (row.beratKg || 0) === 0 &&
         (row.volumeM3 || 0) === 0 &&
@@ -197,6 +209,10 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         tarip: 0,
         uangRp: 0,
         ket: '',
+        plt: '',
+        pc: '',
+        kbl: '',
+        invoiceLineDate: '',
     };
 
     const hasCargo = (cargo: { qtyKoli: number; weightKg: number; volumeM3: number }) =>

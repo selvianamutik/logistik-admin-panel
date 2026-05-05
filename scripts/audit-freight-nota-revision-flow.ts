@@ -695,6 +695,10 @@ async function main() {
             tarip: 1000,
             uangRp: 10000,
             ket: 'Audit revisi nota untuk unlink/relink DO',
+            plt: '',
+            pc: '',
+            kbl: '',
+            invoiceLineDate: '',
         }];
 
         auditStep('create nota dari kandidat DO');
