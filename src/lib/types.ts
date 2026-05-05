@@ -1017,6 +1017,11 @@ export interface Payment {
   method: PaymentMethod;
   note?: string;
   attachmentUrl?: string;
+  editedAt?: string;
+  editedBy?: string;
+  editedByName?: string;
+  reversalBankTransactionRef?: string;
+  replacementBankTransactionRef?: string;
 }
 
 export interface CustomerReceipt {
@@ -1558,6 +1563,7 @@ export interface BankTransaction {
   relatedPurchasePaymentRef?: string;
   relatedPurchaseRef?: string;
   reversesBankTransactionRef?: string;
+  replacesBankTransactionRef?: string;
   _createdAt?: string;
 }
 

@@ -31,6 +31,8 @@ import { findMatchingCustomerBillingRate } from '@/lib/customer-billing-rates';
 import { buildFreightNotaCoverageRowKeys, buildNotaRowsFromDeliveryOrder } from '@/lib/invoice-create-page-support';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
+    BankAccount,
+    BankTransaction,
     CustomerOverpaymentRefund,
     CustomerReceipt,
     DeliveryOrder,
@@ -222,6 +224,47 @@ function normalizeWholeMoneyAmount(value: unknown) {
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
+function bankTransactionDelta(transaction: Pick<BankTransaction, 'amount' | 'type'>) {
+    const amount = normalizeWholeMoneyAmount(transaction.amount);
+    return transaction.type === 'DEBIT' || transaction.type === 'TRANSFER_OUT' ? -amount : amount;
+}
+
+function bankTransactionOrderKey(transaction: Pick<BankTransaction, '_id' | '_createdAt' | 'date'>) {
+    return `${transaction.date || ''} ${transaction._createdAt || ''} ${transaction._id}`;
+}
+
+async function recomputeBankLedgerBalancesForAccounts(accountRefs: Array<string | null | undefined>) {
+    const refs = [...new Set(accountRefs.filter((value): value is string => Boolean(value)))];
+    if (refs.length === 0) return;
+
+    const [accounts, transactions] = await Promise.all([
+        getAllDocuments<BankAccount>('bankAccount'),
+        getAllDocuments<BankTransaction>('bankTransaction'),
+    ]);
+    const accountById = new Map(accounts.map(account => [account._id, account]));
+
+    for (const accountRef of refs) {
+        const account = accountById.get(accountRef);
+        if (!account) continue;
+
+        let runningBalance = readLedgerBalance(account.initialBalance);
+        const accountTransactions = transactions
+            .filter(transaction => transaction.bankAccountRef === accountRef)
+            .sort((left, right) => bankTransactionOrderKey(left).localeCompare(bankTransactionOrderKey(right)));
+
+        for (const transaction of accountTransactions) {
+            runningBalance += bankTransactionDelta(transaction);
+            if (readLedgerBalance(transaction.balanceAfter) !== runningBalance) {
+                await updateDocument(transaction._id, { balanceAfter: runningBalance }, 'bankTransaction');
+            }
+        }
+
+        if (readLedgerBalance(account.currentBalance) !== runningBalance) {
+            await updateDocument(accountRef, { currentBalance: runningBalance }, 'bankAccount');
+        }
+    }
 }
 
 function normalizePph23SettingsInput(
@@ -737,6 +780,216 @@ export async function handlePaymentCreate(
         `Pembayaran ${receiptNumber} dicatat untuk ${loaded.doc._type === 'freightNota' ? 'invoice' : 'arsip invoice'} ${loaded.label || invoiceRef}`
     );
     return NextResponse.json({ data: paymentDoc, id: paymentId });
+}
+
+export async function handlePaymentUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const paymentId =
+        normalizeOptionalText(data._id) ||
+        normalizeOptionalText(data.id) ||
+        normalizeOptionalText(data.paymentRef);
+    if (!paymentId) {
+        return NextResponse.json({ error: 'Referensi pembayaran wajib diisi' }, { status: 400 });
+    }
+
+    const payment = await getDocumentById<Payment>(paymentId, 'payment');
+    if (!payment) {
+        return NextResponse.json({ error: 'Pembayaran tidak ditemukan' }, { status: 404 });
+    }
+    if (payment.receiptRef) {
+        return NextResponse.json(
+            { error: 'Pembayaran dari penerimaan customer harus dikoreksi dari menu penerimaan customer.' },
+            { status: 409 }
+        );
+    }
+
+    const invoiceRef = normalizeOptionalText(data.invoiceRef) || payment.invoiceRef;
+    if (!invoiceRef || invoiceRef !== payment.invoiceRef) {
+        return NextResponse.json({ error: 'Invoice pembayaran tidak boleh diubah' }, { status: 400 });
+    }
+
+    const loaded = await loadReceivableSnapshot(invoiceRef);
+    if ('error' in loaded) return loaded.error;
+    if (loaded.doc.status === 'VOID') {
+        return NextResponse.json({ error: 'Pembayaran invoice batal tidak bisa diedit' }, { status: 409 });
+    }
+
+    const amount = normalizeCurrencyNumber(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal pembayaran tidak valid' }, { status: 400 });
+    }
+
+    const paymentMethod = normalizePaymentMethod(data.method);
+    if (!paymentMethod) {
+        return NextResponse.json({ error: 'Metode pembayaran tidak valid' }, { status: 400 });
+    }
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
+        return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
+    }
+
+    const paymentDate =
+        typeof data.date === 'string' && data.date ? data.date : payment.date || getBusinessDateValue();
+    const paymentDateError = validateIsoDateOrResponse(paymentDate, 'Tanggal pembayaran', 'Tanggal pembayaran tidak valid');
+    if (paymentDateError) {
+        return paymentDateError;
+    }
+
+    const previousAmount = normalizeWholeMoneyAmount(payment.amount);
+    const nextPaidBeforeRefund = Math.max(loaded.paidBeforeRefund - previousAmount + amount, 0);
+    const nextPaidAfterRefund = Math.max(nextPaidBeforeRefund - loaded.refundedOverpaymentAmount, 0);
+    if (loaded.refundedOverpaymentAmount > Math.max(nextPaidBeforeRefund - loaded.netAmount, 0)) {
+        return NextResponse.json(
+            {
+                error: 'Pembayaran tidak bisa dikurangi karena kelebihan bayar dari invoice ini sudah dikonfirmasi transfer balik. Batalkan refund terkait dulu jika memang perlu.',
+            },
+            { status: 409 }
+        );
+    }
+    if (nextPaidAfterRefund > loaded.netAmount) {
+        return NextResponse.json(
+            { error: `Pembayaran melebihi sisa invoice netto (${Math.max(loaded.netAmount - (loaded.totalPaid - previousAmount), 0)})` },
+            { status: 400 }
+        );
+    }
+
+    const resolvedBank = await resolveReceiptBankAccount(paymentMethod, selectedAccountRef);
+    if ('error' in resolvedBank) return resolvedBank.error;
+    const { bankAcc } = resolvedBank;
+
+    const previousBankRef = normalizeOptionalText(payment.bankAccountRef);
+    const previousBankAcc = previousBankRef ? await getLedgerAccount(previousBankRef) : null;
+    if (previousBankRef && !previousBankAcc) {
+        return NextResponse.json(
+            { error: 'Rekening bank pembayaran lama tidak ditemukan, koreksi manual diperlukan sebelum pembayaran diedit.' },
+            { status: 409 }
+        );
+    }
+
+    const paymentNote = normalizeOptionalText(data.note);
+    const paymentAttachmentUrl = normalizeOptionalText(data.attachmentUrl);
+    const previousDate = normalizeOptionalText(payment.date);
+    const previousMethod = normalizePaymentMethod(payment.method) || payment.method;
+    const needsBankCorrection =
+        previousBankRef !== (bankAcc?._id || '') ||
+        previousAmount !== amount ||
+        previousDate !== paymentDate ||
+        previousMethod !== paymentMethod;
+    let reversalBankTransactionRef: string | null = null;
+    let replacementBankTransactionRef: string | null = null;
+
+    if (needsBankCorrection) {
+        const existingPaymentBankTransactions = (await listDocumentsByFilter<BankTransaction>('bankTransaction', {
+            relatedPaymentRef: paymentId,
+        }))
+            .filter(transaction => transaction.bankAccountRef === previousBankRef && transaction.type === 'CREDIT')
+            .sort((left, right) => bankTransactionOrderKey(left).localeCompare(bankTransactionOrderKey(right)));
+        const previousPaymentBankTransaction = existingPaymentBankTransactions[existingPaymentBankTransactions.length - 1];
+        const correctionDate = getBusinessDateValue();
+        let previousBankBalanceAfterReversal: number | null = null;
+        if (previousBankAcc) {
+            previousBankBalanceAfterReversal = readLedgerBalance(previousBankAcc.currentBalance) - previousAmount;
+            reversalBankTransactionRef = crypto.randomUUID();
+            await createDocument({
+                _id: reversalBankTransactionRef,
+                _type: 'bankTransaction',
+                bankAccountRef: previousBankAcc._id,
+                bankAccountName: previousBankAcc.bankName,
+                bankAccountNumber: previousBankAcc.accountNumber,
+                type: 'DEBIT',
+                amount: previousAmount,
+                date: correctionDate,
+                description: `Koreksi balik pembayaran invoice ${loaded.label || invoiceRef}`,
+                balanceAfter: previousBankBalanceAfterReversal,
+                relatedPaymentRef: paymentId,
+                reversesBankTransactionRef: previousPaymentBankTransaction?._id,
+            });
+        }
+
+        if (bankAcc) {
+            const replacementBaseBalance =
+                previousBankAcc && previousBankAcc._id === bankAcc._id && previousBankBalanceAfterReversal !== null
+                    ? previousBankBalanceAfterReversal
+                    : readLedgerBalance(bankAcc.currentBalance);
+            const nextBankBalance = replacementBaseBalance + amount;
+            replacementBankTransactionRef = crypto.randomUUID();
+            await createDocument({
+                _id: replacementBankTransactionRef,
+                _type: 'bankTransaction',
+                bankAccountRef: bankAcc._id,
+                bankAccountName: bankAcc.bankName,
+                bankAccountNumber: bankAcc.accountNumber,
+                type: 'CREDIT',
+                amount,
+                date: paymentDate,
+                description: `Koreksi pembayaran invoice ${loaded.label || invoiceRef}`,
+                balanceAfter: nextBankBalance,
+                relatedPaymentRef: paymentId,
+                replacesBankTransactionRef: previousPaymentBankTransaction?._id,
+            });
+        }
+
+        await recomputeBankLedgerBalancesForAccounts([previousBankAcc?._id, bankAcc?._id]);
+    }
+
+    const paymentPatch = sanitizePatchSet({
+        date: paymentDate,
+        amount,
+        method: paymentMethod,
+        note: paymentNote || null,
+        attachmentUrl: paymentAttachmentUrl || null,
+        bankAccountRef: bankAcc?._id || null,
+        bankAccountName: bankAcc?.bankName || null,
+        bankAccountNumber: bankAcc?.accountNumber || null,
+        editedAt: new Date().toISOString(),
+        editedBy: session._id,
+        editedByName: session.name,
+        ...(needsBankCorrection
+            ? {
+                reversalBankTransactionRef,
+                replacementBankTransactionRef,
+                previousAmount,
+            }
+            : {}),
+    });
+    const updatedPayment = await updateDocument<Payment & { [key: string]: unknown }>(
+        paymentId,
+        paymentPatch,
+        'payment'
+    );
+
+    const incomeRows = await listDocumentsByFilter<{ _id: string }>('income', { paymentRef: paymentId });
+    const incomeNote =
+        loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice';
+    if (incomeRows[0]?._id) {
+        await updateDocument(incomeRows[0]._id, { date: paymentDate, amount, note: incomeNote }, 'income');
+    } else {
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'income',
+            sourceType: 'INVOICE_PAYMENT',
+            paymentRef: paymentId,
+            date: paymentDate,
+            amount,
+            note: incomeNote,
+        });
+    }
+
+    await updateReceivableSnapshot(loaded, nextPaidAfterRefund, loaded.totalAdjustmentAmount);
+    await postPaymentJournal(session, updatedPayment, bankAcc, loaded.label);
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'payments',
+        paymentId,
+        `Pembayaran ${payment.receiptNumber || paymentId} untuk invoice ${loaded.label || invoiceRef} dikoreksi: ${formatAuditMoney(previousAmount)} -> ${formatAuditMoney(amount)}`
+    );
+    return NextResponse.json({ data: updatedPayment, id: paymentId });
 }
 
 export async function handleCustomerReceiptCreate(

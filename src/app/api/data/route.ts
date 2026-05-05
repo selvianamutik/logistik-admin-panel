@@ -53,6 +53,7 @@ import {
     handleInvoiceAdjustmentUpdate,
     handleInvoiceAdjustmentVoid,
     handlePaymentCreate,
+    handlePaymentUpdate,
 } from '@/lib/api/finance-workflows';
 import {
     handlePurchaseCreate,
@@ -1748,6 +1749,10 @@ export async function POST(request: Request) {
 
         if (entity === 'bank-transactions' && action === 'transfer') {
             return await handleBankTransfer(session, data, addAuditLog);
+        }
+
+        if (entity === 'payments' && action === 'update') {
+            return await handlePaymentUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'payments' && isCreateAction) {

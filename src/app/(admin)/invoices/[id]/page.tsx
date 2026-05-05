@@ -62,6 +62,7 @@ export default function NotaDetailPage() {
     const [payDate, setPayDate] = useState(getBusinessDateValue());
     const [payNote, setPayNote] = useState('');
     const [payBankRef, setPayBankRef] = useState('');
+    const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
     const [adjustAmount, setAdjustAmount] = useState(0);
     const [adjustKind, setAdjustKind] = useState('DAMAGE_CLAIM');
     const [adjustDate, setAdjustDate] = useState(getBusinessDateValue());
@@ -148,6 +149,8 @@ export default function NotaDetailPage() {
     const canEditPph23 = canManageInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
     const canReviseInvoice = canManageInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
     const canDeleteInvoiceSafely = canDeleteInvoice && !isVoidedInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
+    const editingPayment = editingPaymentId ? payments.find(payment => payment._id === editingPaymentId) || null : null;
+    const maxPaymentAmount = Math.max(remaining + (editingPayment ? Number(editingPayment.amount) || 0 : 0), 0);
     const draftPph23Summary = calculatePph23Summary({
         grossAmount,
         claimAmount: totalAdjustmentAmount,
@@ -172,6 +175,40 @@ export default function NotaDetailPage() {
             setPayBankRef('');
         }
     }, [bankAccounts, payBankRef, payMethod]);
+
+    const resetPaymentForm = () => {
+        setEditingPaymentId(null);
+        setPayAmount(0);
+        setPayMethod('TRANSFER');
+        setPayDate(getBusinessDateValue());
+        setPayNote('');
+        setPayBankRef('');
+    };
+
+    const closePaymentModal = () => {
+        if (paying) return;
+        setShowPayModal(false);
+        resetPaymentForm();
+    };
+
+    const openCreatePaymentModal = () => {
+        resetPaymentForm();
+        setShowPayModal(true);
+    };
+
+    const openEditPaymentModal = (payment: Payment) => {
+        if (payment.receiptRef) {
+            addToast('error', 'Pembayaran dari penerimaan customer dikoreksi dari menu penerimaan customer.');
+            return;
+        }
+        setEditingPaymentId(payment._id);
+        setPayAmount(Number(payment.amount) || 0);
+        setPayMethod(payment.method || 'TRANSFER');
+        setPayDate(payment.date || getBusinessDateValue());
+        setPayNote(payment.note || '');
+        setPayBankRef(payment.method === 'CASH' ? '' : payment.bankAccountRef || '');
+        setShowPayModal(true);
+    };
 
     const resetAdjustmentForm = () => {
         setEditingAdjustmentId(null);
@@ -227,9 +264,9 @@ export default function NotaDetailPage() {
         setShowRefundModal(true);
     };
 
-    const handleAddPayment = async () => {
+    const handleSavePayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
-        if (payAmount > remaining) { addToast('error', 'Nominal melebihi sisa invoice'); return; }
+        if (payAmount > maxPaymentAmount) { addToast('error', 'Nominal melebihi sisa invoice'); return; }
         if (payMethod === 'TRANSFER' && !payBankRef) { addToast('error', 'Pilih rekening bank untuk transfer'); return; }
         setPaying(true);
         try {
@@ -237,7 +274,16 @@ export default function NotaDetailPage() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'payments',
-                    data: { invoiceRef: nota?._id, date: payDate, amount: payAmount, method: payMethod, note: payNote, bankAccountRef: payBankRef || undefined }
+                    action: editingPaymentId ? 'update' : undefined,
+                    data: {
+                        _id: editingPaymentId || undefined,
+                        invoiceRef: nota?._id,
+                        date: payDate,
+                        amount: payAmount,
+                        method: payMethod,
+                        note: payNote,
+                        bankAccountRef: payBankRef || undefined,
+                    }
                 }),
             });
             const result = await res.json();
@@ -245,11 +291,9 @@ export default function NotaDetailPage() {
                 addToast('error', result.error || 'Gagal');
                 return;
             }
-            addToast('success', 'Pembayaran invoice dicatat');
+            addToast('success', editingPaymentId ? 'Pembayaran invoice dikoreksi' : 'Pembayaran invoice dicatat');
             setShowPayModal(false);
-            setPayAmount(0);
-            setPayNote('');
-            setPayBankRef('');
+            resetPaymentForm();
             await loadNotaDetail();
         } catch {
             addToast('error', 'Gagal');
@@ -608,7 +652,7 @@ export default function NotaDetailPage() {
                             <Pencil size={14} /> Revisi Invoice
                         </button>
                     )}
-                    {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
+                    {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={openCreatePaymentModal}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && !isVoidedInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
                     {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
                     {canManageInvoice && !isVoidedInvoice && <button className="btn btn-secondary btn-sm" onClick={openTaxInvoiceModal}>No Faktur Pajak</button>}
@@ -692,7 +736,7 @@ export default function NotaDetailPage() {
                                     <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                                {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
+                                {canManageInvoice && !isVoidedInvoice && displayStatus !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={openCreatePaymentModal}><DollarSign size={16} /> Catat Pembayaran</button>}
                             </div>
                         </div>
 
@@ -739,11 +783,16 @@ export default function NotaDetailPage() {
                                             )}
                                             {p.note && <span>| {p.note}</span>}
                                         </div>
-                                        {canPrintInvoice && (
-                                            <div style={{ marginTop: '0.5rem' }}>
-                                                <button className="table-action-btn" onClick={() => void handlePrintPaymentReceipt(p)}>
+                                        {(canPrintInvoice || (canManageInvoice && !isVoidedInvoice && !p.receiptRef)) && (
+                                            <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                {canManageInvoice && !isVoidedInvoice && !p.receiptRef && (
+                                                    <button className="table-action-btn" onClick={() => openEditPaymentModal(p)} disabled={paying}>
+                                                        <Pencil size={13} /> Edit
+                                                    </button>
+                                                )}
+                                                {canPrintInvoice && <button className="table-action-btn" onClick={() => void handlePrintPaymentReceipt(p)}>
                                                     <Printer size={13} /> Kwitansi
-                                                </button>
+                                                </button>}
                                             </div>
                                         )}
                                     </div>
@@ -863,13 +912,13 @@ export default function NotaDetailPage() {
             </div>
             {/* Pay Modal */}
             {canManageInvoice && showPayModal && (
-                <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
+                <div className="modal-overlay" onClick={closePaymentModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Catat Pembayaran Invoice</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editingPaymentId ? 'Edit Pembayaran Invoice' : 'Catat Pembayaran Invoice'}</h3><button className="modal-close" onClick={closePaymentModal} disabled={paying}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Invoice</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(remaining)}</div></div>
-                                <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>{editingPaymentId ? 'Maksimum Koreksi' : 'Sisa Invoice'}</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(maxPaymentAmount)}</div></div>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(maxPaymentAmount)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} disabled={paying} /></div>
                             <div className="form-group"><label className="form-label">Nominal (Rp)</label><FormattedNumberInput allowDecimal={false} value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran invoice" /></div>
@@ -907,8 +956,8 @@ export default function NotaDetailPage() {
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} disabled={paying} /></div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)} disabled={paying}>Batal</button>
-                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Invoice'}</button>
+                            <button className="btn btn-secondary" onClick={closePaymentModal} disabled={paying}>Batal</button>
+                            <button className="btn btn-success" onClick={handleSavePayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Invoice'}</button>
                         </div>
                     </div>
                 </div>

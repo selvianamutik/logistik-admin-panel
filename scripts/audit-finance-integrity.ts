@@ -240,7 +240,24 @@ async function main() {
         const [refKey, refValue] = primaryRefs[0];
         if (refKey === 'relatedPaymentRef') {
             assert(payments.some(row => row._id === refValue), `Mutasi bank ${transaction._id} mengarah ke payment yang tidak ditemukan.`);
-            assert(transaction.type === 'CREDIT', `Mutasi bank payment ${transaction._id} harus CREDIT.`);
+            if (transaction.type === 'DEBIT') {
+                assert(
+                    Boolean(transaction.reversesBankTransactionRef),
+                    `Mutasi koreksi payment ${transaction._id} harus mereferensikan mutasi payment yang dibalik.`
+                );
+            } else {
+                assert(transaction.type === 'CREDIT', `Mutasi bank payment ${transaction._id} harus CREDIT atau DEBIT koreksi.`);
+            }
+            if (transaction.reversesBankTransactionRef) {
+                const reversed = bankTransactionById.get(transaction.reversesBankTransactionRef);
+                assert(reversed, `Mutasi koreksi payment ${transaction._id} mengarah ke mutasi bank yang tidak ditemukan.`);
+                assert(reversed.relatedPaymentRef === refValue, `Mutasi koreksi payment ${transaction._id} membalik payment yang berbeda.`);
+            }
+            if (transaction.replacesBankTransactionRef) {
+                const replaced = bankTransactionById.get(transaction.replacesBankTransactionRef);
+                assert(replaced, `Mutasi pengganti payment ${transaction._id} mengarah ke mutasi bank yang tidak ditemukan.`);
+                assert(replaced.relatedPaymentRef === refValue, `Mutasi pengganti payment ${transaction._id} mengganti payment yang berbeda.`);
+            }
         }
         if (refKey === 'relatedReceiptRef') {
             assert(receiptById.has(refValue), `Mutasi bank ${transaction._id} mengarah ke receipt yang tidak ditemukan.`);
@@ -457,10 +474,23 @@ async function main() {
             }
         } else {
             const linkedTransactions = bankTransactionsByPayment.get(payment._id) || [];
-            assert(linkedTransactions.length <= 1, `Payment ${payment._id} punya mutasi bank dobel.`);
+            const netBankMovement = sumBy(linkedTransactions, row => bankDelta(row));
             if (payment.bankAccountRef) {
-                assert(linkedTransactions.length === 1, `Payment ${payment._id} belum punya mutasi bank.`);
-                assert(money(linkedTransactions[0].amount) === money(payment.amount), `Mutasi bank payment ${payment._id} tidak sama nominalnya.`);
+                assert(linkedTransactions.length >= 1, `Payment ${payment._id} belum punya mutasi bank.`);
+                assert(
+                    netBankMovement === money(payment.amount),
+                    `Net mutasi bank payment ${payment._id} tidak sama nominalnya: ${netBankMovement} vs ${money(payment.amount)}.`
+                );
+                assert(
+                    linkedTransactions.some(row =>
+                        row.bankAccountRef === payment.bankAccountRef &&
+                        row.type === 'CREDIT' &&
+                        money(row.amount) === money(payment.amount)
+                    ),
+                    `Payment ${payment._id} belum punya mutasi bank aktif sesuai nilai dan rekening terakhir.`
+                );
+            } else {
+                assert(netBankMovement === 0, `Payment ${payment._id} tanpa rekening tidak boleh punya net mutasi bank.`);
             }
             const paymentJournalLines = getPostedJournalLines('PAYMENT', payment._id, 'RECEIVE', `payment ${payment._id}`);
             assertJournalSide(paymentJournalLines, ['cash_on_hand', 'bank'], 'debit', payment.amount, `payment ${payment._id}`);
