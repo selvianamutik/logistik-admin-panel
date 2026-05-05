@@ -66,15 +66,14 @@ export function getFreightNotaBillingModeLabel(mode: FreightNotaBillingMode) {
 }
 
 export function getFreightNotaWeightColumnLabel(mode: FreightNotaBillingMode) {
-    if (mode === 'PER_VOLUME') return 'VOLUME M3';
-    if (mode === 'PER_TRIP') return 'QTY TRIP';
-    return mode === 'PER_TON' ? 'BERAT TON' : 'BERAT KG';
+    if (mode === 'PER_VOLUME') return 'VOLUME';
+    if (mode === 'PER_TRIP') return 'QTY';
+    return 'BERAT';
 }
 
-export function getFreightNotaRateColumnLabel(mode: FreightNotaBillingMode) {
-    if (mode === 'PER_VOLUME') return 'TARIF/M3';
-    if (mode === 'PER_TRIP') return 'TARIF/TRIP';
-    return mode === 'PER_TON' ? 'TARIF/TON' : 'TARIF/KG';
+export function getFreightNotaRateColumnLabel(_mode: FreightNotaBillingMode) {
+    void _mode;
+    return 'TARIF';
 }
 
 export function getFreightNotaWeightUnitLabel(mode: FreightNotaBillingMode) {
