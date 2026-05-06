@@ -10,6 +10,7 @@ import {
 } from '@/lib/measurement';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
+import { buildTripResourceLocks } from '@/lib/trip-resource-lock-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, OrderItem, Vehicle } from '@/lib/types';
 
 export type SelectedShipmentMap = Record<string, {
@@ -399,23 +400,20 @@ export function buildCreateDeliveryOrderItems(
         );
 }
 
-export function buildBusyAssignmentIds(activeDeliveryOrders: Array<Pick<DeliveryOrder, 'vehicleRef' | 'driverRef'>>) {
-    return {
-        busyVehicleIds: Array.from(
-            new Set(
-                activeDeliveryOrders
-                    .map(item => item.vehicleRef)
-                    .filter((value): value is string => Boolean(value))
-            )
-        ),
-        busyDriverIds: Array.from(
-            new Set(
-                activeDeliveryOrders
-                    .map(item => item.driverRef)
-                    .filter((value): value is string => Boolean(value))
-            )
-        ),
-    };
+export function buildBusyAssignmentIds(params: {
+    deliveryOrders?: DeliveryOrder[];
+    orders?: Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>;
+    excludeDeliveryOrderRef?: string;
+    excludeOrderRef?: string;
+    excludeOrderTripPlanKey?: string;
+}) {
+    return buildTripResourceLocks({
+        deliveryOrders: params.deliveryOrders || [],
+        orders: params.orders || [],
+        excludeDeliveryOrderRef: params.excludeDeliveryOrderRef,
+        excludeOrderRef: params.excludeOrderRef,
+        excludeOrderTripPlanKey: params.excludeOrderTripPlanKey,
+    });
 }
 
 export function sortOrderDetailVehicles(vehicles: VehicleSummary[], order: Order | null) {

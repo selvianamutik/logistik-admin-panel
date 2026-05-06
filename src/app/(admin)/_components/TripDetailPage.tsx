@@ -946,7 +946,7 @@ export default function TripDetailPage() {
                     'Gagal memuat opsi armada trip'
                 ),
                 fetchAdminCollectionData<Trip[]>(
-                    `/api/data?entity=trips&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
+                    `/api/data?entity=trips&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
                     'Gagal memuat opsi armada trip'
                 ),
                 doData?.driverRef

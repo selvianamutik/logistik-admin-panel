@@ -68,6 +68,7 @@ import {
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
 import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
+import { isDeliveryOrderResourceLocked } from '@/lib/trip-resource-lock-support';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 import type { Customer, CustomerProduct, CustomerRecipient, Driver, Incident, IncidentSettlementCategory, IncidentSettlementLine, PendingDriverStatusRequest, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan, DriverAssignedTripPlanPickupStop, DriverPortalVoucher } from '@/lib/api/driver-portal';
@@ -238,11 +239,14 @@ function canDriverStartTracking(status: DriverAssignedDeliveryOrder['status']) {
 }
 
 function isDriverDashboardDeliveryOrderVisible(order: DriverAssignedDeliveryOrder) {
-    return order.status !== 'CANCELLED' && !order.tripClosedByAdminAt;
+    return isDeliveryOrderResourceLocked(order);
 }
 
 function isDriverDashboardTripPlanVisible(plan: DriverAssignedTripPlan) {
-    return plan.linkedDeliveryOrderStatus !== 'CANCELLED';
+    if (plan.linkedDeliveryOrderRef) {
+        return plan.linkedDeliveryOrderStatus !== 'CANCELLED' && plan.linkedDeliveryOrderStatus !== 'UNKNOWN';
+    }
+    return true;
 }
 
 function getNextDriverProgressStatus(order: DriverAssignedDeliveryOrder): DriverProgressStatus | null {

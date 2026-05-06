@@ -74,6 +74,7 @@ import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { getFreightNotaList } from './data-query-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals } from './driver-workflow-support';
+import { assertTripResourcesAssignable } from './trip-resource-locks';
 import { inferExpenseCategoryScope, resolveExpenseCategoryAccountKey } from '@/lib/expense-category-scope';
 import { postExpenseJournal } from './accounting-posting';
 import {
@@ -1359,6 +1360,12 @@ export async function handleOrderCreate(
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
     }
+    try {
+        await assertTripResourcesAssignable(tripPlans);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Kendaraan atau supir sedang terkunci';
+        return NextResponse.json({ error: message }, { status: 409 });
+    }
 
     const customerCreditUsage = summarizeCustomerCreditUsage(
         customer,
@@ -2031,6 +2038,12 @@ export async function handleOrderTripPlanAppend(
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
     }
+    try {
+        await assertTripResourcesAssignable(normalizedNewTripPlans);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Kendaraan atau supir sedang terkunci';
+        return NextResponse.json({ error: message }, { status: 409 });
+    }
 
     const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
     const nextTripPlans = [...currentTripPlans, ...normalizedNewTripPlans].map((plan, index) => ({
@@ -2234,6 +2247,15 @@ export async function handleOrderTripPlanUpdate(
         const message = error instanceof Error ? error.message : 'Data trip tidak valid';
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
+    }
+    try {
+        await assertTripResourcesAssignable(normalizedTripPlans, {
+            excludeOrderRef: id,
+            excludeOrderTripPlanKey: tripPlanKey,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Kendaraan atau supir sedang terkunci';
+        return NextResponse.json({ error: message }, { status: 409 });
     }
 
     const updatedTripPlan = normalizedTripPlans[0];

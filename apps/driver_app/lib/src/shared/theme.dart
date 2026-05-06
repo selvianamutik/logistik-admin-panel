@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
-  const base = Color(0xFF0F766E);
-  const surface = Color(0xFFF4F7F6);
-  const outline = Color(0xFFDCE5E1);
+  const base = Color(0xFFB91C1C);
+  const surface = Color(0xFFFAF7F5);
+  const outline = Color(0xFFE8DDD8);
 
   return ThemeData(
     colorScheme: ColorScheme.fromSeed(
@@ -26,7 +26,7 @@ ThemeData buildAppTheme() {
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       backgroundColor: Colors.transparent,
-      foregroundColor: Color(0xFF102A27),
+      foregroundColor: Color(0xFF231817),
       elevation: 0,
     ),
     cardTheme: CardThemeData(
@@ -48,7 +48,7 @@ ThemeData buildAppTheme() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF16332F),
+        foregroundColor: const Color(0xFF2A1715),
         side: const BorderSide(color: outline),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

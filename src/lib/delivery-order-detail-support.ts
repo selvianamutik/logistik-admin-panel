@@ -22,6 +22,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
+import { buildTripResourceLocks, type DeliveryOrderResourceLock } from '@/lib/trip-resource-lock-support';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary } from '@/lib/utils';
 
 export interface ActualCargoDraft {
@@ -712,29 +713,18 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
     return transitions[current] || [];
 }
 
-export function buildTripResourceBusyIds<T extends {
-    _id: string;
-    vehicleRef?: string;
-    driverRef?: string;
-}>(activeDeliveryOrders: T[], currentDeliveryOrderId: string) {
-    const busyVehicleIds = new Set<string>();
-    const busyDriverIds = new Set<string>();
-
-    for (const deliveryOrder of activeDeliveryOrders) {
-        if (deliveryOrder._id === currentDeliveryOrderId) {
-            continue;
-        }
-        if (deliveryOrder.vehicleRef) {
-            busyVehicleIds.add(deliveryOrder.vehicleRef);
-        }
-        if (deliveryOrder.driverRef) {
-            busyDriverIds.add(deliveryOrder.driverRef);
-        }
-    }
+export function buildTripResourceBusyIds(
+    activeDeliveryOrders: DeliveryOrderResourceLock[],
+    currentDeliveryOrderId: string
+) {
+    const { busyVehicleIds, busyDriverIds } = buildTripResourceLocks({
+        deliveryOrders: activeDeliveryOrders,
+        excludeDeliveryOrderRef: currentDeliveryOrderId,
+    });
 
     return {
-        busyVehicleIds,
-        busyDriverIds,
+        busyVehicleIds: new Set(busyVehicleIds),
+        busyDriverIds: new Set(busyDriverIds),
     };
 }
 

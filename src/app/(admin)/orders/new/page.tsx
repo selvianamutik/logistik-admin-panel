@@ -11,7 +11,8 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import { formatCreditLimitCurrency, formatCustomerCreditBlockMessage, summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, FreightNota, Service, TripRouteRate, Vehicle } from '@/lib/types';
+import { buildTripResourceLocks } from '@/lib/trip-resource-lock-support';
+import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, FreightNota, Order, Service, TripRouteRate, Vehicle } from '@/lib/types';
 import {
     applyCustomerPickupToStop,
     createDefaultPickupStopForm,
@@ -70,7 +71,8 @@ export default function NewOrderPage() {
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
-    const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>([]);
+    const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<DeliveryOrder[]>([]);
+    const [activeOrders, setActiveOrders] = useState<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>([]);
     const [loading, setLoading] = useState(false);
 
     const [customerRef, setCustomerRef] = useState('');
@@ -108,11 +110,15 @@ export default function NewOrderPage() {
             fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat form order'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form order'),
             fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat form order'),
-            fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(
-                `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
+            fetchAdminCollectionData<DeliveryOrder[]>(
+                `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
                 'Gagal memuat form order'
             ),
-        ]).then(([customerRows, serviceRows, vehicleRows, driverRows, bankRows, tripRateRows, activeDoRows]) => {
+            fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(
+                `/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`,
+                'Gagal memuat form order'
+            ),
+        ]).then(([customerRows, serviceRows, vehicleRows, driverRows, bankRows, tripRateRows, activeDoRows, activeOrderRows]) => {
             setCustomers((customerRows || []).filter(customer => customer.active !== false));
             setServices((serviceRows || []).filter(service => service.active !== false));
             setVehicles(vehicleRows || []);
@@ -120,6 +126,7 @@ export default function NewOrderPage() {
             setBankAccounts(bankRows || []);
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
             setActiveDeliveryOrders(activeDoRows || []);
+            setActiveOrders(activeOrderRows || []);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form order');
         });
@@ -645,12 +652,16 @@ export default function NewOrderPage() {
                         {tripDrafts.map((trip, index) => {
                             const otherTripVehicleIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.vehicleRef).filter(Boolean);
                             const otherTripDriverIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.driverRef).filter(Boolean);
+                            const resourceLocks = buildTripResourceLocks({
+                                deliveryOrders: activeDeliveryOrders,
+                                orders: activeOrders,
+                            });
                             const busyVehicleIds = new Set([
-                                ...activeDeliveryOrders.map(item => item.vehicleRef).filter((value): value is string => Boolean(value)),
+                                ...resourceLocks.busyVehicleIds,
                                 ...otherTripVehicleIds,
                             ]);
                             const busyDriverIds = new Set([
-                                ...activeDeliveryOrders.map(item => item.driverRef).filter((value): value is string => Boolean(value)),
+                                ...resourceLocks.busyDriverIds,
                                 ...otherTripDriverIds,
                             ]);
                             const availableTripVehicles = vehicles

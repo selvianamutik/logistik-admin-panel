@@ -37,7 +37,6 @@ import {
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
-    getAvailableDrivers,
     getAvailableVehicles,
     hasCargoAggregate,
     shouldRequireVehicleOverrideReason,
@@ -408,7 +407,7 @@ export default function OrderDetailPage() {
     ) => {
         try {
             const includeNotas = options.includeNotas === true;
-            const [orderData, itemData, deliveryOrders, activeDeliveryOrders] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, activeDeliveryOrders, activeOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, fallbackMessage),
                 fetchAdminCollectionData<OrderItem[]>(
                     `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`,
@@ -418,8 +417,12 @@ export default function OrderDetailPage() {
                     `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`,
                     fallbackMessage
                 ),
-                fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(
-                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
+                fetchAdminCollectionData<DeliveryOrder[]>(
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
+                    fallbackMessage
+                ),
+                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(
+                    `/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`,
                     fallbackMessage
                 ),
             ]);
@@ -446,7 +449,10 @@ export default function OrderDetailPage() {
             const {
                 busyVehicleIds: nextBusyVehicleIds,
                 busyDriverIds: nextBusyDriverIds,
-            } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            } = buildBusyAssignmentIds({
+                deliveryOrders: activeDeliveryOrders || [],
+                orders: activeOrders || [],
+            });
             setBusyVehicleIds(nextBusyVehicleIds);
             setBusyDriverIds(nextBusyDriverIds);
 
@@ -519,11 +525,12 @@ export default function OrderDetailPage() {
             setLoading(true);
         }
         try {
-            const [orderData, itemData, deliveryOrders, activeDeliveryOrders] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, activeDeliveryOrders, activeOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
@@ -547,7 +554,10 @@ export default function OrderDetailPage() {
             const {
                 busyVehicleIds: nextBusyVehicleIds,
                 busyDriverIds: nextBusyDriverIds,
-            } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            } = buildBusyAssignmentIds({
+                deliveryOrders: activeDeliveryOrders || [],
+                orders: activeOrders || [],
+            });
             setBusyVehicleIds(nextBusyVehicleIds);
             setBusyDriverIds(nextBusyDriverIds);
 
@@ -575,7 +585,6 @@ export default function OrderDetailPage() {
 
     const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
     const availableVehicles = getAvailableVehicles(sortedVehicles, busyVehicleIds);
-    const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(
         orderService
@@ -1110,8 +1119,11 @@ export default function OrderDetailPage() {
     const availableTripDraftVehicles = sortedVehicles.filter(
         vehicle => (!busyVehicleIds.includes(vehicle._id) && !reservedPlannedVehicleIds.includes(vehicle._id)) || vehicle._id === tripDraft.vehicleRef
     );
-    const availableTripDraftDrivers = availableDrivers.filter(
-        driver => !reservedPlannedDriverIds.includes(driver._id) || driver._id === tripDraft.driverRef
+    const availableTripDraftDrivers = drivers.filter(
+        driver => (
+            (!busyDriverIds.includes(driver._id) && !reservedPlannedDriverIds.includes(driver._id)) ||
+            driver._id === tripDraft.driverRef
+        ) && driver.active !== false
     );
     const selectedTripDraftVehicle = vehicles.find(vehicle => vehicle._id === tripDraft.vehicleRef) || null;
     const requiresTripDraftOverrideReason = Boolean(

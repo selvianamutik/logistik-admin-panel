@@ -4,6 +4,7 @@ import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
+import { isDeliveryOrderResourceLocked } from '@/lib/trip-resource-lock-support';
 import type { SuratJalanRecord } from '@/lib/trip-document-types';
 import type {
     CompanyProfile,
@@ -204,9 +205,8 @@ export async function getDriverPortalAccessNotice(driverRef: string): Promise<Dr
 }
 
 export async function getDriverAssignedDeliveryOrders(driverRef: string) {
-    const activeStatuses = new Set<DeliveryOrder['status']>(['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD']);
     const deliveryOrders = (await listDocumentsByFilter<DriverAssignedDeliveryOrder>('deliveryOrder', { driverRef }))
-        .filter(item => activeStatuses.has(item.status) && !item.tripClosedByAdminAt);
+        .filter(item => isDeliveryOrderResourceLocked(item));
     if (deliveryOrders.length === 0) {
         return [];
     }
@@ -361,8 +361,10 @@ function normalizeTripPlanPickupStops(
 }
 
 export async function getDriverAssignedTripPlans(driverRef: string) {
+    const activeOrderStatuses = new Set(['OPEN', 'PARTIAL', 'ON_HOLD']);
     const allOrders = await listDocumentsByFilter<Array<{
         _id: string;
+        status?: string;
         masterResi?: string;
         customerRef?: string;
         customerName?: string;
@@ -392,7 +394,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
     ];
 
     const linkedDeliveryOrders = linkedDeliveryOrderRefs.length > 0
-        ? await listDocumentsByFilter<Array<Pick<DeliveryOrder, '_id' | 'status' | 'doNumber'>>[number]>('deliveryOrder', { _id: linkedDeliveryOrderRefs })
+        ? await listDocumentsByFilter<Array<Pick<DeliveryOrder, '_id' | 'status' | 'doNumber' | 'pendingDriverStatus' | 'pendingDriverRequests' | 'tripClosedByAdminAt' | 'tripEndOdometerKm' | 'odometerConfirmedAt'>>[number]>('deliveryOrder', { _id: linkedDeliveryOrderRefs })
         : [];
     const linkedDeliveryOrderMap = new Map(linkedDeliveryOrders.map(item => [item._id, item]));
 
@@ -403,7 +405,11 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
             const linkedDeliveryOrder = plan.linkedDeliveryOrderRef
                 ? linkedDeliveryOrderMap.get(plan.linkedDeliveryOrderRef) || null
                 : null;
-            if (linkedDeliveryOrder?.status === 'CANCELLED') {
+            if (plan.linkedDeliveryOrderRef) {
+                if (!linkedDeliveryOrder || !isDeliveryOrderResourceLocked(linkedDeliveryOrder)) {
+                    continue;
+                }
+            } else if (!activeOrderStatuses.has(String(order.status || ''))) {
                 continue;
             }
 
