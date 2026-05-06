@@ -971,8 +971,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
           ? trip.tripEndOdometerKm!.round().toString()
           : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
-                ? trip.vehicleLastOdometer!.round().toString()
-                : '',
+          ? trip.vehicleLastOdometer!.round().toString()
+          : '',
     );
     final descriptionController = TextEditingController();
 
@@ -994,11 +994,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 return;
               }
               if (odometer == null || odometer <= 0) {
-                setDialogState(() => errorText = 'Odometer insiden wajib diisi.');
+                setDialogState(
+                  () => errorText = 'Odometer insiden wajib diisi.',
+                );
                 return;
               }
               if (description.isEmpty) {
-                setDialogState(() => errorText = 'Kronologi insiden wajib diisi.');
+                setDialogState(
+                  () => errorText = 'Kronologi insiden wajib diisi.',
+                );
                 return;
               }
               Navigator.of(context).pop(
@@ -1031,13 +1035,30 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     ],
                     DropdownButtonFormField<String>(
                       initialValue: incidentType,
-                      decoration: const InputDecoration(labelText: 'Tipe Insiden'),
+                      decoration: const InputDecoration(
+                        labelText: 'Tipe Insiden',
+                      ),
                       items: const [
-                        DropdownMenuItem(value: 'OTHER', child: Text('Lainnya')),
-                        DropdownMenuItem(value: 'ENGINE_TROUBLE', child: Text('Mesin bermasalah')),
-                        DropdownMenuItem(value: 'BLOWOUT_TIRE', child: Text('Ban pecah')),
-                        DropdownMenuItem(value: 'ACCIDENT_MINOR', child: Text('Kecelakaan ringan')),
-                        DropdownMenuItem(value: 'ACCIDENT_MAJOR', child: Text('Kecelakaan berat')),
+                        DropdownMenuItem(
+                          value: 'OTHER',
+                          child: Text('Lainnya'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ENGINE_TROUBLE',
+                          child: Text('Mesin bermasalah'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'BLOWOUT_TIRE',
+                          child: Text('Ban pecah'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ACCIDENT_MINOR',
+                          child: Text('Kecelakaan ringan'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ACCIDENT_MAJOR',
+                          child: Text('Kecelakaan berat'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -1051,7 +1072,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       decoration: const InputDecoration(labelText: 'Urgensi'),
                       items: const [
                         DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
-                        DropdownMenuItem(value: 'MEDIUM', child: Text('Sedang')),
+                        DropdownMenuItem(
+                          value: 'MEDIUM',
+                          child: Text('Sedang'),
+                        ),
                         DropdownMenuItem(value: 'HIGH', child: Text('Tinggi')),
                       ],
                       onChanged: (value) {
@@ -1089,7 +1113,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       maxLines: 6,
                       decoration: const InputDecoration(
                         labelText: 'Kronologi',
-                        hintText: 'Jelaskan kejadian dan kondisi kendaraan/barang',
+                        hintText:
+                            'Jelaskan kejadian dan kondisi kendaraan/barang',
                       ),
                     ),
                   ],
@@ -1156,7 +1181,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   List<DriverIncident> _incidentsForTrip(DeliveryTrip trip) {
     return _driverIncidents
-        .where((incident) => incident.relatedDeliveryOrderRef == trip.deliveryOrderId)
+        .where(
+          (incident) =>
+              incident.relatedDeliveryOrderRef == trip.deliveryOrderId,
+        )
         .toList(growable: false);
   }
 
@@ -1179,10 +1207,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
           ? trip.tripEndOdometerKm!.round().toString()
           : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
-                ? trip.vehicleLastOdometer!.round().toString()
-                : (incident.odometer != null && incident.odometer! > 0)
-                      ? incident.odometer!.round().toString()
-                      : '',
+          ? trip.vehicleLastOdometer!.round().toString()
+          : (incident.odometer != null && incident.odometer! > 0)
+          ? incident.odometer!.round().toString()
+          : '',
     );
     final costRows = <_IncidentCostDraftController>[];
 
@@ -1194,7 +1222,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             void addCostRow() {
-              setDialogState(() => costRows.add(_IncidentCostDraftController()));
+              setDialogState(
+                () => costRows.add(_IncidentCostDraftController()),
+              );
             }
 
             void removeCostRow(int index) {
@@ -1328,10 +1358,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         Text(
                           'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
                           style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.58),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.58),
                             fontSize: 12.5,
                           ),
                         ),
@@ -1614,7 +1643,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     child: OutlinedButton.icon(
                       onPressed: _reportingIncident
                           ? null
-                          : () => unawaited(_openIncidentReport(_selectedTrip!)),
+                          : () =>
+                                unawaited(_openIncidentReport(_selectedTrip!)),
                       icon: _reportingIncident
                           ? const SizedBox(
                               width: 16,
@@ -1623,7 +1653,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                             )
                           : const Icon(Icons.report_problem_outlined),
                       label: Text(
-                        _reportingIncident ? 'Mengirim laporan...' : 'Lapor Insiden',
+                        _reportingIncident
+                            ? 'Mengirim laporan...'
+                            : 'Lapor Insiden',
                       ),
                     ),
                   ),
@@ -2521,6 +2553,7 @@ class _DriverIncidentCard extends StatelessWidget {
 
 class _IncidentCostInputCard extends StatefulWidget {
   const _IncidentCostInputCard({
+    super.key,
     required this.row,
     required this.index,
     required this.onRemove,
@@ -2614,18 +2647,14 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
           const SizedBox(height: 10),
           TextField(
             controller: widget.row.payeeName,
-            decoration: const InputDecoration(
-              labelText: 'Dibayar ke',
-            ),
+            decoration: const InputDecoration(labelText: 'Dibayar ke'),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: widget.row.note,
             minLines: 1,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Catatan',
-            ),
+            decoration: const InputDecoration(labelText: 'Catatan'),
           ),
         ],
       ),

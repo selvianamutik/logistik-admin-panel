@@ -493,7 +493,8 @@ class DeliveryOrderService {
       status: (json['status'] as String?)?.trim() ?? 'OPEN',
       incidentType: (json['incidentType'] as String?)?.trim() ?? 'OTHER',
       urgency: (json['urgency'] as String?)?.trim() ?? 'MEDIUM',
-      relatedDeliveryOrderRef: _readRefId(json['relatedDeliveryOrderRef']) ?? '',
+      relatedDeliveryOrderRef:
+          _readRefId(json['relatedDeliveryOrderRef']) ?? '',
       relatedDONumber: (json['relatedDONumber'] as String?)?.trim() ?? '-',
       description: (json['description'] as String?)?.trim() ?? '',
       locationText: (json['locationText'] as String?)?.trim() ?? '',
