@@ -3515,6 +3515,12 @@ export async function handleDeliveryOrderCancelTrip(
                 orderItem.entrySource === 'DELIVERY_ORDER' &&
                 extractRefId(orderItem.sourceDeliveryOrderRef) === id
             ) {
+                const nextProgress = {
+                    ...getOrderItemProgress(orderItem),
+                    assignedQtyKoli: 0,
+                    assignedWeight: 0,
+                    assignedVolume: 0,
+                };
                 const suratJalanItemRecords = await listDocumentsByFilter<{ _id: string }>('suratJalanItem', {
                     deliveryOrderItemRef: item._id,
                 });
@@ -3522,7 +3528,16 @@ export async function handleDeliveryOrderCancelTrip(
                     await deleteDocument(record._id, 'suratJalanItem');
                 }
                 await deleteDocument(item._id, 'deliveryOrderItem');
-                await deleteDocument(orderItemRef, 'orderItem');
+                await updateDocument(
+                    orderItemRef,
+                    {
+                        assignedQtyKoli: 0,
+                        assignedWeight: 0,
+                        assignedVolume: 0,
+                        status: deriveOrderItemStatusFromProgress(nextProgress),
+                    },
+                    'orderItem'
+                );
                 continue;
             }
 

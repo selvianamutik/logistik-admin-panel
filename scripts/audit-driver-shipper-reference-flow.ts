@@ -7,6 +7,7 @@ type DeliveryOrderLike = {
     doNumber?: string;
     status?: string;
     driverRef?: string | null;
+    cargoFinalizedAt?: string | null;
     pendingDriverStatus?: string | null;
     customerDoNumber?: string | null;
     shipperReferences?: Array<{
@@ -164,6 +165,7 @@ async function main() {
         .filter(item =>
             ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status)) &&
             normalizeText(item.driverRef) &&
+            !normalizeText(item.cargoFinalizedAt) &&
             !normalizeText(item.pendingDriverStatus) &&
             mapShipperReferences(item).length > 0
         )

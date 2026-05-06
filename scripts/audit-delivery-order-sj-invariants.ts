@@ -4,13 +4,30 @@ loadScriptEnv();
 
 import { mapDeliveryOrderToSuratJalanRecords } from '../src/lib/trip-document-mappers';
 import type { DeliveryOrder, DeliveryOrderItem } from '../src/lib/types';
-import type { CargoSummary, SuratJalanDocument } from '../src/lib/trip-document-types';
+import type { CargoSummary, SuratJalanDocument, SuratJalanRecord } from '../src/lib/trip-document-types';
 
 type AuditIssue = {
     kind: string;
     ref: string;
     message: string;
 };
+
+function getSupabaseRestConfig() {
+    const supabaseUrl = requireAnyEnv([
+        'SUPABASE_URL',
+        'SUPABASE_PROJECT_URL',
+        'NEXT_PUBLIC_SUPABASE_URL',
+        'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
+    ]).replace(/\/+$/, '');
+    const serviceRoleKey = requireAnyEnv([
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'SUPABASE_SERVICE_KEY',
+        'SUPABASE_SECRET_KEY',
+        'SUPABASE_SERVICE_ROLE',
+    ]);
+
+    return { supabaseUrl, serviceRoleKey };
+}
 
 function getBaseUrl() {
     return (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -81,18 +98,7 @@ async function requestJson<T>(path: string, cookieHeader: string) {
 }
 
 async function deleteStaleSuratJalanDocument(sourceDocumentId: string) {
-    const supabaseUrl = requireAnyEnv([
-        'SUPABASE_URL',
-        'SUPABASE_PROJECT_URL',
-        'NEXT_PUBLIC_SUPABASE_URL',
-        'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
-    ]).replace(/\/+$/, '');
-    const serviceRoleKey = requireAnyEnv([
-        'SUPABASE_SERVICE_ROLE_KEY',
-        'SUPABASE_SERVICE_KEY',
-        'SUPABASE_SECRET_KEY',
-        'SUPABASE_SERVICE_ROLE',
-    ]);
+    const { supabaseUrl, serviceRoleKey } = getSupabaseRestConfig();
 
     const response = await fetch(
         `${supabaseUrl}/rest/v1/surat_jalan_documents?source_document_id=eq.${encodeURIComponent(sourceDocumentId)}`,
@@ -108,6 +114,55 @@ async function deleteStaleSuratJalanDocument(sourceDocumentId: string) {
 
     if (!response.ok) {
         throw new Error(`Gagal hapus dokumen SJ stale ${sourceDocumentId}: ${await response.text()}`);
+    }
+}
+
+async function upsertSuratJalanDocument(expected: SuratJalanRecord) {
+    const { supabaseUrl, serviceRoleKey } = getSupabaseRestConfig();
+    const nowIso = new Date().toISOString();
+    const row = {
+        source_document_id: expected._id,
+        document_created_at: nowIso,
+        document_updated_at: nowIso,
+        trip_ref: expected.tripRef,
+        delivery_order_ref: expected.deliveryOrderRef,
+        order_ref: expected.orderRef,
+        customer_ref: expected.customerRef,
+        customer_name: expected.customerName,
+        reference_key: expected.referenceKey || null,
+        surat_jalan_number: expected.suratJalanNumber,
+        pickup_address: expected.pickupAddress,
+        receiver_name: expected.receiverName,
+        receiver_company: expected.receiverCompany,
+        receiver_address: expected.receiverAddress,
+        trip_date: expected.tripDate,
+        trip_status: expected.tripStatus,
+        vehicle_plate: expected.vehiclePlate,
+        driver_name: expected.driverName,
+        item_count: expected.itemCount,
+        cargo_summary: expected.cargoSummary,
+        billable_cargo: expected.billableCargo,
+        hold_cargo: expected.holdCargo,
+        return_cargo: expected.returnCargo,
+        extra_data: {},
+    };
+
+    const response = await fetch(
+        `${supabaseUrl}/rest/v1/surat_jalan_documents?on_conflict=source_document_id`,
+        {
+            method: 'POST',
+            headers: {
+                apikey: serviceRoleKey,
+                Authorization: `Bearer ${serviceRoleKey}`,
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=merge-duplicates',
+            },
+            body: JSON.stringify(row),
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Gagal sinkron dokumen SJ ${expected._id}: ${await response.text()}`);
     }
 }
 
@@ -168,7 +223,7 @@ async function main() {
 
     const issues: AuditIssue[] = [];
     const staleDocumentIds: string[] = [];
-    const expectedDocumentIds = new Set<string>();
+    const expectedDocumentsById = new Map<string, SuratJalanRecord>();
     let checkedDocumentCount = 0;
 
     for (const deliveryOrder of deliveryOrders) {
@@ -178,7 +233,7 @@ async function main() {
         const actualDocumentsById = new Map(actualDocuments.map(document => [document._id, document]));
 
         for (const expected of expectedDocuments) {
-            expectedDocumentIds.add(expected._id);
+            expectedDocumentsById.set(expected._id, expected);
             const actual = actualDocumentsById.get(expected._id);
             checkedDocumentCount += 1;
             if (!actual) {
@@ -244,7 +299,7 @@ async function main() {
     for (const actual of suratJalanDocuments) {
         const tripRef = normalizeText(actual.tripRef || actual.sourceDeliveryOrderRef);
         if (!tripRef) continue;
-        if (!expectedDocumentIds.has(actual._id)) {
+        if (!expectedDocumentsById.has(actual._id)) {
             staleDocumentIds.push(actual._id);
             issues.push({
                 kind: 'surat-jalan-stale',
@@ -255,12 +310,17 @@ async function main() {
     }
 
     if (issues.length > 0) {
-        const nonFixableIssues = issues.filter(issue => issue.kind !== 'surat-jalan-stale');
-        if (shouldFix && staleDocumentIds.length > 0 && nonFixableIssues.length === 0) {
+        const nonFixableIssues = issues.filter(issue => !['surat-jalan', 'surat-jalan-stale'].includes(issue.kind));
+        if (shouldFix && nonFixableIssues.length === 0) {
+            for (const expected of expectedDocumentsById.values()) {
+                await upsertSuratJalanDocument(expected);
+            }
             for (const staleDocumentId of staleDocumentIds) {
                 await deleteStaleSuratJalanDocument(staleDocumentId);
             }
-            console.log(`Delivery order/SJ invariant repair OK: ${staleDocumentIds.length} dokumen SJ stale dihapus.`);
+            console.log(
+                `Delivery order/SJ invariant repair OK: ${expectedDocumentsById.size} dokumen SJ disinkronkan, ${staleDocumentIds.length} dokumen SJ stale dihapus.`
+            );
             return;
         }
 

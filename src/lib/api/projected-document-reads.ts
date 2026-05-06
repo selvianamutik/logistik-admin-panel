@@ -109,6 +109,14 @@ function formatTripRouteKey(rate: TripRouteRate) {
     return `${rate.originArea || ''} ${rate.destinationArea || ''} ${rate.serviceName || ''}`.trim();
 }
 
+function hasAnyCargo(cargo?: { qtyKoli?: number; weightKg?: number; volumeM3?: number } | null) {
+    return Boolean(
+        (cargo?.qtyKoli || 0) > 0 ||
+        (cargo?.weightKg || 0) > 0 ||
+        (cargo?.volumeM3 || 0) > 0
+    );
+}
+
 function mergeSuratJalanDocumentWithLiveCargo(
     document: ProjectedSuratJalanDocument,
     liveDocument?: ProjectedSuratJalanDocument
@@ -117,9 +125,20 @@ function mergeSuratJalanDocumentWithLiveCargo(
         return document;
     }
 
+    const isDraftDocumentWithoutActualCargo =
+        document.tripStatus === 'CREATED' &&
+        liveDocument.itemCount === 0 &&
+        ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveDocument.tripStatus || '') &&
+        !hasAnyCargo(document.billableCargo) &&
+        !hasAnyCargo(document.holdCargo) &&
+        !hasAnyCargo(document.returnCargo) &&
+        !hasAnyCargo(liveDocument.billableCargo) &&
+        !hasAnyCargo(liveDocument.holdCargo) &&
+        !hasAnyCargo(liveDocument.returnCargo);
+
     return {
         ...document,
-        tripStatus: document.tripStatus || liveDocument.tripStatus,
+        tripStatus: isDraftDocumentWithoutActualCargo ? document.tripStatus : liveDocument.tripStatus,
         itemCount: liveDocument.itemCount,
         cargoSummary: liveDocument.cargoSummary,
         billableCargo: liveDocument.billableCargo,
@@ -311,6 +330,7 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                     const derivedDocumentById = new Map(derivedDocuments.map(item => [item._id, item] as const));
                     const realDocuments = allSuratJalanRecords
                         .filter(item => item.tripRef === deliveryOrder._id || item.deliveryOrderRef === deliveryOrder._id)
+                        .filter(item => derivedDocumentById.has(item._id))
                         .map(item => {
                             const realDocument = mapSuratJalanRecordToDocument(item, realTripById.get(item.tripRef) || null);
                             return mergeSuratJalanDocumentWithLiveCargo(realDocument, derivedDocumentById.get(realDocument._id));
@@ -409,6 +429,7 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
         const derivedDocumentById = new Map(derivedDocuments.map(item => [item._id, item] as const));
         const realDocuments = allSuratJalanRecords
             .filter(item => item.tripRef === deliveryOrder._id || item.deliveryOrderRef === deliveryOrder._id)
+            .filter(item => derivedDocumentById.has(item._id))
             .map(item => {
                 const realDocument = mapSuratJalanRecordToDocument(item, realTripById.get(item.tripRef) || null);
                 return mergeSuratJalanDocumentWithLiveCargo(realDocument, derivedDocumentById.get(realDocument._id));
@@ -474,12 +495,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
     if (entity === 'surat-jalan') {
         const derivedDocuments = mapDeliveryOrdersToSuratJalanDocuments(derivedDeliveryOrders, allDeliveryOrderItems);
         const derivedDocumentById = new Map(derivedDocuments.map(item => [item._id, item] as const));
-        const realDocuments = allSuratJalanRecords.map(item =>
-            mergeSuratJalanDocumentWithLiveCargo(
-                mapSuratJalanRecordToDocument(item, realTripById.get(item.tripRef) || null),
-                derivedDocumentById.get(item._id)
-            )
-        );
+        const realDocuments = allSuratJalanRecords
+            .filter(item => derivedDocumentById.has(item._id))
+            .map(item =>
+                mergeSuratJalanDocumentWithLiveCargo(
+                    mapSuratJalanRecordToDocument(item, realTripById.get(item.tripRef) || null),
+                    derivedDocumentById.get(item._id)
+                )
+            );
         const realDocumentById = new Map(realDocuments.map(item => [item._id, item] as const));
         const documents = [
             ...realDocuments,
