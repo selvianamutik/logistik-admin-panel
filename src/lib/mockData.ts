@@ -156,6 +156,7 @@ const seedData: DataStore = {
         { _id: 'expcat-017', _type: 'expenseCategory', name: 'Administrasi Bank', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 420, active: true },
         { _id: 'expcat-018', _type: 'expenseCategory', name: 'Gaji & Upah', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 430, active: true },
         { _id: 'expcat-019', _type: 'expenseCategory', name: 'Lain-lain Umum', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 440, active: true },
+        { _id: 'expcat-021', _type: 'expenseCategory', name: 'Pembatalan Trip', scope: 'GENERAL', allowManual: true, accountSystemKey: 'operational_expense', sortOrder: 450, active: true },
         { _id: 'expcat-020', _type: 'expenseCategory', name: 'Kategori Lama', scope: 'GENERAL', allowManual: false, accountSystemKey: 'operational_expense', sortOrder: 999, active: false }
     ],
 

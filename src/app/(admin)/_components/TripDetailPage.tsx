@@ -93,7 +93,7 @@ import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -155,6 +155,14 @@ type TripCashIssueFormState = {
     notes: string;
 };
 
+type CancelTripExpenseFormState = {
+    expenseDate: string;
+    categoryRef: string;
+    bankAccountRef: string;
+    description: string;
+    amount: number;
+};
+
 const ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR = '::item::';
 
 function buildActualDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
@@ -176,6 +184,31 @@ function createDefaultTripCashIssueForm(): TripCashIssueFormState {
         issuedDate: getBusinessDateValue(),
         notes: '',
     };
+}
+
+function createDefaultCancelTripExpenseForm(): CancelTripExpenseFormState {
+    return {
+        expenseDate: getBusinessDateValue(),
+        categoryRef: '',
+        bankAccountRef: '',
+        description: '',
+        amount: 0,
+    };
+}
+
+function isOperationalCancelExpenseCategory(category: ExpenseCategory) {
+    return category.active !== false && category.scope === 'GENERAL' && category.allowManual !== false;
+}
+
+function getDefaultCancelExpenseCategoryRef(categories: ExpenseCategory[]) {
+    const operationalCategories = categories.filter(isOperationalCancelExpenseCategory);
+    return (
+        operationalCategories.find(category => /batal|pembatalan/i.test(category.name))?._id ||
+        operationalCategories.find(category => /lain-lain umum/i.test(category.name))?._id ||
+        operationalCategories.find(category => /operasional/i.test(category.name))?._id ||
+        operationalCategories[0]?._id ||
+        ''
+    );
 }
 
 function parseActualDropItemValueKey(valueKey: string) {
@@ -551,6 +584,7 @@ export default function TripDetailPage() {
     const [linkedTripCashLink, setLinkedTripCashLink] = useState<TripCashLinkSummary | null>(null);
     const [linkedVoucherBonNumber, setLinkedVoucherBonNumber] = useState('');
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
@@ -605,7 +639,7 @@ export default function TripDetailPage() {
     const [tripCashIssueForm, setTripCashIssueForm] = useState<TripCashIssueFormState>(createDefaultTripCashIssueForm);
     const [tripCashTopUpForm, setTripCashTopUpForm] = useState(createDefaultDriverVoucherTopUpForm);
     const [tripCashExpenseForm, setTripCashExpenseForm] = useState(createDefaultDriverVoucherItemForm);
-    const [cancelTripExpenseForm, setCancelTripExpenseForm] = useState(createDefaultDriverVoucherItemForm);
+    const [cancelTripExpenseForm, setCancelTripExpenseForm] = useState<CancelTripExpenseFormState>(createDefaultCancelTripExpenseForm);
     const [tripCashSettlementDate, setTripCashSettlementDate] = useState(getBusinessDateValue());
     const [tripCashSettlementBankRef, setTripCashSettlementBankRef] = useState('');
     const editingTaripRef = useRef(false);
@@ -968,6 +1002,32 @@ export default function TripDetailPage() {
             setLoadingTripCashOptions(false);
         }
     }, [addToast]);
+
+    const loadCancelTripExpenseReferences = useCallback(async () => {
+        setLoadingTripCashOptions(true);
+        try {
+            const [categoryRows, accountRows] = await Promise.all([
+                fetchAdminCollectionData<ExpenseCategory[]>(
+                    '/api/data?entity=expense-categories',
+                    'Gagal memuat kategori pengeluaran'
+                ),
+                fetchAdminCollectionData<BankAccount[]>(
+                    '/api/data?entity=bank-accounts',
+                    'Gagal memuat kas / bank pengeluaran'
+                ),
+            ]);
+            const activeAccounts = (accountRows || []).filter(account => account.active !== false);
+            const activeCategories = (categoryRows || []).filter(category => category.active !== false);
+            setBankAccounts(activeAccounts);
+            setExpenseCategories(activeCategories);
+            return { categories: activeCategories, accounts: activeAccounts };
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat referensi biaya batal trip');
+            return { categories: expenseCategories, accounts: bankAccounts };
+        } finally {
+            setLoadingTripCashOptions(false);
+        }
+    }, [addToast, bankAccounts, expenseCategories]);
 
     const loadTripCashModalReferences = useCallback(async () => {
         await Promise.all([
@@ -2920,6 +2980,14 @@ export default function TripDetailPage() {
     const cancelTrip = async () => {
         if (!doData?._id || !canManageDeliveryStatus) return;
         const shouldSubmitCancelExpense = canRecordCancelTripExpense && cancelTripExpenseForm.amount > 0;
+        if (shouldSubmitCancelExpense && !cancelTripExpenseForm.categoryRef) {
+            addToast('error', 'Pilih kategori pengeluaran biaya batal trip');
+            return;
+        }
+        if (shouldSubmitCancelExpense && !cancelTripExpenseForm.bankAccountRef) {
+            addToast('error', 'Pilih kas / bank untuk biaya batal trip');
+            return;
+        }
         const cancelExpenseDescription =
             cancelTripExpenseForm.description.trim() ||
             `Biaya pembatalan trip ${displayTripNumber}`;
@@ -2937,7 +3005,8 @@ export default function TripDetailPage() {
                         ...(shouldSubmitCancelExpense
                             ? {
                                 cancelExpenseDate: cancelTripExpenseForm.expenseDate,
-                                cancelExpenseCategory: cancelTripExpenseForm.category,
+                                cancelExpenseCategoryRef: cancelTripExpenseForm.categoryRef,
+                                cancelExpenseBankAccountRef: cancelTripExpenseForm.bankAccountRef,
                                 cancelExpenseDescription,
                                 cancelExpenseAmount: cancelTripExpenseForm.amount,
                             }
@@ -2952,13 +3021,13 @@ export default function TripDetailPage() {
             }
             setShowCancelTripModal(false);
             setCancelTripNote('');
-            setCancelTripExpenseForm(createDefaultDriverVoucherItemForm());
+            setCancelTripExpenseForm(createDefaultCancelTripExpenseForm());
             await refreshTripDetail();
             const cancelledCount = Number(result.data?.cancelledSuratJalanCount || 0);
             const cancelExpenseAmount = Number(result.data?.cancelExpenseAmount || 0);
             addToast(
                 'success',
-                `Trip dibatalkan${cancelledCount > 0 ? `, ${cancelledCount} SJ ikut batal` : ''}${cancelExpenseAmount > 0 ? `, biaya batal ${formatCurrency(cancelExpenseAmount)} tercatat` : ''}`
+                `Trip dibatalkan${cancelledCount > 0 ? `, ${cancelledCount} SJ ikut batal` : ''}${cancelExpenseAmount > 0 ? `, biaya batal ${formatCurrency(cancelExpenseAmount)} masuk pengeluaran` : ''}`
             );
         } catch {
             addToast('error', 'Gagal membatalkan trip');
@@ -3954,7 +4023,8 @@ export default function TripDetailPage() {
     const hasLinkedTripCash = Boolean(linkedTripCashVoucherId || linkedTripCashBonNumber);
     const canTopUpLinkedTripCash = Boolean(linkedVoucher && linkedVoucher.status !== 'SETTLED' && canManageTripCashCosts);
     const canAddLinkedTripCashExpense = canTopUpLinkedTripCash;
-    const canRecordCancelTripExpense = canTopUpLinkedTripCash;
+    const canRecordCancelTripExpense = canManageDeliveryStatus && normalizedRole !== 'DRIVER';
+    const cancelTripExpenseCategories = expenseCategories.filter(isOperationalCancelExpenseCategory);
     const canSettleLinkedTripCash = Boolean(
         linkedVoucher &&
         linkedVoucher.status !== 'SETTLED' &&
@@ -4040,12 +4110,26 @@ export default function TripDetailPage() {
         (Array.isArray(doData.actualDropPoints) && doData.actualDropPoints.length > 0);
     const canCancelTripFromDetail =
         canManageDeliveryStatus &&
+        normalizedRole !== 'DRIVER' &&
         !doData.pendingDriverStatus &&
         !hasFinalizedCargoOutcome &&
         displayTripStatus !== 'CANCELLED' &&
         displayTripStatus !== 'DELIVERED' &&
         displayTripStatus !== 'PARTIAL_HOLD' &&
         (suratJalanDocuments.length === 0 || cancelableSuratJalanDocuments.length > 0);
+
+    const openCancelTripModal = async () => {
+        if (!canCancelTripFromDetail) return;
+        setCancelTripNote('');
+        const { categories, accounts } = await loadCancelTripExpenseReferences();
+        setCancelTripExpenseForm({
+            ...createDefaultCancelTripExpenseForm(),
+            categoryRef: getDefaultCancelExpenseCategoryRef(categories),
+            bankAccountRef: accounts[0]?._id || '',
+            description: `Biaya pembatalan trip ${displayTripNumber}`,
+        });
+        setShowCancelTripModal(true);
+    };
     const eligibleStatusSuratJalanDocuments = newStatus
         ? suratJalanStatusOptions.filter(document => getEligibleStatusesForSuratJalan(document).includes(newStatus))
         : [];
@@ -4895,6 +4979,14 @@ export default function TripDetailPage() {
                                     <Plus size={14} /> Tambah SJ
                                 </button>
                             )}
+                            {canCancelTripFromDetail && (
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => void openCancelTripModal()}
+                                >
+                                    Batalkan Trip
+                                </button>
+                            )}
                             {canManageDeliveryStatus && (
                                 <button className="btn btn-secondary btn-sm" onClick={() => void toggleTripClosure()} disabled={togglingTripClosure}>
                                     {togglingTripClosure
@@ -4907,22 +4999,6 @@ export default function TripDetailPage() {
                             {canManageTripFee && !hasLinkedTripCash && !editingTarip && (
                                 <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
                                     <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah Trip' : 'Isi Upah Trip'}
-                                </button>
-                            )}
-                            {canCancelTripFromDetail && (
-                                <button
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => {
-                                        setCancelTripNote('');
-                                        setCancelTripExpenseForm({
-                                            ...createDefaultDriverVoucherItemForm(),
-                                            category: 'BBM / Solar',
-                                            description: `Biaya pembatalan trip ${displayTripNumber}`,
-                                        });
-                                        setShowCancelTripModal(true);
-                                    }}
-                                >
-                                    Batalkan Trip
                                 </button>
                             )}
                         </div>
@@ -6356,7 +6432,10 @@ export default function TripDetailPage() {
                             </div>
                             {canRecordCancelTripExpense && (
                                 <div style={{ borderTop: '1px solid var(--color-gray-200)', paddingTop: '1rem', marginTop: '1rem' }}>
-                                    <div className="font-semibold" style={{ marginBottom: '0.75rem' }}>Biaya Batal Opsional</div>
+                                    <div className="font-semibold" style={{ marginBottom: '0.35rem' }}>Pengeluaran Operasional Opsional</div>
+                                    <div className="text-muted" style={{ marginBottom: '0.75rem' }}>
+                                        Isi hanya jika pembatalan trip menimbulkan biaya. Biaya ini masuk menu Pengeluaran, bukan bon driver.
+                                    </div>
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Tanggal</label>
@@ -6372,13 +6451,38 @@ export default function TripDetailPage() {
                                             <label className="form-label">Kategori</label>
                                             <select
                                                 className="form-select"
-                                                value={cancelTripExpenseForm.category}
-                                                onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, category: event.target.value }))}
-                                                disabled={cancellingTrip}
+                                                value={cancelTripExpenseForm.categoryRef}
+                                                onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, categoryRef: event.target.value }))}
+                                                disabled={cancellingTrip || loadingTripCashOptions || cancelTripExpenseCategories.length === 0}
                                             >
-                                                {DRIVER_VOUCHER_EXPENSE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                                                {cancelTripExpenseCategories.length === 0 ? (
+                                                    <option value="">Tidak ada kategori pengeluaran umum aktif</option>
+                                                ) : (
+                                                    cancelTripExpenseCategories.map(category => (
+                                                        <option key={category._id} value={category._id}>{category.name}</option>
+                                                    ))
+                                                )}
                                             </select>
                                         </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Kas / Bank</label>
+                                        <select
+                                            className="form-select"
+                                            value={cancelTripExpenseForm.bankAccountRef}
+                                            onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, bankAccountRef: event.target.value }))}
+                                            disabled={cancellingTrip || loadingTripCashOptions || bankAccounts.length === 0}
+                                        >
+                                            {bankAccounts.length === 0 ? (
+                                                <option value="">Tidak ada kas / bank aktif</option>
+                                            ) : (
+                                                bankAccounts.map(account => (
+                                                    <option key={account._id} value={account._id}>
+                                                        {account.bankName}{account.accountNumber ? ` - ${account.accountNumber}` : ''}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                                    </option>
+                                                ))
+                                            )}
+                                        </select>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Deskripsi</label>
@@ -6408,7 +6512,15 @@ export default function TripDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowCancelTripModal(false)} disabled={cancellingTrip}>Batal</button>
-                            <button className="btn btn-primary" onClick={cancelTrip} disabled={cancellingTrip} style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>
+                            <button
+                                className="btn btn-primary"
+                                onClick={cancelTrip}
+                                disabled={
+                                    cancellingTrip ||
+                                    (cancelTripExpenseForm.amount > 0 && (!cancelTripExpenseForm.categoryRef || !cancelTripExpenseForm.bankAccountRef))
+                                }
+                                style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+                            >
                                 {cancellingTrip ? 'Membatalkan...' : 'Batalkan Trip'}
                             </button>
                         </div>

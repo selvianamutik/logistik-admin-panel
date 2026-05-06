@@ -1178,6 +1178,10 @@ export interface Expense {
   relatedIncidentRef?: string;
   relatedIncidentSettlementLineRef?: string;
   relatedMaintenanceRef?: string;
+  relatedOrderRef?: string;
+  relatedOrderNumber?: string;
+  relatedDeliveryOrderRef?: string;
+  relatedDeliveryOrderNumber?: string;
   boronganRef?: string;
   voucherRef?: string;
 }

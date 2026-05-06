@@ -23,7 +23,9 @@ import {
 
 import {
     assertIsoDate,
+    computeLedgerDebitBalance,
     extractRefId,
+    getLedgerAccount,
     isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
@@ -71,7 +73,9 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { getFreightNotaList } from './data-query-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
-import { computeDriverVoucherTotals, getDriverVoucherIssuedAmount } from './driver-workflow-support';
+import { computeDriverVoucherTotals } from './driver-workflow-support';
+import { inferExpenseCategoryScope, resolveExpenseCategoryAccountKey } from '@/lib/expense-category-scope';
+import { postExpenseJournal } from './accounting-posting';
 import {
     aggregateTripStatusFromSuratJalanStatuses,
     mapDeliveryOrderToSuratJalanItemRecords,
@@ -237,7 +241,7 @@ import {
     getDeliveryOrderNonBillableCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
-import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, DriverVoucher, DriverVoucherItem, Maintenance, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
+import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Expense, ExpenseCategory, Maintenance, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -3367,7 +3371,9 @@ export async function handleDeliveryOrderCancelTrip(
     const cancelExpenseAmountRaw = normalizeCurrencyNumber(data.cancelExpenseAmount ?? 0);
     const cancelExpenseAmount = Number.isFinite(cancelExpenseAmountRaw) ? cancelExpenseAmountRaw : Number.NaN;
     const shouldRecordCancelExpense = cancelExpenseAmount > 0;
-    const cancelExpenseCategory = normalizeOptionalText(data.cancelExpenseCategory) || 'Lain-lain Trip';
+    const cancelExpenseCategoryRef = normalizeOptionalText(data.cancelExpenseCategoryRef);
+    const cancelExpenseCategoryName = normalizeOptionalText(data.cancelExpenseCategory);
+    const cancelExpenseBankAccountRef = normalizeOptionalText(data.cancelExpenseBankAccountRef);
     const cancelExpenseDescription =
         normalizeOptionalText(data.cancelExpenseDescription) ||
         `Biaya pembatalan trip${note ? `: ${note}` : ''}`;
@@ -3383,6 +3389,9 @@ export async function handleDeliveryOrderCancelTrip(
             assertIsoDate(cancelExpenseDate, 'Tanggal biaya batal trip');
         } catch {
             return NextResponse.json({ error: 'Tanggal biaya batal trip tidak valid' }, { status: 400 });
+        }
+        if (!cancelExpenseBankAccountRef) {
+            return NextResponse.json({ error: 'Kas / bank biaya batal trip wajib dipilih' }, { status: 400 });
         }
     }
 
@@ -3459,32 +3468,61 @@ export async function handleDeliveryOrderCancelTrip(
         );
     }
 
-    let cancellationVoucher: Pick<
-        DriverVoucher,
-        '_id' | 'bonNumber' | 'status' | 'cashGiven' | 'totalIssuedAmount' | 'driverFeeAmount'
-    > | null = null;
-    let cancellationVoucherItems: Array<Pick<DriverVoucherItem, 'amount'>> = [];
+    let cancelExpenseCategoryDoc: ExpenseCategory | null = null;
+    let cancelExpenseBankAccount: Awaited<ReturnType<typeof getLedgerAccount>> = null;
     if (shouldRecordCancelExpense) {
-        cancellationVoucher = (await listDocumentsByFilter<Pick<
-            DriverVoucher,
-            '_id' | 'bonNumber' | 'status' | 'cashGiven' | 'totalIssuedAmount' | 'driverFeeAmount'
-        >>('driverVoucher', { deliveryOrderRef: id }))[0] || null;
-        if (!cancellationVoucher) {
+        const categoryRows = await listDocumentsByFilter<ExpenseCategory>('expenseCategory', {});
+        const activeOperationalCategories = categoryRows
+            .filter(category =>
+                category.active !== false &&
+                inferExpenseCategoryScope(category) === 'GENERAL' &&
+                category.allowManual !== false
+            )
+            .sort((left, right) => normalizeNumber(left.sortOrder ?? 0) - normalizeNumber(right.sortOrder ?? 0));
+        cancelExpenseCategoryDoc = cancelExpenseCategoryRef
+            ? await getDocumentById<ExpenseCategory>(cancelExpenseCategoryRef, 'expenseCategory')
+            : null;
+        if (!cancelExpenseCategoryDoc && cancelExpenseCategoryName) {
+            const categoryNameLower = cancelExpenseCategoryName.toLowerCase();
+            cancelExpenseCategoryDoc = activeOperationalCategories.find(category => category.name.toLowerCase() === categoryNameLower) || null;
+        }
+        cancelExpenseCategoryDoc =
+            cancelExpenseCategoryDoc ||
+            activeOperationalCategories.find(category => /batal|pembatalan/i.test(category.name)) ||
+            activeOperationalCategories.find(category => /lain-lain umum/i.test(category.name)) ||
+            activeOperationalCategories.find(category => /operasional/i.test(category.name)) ||
+            activeOperationalCategories[0] ||
+            null;
+        if (!cancelExpenseCategoryDoc) {
             return NextResponse.json(
-                { error: 'Biaya batal trip hanya bisa dicatat jika trip sudah punya uang jalan / bon.' },
+                { error: 'Kategori pengeluaran umum untuk biaya batal trip belum tersedia.' },
                 { status: 409 }
             );
         }
-        if (cancellationVoucher.status === 'SETTLED') {
+        if (
+            cancelExpenseCategoryDoc.active === false ||
+            inferExpenseCategoryScope(cancelExpenseCategoryDoc) !== 'GENERAL' ||
+            cancelExpenseCategoryDoc.allowManual === false
+        ) {
             return NextResponse.json(
-                { error: `Bon ${cancellationVoucher.bonNumber || ''} sudah selesai. Biaya batal tidak bisa ditambahkan.` },
+                { error: 'Kategori biaya batal trip harus berupa kategori pengeluaran umum aktif.' },
                 { status: 409 }
             );
         }
-        cancellationVoucherItems = await listDocumentsByFilter<Pick<DriverVoucherItem, 'amount'>>(
-            'driverVoucherItem',
-            { voucherRef: cancellationVoucher._id }
+        cancelExpenseBankAccount = await getLedgerAccount(cancelExpenseBankAccountRef || '');
+        if (!cancelExpenseBankAccount) {
+            return NextResponse.json({ error: 'Kas / bank biaya batal trip tidak ditemukan atau nonaktif' }, { status: 404 });
+        }
+        const { startingBalance, nextBalance } = computeLedgerDebitBalance(
+            cancelExpenseBankAccount.currentBalance,
+            cancelExpenseAmount
         );
+        if (nextBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
     }
 
     const timestamp = new Date().toISOString();
@@ -3585,38 +3623,66 @@ export async function handleDeliveryOrderCancelTrip(
         throw error;
     }
 
-    let cancelExpenseItemRef: string | undefined;
-    if (shouldRecordCancelExpense && cancellationVoucher) {
-        cancelExpenseItemRef = crypto.randomUUID();
-        const nextOperationalSpent = cancellationVoucherItems.reduce(
-            (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
-            0
-        ) + cancelExpenseAmount;
-        const nextTotals = computeDriverVoucherTotals(
-            getDriverVoucherIssuedAmount(cancellationVoucher),
-            nextOperationalSpent,
-            normalizeNumber(cancellationVoucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
+    let cancelExpenseRef: string | undefined;
+    if (shouldRecordCancelExpense && cancelExpenseCategoryDoc && cancelExpenseBankAccount && cancelExpenseBankAccountRef) {
+        cancelExpenseRef = crypto.randomUUID();
+        const { startingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(
+            cancelExpenseBankAccount.currentBalance,
+            cancelExpenseAmount
         );
-
+        if (newBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
+        const cancelExpenseOrderRef = extractRefId(deliveryOrder.orderRef);
+        const cancelExpenseDoc: Expense = {
+            _id: cancelExpenseRef,
+            _type: 'expense',
+            categoryRef: cancelExpenseCategoryDoc._id,
+            categoryName: cancelExpenseCategoryDoc.name,
+            categoryScope: inferExpenseCategoryScope(cancelExpenseCategoryDoc),
+            accountSystemKey: resolveExpenseCategoryAccountKey(cancelExpenseCategoryDoc),
+            date: cancelExpenseDate,
+            amount: cancelExpenseAmount,
+            note: note || undefined,
+            description: cancelExpenseDescription,
+            privacyLevel: 'internal',
+            bankAccountRef: cancelExpenseBankAccountRef,
+            bankAccountName: cancelExpenseBankAccount.bankName,
+            bankAccountNumber: cancelExpenseBankAccount.accountNumber,
+            relatedVehicleRef: deliveryOrder.vehicleRef,
+            relatedVehiclePlate: deliveryOrder.vehiclePlate,
+            relatedOrderRef: cancelExpenseOrderRef || undefined,
+            relatedDeliveryOrderRef: id,
+            relatedDeliveryOrderNumber: deliveryOrder.doNumber,
+        };
         try {
+            await createDocument(cancelExpenseDoc as unknown as { _type: string; [key: string]: unknown });
             await createDocument({
-                _id: cancelExpenseItemRef,
-                _type: 'driverVoucherItem',
-                voucherRef: cancellationVoucher._id,
-                expenseDate: cancelExpenseDate,
-                category: cancelExpenseCategory,
-                description: cancelExpenseDescription,
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: cancelExpenseBankAccountRef,
+                bankAccountName: cancelExpenseBankAccount.bankName,
+                bankAccountNumber: cancelExpenseBankAccount.accountNumber,
+                type: 'DEBIT',
                 amount: cancelExpenseAmount,
+                date: cancelExpenseDate,
+                description: cancelExpenseDescription,
+                balanceAfter: newBalance,
+                relatedExpenseRef: cancelExpenseRef,
             });
-            await updateDocument(cancellationVoucher._id, {
-                totalSpent: nextTotals.totalSpent,
-                totalClaimAmount: nextTotals.totalClaimAmount,
-                balance: nextTotals.balance,
-            }, 'driverVoucher');
+            await updateDocument(cancelExpenseBankAccountRef, { currentBalance: newBalance }, 'bankAccount');
+            await updateDocument(cancelExpenseCategoryDoc._id, { updatedAt: timestamp }, 'expenseCategory');
+            if (deliveryOrder.vehicleRef) {
+                await updateDocument(deliveryOrder.vehicleRef, { updatedAt: timestamp }, 'vehicle');
+            }
+            await postExpenseJournal(session, cancelExpenseDoc, cancelExpenseBankAccount);
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
-                    { error: 'Trip sudah dibatalkan, tetapi pencatatan biaya batal gagal karena bon berubah. Tambahkan biaya lain-lain dari detail bon.' },
+                    { error: 'Trip sudah dibatalkan, tetapi pencatatan pengeluaran biaya batal gagal karena data berubah. Cek menu Pengeluaran sebelum mencoba ulang.' },
                     { status: 409 }
                 );
             }
@@ -3626,9 +3692,9 @@ export async function handleDeliveryOrderCancelTrip(
         await addAuditLog(
             session,
             'CREATE',
-            'driver-voucher-items',
-            cancelExpenseItemRef,
-            `Biaya pembatalan trip ${deliveryOrder.doNumber || id} dicatat ke ${cancellationVoucher.bonNumber || 'bon trip'}: ${cancelExpenseCategory} (${cancelExpenseAmount})`
+            'expenses',
+            cancelExpenseRef,
+            `Biaya pembatalan trip ${deliveryOrder.doNumber || id} dicatat sebagai pengeluaran operasional: ${cancelExpenseCategoryDoc.name} (${cancelExpenseAmount})`
         );
     }
 
@@ -3648,7 +3714,7 @@ export async function handleDeliveryOrderCancelTrip(
         'UPDATE',
         'delivery-orders',
         id,
-        `Trip dibatalkan: ${deliveryOrder.doNumber || id}. ${suratJalanRecords.length} SJ ikut batal.${note ? ` | ${note}` : ''}${shouldRecordCancelExpense ? ` | Biaya batal: ${cancelExpenseCategory} (${cancelExpenseAmount})` : ''}`
+        `Trip dibatalkan: ${deliveryOrder.doNumber || id}. ${suratJalanRecords.length} SJ ikut batal.${note ? ` | ${note}` : ''}${shouldRecordCancelExpense ? ` | Biaya batal: ${cancelExpenseCategoryDoc?.name || cancelExpenseCategoryName || 'Pengeluaran operasional'} (${cancelExpenseAmount})` : ''}`
     );
 
     return NextResponse.json({
@@ -3656,7 +3722,7 @@ export async function handleDeliveryOrderCancelTrip(
             tripRef: id,
             status: 'CANCELLED',
             cancelledSuratJalanCount: suratJalanRecords.length,
-            cancelExpenseItemRef,
+            cancelExpenseRef,
             cancelExpenseAmount: shouldRecordCancelExpense ? cancelExpenseAmount : 0,
         },
     });
