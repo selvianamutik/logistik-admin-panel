@@ -20,10 +20,16 @@ import {
     formatQuantity,
 } from '@/lib/utils';
 import {
+    getDeliveryOrderBillableCargoSummary,
+    getDeliveryOrderHoldCargoSummary,
+} from '@/lib/delivery-order-completion';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { formatCargoSummary } from '@/lib/measurement';
+import {
     formatTireSlotLabel,
     resolveTireSlotCode,
 } from '@/lib/tire-slots';
-import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, TireHistoryLog, Expense, IncidentSettlementLine } from '@/lib/types';
+import type { Vehicle, Maintenance, Incident, DeliveryOrder, DeliveryOrderItem, TireEvent, TireHistoryLog, Expense, IncidentSettlementLine } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -112,6 +118,7 @@ export default function VehicleDetailPage() {
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [incidentSettlementLines, setIncidentSettlementLines] = useState<IncidentSettlementLine[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
+    const [doItemsByDeliveryOrderRef, setDoItemsByDeliveryOrderRef] = useState<Record<string, DeliveryOrderItem[]>>({});
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -163,12 +170,25 @@ export default function VehicleDetailPage() {
                     'Gagal memuat biaya insiden'
                 )
                 : [];
+            const deliveryOrderRefs = (doRows || []).map(row => row._id).filter(Boolean);
+            const deliveryOrderItems = deliveryOrderRefs.length > 0
+                ? await fetchAllAdminCollectionData<DeliveryOrderItem>(
+                    `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderRefs }))}`,
+                    'Gagal memuat ringkasan barang trip'
+                )
+                : [];
+            const nextDoItemsByRef = deliveryOrderItems.reduce<Record<string, DeliveryOrderItem[]>>((map, item) => {
+                if (!item.deliveryOrderRef) return map;
+                map[item.deliveryOrderRef] = [...(map[item.deliveryOrderRef] || []), item];
+                return map;
+            }, {});
 
             setVehicle(vehicleData);
             setMaints([...(maintenanceRows || [])].sort((a, b) => `${b.plannedDate || ''}-${b._id}`.localeCompare(`${a.plannedDate || ''}-${a._id}`)));
             setIncidents(sortedIncidents);
             setIncidentSettlementLines([...(settlementRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDos([...(doRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
+            setDoItemsByDeliveryOrderRef(nextDoItemsByRef);
             setTireEvents(tireRows || []);
             setAllTireEvents(allTireRows || []);
             setExpenses([...(expenseRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
@@ -331,6 +351,24 @@ export default function VehicleDetailPage() {
                     {summary.recovery > 0 ? ` | Klaim ${formatCurrency(summary.recovery)}` : ''}
                 </div>
                 {summary.pendingCost > 0 && <div className="text-muted text-sm">Belum diposting {formatCurrency(summary.pendingCost)}</div>}
+            </div>
+        );
+    };
+    const renderDeliveryOrderCargoSummary = (deliveryOrder: DeliveryOrder) => {
+        const deliveryOrderItems = doItemsByDeliveryOrderRef[deliveryOrder._id] || [];
+        const totalCargo = deliveryOrderItems.reduce((summary, item) => ({
+            qtyKoli: summary.qtyKoli + parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0, { maxFractionDigits: 2 }),
+            weightKg: summary.weightKg + parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0),
+            volumeM3: summary.volumeM3 + parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }),
+        }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+        const holdCargo = getDeliveryOrderHoldCargoSummary(deliveryOrder);
+        const dropCargo = getDeliveryOrderBillableCargoSummary(deliveryOrder);
+
+        return (
+            <div className="trip-cargo-history-summary">
+                <div><span className="text-muted">Total:</span> {formatCargoSummary(totalCargo)}</div>
+                <div><span className="text-muted">Hold:</span> {formatCargoSummary(holdCargo)}</div>
+                <div><span className="text-muted">Drop:</span> {formatCargoSummary(dropCargo)}</div>
             </div>
         );
     };
@@ -648,9 +686,9 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>Trip / DO</th><th>Tanggal</th><th>Supir</th><th>Rute Trip</th><th>Customer</th><th>Status</th></tr></thead>
-                            <tbody>{dos.length === 0 ? <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat trip</td></tr> : dos.map(d => (
-                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{getShipperReferenceCount(d) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.driverName || '-'}</td><td>{formatDeliveryOrderTripRoute(d)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
+                            <thead><tr><th>Trip / DO</th><th>Tanggal</th><th>Supir</th><th>Rute Trip</th><th>Customer</th><th>Barang</th><th>Status</th></tr></thead>
+                            <tbody>{dos.length === 0 ? <tr><td colSpan={7} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat trip</td></tr> : dos.map(d => (
+                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{getShipperReferenceCount(d) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.driverName || '-'}</td><td>{formatDeliveryOrderTripRoute(d)}</td><td>{d.customerName}</td><td>{renderDeliveryOrderCargoSummary(d)}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
                             ))}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
@@ -685,6 +723,10 @@ export default function VehicleDetailPage() {
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Rute Trip</span>
                                             <span className="mobile-record-value">{formatDeliveryOrderTripRoute(d)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Barang</span>
+                                            <div className="mobile-record-value">{renderDeliveryOrderCargoSummary(d)}</div>
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
