@@ -283,12 +283,91 @@ class DriverPortalData {
     required this.plannedTrips,
     required this.customerProducts,
     required this.customerRecipients,
+    this.incidents = const [],
   });
 
   final List<DeliveryTrip> trips;
   final List<DriverAssignedTripPlan> plannedTrips;
   final List<CustomerProductOption> customerProducts;
   final List<CustomerRecipientOption> customerRecipients;
+  final List<DriverIncident> incidents;
+}
+
+class DriverIncident {
+  const DriverIncident({
+    required this.id,
+    required this.incidentNumber,
+    required this.status,
+    required this.incidentType,
+    required this.urgency,
+    required this.relatedDeliveryOrderRef,
+    required this.relatedDONumber,
+    required this.description,
+    required this.locationText,
+    this.odometer,
+    this.dateTime,
+    this.settlementLines = const [],
+  });
+
+  final String id;
+  final String incidentNumber;
+  final String status;
+  final String incidentType;
+  final String urgency;
+  final String relatedDeliveryOrderRef;
+  final String relatedDONumber;
+  final String description;
+  final String locationText;
+  final double? odometer;
+  final String? dateTime;
+  final List<DriverIncidentSettlementLine> settlementLines;
+
+  bool get canSubmitResolution => status != 'RESOLVED' && status != 'CLOSED';
+
+  int get draftCostCount => settlementLines
+      .where((line) => line.status == 'DRAFT')
+      .length;
+}
+
+class DriverIncidentSettlementLine {
+  const DriverIncidentSettlementLine({
+    required this.id,
+    required this.status,
+    required this.category,
+    required this.amount,
+    required this.description,
+  });
+
+  final String id;
+  final String status;
+  final String category;
+  final double amount;
+  final String description;
+}
+
+class DriverIncidentCostInput {
+  const DriverIncidentCostInput({
+    required this.category,
+    required this.amount,
+    required this.description,
+    this.payeeName,
+    this.note,
+  });
+
+  final String category;
+  final double amount;
+  final String description;
+  final String? payeeName;
+  final String? note;
+
+  Map<String, dynamic> toJson() => {
+    'category': category,
+    'amount': amount,
+    'description': description,
+    if (payeeName != null && payeeName!.trim().isNotEmpty)
+      'payeeName': payeeName!.trim(),
+    if (note != null && note!.trim().isNotEmpty) 'note': note!.trim(),
+  };
 }
 
 class DeliveryTrip {

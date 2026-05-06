@@ -67,7 +67,7 @@ import {
 } from '@/lib/order-create-page-support';
 import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
-import type { Customer, CustomerProduct, CustomerRecipient, Driver, Incident, PendingDriverStatusRequest, SessionUser } from '@/lib/types';
+import type { Customer, CustomerProduct, CustomerRecipient, Driver, Incident, IncidentSettlementCategory, IncidentSettlementLine, PendingDriverStatusRequest, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan, DriverAssignedTripPlanPickupStop } from '@/lib/api/driver-portal';
 
 type DriverSessionResponse = {
@@ -85,6 +85,24 @@ type DriverDeliveryOrdersResponse = {
     error?: string;
 };
 
+type DriverIncidentRecord = Incident & {
+    settlementLines?: IncidentSettlementLine[];
+};
+
+type DriverIncidentsResponse = {
+    data?: DriverIncidentRecord[];
+    error?: string;
+};
+
+type DriverIncidentCostDraft = {
+    draftId: string;
+    category: IncidentSettlementCategory;
+    amount: number;
+    description: string;
+    payeeName: string;
+    note: string;
+};
+
 type DriverPortalError = Error & { status?: number };
 type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
 type DriverBatchStatus = 'HEADING_TO_PICKUP' | 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED';
@@ -99,6 +117,37 @@ type CompletionDropItemValueDraft = Pick<
 
 const DRIVER_TRACKING_HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000;
 const COMPLETION_DROP_ITEM_VALUE_SEPARATOR = '::item::';
+
+const DRIVER_INCIDENT_COST_CATEGORY_OPTIONS: Array<{ value: IncidentSettlementCategory; label: string }> = [
+    { value: 'REPAIR', label: 'Perbaikan' },
+    { value: 'SPAREPART', label: 'Sparepart' },
+    { value: 'TIRE', label: 'Ban' },
+    { value: 'TOWING', label: 'Derek / Evakuasi' },
+    { value: 'MEDICAL', label: 'Medis' },
+    { value: 'POLICE_ADMIN', label: 'Polisi / Administrasi' },
+    { value: 'ACCOMMODATION', label: 'Akomodasi' },
+    { value: 'CARGO_HANDLING', label: 'Bongkar / Handling' },
+    { value: 'THIRD_PARTY_DAMAGE', label: 'Kerusakan Pihak Ketiga' },
+    { value: 'OTHER', label: 'Lainnya' },
+];
+
+function createDriverIncidentCostDraft(): DriverIncidentCostDraft {
+    return {
+        draftId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        category: 'REPAIR',
+        amount: 0,
+        description: '',
+        payeeName: '',
+        note: '',
+    };
+}
+
+function getDriverIncidentStatusLabel(status: Incident['status']) {
+    if (status === 'OPEN') return 'Dilaporkan';
+    if (status === 'IN_PROGRESS') return 'Ditangani';
+    if (status === 'RESOLVED') return 'Selesai, menunggu admin tutup';
+    return 'Ditutup';
+}
 
 function buildCompletionDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
     return `${draftKey}${COMPLETION_DROP_ITEM_VALUE_SEPARATOR}${deliveryOrderItemRef}`;
@@ -802,6 +851,7 @@ export default function DriverPortalPage() {
     const [companyName, setCompanyName] = useState('PT Gading Mas Surya');
     const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
     const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
+    const [driverIncidents, setDriverIncidents] = useState<DriverIncidentRecord[]>([]);
     const [billingCustomers, setBillingCustomers] = useState<Array<Pick<Customer, '_id' | 'name' | 'active'>>>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
@@ -855,6 +905,19 @@ export default function DriverPortalPage() {
         locationText: '',
         odometer: 0,
         description: '',
+    });
+    const [showIncidentCompletionModal, setShowIncidentCompletionModal] = useState(false);
+    const [incidentCompletionIncidentId, setIncidentCompletionIncidentId] = useState<string | null>(null);
+    const [incidentCompletionForm, setIncidentCompletionForm] = useState<{
+        resolutionNote: string;
+        resolutionLocationText: string;
+        resolutionOdometer: number;
+        costs: DriverIncidentCostDraft[];
+    }>({
+        resolutionNote: '',
+        resolutionLocationText: '',
+        resolutionOdometer: 0,
+        costs: [],
     });
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
@@ -1367,6 +1430,29 @@ export default function DriverPortalPage() {
         () => orders.find(item => item._id === incidentOrderId) || null,
         [incidentOrderId, orders]
     );
+    const driverIncidentsByOrder = useMemo(() => {
+        const grouped = new Map<string, DriverIncidentRecord[]>();
+        for (const incident of driverIncidents) {
+            const orderRef = incident.relatedDeliveryOrderRef || '';
+            if (!orderRef) {
+                continue;
+            }
+            const current = grouped.get(orderRef) || [];
+            current.push(incident);
+            grouped.set(orderRef, current);
+        }
+        return grouped;
+    }, [driverIncidents]);
+    const incidentCompletionIncident = useMemo(
+        () => driverIncidents.find(item => item._id === incidentCompletionIncidentId) || null,
+        [driverIncidents, incidentCompletionIncidentId]
+    );
+    const incidentCompletionOrder = useMemo(
+        () => incidentCompletionIncident
+            ? orders.find(item => item._id === incidentCompletionIncident.relatedDeliveryOrderRef) || null
+            : null,
+        [incidentCompletionIncident, orders]
+    );
     const tripCreateAllowsDirectCargoInput = tripCreateTarget?.allowsDirectCargoInput !== false;
     const tripCreateCustomerProducts = useMemo(
         () => customerProducts.filter(product => product.customerRef === tripCreateTarget?.customerRef),
@@ -1618,8 +1704,27 @@ export default function DriverPortalPage() {
             if (!res.ok) {
                 throw createDriverPortalError(res.status, payload.error || 'Gagal memuat surat jalan driver');
             }
+
+            let incidents: DriverIncidentRecord[] = [];
+            try {
+                const incidentsRes = await fetch('/api/driver/incidents');
+                const incidentPayload = await incidentsRes.json().catch(() => null) as DriverIncidentsResponse | null;
+                if (!incidentsRes.ok) {
+                    if (incidentsRes.status === 401 || incidentsRes.status === 403) {
+                        throw createDriverPortalError(incidentsRes.status, incidentPayload?.error || 'Gagal memuat insiden driver');
+                    }
+                } else {
+                    incidents = incidentPayload?.data || [];
+                }
+            } catch (incidentError) {
+                if (isDriverUnauthorizedError(incidentError)) {
+                    throw incidentError;
+                }
+                incidents = [];
+            }
             setOrders((payload.data || []).filter(isDriverDashboardDeliveryOrderVisible));
             setPlannedTrips((payload.plannedTrips || []).filter(isDriverDashboardTripPlanVisible));
+            setDriverIncidents(incidents.filter(incident => incident.status !== 'CLOSED'));
             setBillingCustomers((payload.billingCustomers || []).filter(customer => customer.active !== false));
             setCustomerProducts((payload.customerProducts || []).filter(product => product.active !== false));
             setCustomerRecipients((payload.customerRecipients || []).filter(recipient => recipient.active !== false));
@@ -2176,6 +2281,61 @@ export default function DriverPortalPage() {
             description: '',
         });
     }, [actionLoadingId]);
+
+    const openIncidentCompletionModal = useCallback((incident: DriverIncidentRecord) => {
+        const relatedOrder = orders.find(order => order._id === incident.relatedDeliveryOrderRef);
+        setIncidentCompletionIncidentId(incident._id);
+        setIncidentCompletionForm({
+            resolutionNote: '',
+            resolutionLocationText: incident.locationText || '',
+            resolutionOdometer: relatedOrder?.tripEndOdometerKm || incident.odometer || 0,
+            costs: [],
+        });
+        setShowIncidentCompletionModal(true);
+    }, [orders]);
+
+    const closeIncidentCompletionModal = useCallback(() => {
+        if (actionLoadingId) {
+            return;
+        }
+        setShowIncidentCompletionModal(false);
+        setIncidentCompletionIncidentId(null);
+        setIncidentCompletionForm({
+            resolutionNote: '',
+            resolutionLocationText: '',
+            resolutionOdometer: 0,
+            costs: [],
+        });
+    }, [actionLoadingId]);
+
+    const updateIncidentCompletionCost = useCallback((
+        draftId: string,
+        field: keyof Omit<DriverIncidentCostDraft, 'draftId'>,
+        value: string | number | IncidentSettlementCategory
+    ) => {
+        setIncidentCompletionForm(previous => ({
+            ...previous,
+            costs: previous.costs.map(cost => (
+                cost.draftId === draftId
+                    ? { ...cost, [field]: value }
+                    : cost
+            )),
+        }));
+    }, []);
+
+    const addIncidentCompletionCost = useCallback(() => {
+        setIncidentCompletionForm(previous => ({
+            ...previous,
+            costs: [...previous.costs, createDriverIncidentCostDraft()],
+        }));
+    }, []);
+
+    const removeIncidentCompletionCost = useCallback((draftId: string) => {
+        setIncidentCompletionForm(previous => ({
+            ...previous,
+            costs: previous.costs.filter(cost => cost.draftId !== draftId),
+        }));
+    }, []);
 
     const updateCargoInputGroup = useCallback((
         groupId: string,
@@ -3198,6 +3358,7 @@ export default function DriverPortalPage() {
                 odometer: 0,
                 description: '',
             });
+            await loadOrders();
         } catch (error) {
             if (isDriverUnauthorizedError(error)) {
                 handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
@@ -3210,7 +3371,72 @@ export default function DriverPortalPage() {
         } finally {
             setActionLoadingId(null);
         }
-    }, [handleDriverAuthFailure, incidentForm, incidentOrder]);
+    }, [handleDriverAuthFailure, incidentForm, incidentOrder, loadOrders]);
+
+    const submitIncidentCompletionRequest = useCallback(async () => {
+        if (!incidentCompletionIncident) {
+            return;
+        }
+        if (!incidentCompletionForm.resolutionNote.trim()) {
+            setFeedback({ type: 'error', message: 'Catatan penyelesaian insiden wajib diisi.' });
+            return;
+        }
+        const invalidCostIndex = incidentCompletionForm.costs.findIndex(cost =>
+            cost.amount <= 0 || !cost.description.trim()
+        );
+        if (invalidCostIndex >= 0) {
+            setFeedback({ type: 'error', message: `Biaya insiden baris ${invalidCostIndex + 1} wajib berisi nominal dan deskripsi.` });
+            return;
+        }
+
+        setActionLoadingId(`incident-complete-${incidentCompletionIncident._id}`);
+        try {
+            const response = await fetch('/api/driver/incidents', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'submit-resolution',
+                    incidentRef: incidentCompletionIncident._id,
+                    resolutionNote: incidentCompletionForm.resolutionNote,
+                    resolutionLocationText: incidentCompletionForm.resolutionLocationText,
+                    resolutionOdometer: incidentCompletionForm.resolutionOdometer,
+                    costs: incidentCompletionForm.costs.map(cost => ({
+                        category: cost.category,
+                        amount: cost.amount,
+                        description: cost.description,
+                        payeeName: cost.payeeName,
+                        note: cost.note,
+                    })),
+                }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw createDriverPortalError(response.status, payload?.error || 'Gagal mengajukan penyelesaian insiden');
+            }
+
+            setFeedback({ type: 'success', message: 'Penyelesaian insiden dikirim. Admin akan crosscheck biaya dan statusnya.' });
+            setShowIncidentCompletionModal(false);
+            setIncidentCompletionIncidentId(null);
+            setIncidentCompletionForm({
+                resolutionNote: '',
+                resolutionLocationText: '',
+                resolutionOdometer: 0,
+                costs: [],
+            });
+            await loadOrders();
+        } catch (error) {
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
+                return;
+            }
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal mengajukan penyelesaian insiden',
+            });
+        } finally {
+            setActionLoadingId(null);
+        }
+    }, [handleDriverAuthFailure, incidentCompletionForm, incidentCompletionIncident, loadOrders]);
 
     const deleteShipperReference = useCallback(async (
         order: DriverAssignedDeliveryOrder,
@@ -3512,6 +3738,7 @@ export default function DriverPortalPage() {
                             pendingRequests.length === 0 &&
                             cargoItemCount > 0 &&
                             !item.tripClosedByAdminAt;
+                        const relatedIncidents = driverIncidentsByOrder.get(item._id) || [];
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`
@@ -3582,6 +3809,40 @@ export default function DriverPortalPage() {
                                                         {request.note && (
                                                             <div className="text-muted text-sm">Catatan: {request.note}</div>
                                                         )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {relatedIncidents.length > 0 && (
+                                        <div className="driver-pending-request" style={{ borderColor: 'rgba(245, 158, 11, 0.35)', background: '#fffbeb' }}>
+                                            <div className="driver-pending-request-title">
+                                                Insiden Aktif
+                                            </div>
+                                            {relatedIncidents.map(incident => {
+                                                const pendingDraftCosts = (incident.settlementLines || []).filter(line => line.status === 'DRAFT').length;
+                                                return (
+                                                    <div key={incident._id} style={{ display: 'grid', gap: '0.45rem' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                            <div>
+                                                                <strong>{incident.incidentNumber}</strong>
+                                                                <span className="text-muted text-sm"> | {getDriverIncidentStatusLabel(incident.status)}</span>
+                                                            </div>
+                                                            {incident.status !== 'RESOLVED' && (
+                                                                <button
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    onClick={() => openIncidentCompletionModal(incident)}
+                                                                    disabled={isActionInFlight}
+                                                                >
+                                                                    <Pencil size={15} /> Ajukan Selesai
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-muted text-sm">
+                                                            {incident.locationText || '-'} | {incident.description || '-'}
+                                                            {pendingDraftCosts > 0 ? ` | ${pendingDraftCosts} biaya draft menunggu admin` : ''}
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -3948,6 +4209,176 @@ export default function DriverPortalPage() {
                                 disabled={isActionInFlight || !incidentForm.locationText.trim() || !incidentForm.description.trim() || incidentForm.odometer <= 0}
                             >
                                 <AlertTriangle size={15} /> {actionLoadingId === `incident-${incidentOrder._id}` ? 'Mengirim...' : 'Kirim Laporan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showIncidentCompletionModal && incidentCompletionIncident && (
+                <div className="modal-overlay" onClick={closeIncidentCompletionModal}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Ajukan Selesai Insiden {incidentCompletionIncident.incidentNumber}</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                    Biaya yang diisi supir masuk draft dan tetap dicek admin sebelum diposting.
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeIncidentCompletionModal} disabled={isActionInFlight}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="driver-completion-summary">
+                                <div className="driver-completion-summary-card">
+                                    <span>Trip/SJ</span>
+                                    <strong>{incidentCompletionOrder?.doNumber || incidentCompletionIncident.relatedDONumber || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Kendaraan</span>
+                                    <strong>{incidentCompletionIncident.vehiclePlate || incidentCompletionOrder?.vehiclePlate || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Status</span>
+                                    <strong>{getDriverIncidentStatusLabel(incidentCompletionIncident.status)}</strong>
+                                </div>
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: '1rem' }}>
+                                <label className="form-label">Catatan Penyelesaian <span className="required">*</span></label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={incidentCompletionForm.resolutionNote}
+                                    onChange={event => setIncidentCompletionForm(previous => ({ ...previous, resolutionNote: event.target.value }))}
+                                    disabled={isActionInFlight}
+                                    placeholder="Contoh: ban sudah diganti, kendaraan lanjut jalan, nota biaya terlampir ke admin."
+                                />
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Lokasi Akhir</label>
+                                    <input
+                                        className="form-input"
+                                        value={incidentCompletionForm.resolutionLocationText}
+                                        onChange={event => setIncidentCompletionForm(previous => ({ ...previous, resolutionLocationText: event.target.value }))}
+                                        disabled={isActionInFlight}
+                                        placeholder="Opsional"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Odometer Akhir</label>
+                                    <FormattedNumberInput
+                                        min={0}
+                                        allowDecimal={false}
+                                        value={incidentCompletionForm.resolutionOdometer}
+                                        onValueChange={value => setIncidentCompletionForm(previous => ({ ...previous, resolutionOdometer: value }))}
+                                        disabled={isActionInFlight}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-section-title" style={{ marginTop: '1rem' }}>Biaya yang Dikeluarkan Supir</div>
+                            <div style={{ display: 'grid', gap: '0.8rem' }}>
+                                {incidentCompletionForm.costs.length === 0 ? (
+                                    <div className="text-muted text-sm">Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan biaya dari halaman insiden.</div>
+                                ) : (
+                                    incidentCompletionForm.costs.map((cost, index) => (
+                                        <div key={cost.draftId} className="card" style={{ boxShadow: 'none' }}>
+                                            <div className="card-body" style={{ display: 'grid', gap: '0.75rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                                                    <strong>Biaya {index + 1}</strong>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => removeIncidentCompletionCost(cost.draftId)}
+                                                        disabled={isActionInFlight}
+                                                    >
+                                                        <Trash2 size={14} /> Hapus
+                                                    </button>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Kategori</label>
+                                                        <select
+                                                            className="form-select"
+                                                            value={cost.category}
+                                                            onChange={event => updateIncidentCompletionCost(cost.draftId, 'category', event.target.value as IncidentSettlementCategory)}
+                                                            disabled={isActionInFlight}
+                                                        >
+                                                            {DRIVER_INCIDENT_COST_CATEGORY_OPTIONS.map(option => (
+                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Nominal <span className="required">*</span></label>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            allowDecimal={false}
+                                                            value={cost.amount}
+                                                            onValueChange={value => updateIncidentCompletionCost(cost.draftId, 'amount', value)}
+                                                            disabled={isActionInFlight}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Deskripsi Biaya <span className="required">*</span></label>
+                                                    <input
+                                                        className="form-input"
+                                                        value={cost.description}
+                                                        onChange={event => updateIncidentCompletionCost(cost.draftId, 'description', event.target.value)}
+                                                        disabled={isActionInFlight}
+                                                        placeholder="Contoh: Tambal ban luar, derek ke bengkel, beli oli darurat"
+                                                    />
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Dibayar ke</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={cost.payeeName}
+                                                            onChange={event => updateIncidentCompletionCost(cost.draftId, 'payeeName', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                            placeholder="Nama bengkel/toko/orang"
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Catatan</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={cost.note}
+                                                            onChange={event => updateIncidentCompletionCost(cost.draftId, 'note', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                            placeholder="Opsional"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={addIncidentCompletionCost}
+                                    disabled={isActionInFlight}
+                                    style={{ justifySelf: 'start' }}
+                                >
+                                    <Plus size={15} /> Tambah Biaya
+                                </button>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeIncidentCompletionModal} disabled={isActionInFlight}>
+                                Batal
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => void submitIncidentCompletionRequest()}
+                                disabled={isActionInFlight || !incidentCompletionForm.resolutionNote.trim()}
+                            >
+                                <AlertTriangle size={15} /> {actionLoadingId === `incident-complete-${incidentCompletionIncident._id}` ? 'Mengirim...' : 'Kirim ke Admin'}
                             </button>
                         </div>
                     </div>

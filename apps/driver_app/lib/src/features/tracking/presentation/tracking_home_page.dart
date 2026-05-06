@@ -35,6 +35,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   List<DriverAssignedTripPlan> _plannedTrips = const [];
   List<CustomerProductOption> _customerProducts = const [];
   List<CustomerRecipientOption> _customerRecipients = const [];
+  List<DriverIncident> _driverIncidents = const [];
   DeliveryTrip? _selectedTrip;
   DeliveryTrip? _activeTrip;
   LocationSnapshot? _latestLocation;
@@ -45,6 +46,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   bool _submittingManifest = false;
   bool _acknowledgingWarning = false;
   bool _reportingIncident = false;
+  bool _submittingIncidentResolution = false;
   String? _loadError;
   String? _locationError;
   String? _pingError;
@@ -232,6 +234,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       final portalData = await _deliveryOrderService.fetchDriverPortalData(
         sessionToken: sessionToken,
       );
+      var incidents = const <DriverIncident>[];
+      try {
+        incidents = await _deliveryOrderService.fetchDriverIncidents(
+          sessionToken: sessionToken,
+        );
+      } catch (_) {
+        // Incident status is supplementary; do not block the driver's trip list
+        // if this lightweight refresh fails.
+      }
       final trips = portalData.trips;
       if (!mounted) return;
       setState(() {
@@ -239,10 +250,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         _plannedTrips = portalData.plannedTrips;
         _customerProducts = portalData.customerProducts;
         _customerRecipients = portalData.customerRecipients;
+        _driverIncidents = incidents;
         // DO NOT clear _accessNotice here. It should only be cleared by
         // explicit server response (notice = null) or after acknowledgement.
         // The previous code was wiping warnings incorrectly.
         final activeId = _activeTrip?.deliveryOrderId;
+        final selectedId = _selectedTrip?.deliveryOrderId;
         final lockedTrip = trips.firstWhereOrNull(
           (t) => t.trackingState == 'ACTIVE' || t.trackingState == 'PAUSED',
         );
@@ -252,7 +265,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   trips.firstWhereOrNull(
                     (t) => t.status == TripStatus.onDelivery,
                   );
-        _selectedTrip = _activeTrip ?? (trips.isNotEmpty ? trips.first : null);
+        _selectedTrip =
+            (selectedId != null
+                ? trips.firstWhereOrNull((t) => t.deliveryOrderId == selectedId)
+                : null) ??
+            _activeTrip ??
+            (trips.isNotEmpty ? trips.first : null);
         _trackingEnabled = _activeTrip?.trackingState == 'ACTIVE';
         _loadingTrips = false;
       });
@@ -1113,6 +1131,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         odometer: result.odometer,
         description: result.description,
       );
+      await _loadTrips();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1131,6 +1150,261 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     } finally {
       if (mounted) {
         setState(() => _reportingIncident = false);
+      }
+    }
+  }
+
+  List<DriverIncident> _incidentsForTrip(DeliveryTrip trip) {
+    return _driverIncidents
+        .where((incident) => incident.relatedDeliveryOrderRef == trip.deliveryOrderId)
+        .toList(growable: false);
+  }
+
+  Future<void> _openIncidentResolution(
+    DeliveryTrip trip,
+    DriverIncident incident,
+  ) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+
+    final noteController = TextEditingController();
+    final locationController = TextEditingController(
+      text: _latestLocation == null
+          ? incident.locationText
+          : '${_latestLocation!.latitude.toStringAsFixed(6)}, ${_latestLocation!.longitude.toStringAsFixed(6)}',
+    );
+    final odometerController = TextEditingController(
+      text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
+          ? trip.tripEndOdometerKm!.round().toString()
+          : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
+                ? trip.vehicleLastOdometer!.round().toString()
+                : (incident.odometer != null && incident.odometer! > 0)
+                      ? incident.odometer!.round().toString()
+                      : '',
+    );
+    final costRows = <_IncidentCostDraftController>[];
+
+    final result = await showDialog<_IncidentResolutionSubmitResult>(
+      context: context,
+      builder: (context) {
+        String? errorText;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void addCostRow() {
+              setDialogState(() => costRows.add(_IncidentCostDraftController()));
+            }
+
+            void removeCostRow(int index) {
+              final removed = costRows.removeAt(index);
+              removed.dispose();
+              setDialogState(() {});
+            }
+
+            void submit() {
+              final note = noteController.text.trim();
+              if (note.isEmpty) {
+                setDialogState(
+                  () => errorText = 'Catatan penyelesaian wajib diisi.',
+                );
+                return;
+              }
+
+              final costs = <DriverIncidentCostInput>[];
+              for (var index = 0; index < costRows.length; index++) {
+                final row = costRows[index];
+                final amount = _parseCurrencyInput(row.amount.text);
+                final description = row.description.text.trim();
+                final payee = row.payeeName.text.trim();
+                final rowNote = row.note.text.trim();
+                final hasAnyInput =
+                    amount > 0 ||
+                    description.isNotEmpty ||
+                    payee.isNotEmpty ||
+                    rowNote.isNotEmpty;
+                if (!hasAnyInput) {
+                  continue;
+                }
+                if (amount <= 0 || description.isEmpty) {
+                  setDialogState(
+                    () => errorText =
+                        'Biaya baris ${index + 1} wajib berisi nominal dan deskripsi.',
+                  );
+                  return;
+                }
+                costs.add(
+                  DriverIncidentCostInput(
+                    category: row.category,
+                    amount: amount,
+                    description: description,
+                    payeeName: payee,
+                    note: rowNote,
+                  ),
+                );
+              }
+
+              Navigator.of(context).pop(
+                _IncidentResolutionSubmitResult(
+                  note: note,
+                  locationText: locationController.text.trim(),
+                  odometer: _parseOdometerInput(odometerController.text),
+                  costs: costs,
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: Text('Ajukan Selesai ${incident.incidentNumber}'),
+              content: SizedBox(
+                width: 460,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${trip.doNumber} | ${trip.vehiclePlate}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      if (errorText != null) ...[
+                        Text(
+                          errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextField(
+                        controller: noteController,
+                        minLines: 3,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Catatan Penyelesaian',
+                          hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: locationController,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Lokasi Akhir',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: odometerController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Odometer Akhir',
+                          suffixText: 'km',
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Biaya Driver',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: addCostRow,
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Tambah'),
+                          ),
+                        ],
+                      ),
+                      if (costRows.isEmpty)
+                        Text(
+                          'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.58),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      for (var index = 0; index < costRows.length; index++) ...[
+                        const SizedBox(height: 10),
+                        _IncidentCostInputCard(
+                          key: ObjectKey(costRows[index]),
+                          row: costRows[index],
+                          index: index,
+                          onRemove: () => removeCostRow(index),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: submit,
+                  icon: const Icon(Icons.task_alt_rounded),
+                  label: const Text('Kirim ke Admin'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
+    locationController.dispose();
+    odometerController.dispose();
+    for (final row in costRows) {
+      row.dispose();
+    }
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _submittingIncidentResolution = true);
+    try {
+      await _deliveryOrderService.submitIncidentResolution(
+        sessionToken: sessionToken,
+        incidentRef: incident.id,
+        resolutionNote: result.note,
+        resolutionLocationText: result.locationText,
+        resolutionOdometer: result.odometer,
+        costs: result.costs,
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Penyelesaian insiden dikirim. Menunggu review admin.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submittingIncidentResolution = false);
       }
     }
   }
@@ -1296,6 +1570,16 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   _TripDetailCard(trip: _selectedTrip!),
                   const SizedBox(height: 12),
                   _ManifestSummaryCard(trip: _selectedTrip!),
+                  if (_incidentsForTrip(_selectedTrip!).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _DriverIncidentCard(
+                      incidents: _incidentsForTrip(_selectedTrip!),
+                      busy: _submittingIncidentResolution,
+                      onSubmitResolution: (incident) => unawaited(
+                        _openIncidentResolution(_selectedTrip!, incident),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -1585,6 +1869,37 @@ class _IncidentReportSubmitResult {
   final String description;
 }
 
+class _IncidentResolutionSubmitResult {
+  const _IncidentResolutionSubmitResult({
+    required this.note,
+    required this.locationText,
+    required this.odometer,
+    required this.costs,
+  });
+
+  final String note;
+  final String locationText;
+  final double? odometer;
+  final List<DriverIncidentCostInput> costs;
+}
+
+class _IncidentCostDraftController {
+  _IncidentCostDraftController();
+
+  String category = 'REPAIR';
+  final TextEditingController amount = TextEditingController();
+  final TextEditingController description = TextEditingController();
+  final TextEditingController payeeName = TextEditingController();
+  final TextEditingController note = TextEditingController();
+
+  void dispose() {
+    amount.dispose();
+    description.dispose();
+    payeeName.dispose();
+    note.dispose();
+  }
+}
+
 class _TripClosureSubmitResult {
   const _TripClosureSubmitResult({
     required this.odometerKm,
@@ -1600,6 +1915,56 @@ double? _parseOdometerInput(String value) {
   if (normalized.isEmpty) return null;
   final parsed = double.tryParse(normalized);
   return parsed == null || parsed.isNaN || parsed.isInfinite ? null : parsed;
+}
+
+double _parseCurrencyInput(String value) {
+  final normalized = value
+      .trim()
+      .replaceAll(RegExp(r'[^0-9,.-]'), '')
+      .replaceAll('.', '')
+      .replaceAll(',', '.');
+  if (normalized.isEmpty) return 0;
+  final parsed = double.tryParse(normalized);
+  return parsed == null || parsed.isNaN || parsed.isInfinite ? 0 : parsed;
+}
+
+String _formatRupiah(num value) {
+  final rounded = value.round().toString();
+  final buffer = StringBuffer();
+  for (var index = 0; index < rounded.length; index++) {
+    final remaining = rounded.length - index;
+    buffer.write(rounded[index]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+  return 'Rp ${buffer.toString()}';
+}
+
+String _incidentStatusLabel(String status) {
+  return switch (status) {
+    'OPEN' => 'Dilaporkan',
+    'IN_PROGRESS' => 'Ditangani',
+    'RESOLVED' => 'Selesai, review admin',
+    'CLOSED' => 'Ditutup',
+    _ => status,
+  };
+}
+
+String _incidentCostCategoryLabel(String category) {
+  return switch (category) {
+    'REPAIR' => 'Perbaikan',
+    'SPAREPART' => 'Sparepart',
+    'TIRE' => 'Ban',
+    'TOWING' => 'Derek / Evakuasi',
+    'MEDICAL' => 'Medis',
+    'POLICE_ADMIN' => 'Polisi / Administrasi',
+    'ACCOMMODATION' => 'Akomodasi',
+    'CARGO_HANDLING' => 'Bongkar / Handling',
+    'THIRD_PARTY_DAMAGE' => 'Kerusakan Pihak Ketiga',
+    'OTHER' => 'Lainnya',
+    _ => category,
+  };
 }
 
 String _formatKm(num value) {
@@ -2024,6 +2389,245 @@ class _ManifestSummaryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DriverIncidentCard extends StatelessWidget {
+  const _DriverIncidentCard({
+    required this.incidents,
+    required this.busy,
+    required this.onSubmitResolution,
+  });
+
+  final List<DriverIncident> incidents;
+  final bool busy;
+  final void Function(DriverIncident incident) onSubmitResolution;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.report_problem_outlined,
+                  color: scheme.error,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Insiden Aktif',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  '${incidents.length}',
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.58),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...incidents.map((incident) {
+              final draftTotal = incident.settlementLines
+                  .where((line) => line.status == 'DRAFT')
+                  .fold<num>(0, (sum, line) => sum + line.amount);
+              final draftInfo = incident.draftCostCount > 0
+                  ? ' | ${incident.draftCostCount} biaya draft ${_formatRupiah(draftTotal)}'
+                  : '';
+              return Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: scheme.error.withValues(alpha: 0.24),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${incident.incidentNumber} | ${_incidentStatusLabel(incident.status)}$draftInfo',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (incident.locationText.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        incident.locationText,
+                        style: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.62),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                    if (incident.description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        incident.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ],
+                    if (incident.canSubmitResolution) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonalIcon(
+                          onPressed: busy
+                              ? null
+                              : () => onSubmitResolution(incident),
+                          icon: busy
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: scheme.primary,
+                                  ),
+                                )
+                              : const Icon(Icons.task_alt_rounded),
+                          label: Text(
+                            busy ? 'Mengirim...' : 'Ajukan Selesai Insiden',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IncidentCostInputCard extends StatefulWidget {
+  const _IncidentCostInputCard({
+    required this.row,
+    required this.index,
+    required this.onRemove,
+  });
+
+  final _IncidentCostDraftController row;
+  final int index;
+  final VoidCallback onRemove;
+
+  @override
+  State<_IncidentCostInputCard> createState() => _IncidentCostInputCardState();
+}
+
+class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
+  static const _categoryOptions = [
+    'REPAIR',
+    'SPAREPART',
+    'TIRE',
+    'TOWING',
+    'MEDICAL',
+    'POLICE_ADMIN',
+    'ACCOMMODATION',
+    'CARGO_HANDLING',
+    'THIRD_PARTY_DAMAGE',
+    'OTHER',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Biaya ${widget.index + 1}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                onPressed: widget.onRemove,
+                icon: const Icon(Icons.delete_outline_rounded),
+                tooltip: 'Hapus biaya',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: widget.row.category,
+            decoration: const InputDecoration(labelText: 'Kategori'),
+            items: _categoryOptions
+                .map(
+                  (category) => DropdownMenuItem(
+                    value: category,
+                    child: Text(_incidentCostCategoryLabel(category)),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => widget.row.category = value);
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.row.amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Nominal',
+              prefixText: 'Rp ',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.row.description,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Deskripsi Biaya',
+              hintText: 'Contoh: tambal ban / derek / sparepart',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.row.payeeName,
+            decoration: const InputDecoration(
+              labelText: 'Dibayar ke',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.row.note,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Catatan',
+            ),
+          ),
+        ],
       ),
     );
   }

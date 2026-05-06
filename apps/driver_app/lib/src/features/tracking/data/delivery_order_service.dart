@@ -209,6 +209,71 @@ class DeliveryOrderService {
     }
   }
 
+  Future<List<DriverIncident>> fetchDriverIncidents({
+    required String sessionToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/incidents'),
+      headers: {
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal memuat insiden driver';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+
+    final data = decoded['data'] is List ? decoded['data'] as List : const [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(_mapDriverIncident)
+        .toList(growable: false);
+  }
+
+  Future<void> submitIncidentResolution({
+    required String sessionToken,
+    required String incidentRef,
+    required String resolutionNote,
+    String? resolutionLocationText,
+    double? resolutionOdometer,
+    required List<DriverIncidentCostInput> costs,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/incidents'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'action': 'submit-resolution',
+        'incidentRef': incidentRef,
+        'resolutionNote': resolutionNote.trim(),
+        if (resolutionLocationText != null &&
+            resolutionLocationText.trim().isNotEmpty)
+          'resolutionLocationText': resolutionLocationText.trim(),
+        if (resolutionOdometer != null && resolutionOdometer > 0)
+          'resolutionOdometer': resolutionOdometer,
+        'costs': costs.map((cost) => cost.toJson()).toList(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal mengajukan penyelesaian insiden';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   Future<void> createDeliveryOrderFromTripPlan({
     required String sessionToken,
     required String orderRef,
@@ -419,6 +484,40 @@ class DeliveryOrderService {
       receiverPhone: (json['receiverPhone'] as String?)?.trim(),
       receiverCompany: (json['receiverCompany'] as String?)?.trim(),
     );
+  }
+
+  DriverIncident _mapDriverIncident(Map<String, dynamic> json) {
+    return DriverIncident(
+      id: (json['_id'] as String?)?.trim() ?? '',
+      incidentNumber: (json['incidentNumber'] as String?)?.trim() ?? '-',
+      status: (json['status'] as String?)?.trim() ?? 'OPEN',
+      incidentType: (json['incidentType'] as String?)?.trim() ?? 'OTHER',
+      urgency: (json['urgency'] as String?)?.trim() ?? 'MEDIUM',
+      relatedDeliveryOrderRef: _readRefId(json['relatedDeliveryOrderRef']) ?? '',
+      relatedDONumber: (json['relatedDONumber'] as String?)?.trim() ?? '-',
+      description: (json['description'] as String?)?.trim() ?? '',
+      locationText: (json['locationText'] as String?)?.trim() ?? '',
+      odometer: _toDouble(json['odometer']),
+      dateTime: (json['dateTime'] as String?)?.trim(),
+      settlementLines: _mapIncidentSettlementLines(json['settlementLines']),
+    );
+  }
+
+  List<DriverIncidentSettlementLine> _mapIncidentSettlementLines(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => DriverIncidentSettlementLine(
+            id: (item['_id'] as String?)?.trim() ?? '',
+            status: (item['status'] as String?)?.trim() ?? 'DRAFT',
+            category: (item['category'] as String?)?.trim() ?? 'OTHER',
+            amount: _toDouble(item['amount']) ?? 0,
+            description: (item['description'] as String?)?.trim() ?? '',
+          ),
+        )
+        .where((line) => line.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   List<DeliveryPickupStop> _mapPickupStops(dynamic raw) {
