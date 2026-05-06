@@ -11,10 +11,12 @@ import {
     Pencil,
     Plus,
     PlayCircle,
+    Printer,
     RefreshCw,
     Smartphone,
     Trash2,
     Truck,
+    Wallet,
     X,
 } from 'lucide-react';
 
@@ -68,7 +70,15 @@ import {
 import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 import type { Customer, CustomerProduct, CustomerRecipient, Driver, Incident, IncidentSettlementCategory, IncidentSettlementLine, PendingDriverStatusRequest, SessionUser } from '@/lib/types';
-import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan, DriverAssignedTripPlanPickupStop } from '@/lib/api/driver-portal';
+import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan, DriverAssignedTripPlanPickupStop, DriverPortalVoucher } from '@/lib/api/driver-portal';
+import {
+    buildDriverVoucherCashBreakdown,
+    buildDriverVoucherDetailSummary,
+    buildDriverVoucherPrintHtml,
+    DRIVER_VOUCHER_STATUS_MAP,
+    getDriverVoucherDisbursementLabel,
+} from '@/lib/driver-voucher-detail-support';
+import { openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile, type PrintableCompanyProfile } from '@/lib/print';
 
 type DriverSessionResponse = {
     user: SessionUser;
@@ -82,6 +92,7 @@ type DriverDeliveryOrdersResponse = {
     billingCustomers?: Array<Pick<Customer, '_id' | 'name' | 'active'>>;
     customerProducts?: CustomerProduct[];
     customerRecipients?: CustomerRecipient[];
+    driverVouchers?: DriverPortalVoucher[];
     error?: string;
 };
 
@@ -104,6 +115,7 @@ type DriverIncidentCostDraft = {
 };
 
 type DriverPortalError = Error & { status?: number };
+type DriverPortalSection = 'TRIPS' | 'VOUCHERS';
 type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
 type DriverBatchStatus = 'HEADING_TO_PICKUP' | 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED';
 type DriverBatchStatusSelection = DriverBatchStatus | '';
@@ -849,9 +861,12 @@ export default function DriverPortalPage() {
     const [user, setUser] = useState<SessionUser | null>(null);
     const [driver, setDriver] = useState<Driver | null>(null);
     const [companyName, setCompanyName] = useState('PT Gading Mas Surya');
+    const [driverPrintCompany, setDriverPrintCompany] = useState<PrintableCompanyProfile | null>(null);
     const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
     const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
+    const [driverVouchers, setDriverVouchers] = useState<DriverPortalVoucher[]>([]);
     const [driverIncidents, setDriverIncidents] = useState<DriverIncidentRecord[]>([]);
+    const [activeSection, setActiveSection] = useState<DriverPortalSection>('TRIPS');
     const [billingCustomers, setBillingCustomers] = useState<Array<Pick<Customer, '_id' | 'name' | 'active'>>>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
@@ -1724,6 +1739,7 @@ export default function DriverPortalPage() {
             }
             setOrders((payload.data || []).filter(isDriverDashboardDeliveryOrderVisible));
             setPlannedTrips((payload.plannedTrips || []).filter(isDriverDashboardTripPlanVisible));
+            setDriverVouchers(payload.driverVouchers || []);
             setDriverIncidents(incidents.filter(incident => incident.status !== 'CLOSED'));
             setBillingCustomers((payload.billingCustomers || []).filter(customer => customer.active !== false));
             setCustomerProducts((payload.customerProducts || []).filter(product => product.active !== false));
@@ -1757,6 +1773,15 @@ export default function DriverPortalPage() {
             setUser(sessionPayload.user);
             setDriver(sessionPayload.driver);
             setCompanyName(sessionPayload.company?.name || 'PT Gading Mas Surya');
+            setDriverPrintCompany(sessionPayload.company
+                ? {
+                    name: sessionPayload.company.name,
+                    address: '',
+                    phone: sessionPayload.company.phone || '',
+                    email: '',
+                }
+                : null
+            );
             await loadOrders('initial');
         } catch (error) {
             if (isDriverUnauthorizedError(error)) {
@@ -1768,6 +1793,48 @@ export default function DriverPortalPage() {
             setLoading(false);
         }
     }, [handleDriverAuthFailure, loadOrders]);
+
+    const handlePreviewDriverVoucher = useCallback(async (voucher: DriverPortalVoucher) => {
+        const targetWindow = openPrintWindow(`Menyiapkan uang jalan ${voucher.bonNumber}...`);
+        if (!targetWindow) {
+            setFeedback({
+                type: 'error',
+                message: 'Popup preview diblokir browser. Izinkan popup untuk membuka preview uang jalan.',
+            });
+            return;
+        }
+
+        try {
+            const linkedDeliveryOrder = voucher.deliveryOrderRef
+                ? orders.find(order => order._id === voucher.deliveryOrderRef) || null
+                : null;
+            const items = voucher.items || [];
+            const disbursements = voucher.disbursements || [];
+            const summary = buildDriverVoucherDetailSummary(voucher, items);
+            const bodyHtml = buildDriverVoucherPrintHtml({
+                voucher,
+                deliveryOrder: linkedDeliveryOrder,
+                items,
+                disbursements,
+                summary,
+            });
+
+            openBrandedPrint({
+                title: 'Uang Jalan Trip',
+                subtitle: voucher.bonNumber,
+                company: resolveDocumentIssuerProfile(voucher, driverPrintCompany),
+                bodyHtml,
+                targetWindow,
+                autoPrint: false,
+            });
+        } catch (error) {
+            targetWindow.close();
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal membuka preview uang jalan',
+            });
+        }
+    }, [driverPrintCompany, orders]);
 
     useEffect(() => {
         void loadDriverPortal();
@@ -3575,9 +3642,28 @@ export default function DriverPortalPage() {
                 {feedback && <div className={`driver-feedback ${feedback.type}`}>{feedback.message}</div>}
             </section>
 
+            <section className="driver-section-tabs" aria-label="Menu driver">
+                <button
+                    type="button"
+                    className={`driver-section-tab ${activeSection === 'TRIPS' ? 'active' : ''}`}
+                    onClick={() => setActiveSection('TRIPS')}
+                >
+                    <Truck size={16} /> Cek Trip
+                </button>
+                <button
+                    type="button"
+                    className={`driver-section-tab ${activeSection === 'VOUCHERS' ? 'active' : ''}`}
+                    onClick={() => setActiveSection('VOUCHERS')}
+                >
+                    <Wallet size={16} /> Uang Jalan Trip
+                </button>
+            </section>
+
             <section className="driver-toolbar">
                 <div className="driver-toolbar-text">
-                    {lockedTrackingDo ? (
+                    {activeSection === 'VOUCHERS' ? (
+                        <>Preview bon dan rincian uang jalan yang melekat ke trip kamu</>
+                    ) : lockedTrackingDo ? (
                         <>DO terkunci di <strong>{lockedTrackingDo.doNumber}</strong></>
                     ) : (
                         <>Belum ada DO yang mengunci tracking</>
@@ -3588,6 +3674,8 @@ export default function DriverPortalPage() {
                 </button>
             </section>
 
+            {activeSection === 'TRIPS' ? (
+            <>
             {plannedTrips.length > 0 && (
                 <section className="driver-do-grid" style={{ marginBottom: '1rem' }}>
                     {plannedTrips.map(item => {
@@ -4108,6 +4196,134 @@ export default function DriverPortalPage() {
                     })
                 )}
             </section>
+            </>
+            ) : (
+                <section className="driver-do-grid">
+                    {driverVouchers.length === 0 ? (
+                        <div className="card">
+                            <div className="card-body">
+                                <div className="empty-state" style={{ padding: '1rem 0' }}>
+                                    <Wallet size={40} className="empty-state-icon" />
+                                    <div className="empty-state-title">Belum ada uang jalan trip</div>
+                                    <div className="empty-state-text">
+                                        Bon uang jalan akan muncul setelah admin menerbitkan bon untuk trip kamu.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        driverVouchers.map(voucher => {
+                            const items = voucher.items || [];
+                            const disbursements = voucher.disbursements || [];
+                            const summary = buildDriverVoucherDetailSummary(voucher, items);
+                            const statusConfig = DRIVER_VOUCHER_STATUS_MAP[voucher.status] || { label: voucher.status || '-', cls: 'badge-gray' };
+                            const statusColor = statusConfig.cls.replace('badge-', '') || 'gray';
+                            const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, summary);
+                            const routeLabel = voucher.route || formatDriverTripRoute(undefined, undefined);
+                            const settlementLabel = summary.balance < 0
+                                ? 'Tambahan bayar ke supir'
+                                : summary.balance > 0
+                                    ? 'Dikembalikan ke perusahaan'
+                                    : 'Nihil';
+
+                            return (
+                                <div key={voucher._id} className="card driver-trip-panel">
+                                    <div className="card-header driver-trip-panel-header">
+                                        <div>
+                                            <div className="driver-trip-panel-kicker">Uang Jalan Trip</div>
+                                            <div className="card-header-title">{voucher.bonNumber}</div>
+                                            <div className="text-muted text-sm">{voucher.doNumber || '-'} | {formatDate(voucher.issuedDate || '')}</div>
+                                        </div>
+                                        <div className="driver-trip-status-stack">
+                                            <span className={`badge badge-${statusColor}`}>{statusConfig.label}</span>
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => void handlePreviewDriverVoucher(voucher)}
+                                            >
+                                                <Printer size={15} /> Preview Print
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="card-body driver-trip-panel-body">
+                                        <div className="detail-grid driver-trip-detail-grid">
+                                            <div className="detail-item">
+                                                <div className="detail-label">Kendaraan</div>
+                                                <div className="detail-value">{voucher.vehiclePlate || '-'}</div>
+                                            </div>
+                                            <div className="detail-item">
+                                                <div className="detail-label">Rute</div>
+                                                <div className="detail-value">{routeLabel || '-'}</div>
+                                            </div>
+                                            <div className="detail-item">
+                                                <div className="detail-label">Total Uang Diberikan</div>
+                                                <div className="detail-value">{formatCurrency(summary.totalIssuedAmount)}</div>
+                                            </div>
+                                            <div className="detail-item">
+                                                <div className="detail-label">Biaya Lain-lain</div>
+                                                <div className="detail-value">{formatCurrency(summary.operationalSpent)}</div>
+                                            </div>
+                                            <div className="detail-item">
+                                                <div className="detail-label">Upah Borongan</div>
+                                                <div className="detail-value">{formatCurrency(summary.driverFeeAmount)}</div>
+                                            </div>
+                                            <div className="detail-item">
+                                                <div className="detail-label">Net Settlement</div>
+                                                <div className="detail-value">{formatCurrency(Math.abs(summary.balance))}</div>
+                                                <div className="text-muted text-sm">{settlementLabel}</div>
+                                            </div>
+                                            <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+                                                <div className="detail-label">Rincian Bon</div>
+                                                <div className="detail-value">{cashBreakdown}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="driver-voucher-history">
+                                            <div>
+                                                <div className="form-section-title">Riwayat Uang Jalan</div>
+                                                {disbursements.length === 0 ? (
+                                                    <div className="text-muted text-sm">Belum ada rincian pencairan.</div>
+                                                ) : (
+                                                    <div className="driver-voucher-list">
+                                                        {disbursements.map(disbursement => (
+                                                            <div className="driver-voucher-row" key={disbursement._id}>
+                                                                <div>
+                                                                    <strong>{getDriverVoucherDisbursementLabel(disbursement, disbursements)}</strong>
+                                                                    <div className="text-muted text-sm">{formatDate(disbursement.date || '')} | {disbursement.bankAccountName || '-'}</div>
+                                                                    {disbursement.note && <div className="text-muted text-sm">{disbursement.note}</div>}
+                                                                </div>
+                                                                <strong>{formatCurrency(disbursement.amount || 0)}</strong>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <div className="form-section-title">Biaya Lain-lain Aktual</div>
+                                                {items.length === 0 ? (
+                                                    <div className="text-muted text-sm">Belum ada biaya lain-lain.</div>
+                                                ) : (
+                                                    <div className="driver-voucher-list">
+                                                        {items.map(item => (
+                                                            <div className="driver-voucher-row" key={item._id}>
+                                                                <div>
+                                                                    <strong>{item.category}</strong>
+                                                                    <div className="text-muted text-sm">{formatDate(item.expenseDate || '')} | {item.description || '-'}</div>
+                                                                </div>
+                                                                <strong>{formatCurrency(item.amount || 0)}</strong>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </section>
+            )}
 
             {showIncidentModal && incidentOrder && (
                 <div className="modal-overlay" onClick={closeIncidentModal}>

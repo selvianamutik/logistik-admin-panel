@@ -277,12 +277,108 @@ class DriverAssignedTripPlan {
       : 'Trip $tripSequence';
 }
 
+class DriverTripVoucher {
+  const DriverTripVoucher({
+    required this.id,
+    required this.bonNumber,
+    required this.status,
+    required this.issuedDate,
+    required this.totalIssuedAmount,
+    required this.initialCashGiven,
+    required this.topUpAmount,
+    required this.operationalSpent,
+    required this.operationalBalance,
+    required this.driverFeeAmount,
+    required this.totalClaimAmount,
+    required this.netSettlementAmount,
+    this.doNumber,
+    this.deliveryOrderRef,
+    this.vehiclePlate,
+    this.route,
+    this.issueBankName,
+    this.settlementBankName,
+    this.notes,
+    this.disbursements = const [],
+    this.items = const [],
+  });
+
+  final String id;
+  final String bonNumber;
+  final String status;
+  final String issuedDate;
+  final double totalIssuedAmount;
+  final double initialCashGiven;
+  final double topUpAmount;
+  final double operationalSpent;
+  final double operationalBalance;
+  final double driverFeeAmount;
+  final double totalClaimAmount;
+  final double netSettlementAmount;
+  final String? doNumber;
+  final String? deliveryOrderRef;
+  final String? vehiclePlate;
+  final String? route;
+  final String? issueBankName;
+  final String? settlementBankName;
+  final String? notes;
+  final List<DriverTripVoucherDisbursement> disbursements;
+  final List<DriverTripVoucherItem> items;
+
+  String get statusLabel => switch (status) {
+    'DRAFT' => 'Draft',
+    'ISSUED' => 'Diberikan',
+    'SETTLED' => 'Selesai',
+    _ => status,
+  };
+
+  String get settlementLabel {
+    if (netSettlementAmount < 0) return 'Tambahan bayar ke supir';
+    if (netSettlementAmount > 0) return 'Dikembalikan ke perusahaan';
+    return 'Nihil';
+  }
+}
+
+class DriverTripVoucherDisbursement {
+  const DriverTripVoucherDisbursement({
+    required this.id,
+    required this.date,
+    required this.kind,
+    required this.amount,
+    this.bankAccountName,
+    this.note,
+  });
+
+  final String id;
+  final String date;
+  final String kind;
+  final double amount;
+  final String? bankAccountName;
+  final String? note;
+}
+
+class DriverTripVoucherItem {
+  const DriverTripVoucherItem({
+    required this.id,
+    required this.expenseDate,
+    required this.category,
+    required this.amount,
+    this.description,
+  });
+
+  final String id;
+  final String expenseDate;
+  final String category;
+  final double amount;
+  final String? description;
+}
+
 class DriverPortalData {
   const DriverPortalData({
     required this.trips,
     required this.plannedTrips,
     required this.customerProducts,
     required this.customerRecipients,
+    this.driverVouchers = const [],
     this.incidents = const [],
   });
 
@@ -290,6 +386,7 @@ class DriverPortalData {
   final List<DriverAssignedTripPlan> plannedTrips;
   final List<CustomerProductOption> customerProducts;
   final List<CustomerRecipientOption> customerRecipients;
+  final List<DriverTripVoucher> driverVouchers;
   final List<DriverIncident> incidents;
 }
 

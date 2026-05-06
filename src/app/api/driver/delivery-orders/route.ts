@@ -4,6 +4,7 @@ import {
     getDriverBillingCustomers,
     getDriverAssignedDeliveryOrders,
     getDriverAssignedTripPlans,
+    getDriverAssignedVouchers,
     getDriverOrderCargoCapabilities,
     getDriverPortalAccessNotice,
     requireDriverSessionContext,
@@ -26,9 +27,10 @@ export async function GET(request: Request) {
             return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
         }
 
-        const [deliveryOrders, plannedTrips] = await Promise.all([
+        const [deliveryOrders, plannedTrips, driverVouchers] = await Promise.all([
             getDriverAssignedDeliveryOrders(result.driver._id),
             getDriverAssignedTripPlans(result.driver._id),
+            getDriverAssignedVouchers(result.driver._id),
         ]);
         const cargoCapabilities = await getDriverOrderCargoCapabilities([
             ...deliveryOrders.map(item => typeof item.orderRef === 'string' ? item.orderRef : ''),
@@ -59,6 +61,7 @@ export async function GET(request: Request) {
             billingCustomers,
             customerProducts,
             customerRecipients,
+            driverVouchers,
         });
     } catch (error) {
         const serviceError = getDataServiceErrorInfo(

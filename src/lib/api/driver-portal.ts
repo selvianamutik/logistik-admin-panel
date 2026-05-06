@@ -12,6 +12,9 @@ import type {
     CustomerProduct,
     DeliveryOrder,
     DeliveryOrderItem,
+    DriverVoucher,
+    DriverVoucherDisbursement,
+    DriverVoucherItem,
     Driver,
     DriverScore,
     OrderPickupStop,
@@ -21,6 +24,12 @@ import type {
     Vehicle,
 } from '@/lib/types';
 import { normalizeUserRole, type InternalUserRole } from '@/lib/rbac';
+import {
+    buildDriverVoucherDetailSummary,
+    isActiveDriverVoucherDisbursement,
+    sortDriverVoucherDisbursementsChronologically,
+    sortDriverVoucherItems,
+} from '@/lib/driver-voucher-detail-support';
 
 export type DriverSessionContext = {
     session: SessionUser;
@@ -72,6 +81,19 @@ export type DriverAssignedTripPlan = {
     linkedDeliveryOrderNumber?: string;
     linkedDeliveryOrderStatus?: DeliveryOrder['status'] | 'UNKNOWN';
     allowsDirectCargoInput?: boolean;
+};
+
+export type DriverPortalVoucher = DriverVoucher & {
+    disbursements: DriverVoucherDisbursement[];
+    items: DriverVoucherItem[];
+    initialCashGiven: number;
+    topUpAmount: number;
+    totalIssuedAmount: number;
+    operationalSpent: number;
+    operationalBalance: number;
+    driverFeeAmount: number;
+    totalClaimAmount: number;
+    netSettlementAmount: number;
 };
 
 export type DriverPortalAccessNotice = {
@@ -446,6 +468,65 @@ export async function getDriverBillingCustomers() {
     return (await listDocumentsByFilter<Pick<Customer, '_id' | '_type' | 'name' | 'active'>>('customer', {}))
         .filter(item => item.active !== false)
         .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
+}
+
+export async function getDriverAssignedVouchers(driverRef: string): Promise<DriverPortalVoucher[]> {
+    const normalizedDriverRef = driverRef.trim();
+    if (!normalizedDriverRef) {
+        return [];
+    }
+
+    const vouchers = (await listDocumentsByFilter<DriverVoucher>('driverVoucher', {
+        driverRef: normalizedDriverRef,
+    })).sort((left, right) =>
+        `${right.issuedDate || ''}-${right.bonNumber || ''}`.localeCompare(
+            `${left.issuedDate || ''}-${left.bonNumber || ''}`
+        )
+    );
+
+    if (vouchers.length === 0) {
+        return [];
+    }
+
+    const voucherRefs = vouchers.map(item => item._id);
+    const [rawDisbursements, rawItems] = await Promise.all([
+        listDocumentsByFilter<DriverVoucherDisbursement>('driverVoucherDisbursement', { voucherRef: voucherRefs }),
+        listDocumentsByFilter<DriverVoucherItem>('driverVoucherItem', { voucherRef: voucherRefs }),
+    ]);
+
+    const disbursementsByVoucher = new Map<string, DriverVoucherDisbursement[]>();
+    for (const disbursement of rawDisbursements.filter(isActiveDriverVoucherDisbursement)) {
+        const current = disbursementsByVoucher.get(disbursement.voucherRef) || [];
+        current.push(disbursement);
+        disbursementsByVoucher.set(disbursement.voucherRef, current);
+    }
+
+    const itemsByVoucher = new Map<string, DriverVoucherItem[]>();
+    for (const item of rawItems) {
+        const current = itemsByVoucher.get(item.voucherRef) || [];
+        current.push(item);
+        itemsByVoucher.set(item.voucherRef, current);
+    }
+
+    return vouchers.map(voucher => {
+        const disbursements = sortDriverVoucherDisbursementsChronologically(disbursementsByVoucher.get(voucher._id) || []);
+        const items = sortDriverVoucherItems(itemsByVoucher.get(voucher._id) || []);
+        const summary = buildDriverVoucherDetailSummary(voucher, items);
+
+        return {
+            ...voucher,
+            disbursements,
+            items,
+            initialCashGiven: summary.initialCashGiven,
+            topUpAmount: summary.topUpAmount,
+            totalIssuedAmount: summary.totalIssuedAmount,
+            operationalSpent: summary.operationalSpent,
+            operationalBalance: summary.operationalBalance,
+            driverFeeAmount: summary.driverFeeAmount,
+            totalClaimAmount: summary.totalClaimAmount,
+            netSettlementAmount: summary.balance,
+        };
+    });
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

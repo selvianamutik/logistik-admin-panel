@@ -11,6 +11,8 @@ import '../domain/models.dart';
 import 'delivery_completion_page.dart';
 import 'delivery_manifest_page.dart';
 
+enum _DriverHomeSection { trips, vouchers }
+
 class TrackingHomePage extends StatefulWidget {
   const TrackingHomePage({
     super.key,
@@ -35,7 +37,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   List<DriverAssignedTripPlan> _plannedTrips = const [];
   List<CustomerProductOption> _customerProducts = const [];
   List<CustomerRecipientOption> _customerRecipients = const [];
+  List<DriverTripVoucher> _driverVouchers = const [];
   List<DriverIncident> _driverIncidents = const [];
+  _DriverHomeSection _activeSection = _DriverHomeSection.trips;
   DeliveryTrip? _selectedTrip;
   DeliveryTrip? _activeTrip;
   LocationSnapshot? _latestLocation;
@@ -250,6 +254,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         _plannedTrips = portalData.plannedTrips;
         _customerProducts = portalData.customerProducts;
         _customerRecipients = portalData.customerRecipients;
+        _driverVouchers = portalData.driverVouchers;
         _driverIncidents = incidents;
         // DO NOT clear _accessNotice here. It should only be cleared by
         // explicit server response (notice = null) or after acknowledgement.
@@ -1561,6 +1566,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   session: widget.session,
                   tripCount: _trips.length + pendingTripPlans.length,
                 ),
+                const SizedBox(height: 12),
+                _DriverSectionSwitcher(
+                  activeSection: _activeSection,
+                  tripCount: _trips.length + pendingTripPlans.length,
+                  voucherCount: _driverVouchers.length,
+                  onChanged: (section) => setState(() {
+                    _activeSection = section;
+                  }),
+                ),
                 const SizedBox(height: 16),
                 if (!hasBlockingNotice && accessNotice != null) ...[
                   _ErrorBanner(
@@ -1570,167 +1584,179 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   ),
                   const SizedBox(height: 16),
                 ],
-                if (!hasBlockingNotice && pendingTripPlans.isNotEmpty) ...[
-                  _SectionHeader(
-                    title: 'Trip siap input SJ',
-                    count: pendingTripPlans.length,
-                  ),
-                  const SizedBox(height: 10),
-                  ...pendingTripPlans.map(
-                    (tripPlan) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _PlannedTripCard(
-                        tripPlan: tripPlan,
-                        busy: _submittingManifest,
-                        onPressed: () =>
-                            unawaited(_openTripManifestPlan(tripPlan)),
+                if (_activeSection == _DriverHomeSection.trips) ...[
+                  if (!hasBlockingNotice && pendingTripPlans.isNotEmpty) ...[
+                    _SectionHeader(
+                      title: 'Trip siap input SJ',
+                      count: pendingTripPlans.length,
+                    ),
+                    const SizedBox(height: 10),
+                    ...pendingTripPlans.map(
+                      (tripPlan) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _PlannedTripCard(
+                          tripPlan: tripPlan,
+                          busy: _submittingManifest,
+                          onPressed: () =>
+                              unawaited(_openTripManifestPlan(tripPlan)),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-                _SectionHeader(title: 'Trip', count: _trips.length),
-                const SizedBox(height: 10),
-                _buildTripList(scheme),
-                if (_selectedTrip != null) ...[
-                  const SizedBox(height: 20),
-                  const _SectionHeader(title: 'Trip dipilih'),
-                  const SizedBox(height: 10),
-                  _TripDetailCard(trip: _selectedTrip!),
-                  const SizedBox(height: 12),
-                  _ManifestSummaryCard(trip: _selectedTrip!),
-                  if (_incidentsForTrip(_selectedTrip!).isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _DriverIncidentCard(
-                      incidents: _incidentsForTrip(_selectedTrip!),
-                      busy: _submittingIncidentResolution,
-                      onSubmitResolution: (incident) => unawaited(
-                        _openIncidentResolution(_selectedTrip!, incident),
-                      ),
-                    ),
+                    const SizedBox(height: 20),
                   ],
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.tonalIcon(
-                      onPressed:
-                          _submittingManifest ||
-                              !_canManageManifest(_selectedTrip!)
-                          ? null
-                          : () => unawaited(
-                              _openDeliveryManifest(_selectedTrip!),
-                            ),
-                      icon: _submittingManifest
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.primary,
+                  _SectionHeader(title: 'Trip', count: _trips.length),
+                  const SizedBox(height: 10),
+                  _buildTripList(scheme),
+                  if (_selectedTrip != null) ...[
+                    const SizedBox(height: 20),
+                    const _SectionHeader(title: 'Trip dipilih'),
+                    const SizedBox(height: 10),
+                    _TripDetailCard(trip: _selectedTrip!),
+                    const SizedBox(height: 12),
+                    _ManifestSummaryCard(trip: _selectedTrip!),
+                    if (_incidentsForTrip(_selectedTrip!).isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _DriverIncidentCard(
+                        incidents: _incidentsForTrip(_selectedTrip!),
+                        busy: _submittingIncidentResolution,
+                        onSubmitResolution: (incident) => unawaited(
+                          _openIncidentResolution(_selectedTrip!, incident),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed:
+                            _submittingManifest ||
+                                !_canManageManifest(_selectedTrip!)
+                            ? null
+                            : () => unawaited(
+                                _openDeliveryManifest(_selectedTrip!),
                               ),
-                            )
-                          : const Icon(Icons.inventory_2_outlined),
-                      label: Text(
-                        _selectedTrip!.allowsDirectCargoInput
-                            ? 'Kelola SJ & Barang'
-                            : 'Kelola SJ',
+                        icon: _submittingManifest
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.primary,
+                                ),
+                              )
+                            : const Icon(Icons.inventory_2_outlined),
+                        label: Text(
+                          _selectedTrip!.allowsDirectCargoInput
+                              ? 'Kelola SJ & Barang'
+                              : 'Kelola SJ',
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _reportingIncident
-                          ? null
-                          : () =>
-                                unawaited(_openIncidentReport(_selectedTrip!)),
-                      icon: _reportingIncident
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.report_problem_outlined),
-                      label: Text(
-                        _reportingIncident
-                            ? 'Mengirim laporan...'
-                            : 'Lapor Insiden',
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _reportingIncident
+                            ? null
+                            : () => unawaited(
+                                _openIncidentReport(_selectedTrip!),
+                              ),
+                        icon: _reportingIncident
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.report_problem_outlined),
+                        label: Text(
+                          _reportingIncident
+                              ? 'Mengirim laporan...'
+                              : 'Lapor Insiden',
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    if (_locationError != null) ...[
+                      _ErrorBanner(
+                        icon: Icons.location_off_rounded,
+                        message: _locationError!,
+                        onRetry: () => unawaited(_setTrackingEnabled(true)),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_pingError != null) ...[
+                      _ErrorBanner(
+                        icon: Icons.cloud_off_rounded,
+                        message: _pingError!,
+                        isWarning: true,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_selectedTrip!.isAwaitingAdminApproval) ...[
+                      const _ErrorBanner(
+                        icon: Icons.admin_panel_settings_rounded,
+                        message: 'Trip ini menunggu approval admin.',
+                        isWarning: true,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _TrackingCard(
+                      trackingEnabled: _trackingEnabled,
+                      selectedInterval: _trackingInterval,
+                      location: _latestLocation,
+                      pingCount: _pingCount,
+                      onTrackingChanged: (v) => (_setTrackingEnabled(v)),
+                      onIntervalChanged: _changeInterval,
+                    ),
+                    const SizedBox(height: 12),
+                    if (_activeTrip == null ||
+                        _activeTrip!.deliveryOrderId ==
+                            _selectedTrip!.deliveryOrderId)
+                      _StartDeliveryButton(
+                        trip: _selectedTrip!,
+                        onPressed:
+                            (_selectedTrip!.status == TripStatus.onDelivery ||
+                                _selectedTrip!.status == TripStatus.arrived ||
+                                _selectedTrip!.status == TripStatus.delivered ||
+                                _selectedTrip!.isAwaitingAdminApproval)
+                            ? null
+                            : () => unawaited(_beginDelivery(_selectedTrip!)),
+                      ),
+                    if (_activeTrip?.deliveryOrderId ==
+                        _selectedTrip!.deliveryOrderId) ...[
+                      const SizedBox(height: 12),
+                      _AdvanceButton(
+                        status: _selectedTrip!.status,
+                        awaitingAdminApproval:
+                            _selectedTrip!.isAwaitingAdminApproval,
+                        onPressed:
+                            _selectedTrip!.status == TripStatus.delivered ||
+                                _selectedTrip!.isAwaitingAdminApproval
+                            ? null
+                            : (_updatingStatus
+                                  ? null
+                                  : () => unawaited(_advanceStatus())),
+                      ),
+                    ],
+                    if (_selectedTrip!.status == TripStatus.delivered &&
+                        !_selectedTrip!.isAwaitingAdminApproval) ...[
+                      const SizedBox(height: 12),
+                      _CloseTripButton(
+                        onPressed: _updatingStatus
+                            ? null
+                            : () => unawaited(_openTripClosure(_selectedTrip!)),
+                      ),
+                    ],
+                  ],
+                ] else ...[
+                  _SectionHeader(
+                    title: 'Uang Jalan Trip',
+                    count: _driverVouchers.length,
                   ),
-                  const SizedBox(height: 12),
-                  if (_locationError != null) ...[
-                    _ErrorBanner(
-                      icon: Icons.location_off_rounded,
-                      message: _locationError!,
-                      onRetry: () => unawaited(_setTrackingEnabled(true)),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (_pingError != null) ...[
-                    _ErrorBanner(
-                      icon: Icons.cloud_off_rounded,
-                      message: _pingError!,
-                      isWarning: true,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (_selectedTrip!.isAwaitingAdminApproval) ...[
-                    const _ErrorBanner(
-                      icon: Icons.admin_panel_settings_rounded,
-                      message: 'Trip ini menunggu approval admin.',
-                      isWarning: true,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  _TrackingCard(
-                    trackingEnabled: _trackingEnabled,
-                    selectedInterval: _trackingInterval,
-                    location: _latestLocation,
-                    pingCount: _pingCount,
-                    onTrackingChanged: (v) => (_setTrackingEnabled(v)),
-                    onIntervalChanged: _changeInterval,
-                  ),
-                  const SizedBox(height: 12),
-                  if (_activeTrip == null ||
-                      _activeTrip!.deliveryOrderId ==
-                          _selectedTrip!.deliveryOrderId)
-                    _StartDeliveryButton(
-                      trip: _selectedTrip!,
-                      onPressed:
-                          (_selectedTrip!.status == TripStatus.onDelivery ||
-                              _selectedTrip!.status == TripStatus.arrived ||
-                              _selectedTrip!.status == TripStatus.delivered ||
-                              _selectedTrip!.isAwaitingAdminApproval)
-                          ? null
-                          : () => unawaited(_beginDelivery(_selectedTrip!)),
-                    ),
-                  if (_activeTrip?.deliveryOrderId ==
-                      _selectedTrip!.deliveryOrderId) ...[
-                    const SizedBox(height: 12),
-                    _AdvanceButton(
-                      status: _selectedTrip!.status,
-                      awaitingAdminApproval:
-                          _selectedTrip!.isAwaitingAdminApproval,
-                      onPressed:
-                          _selectedTrip!.status == TripStatus.delivered ||
-                              _selectedTrip!.isAwaitingAdminApproval
-                          ? null
-                          : (_updatingStatus
-                                ? null
-                                : () => unawaited(_advanceStatus())),
-                    ),
-                  ],
-                  if (_selectedTrip!.status == TripStatus.delivered &&
-                      !_selectedTrip!.isAwaitingAdminApproval) ...[
-                    const SizedBox(height: 12),
-                    _CloseTripButton(
-                      onPressed: _updatingStatus
-                          ? null
-                          : () => unawaited(_openTripClosure(_selectedTrip!)),
-                    ),
-                  ],
+                  const SizedBox(height: 10),
+                  _buildVoucherList(scheme),
                 ],
               ],
             ),
@@ -1882,6 +1908,45 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           .toList(),
     );
   }
+
+  Widget _buildVoucherList(ColorScheme scheme) {
+    if (_loadingTrips) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator(color: scheme.primary)),
+      );
+    }
+    if (_loadError != null) {
+      return _ErrorCard(message: _loadError!, onRetry: _loadTrips);
+    }
+    if (_driverVouchers.isEmpty) {
+      return const _EmptyCard(
+        title: 'Belum ada uang jalan trip',
+        message:
+            'Bon uang jalan akan muncul setelah admin menerbitkan bon untuk trip kamu.',
+      );
+    }
+    return Column(
+      children: _driverVouchers
+          .map(
+            (voucher) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _DriverVoucherCard(
+                voucher: voucher,
+                onPreview: () => _openVoucherPreview(voucher),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  void _openVoucherPreview(DriverTripVoucher voucher) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _DriverVoucherPreviewDialog(voucher: voucher),
+    );
+  }
 }
 
 // ── Driver card ────────────────────────────────────────────
@@ -1971,6 +2036,30 @@ String _formatRupiah(num value) {
     }
   }
   return 'Rp ${buffer.toString()}';
+}
+
+String _formatDateText(String? value) {
+  final rawValue = value?.trim();
+  if (rawValue == null || rawValue.isEmpty) return '-';
+  final parsed = DateTime.tryParse(rawValue);
+  if (parsed == null) return rawValue;
+  final local = parsed.toLocal();
+  String twoDigits(int input) => input.toString().padLeft(2, '0');
+  return '${twoDigits(local.day)}/${twoDigits(local.month)}/${local.year}';
+}
+
+String _textOrDash(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? '-' : trimmed;
+}
+
+String _voucherDisbursementLabel(
+  DriverTripVoucherDisbursement disbursement,
+  int index,
+) {
+  if (disbursement.kind == 'INITIAL') return 'Bon Pertama';
+  if (disbursement.kind == 'TOP_UP') return 'Bon ${index + 1}';
+  return disbursement.kind;
 }
 
 String _incidentStatusLabel(String status) {
@@ -2087,6 +2176,549 @@ class _DriverCard extends StatelessWidget {
 }
 
 // ── Section header ─────────────────────────────────────────
+class _DriverSectionSwitcher extends StatelessWidget {
+  const _DriverSectionSwitcher({
+    required this.activeSection,
+    required this.tripCount,
+    required this.voucherCount,
+    required this.onChanged,
+  });
+
+  final _DriverHomeSection activeSection;
+  final int tripCount;
+  final int voucherCount;
+  final ValueChanged<_DriverHomeSection> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget buildButton({
+      required _DriverHomeSection section,
+      required IconData icon,
+      required String label,
+      required int count,
+    }) {
+      final selected = activeSection == section;
+      final content = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 8),
+          Flexible(child: Text('$label ($count)')),
+        ],
+      );
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      );
+
+      return Expanded(
+        child: selected
+            ? FilledButton(
+                onPressed: () => onChanged(section),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: shape,
+                ),
+                child: content,
+              )
+            : OutlinedButton(
+                onPressed: () => onChanged(section),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: scheme.onSurface,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: shape,
+                ),
+                child: content,
+              ),
+      );
+    }
+
+    return Row(
+      children: [
+        buildButton(
+          section: _DriverHomeSection.trips,
+          icon: Icons.local_shipping_outlined,
+          label: 'Cek Trip',
+          count: tripCount,
+        ),
+        const SizedBox(width: 10),
+        buildButton(
+          section: _DriverHomeSection.vouchers,
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Uang Jalan',
+          count: voucherCount,
+        ),
+      ],
+    );
+  }
+}
+
+class _DriverVoucherCard extends StatelessWidget {
+  const _DriverVoucherCard({required this.voucher, required this.onPreview});
+
+  final DriverTripVoucher voucher;
+  final VoidCallback onPreview;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final settlementColor = voucher.netSettlementAmount < 0
+        ? scheme.error
+        : scheme.primary;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        voucher.bonNumber,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_textOrDash(voucher.doNumber)} | ${_formatDateText(voucher.issuedDate)}',
+                        style: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.62),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    voucher.statusLabel,
+                    style: TextStyle(
+                      color: scheme.secondary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _VoucherInfoGrid(
+              items: [
+                _VoucherInfoItem(
+                  label: 'Kendaraan',
+                  value: _textOrDash(voucher.vehiclePlate),
+                ),
+                _VoucherInfoItem(
+                  label: 'Rute',
+                  value: _textOrDash(voucher.route),
+                ),
+                _VoucherInfoItem(
+                  label: 'Total Uang',
+                  value: _formatRupiah(voucher.totalIssuedAmount),
+                ),
+                _VoucherInfoItem(
+                  label: 'Biaya Lain-lain',
+                  value: _formatRupiah(voucher.operationalSpent),
+                ),
+                _VoucherInfoItem(
+                  label: 'Upah Borongan',
+                  value: _formatRupiah(voucher.driverFeeAmount),
+                ),
+                _VoucherInfoItem(
+                  label: 'Settlement',
+                  value: _formatRupiah(voucher.netSettlementAmount.abs()),
+                  color: settlementColor,
+                  caption: voucher.settlementLabel,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onPreview,
+                icon: const Icon(Icons.print_outlined, size: 18),
+                label: const Text('Preview Uang Jalan'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoucherInfoItem {
+  const _VoucherInfoItem({
+    required this.label,
+    required this.value,
+    this.color,
+    this.caption,
+  });
+
+  final String label;
+  final String value;
+  final Color? color;
+  final String? caption;
+}
+
+class _VoucherInfoGrid extends StatelessWidget {
+  const _VoucherInfoGrid({required this.items});
+
+  final List<_VoucherInfoItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= 440;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: items
+              .map(
+                (item) => SizedBox(
+                  width: twoColumns
+                      ? (constraints.maxWidth - 10) / 2
+                      : constraints.maxWidth,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.42,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.label,
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.58),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          item.value,
+                          style: TextStyle(
+                            color: item.color ?? scheme.onSurface,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (item.caption?.trim().isNotEmpty == true) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            item.caption!,
+                            style: TextStyle(
+                              color: scheme.onSurface.withValues(alpha: 0.55),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              )
+              .toList(growable: false),
+        );
+      },
+    );
+  }
+}
+
+class _DriverVoucherPreviewDialog extends StatelessWidget {
+  const _DriverVoucherPreviewDialog({required this.voucher});
+
+  final DriverTripVoucher voucher;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(18),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Preview Uang Jalan',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          voucher.bonNumber,
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.62),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _VoucherInfoGrid(
+                      items: [
+                        _VoucherInfoItem(
+                          label: 'DO',
+                          value: _textOrDash(voucher.doNumber),
+                        ),
+                        _VoucherInfoItem(
+                          label: 'Tanggal',
+                          value: _formatDateText(voucher.issuedDate),
+                        ),
+                        _VoucherInfoItem(
+                          label: 'Kendaraan',
+                          value: _textOrDash(voucher.vehiclePlate),
+                        ),
+                        _VoucherInfoItem(
+                          label: 'Rute',
+                          value: _textOrDash(voucher.route),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Ringkasan',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 10),
+                    _VoucherSummaryLine(
+                      label: 'Total uang diberikan',
+                      value: _formatRupiah(voucher.totalIssuedAmount),
+                    ),
+                    _VoucherSummaryLine(
+                      label: 'Biaya lain-lain',
+                      value: _formatRupiah(voucher.operationalSpent),
+                    ),
+                    _VoucherSummaryLine(
+                      label: 'Sisa bon operasional',
+                      value: _formatRupiah(voucher.operationalBalance),
+                    ),
+                    _VoucherSummaryLine(
+                      label: 'Upah borongan',
+                      value: _formatRupiah(voucher.driverFeeAmount),
+                    ),
+                    _VoucherSummaryLine(
+                      label: 'Net settlement akhir',
+                      value:
+                          '${voucher.netSettlementAmount < 0 ? '-' : ''}${_formatRupiah(voucher.netSettlementAmount.abs())}',
+                    ),
+                    const SizedBox(height: 18),
+                    _VoucherHistorySection(voucher: voucher),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoucherSummaryLine extends StatelessWidget {
+  const _VoucherSummaryLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.64),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoucherHistorySection extends StatelessWidget {
+  const _VoucherHistorySection({required this.voucher});
+
+  final DriverTripVoucher voucher;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Riwayat bon',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        if (voucher.disbursements.isEmpty)
+          Text(
+            'Belum ada riwayat bon.',
+            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.56)),
+          )
+        else
+          ...voucher.disbursements.indexed.map((entry) {
+            final index = entry.$1;
+            final item = entry.$2;
+            return _VoucherHistoryRow(
+              title: _voucherDisbursementLabel(item, index),
+              subtitle:
+                  '${_formatDateText(item.date)} | ${_textOrDash(item.bankAccountName)}',
+              amount: _formatRupiah(item.amount),
+            );
+          }),
+        const SizedBox(height: 16),
+        const Text(
+          'Biaya lain-lain',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        if (voucher.items.isEmpty)
+          Text(
+            'Tidak ada biaya lain-lain.',
+            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.56)),
+          )
+        else
+          ...voucher.items.map(
+            (item) => _VoucherHistoryRow(
+              title: item.category,
+              subtitle:
+                  '${_formatDateText(item.expenseDate)} | ${_textOrDash(item.description)}',
+              amount: _formatRupiah(item.amount),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _VoucherHistoryRow extends StatelessWidget {
+  const _VoucherHistoryRow({
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+  });
+
+  final String title;
+  final String subtitle;
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.58),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(amount, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title, this.count});
   final String title;
@@ -3351,7 +3983,10 @@ class _ErrorCard extends StatelessWidget {
 }
 
 class _EmptyCard extends StatelessWidget {
-  const _EmptyCard();
+  const _EmptyCard({this.title = 'Tidak ada DO aktif', this.message});
+
+  final String title;
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -3368,12 +4003,27 @@ class _EmptyCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Tidak ada DO aktif',
+              title,
               style: TextStyle(
                 color: scheme.onSurface.withValues(alpha: 0.5),
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (message?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  message!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.45),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

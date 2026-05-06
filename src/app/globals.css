@@ -2598,6 +2598,7 @@ tbody td {
 
 .driver-hint-card,
 .driver-toolbar,
+.driver-section-tabs,
 .driver-do-grid {
   max-width: 920px;
   margin: 0 auto;
@@ -2646,6 +2647,40 @@ tbody td {
 .driver-feedback.info {
   background: rgba(59, 130, 246, 0.12);
   color: #1d4ed8;
+}
+
+.driver-section-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.driver-section-tab {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--color-gray-700);
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.driver-section-tab:hover {
+  border-color: rgba(15, 118, 110, 0.35);
+  color: var(--color-primary);
+}
+
+.driver-section-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  box-shadow: 0 12px 24px rgba(15, 118, 110, 0.18);
 }
 
 .driver-toolbar {
@@ -2707,6 +2742,28 @@ tbody td {
 .driver-trip-panel-body {
   display: grid;
   gap: var(--space-5);
+}
+
+.driver-voucher-history {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.driver-voucher-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.driver-voucher-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  padding: 0.75rem 0.85rem;
 }
 
 .driver-trip-detail-grid {
@@ -3007,6 +3064,11 @@ tbody td {
   }
 
   .driver-trip-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-section-tabs,
+  .driver-voucher-history {
     grid-template-columns: 1fr;
   }
 

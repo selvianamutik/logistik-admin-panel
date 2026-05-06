@@ -45,6 +45,9 @@ class DeliveryOrderService {
     final customerRecipientData = decoded['customerRecipients'] is List
         ? decoded['customerRecipients'] as List
         : const [];
+    final driverVoucherData = decoded['driverVouchers'] is List
+        ? decoded['driverVouchers'] as List
+        : const [];
 
     return DriverPortalData(
       trips: tripData
@@ -62,6 +65,10 @@ class DeliveryOrderService {
       customerRecipients: customerRecipientData
           .whereType<Map<String, dynamic>>()
           .map(_mapCustomerRecipient)
+          .toList(growable: false),
+      driverVouchers: driverVoucherData
+          .whereType<Map<String, dynamic>>()
+          .map(_mapDriverTripVoucher)
           .toList(growable: false),
     );
   }
@@ -484,6 +491,69 @@ class DeliveryOrderService {
       receiverPhone: (json['receiverPhone'] as String?)?.trim(),
       receiverCompany: (json['receiverCompany'] as String?)?.trim(),
     );
+  }
+
+  DriverTripVoucher _mapDriverTripVoucher(Map<String, dynamic> json) {
+    return DriverTripVoucher(
+      id: (json['_id'] as String?)?.trim() ?? '',
+      bonNumber: (json['bonNumber'] as String?)?.trim() ?? '-',
+      status: (json['status'] as String?)?.trim() ?? 'ISSUED',
+      issuedDate: (json['issuedDate'] as String?)?.trim() ?? '',
+      doNumber: (json['doNumber'] as String?)?.trim(),
+      deliveryOrderRef: _readRefId(json['deliveryOrderRef']),
+      vehiclePlate: (json['vehiclePlate'] as String?)?.trim(),
+      route: (json['route'] as String?)?.trim(),
+      issueBankName: (json['issueBankName'] as String?)?.trim(),
+      settlementBankName: (json['settlementBankName'] as String?)?.trim(),
+      notes: (json['notes'] as String?)?.trim(),
+      totalIssuedAmount: _toDouble(json['totalIssuedAmount']) ?? 0,
+      initialCashGiven: _toDouble(json['initialCashGiven']) ?? 0,
+      topUpAmount: _toDouble(json['topUpAmount']) ?? 0,
+      operationalSpent: _toDouble(json['operationalSpent']) ?? 0,
+      operationalBalance: _toDouble(json['operationalBalance']) ?? 0,
+      driverFeeAmount: _toDouble(json['driverFeeAmount']) ?? 0,
+      totalClaimAmount: _toDouble(json['totalClaimAmount']) ?? 0,
+      netSettlementAmount: _toDouble(json['netSettlementAmount']) ?? 0,
+      disbursements: _mapDriverTripVoucherDisbursements(json['disbursements']),
+      items: _mapDriverTripVoucherItems(json['items']),
+    );
+  }
+
+  List<DriverTripVoucherDisbursement> _mapDriverTripVoucherDisbursements(
+    dynamic raw,
+  ) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => DriverTripVoucherDisbursement(
+            id: (item['_id'] as String?)?.trim() ?? '',
+            date: (item['date'] as String?)?.trim() ?? '',
+            kind: (item['kind'] as String?)?.trim() ?? 'INITIAL',
+            amount: _toDouble(item['amount']) ?? 0,
+            bankAccountName: (item['bankAccountName'] as String?)?.trim(),
+            note: (item['note'] as String?)?.trim(),
+          ),
+        )
+        .where((item) => item.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<DriverTripVoucherItem> _mapDriverTripVoucherItems(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => DriverTripVoucherItem(
+            id: (item['_id'] as String?)?.trim() ?? '',
+            expenseDate: (item['expenseDate'] as String?)?.trim() ?? '',
+            category: (item['category'] as String?)?.trim() ?? '-',
+            amount: _toDouble(item['amount']) ?? 0,
+            description: (item['description'] as String?)?.trim(),
+          ),
+        )
+        .where((item) => item.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   DriverIncident _mapDriverIncident(Map<String, dynamic> json) {
