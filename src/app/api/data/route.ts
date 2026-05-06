@@ -97,6 +97,7 @@ import {
     handleOrderItemHoldSet,
     handleOrderCreate,
     handleOrderHeaderBookingUpdate,
+    handleOrderTripPlanCancel,
     handleOrderTripPlanAppend,
     handleOrderTripPlanUpdate,
     handleOrderTargetRevision,
@@ -253,6 +254,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'update-tax-invoice' ||
         action === 'update-header-booking' ||
         action === 'append-trip-plan' ||
+        action === 'cancel-trip-plan' ||
         action === 'delete-trip-plan' ||
         action === 'update-trip-plan' ||
         action === 'revise-targets' ||
@@ -1606,6 +1608,10 @@ export async function POST(request: Request) {
 
         if (entity === 'orders' && action === 'delete-trip-plan') {
             return await handleOrderTripPlanDeleteLocal(session, data);
+        }
+
+        if (entity === 'orders' && action === 'cancel-trip-plan') {
+            return await handleOrderTripPlanCancel(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'revise-targets') {

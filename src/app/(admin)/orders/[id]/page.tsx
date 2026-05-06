@@ -60,7 +60,7 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Service, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, ExpenseCategory, FreightNota, FreightNotaItem, Service, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -165,6 +165,39 @@ type TripDraftForm = {
 };
 
 type TripPlanModalMode = 'create' | 'edit' | 'delete';
+
+type CancelTripExpenseFormState = {
+    expenseDate: string;
+    categoryRef: string;
+    bankAccountRef: string;
+    description: string;
+    amount: number;
+};
+
+function createDefaultCancelTripExpenseForm(): CancelTripExpenseFormState {
+    return {
+        expenseDate: getBusinessDateValue(),
+        categoryRef: '',
+        bankAccountRef: '',
+        description: '',
+        amount: 0,
+    };
+}
+
+function isOperationalCancelExpenseCategory(category: ExpenseCategory) {
+    return category.active !== false && category.scope === 'GENERAL' && category.allowManual !== false;
+}
+
+function getDefaultCancelExpenseCategoryRef(categories: ExpenseCategory[]) {
+    const operationalCategories = categories.filter(isOperationalCancelExpenseCategory);
+    return (
+        operationalCategories.find(category => /batal|pembatalan/i.test(category.name))?._id ||
+        operationalCategories.find(category => /lain-lain umum/i.test(category.name))?._id ||
+        operationalCategories.find(category => /operasional/i.test(category.name))?._id ||
+        operationalCategories[0]?._id ||
+        ''
+    );
+}
 
 function toDirectCargoGroupItem(item: OrderItemForm): DirectCargoGroupItem {
     return {
@@ -280,6 +313,13 @@ export default function OrderDetailPage() {
     const [selectedTripPlanActionKey, setSelectedTripPlanActionKey] = useState('');
     const [editingTripPlanKey, setEditingTripPlanKey] = useState('');
     const [deletingTripPlanKey, setDeletingTripPlanKey] = useState('');
+    const [showCancelTripModal, setShowCancelTripModal] = useState(false);
+    const [cancelTripPlanKey, setCancelTripPlanKey] = useState('');
+    const [cancelTripNote, setCancelTripNote] = useState('');
+    const [cancelTripExpenseForm, setCancelTripExpenseForm] = useState<CancelTripExpenseFormState>(createDefaultCancelTripExpenseForm());
+    const [cancelTripExpenseCategories, setCancelTripExpenseCategories] = useState<ExpenseCategory[]>([]);
+    const [loadingCancelExpenseRefs, setLoadingCancelExpenseRefs] = useState(false);
+    const [cancellingTripPlan, setCancellingTripPlan] = useState(false);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
@@ -294,9 +334,10 @@ export default function OrderDetailPage() {
     const loadedVehicleOptionsRef = useRef(false);
     const loadedTripPlanSupportRef = useRef(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
+    const canManageOrderTrips = user ? hasPermission(user.role, 'orders', 'update') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
-    const hasOpenModal = showDOModal || showAddTripModal || showTripPlanActionModal || showHoldModal;
+    const hasOpenModal = showDOModal || showAddTripModal || showTripPlanActionModal || showCancelTripModal || showHoldModal;
     const currentPath = pathname || `/orders/${orderId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
 
@@ -452,6 +493,26 @@ export default function OrderDetailPage() {
         setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
         loadedTripPlanSupportRef.current = true;
     }, []);
+
+    const loadCancelTripExpenseReferences = useCallback(async () => {
+        setLoadingCancelExpenseRefs(true);
+        try {
+            const [categoryRows, accountRows] = await Promise.all([
+                fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat kategori pengeluaran'),
+                fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat kas / bank pengeluaran'),
+            ]);
+            const activeCategories = (categoryRows || []).filter(category => category.active !== false);
+            const activeAccounts = (accountRows || []).filter(account => account.active !== false);
+            setCancelTripExpenseCategories(activeCategories);
+            setBankAccounts(activeAccounts);
+            return { categories: activeCategories, accounts: activeAccounts };
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat referensi biaya batal trip');
+            return { categories: cancelTripExpenseCategories, accounts: bankAccounts };
+        } finally {
+            setLoadingCancelExpenseRefs(false);
+        }
+    }, [addToast, bankAccounts, cancelTripExpenseCategories]);
 
     const loadOrderDetail = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -853,6 +914,102 @@ export default function OrderDetailPage() {
         }
     };
 
+    const closeCancelTripModal = () => {
+        if (cancellingTripPlan) return;
+        setShowCancelTripModal(false);
+        setCancelTripPlanKey('');
+        setCancelTripNote('');
+        setCancelTripExpenseForm(createDefaultCancelTripExpenseForm());
+    };
+
+    const openCancelTripModal = async (tripPlan: NonNullable<Order['tripPlans']>[number]) => {
+        if (!tripPlan._key || !order?._id) return;
+        const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef
+            ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef)
+            : undefined;
+        if (!canCancelTripPlanFromOrder(tripPlan, linkedDeliveryOrder)) {
+            addToast('error', 'Trip ini sudah punya progres final atau tidak bisa dibatalkan dari halaman order.');
+            return;
+        }
+        setCancelTripPlanKey(tripPlan._key);
+        setCancelTripNote('');
+        const { categories, accounts } = await loadCancelTripExpenseReferences();
+        setCancelTripExpenseForm({
+            ...createDefaultCancelTripExpenseForm(),
+            categoryRef: getDefaultCancelExpenseCategoryRef(categories),
+            bankAccountRef: accounts[0]?._id || '',
+            description: `Biaya pembatalan Trip ${tripPlan.sequence || ''}${order.masterResi ? ` ${order.masterResi}` : ''}`.trim(),
+        });
+        setShowCancelTripModal(true);
+    };
+
+    const cancelTripFromOrder = async () => {
+        if (!order?._id || !selectedCancelTripPlan?._key) return;
+        const linkedDeliveryOrder = selectedCancelDeliveryOrder;
+        if (!canCancelTripPlanFromOrder(selectedCancelTripPlan, linkedDeliveryOrder)) {
+            addToast('error', 'Trip ini sudah berubah atau sudah punya progres final. Refresh lalu cek ulang.');
+            return;
+        }
+        const shouldSubmitCancelExpense = cancelTripExpenseForm.amount > 0;
+        if (shouldSubmitCancelExpense && !cancelTripExpenseForm.categoryRef) {
+            addToast('error', 'Pilih kategori pengeluaran biaya batal trip');
+            return;
+        }
+        if (shouldSubmitCancelExpense && !cancelTripExpenseForm.bankAccountRef) {
+            addToast('error', 'Pilih kas / bank untuk biaya batal trip');
+            return;
+        }
+        const cancelExpenseDescription =
+            cancelTripExpenseForm.description.trim() ||
+            `Biaya pembatalan Trip ${selectedCancelTripPlan.sequence || ''}${order.masterResi ? ` ${order.masterResi}` : ''}`.trim();
+
+        setCancellingTripPlan(true);
+        try {
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: linkedDeliveryOrder ? 'delivery-orders' : 'orders',
+                    action: linkedDeliveryOrder ? 'cancel-trip' : 'cancel-trip-plan',
+                    data: {
+                        id: linkedDeliveryOrder?._id || order._id,
+                        tripPlanKey: linkedDeliveryOrder ? undefined : selectedCancelTripPlan._key,
+                        note: cancelTripNote,
+                        ...(shouldSubmitCancelExpense
+                            ? {
+                                cancelExpenseDate: cancelTripExpenseForm.expenseDate,
+                                cancelExpenseCategoryRef: cancelTripExpenseForm.categoryRef,
+                                cancelExpenseBankAccountRef: cancelTripExpenseForm.bankAccountRef,
+                                cancelExpenseDescription,
+                                cancelExpenseAmount: cancelTripExpenseForm.amount,
+                            }
+                            : {}),
+                    },
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                addToast('error', result.error || 'Gagal membatalkan trip');
+                return;
+            }
+            const cancelExpenseAmount = Number(result.data?.cancelExpenseAmount || 0);
+            const cancelledSuratJalanCount = Number(result.data?.cancelledSuratJalanCount || 0);
+            setShowCancelTripModal(false);
+            setCancelTripPlanKey('');
+            setCancelTripNote('');
+            setCancelTripExpenseForm(createDefaultCancelTripExpenseForm());
+            await refreshOrderDeliveryState('Gagal memuat ulang order setelah trip dibatalkan');
+            addToast(
+                'success',
+                `Trip ${selectedCancelTripPlan.sequence} dibatalkan${cancelledSuratJalanCount > 0 ? `, ${cancelledSuratJalanCount} SJ ikut batal` : ''}${cancelExpenseAmount > 0 ? `, biaya ${formatCurrency(cancelExpenseAmount)} masuk Pengeluaran` : ''}`
+            );
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal membatalkan trip');
+        } finally {
+            setCancellingTripPlan(false);
+        }
+    };
+
     const openCreateDOModal = (tripPlanKey?: string) => {
         const tripPlan = orderTripPlans.find(plan => plan._key === tripPlanKey) || null;
         const defaultPickupStopKey = tripPlan?.pickupStopKeys[0] || resolvedOrderPickupStops[0]?._key || '';
@@ -991,6 +1148,37 @@ export default function OrderDetailPage() {
     );
     const unplannedDos = dos.filter(deliveryOrder => !linkedTripDoIds.has(deliveryOrder._id));
     const nonCancelledDos = dos.filter(deliveryOrder => deliveryOrder.status !== 'CANCELLED');
+    const selectedCancelTripPlan = orderTripPlans.find(plan => plan._key === cancelTripPlanKey) || null;
+    const selectedCancelDeliveryOrder =
+        selectedCancelTripPlan?.linkedDeliveryOrderRef
+            ? deliveryOrderById.get(selectedCancelTripPlan.linkedDeliveryOrderRef)
+            : undefined;
+    const cancelTripOperationalCategories = cancelTripExpenseCategories.filter(isOperationalCancelExpenseCategory);
+    const cancelTripBankAccounts = bankAccounts.filter(account => account.active !== false);
+    const canCancelTripPlanFromOrder = (
+        tripPlan: NonNullable<Order['tripPlans']>[number],
+        linkedDeliveryOrder?: DeliveryOrder
+    ) => {
+        if (!canManageOrderTrips) {
+            return false;
+        }
+        if (!tripPlan.linkedDeliveryOrderRef) {
+            return true;
+        }
+        if (!linkedDeliveryOrder) {
+            return false;
+        }
+        const hasFinalizedCargo =
+            linkedDeliveryOrder.status === 'DELIVERED' ||
+            linkedDeliveryOrder.status === 'PARTIAL_HOLD' ||
+            Boolean(linkedDeliveryOrder.cargoFinalizedAt) ||
+            (Array.isArray(linkedDeliveryOrder.actualDropPoints) && linkedDeliveryOrder.actualDropPoints.length > 0);
+        return (
+            !linkedDeliveryOrder.pendingDriverStatus &&
+            !hasFinalizedCargo &&
+            linkedDeliveryOrder.status !== 'CANCELLED'
+        );
+    };
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
             setDoVehicleOverrideReason('');
@@ -1698,6 +1886,7 @@ export default function OrderDetailPage() {
                             const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, linkedShipperReferenceItems, 3) : null;
                             const canInputSuratJalan =
                                 !linkedDeliveryOrder;
+                            const canCancelCurrentTrip = canCancelTripPlanFromOrder(tripPlan, linkedDeliveryOrder);
                             return (
                                 <div
                                     key={tripPlan._key}
@@ -1777,6 +1966,17 @@ export default function OrderDetailPage() {
                                             {canInputSuratJalan && (
                                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal(tripPlan._key)}>
                                                     <Truck size={14} /> Input Surat Jalan
+                                                </button>
+                                            )}
+                                            {canCancelCurrentTrip && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => void openCancelTripModal(tripPlan)}
+                                                    disabled={cancellingTripPlan && cancelTripPlanKey === tripPlan._key}
+                                                    style={{ color: 'var(--color-danger)' }}
+                                                >
+                                                    Batalkan Trip
                                                 </button>
                                             )}
                                         </div>
@@ -2426,6 +2626,125 @@ export default function OrderDetailPage() {
                             ) : (
                                 <div className="text-muted text-sm">Pilih trip untuk langsung membuka form edit.</div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCancelTripModal && (
+                <div className="modal-overlay" onClick={closeCancelTripModal}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Batalkan Trip</h3>
+                            <button className="modal-close" onClick={closeCancelTripModal} disabled={cancellingTripPlan}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'grid', gap: '1rem' }}>
+                            <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-danger-light)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}>
+                                {selectedCancelDeliveryOrder
+                                    ? `Trip ${selectedCancelTripPlan?.sequence || '-'} dan ${formatInternalDeliveryOrderNumber(selectedCancelDeliveryOrder)} akan dibatalkan. Order/resi tetap aktif.`
+                                    : `Rencana Trip ${selectedCancelTripPlan?.sequence || '-'} akan dibatalkan sebelum SJ dibuat. Order/resi tetap aktif.`}
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Catatan Pembatalan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={cancelTripNote}
+                                    onChange={event => setCancelTripNote(event.target.value)}
+                                    placeholder="Mis. muatan batal / armada diganti"
+                                    disabled={cancellingTripPlan}
+                                />
+                            </div>
+                            <div style={{ borderTop: '1px solid var(--color-gray-200)', paddingTop: '1rem' }}>
+                                <div className="font-semibold" style={{ marginBottom: '0.35rem' }}>Pengeluaran Operasional Opsional</div>
+                                <div className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
+                                    Isi hanya jika pembatalan menimbulkan biaya. Biaya ini masuk menu Pengeluaran, bukan bon driver.
+                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Tanggal</label>
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={cancelTripExpenseForm.expenseDate}
+                                            onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, expenseDate: event.target.value }))}
+                                            disabled={cancellingTripPlan}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Kategori</label>
+                                        <select
+                                            className="form-select"
+                                            value={cancelTripExpenseForm.categoryRef}
+                                            onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, categoryRef: event.target.value }))}
+                                            disabled={cancellingTripPlan || loadingCancelExpenseRefs || cancelTripOperationalCategories.length === 0}
+                                        >
+                                            {cancelTripOperationalCategories.length === 0 ? (
+                                                <option value="">Tidak ada kategori pengeluaran umum aktif</option>
+                                            ) : (
+                                                cancelTripOperationalCategories.map(category => (
+                                                    <option key={category._id} value={category._id}>{category.name}</option>
+                                                ))
+                                            )}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Kas / Bank</label>
+                                    <select
+                                        className="form-select"
+                                        value={cancelTripExpenseForm.bankAccountRef}
+                                        onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, bankAccountRef: event.target.value }))}
+                                        disabled={cancellingTripPlan || loadingCancelExpenseRefs || cancelTripBankAccounts.length === 0}
+                                    >
+                                        {cancelTripBankAccounts.length === 0 ? (
+                                            <option value="">Tidak ada kas / bank aktif</option>
+                                        ) : (
+                                            cancelTripBankAccounts.map(account => (
+                                                <option key={account._id} value={account._id}>
+                                                    {account.bankName}{account.accountNumber ? ` - ${account.accountNumber}` : ''}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Deskripsi</label>
+                                    <input
+                                        className="form-input"
+                                        value={cancelTripExpenseForm.description}
+                                        onChange={event => setCancelTripExpenseForm(prev => ({ ...prev, description: event.target.value }))}
+                                        placeholder="Mis. solar perjalanan ke pickup"
+                                        disabled={cancellingTripPlan}
+                                    />
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label">Nominal</label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        min={0}
+                                        className="form-input"
+                                        value={cancelTripExpenseForm.amount}
+                                        onValueChange={value => setCancelTripExpenseForm(prev => ({ ...prev, amount: value }))}
+                                        placeholder="Isi jika ada biaya keluar"
+                                        disabled={cancellingTripPlan}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeCancelTripModal} disabled={cancellingTripPlan}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={cancelTripFromOrder}
+                                disabled={
+                                    cancellingTripPlan ||
+                                    (cancelTripExpenseForm.amount > 0 && (!cancelTripExpenseForm.categoryRef || !cancelTripExpenseForm.bankAccountRef))
+                                }
+                                style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+                            >
+                                {cancellingTripPlan ? 'Membatalkan...' : 'Batalkan Trip'}
+                            </button>
                         </div>
                     </div>
                 </div>

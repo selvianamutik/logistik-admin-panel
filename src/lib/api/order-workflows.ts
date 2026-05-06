@@ -241,7 +241,7 @@ import {
     getDeliveryOrderNonBillableCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
-import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Expense, ExpenseCategory, Maintenance, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
+import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Expense, ExpenseCategory, Maintenance, Order, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -3725,6 +3725,230 @@ export async function handleDeliveryOrderCancelTrip(
             cancelExpenseRef,
             cancelExpenseAmount: shouldRecordCancelExpense ? cancelExpenseAmount : 0,
         },
+    });
+}
+
+export async function handleOrderTripPlanCancel(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeOptionalText(data.id);
+    const tripPlanKey = normalizeOptionalText(data.tripPlanKey);
+    const note = normalizeOptionalText(data.note);
+    const cancelExpenseAmountRaw = normalizeCurrencyNumber(data.cancelExpenseAmount ?? 0);
+    const cancelExpenseAmount = Number.isFinite(cancelExpenseAmountRaw) ? cancelExpenseAmountRaw : Number.NaN;
+    const shouldRecordCancelExpense = cancelExpenseAmount > 0;
+    const cancelExpenseCategoryRef = normalizeOptionalText(data.cancelExpenseCategoryRef);
+    const cancelExpenseCategoryName = normalizeOptionalText(data.cancelExpenseCategory);
+    const cancelExpenseBankAccountRef = normalizeOptionalText(data.cancelExpenseBankAccountRef);
+    const cancelExpenseDescription =
+        normalizeOptionalText(data.cancelExpenseDescription) ||
+        `Biaya pembatalan rencana trip${note ? `: ${note}` : ''}`;
+    const cancelExpenseDate = normalizeOptionalText(data.cancelExpenseDate) || getBusinessDateValue();
+
+    if (!id || !tripPlanKey) {
+        return NextResponse.json({ error: 'Rencana trip tidak valid' }, { status: 400 });
+    }
+    if (data.cancelExpenseAmount !== undefined && !Number.isFinite(cancelExpenseAmountRaw)) {
+        return NextResponse.json({ error: 'Nominal biaya batal trip tidak valid' }, { status: 400 });
+    }
+    if (shouldRecordCancelExpense) {
+        try {
+            assertIsoDate(cancelExpenseDate, 'Tanggal biaya batal trip');
+        } catch {
+            return NextResponse.json({ error: 'Tanggal biaya batal trip tidak valid' }, { status: 400 });
+        }
+        if (!cancelExpenseBankAccountRef) {
+            return NextResponse.json({ error: 'Kas / bank biaya batal trip wajib dipilih' }, { status: 400 });
+        }
+    }
+
+    const order = await getDocumentById<Pick<Order, '_id' | 'masterResi' | 'tripPlans'>>(id, 'order');
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const tripPlan = currentTripPlans.find(plan => normalizeOptionalText(plan._key) === tripPlanKey) || null;
+    if (!tripPlan) {
+        return NextResponse.json({ error: 'Rencana trip tidak ditemukan. Refresh lalu coba lagi.' }, { status: 404 });
+    }
+    if (tripPlan.linkedDeliveryOrderRef) {
+        return NextResponse.json(
+            { error: 'Trip yang sudah punya SJ harus dibatalkan dari alur trip/SJ agar seluruh SJ tertaut ikut batal.' },
+            { status: 409 }
+        );
+    }
+
+    let cancelExpenseCategoryDoc: ExpenseCategory | null = null;
+    let cancelExpenseBankAccount: Awaited<ReturnType<typeof getLedgerAccount>> = null;
+    if (shouldRecordCancelExpense) {
+        const categoryRows = await listDocumentsByFilter<ExpenseCategory>('expenseCategory', {});
+        const activeOperationalCategories = categoryRows
+            .filter(category =>
+                category.active !== false &&
+                inferExpenseCategoryScope(category) === 'GENERAL' &&
+                category.allowManual !== false
+            )
+            .sort((left, right) => normalizeNumber(left.sortOrder ?? 0) - normalizeNumber(right.sortOrder ?? 0));
+        cancelExpenseCategoryDoc = cancelExpenseCategoryRef
+            ? await getDocumentById<ExpenseCategory>(cancelExpenseCategoryRef, 'expenseCategory')
+            : null;
+        if (!cancelExpenseCategoryDoc && cancelExpenseCategoryName) {
+            const categoryNameLower = cancelExpenseCategoryName.toLowerCase();
+            cancelExpenseCategoryDoc = activeOperationalCategories.find(category => category.name.toLowerCase() === categoryNameLower) || null;
+        }
+        cancelExpenseCategoryDoc =
+            cancelExpenseCategoryDoc ||
+            activeOperationalCategories.find(category => /batal|pembatalan/i.test(category.name)) ||
+            activeOperationalCategories.find(category => /lain-lain umum/i.test(category.name)) ||
+            activeOperationalCategories.find(category => /operasional/i.test(category.name)) ||
+            activeOperationalCategories[0] ||
+            null;
+        if (!cancelExpenseCategoryDoc) {
+            return NextResponse.json(
+                { error: 'Kategori pengeluaran umum untuk biaya batal trip belum tersedia.' },
+                { status: 409 }
+            );
+        }
+        if (
+            cancelExpenseCategoryDoc.active === false ||
+            inferExpenseCategoryScope(cancelExpenseCategoryDoc) !== 'GENERAL' ||
+            cancelExpenseCategoryDoc.allowManual === false
+        ) {
+            return NextResponse.json(
+                { error: 'Kategori biaya batal trip harus berupa kategori pengeluaran umum aktif.' },
+                { status: 409 }
+            );
+        }
+
+        cancelExpenseBankAccount = await getLedgerAccount(cancelExpenseBankAccountRef || '');
+        if (!cancelExpenseBankAccount) {
+            return NextResponse.json({ error: 'Kas / bank biaya batal trip tidak ditemukan atau nonaktif' }, { status: 404 });
+        }
+        const { startingBalance, nextBalance } = computeLedgerDebitBalance(
+            cancelExpenseBankAccount.currentBalance,
+            cancelExpenseAmount
+        );
+        if (nextBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
+    }
+
+    const nextTripPlans = currentTripPlans
+        .filter(plan => normalizeOptionalText(plan._key) !== tripPlanKey)
+        .map((plan, index) => ({
+            ...plan,
+            sequence: index + 1,
+        }));
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await updateDocument(id, {
+            tripPlans: nextTripPlans.length > 0 ? nextTripPlans : undefined,
+        }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Rencana trip order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    const timestamp = new Date().toISOString();
+    let cancelExpenseRef: string | undefined;
+    if (shouldRecordCancelExpense && cancelExpenseCategoryDoc && cancelExpenseBankAccount && cancelExpenseBankAccountRef) {
+        cancelExpenseRef = crypto.randomUUID();
+        const { startingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(
+            cancelExpenseBankAccount.currentBalance,
+            cancelExpenseAmount
+        );
+        if (newBalance < 0) {
+            return NextResponse.json(
+                { error: `Rencana trip sudah dibatalkan, tetapi saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
+        const cancelExpenseDoc: Expense = {
+            _id: cancelExpenseRef,
+            _type: 'expense',
+            categoryRef: cancelExpenseCategoryDoc._id,
+            categoryName: cancelExpenseCategoryDoc.name,
+            categoryScope: inferExpenseCategoryScope(cancelExpenseCategoryDoc),
+            accountSystemKey: resolveExpenseCategoryAccountKey(cancelExpenseCategoryDoc),
+            date: cancelExpenseDate,
+            amount: cancelExpenseAmount,
+            note: note || undefined,
+            description: cancelExpenseDescription,
+            privacyLevel: 'internal',
+            bankAccountRef: cancelExpenseBankAccountRef,
+            bankAccountName: cancelExpenseBankAccount.bankName,
+            bankAccountNumber: cancelExpenseBankAccount.accountNumber,
+            relatedVehicleRef: tripPlan.vehicleRef,
+            relatedVehiclePlate: tripPlan.vehiclePlate,
+            relatedOrderRef: id,
+            relatedOrderNumber: order.masterResi,
+        };
+        try {
+            await createDocument(cancelExpenseDoc as unknown as { _type: string; [key: string]: unknown });
+            await createDocument({
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: cancelExpenseBankAccountRef,
+                bankAccountName: cancelExpenseBankAccount.bankName,
+                bankAccountNumber: cancelExpenseBankAccount.accountNumber,
+                type: 'DEBIT',
+                amount: cancelExpenseAmount,
+                date: cancelExpenseDate,
+                description: cancelExpenseDescription,
+                balanceAfter: newBalance,
+                relatedExpenseRef: cancelExpenseRef,
+            });
+            await updateDocument(cancelExpenseBankAccountRef, { currentBalance: newBalance }, 'bankAccount');
+            await updateDocument(cancelExpenseCategoryDoc._id, { updatedAt: timestamp }, 'expenseCategory');
+            if (tripPlan.vehicleRef) {
+                await updateDocument(tripPlan.vehicleRef, { updatedAt: timestamp }, 'vehicle');
+            }
+            await postExpenseJournal(session, cancelExpenseDoc, cancelExpenseBankAccount);
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Rencana trip sudah dibatalkan, tetapi pencatatan biaya batal gagal karena data berubah. Cek menu Pengeluaran sebelum mencoba ulang.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+
+        await addAuditLog(
+            session,
+            'CREATE',
+            'expenses',
+            cancelExpenseRef,
+            `Biaya pembatalan rencana trip ${order.masterResi || id} dicatat sebagai pengeluaran operasional: ${cancelExpenseCategoryDoc.name} (${cancelExpenseAmount})`
+        );
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Rencana trip ${tripPlan.sequence} dibatalkan pada ${order.masterResi || id}.${note ? ` | ${note}` : ''}${shouldRecordCancelExpense ? ` | Biaya batal: ${cancelExpenseCategoryDoc?.name || cancelExpenseCategoryName || 'Pengeluaran operasional'} (${cancelExpenseAmount})` : ''}`
+    );
+
+    return NextResponse.json({
+        data: updatedOrder,
+        id,
+        cancelledTripPlanKey: tripPlanKey,
+        cancelExpenseRef,
+        cancelExpenseAmount: shouldRecordCancelExpense ? cancelExpenseAmount : 0,
     });
 }
 
