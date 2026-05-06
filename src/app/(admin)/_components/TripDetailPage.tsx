@@ -5672,22 +5672,22 @@ export default function TripDetailPage() {
                 ) : (
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
                         {cargoGroups.length > 1 && (
-                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                            <div className="trip-cargo-group-list">
                                 {cargoGroups.map(group => (
-                                    <div key={group.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.8rem', padding: '0.85rem 1rem', background: 'var(--color-gray-50)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                            <div>
+                                    <div key={group.key} className="trip-cargo-group-card">
+                                        <div className="trip-cargo-group-grid">
+                                            <div className="trip-cargo-group-cell">
                                                 <div className="detail-label">SJ Pengirim</div>
                                                 <div className="detail-value font-mono">{group.shipperReferenceNumber}</div>
                                             </div>
-                                            <div>
+                                            <div className="trip-cargo-group-cell">
                                                 <div className="detail-label">Pickup</div>
                                                 <div className="detail-value">{group.pickupLabel || '-'}</div>
                                                 {group.pickupAddress && (
                                                     <div className="text-muted text-sm">{group.pickupAddress}</div>
                                                 )}
                                             </div>
-                                            <div>
+                                            <div className="trip-cargo-group-cell">
                                                 <div className="detail-label">Ringkasan</div>
                                                 <div className="detail-value">
                                                     {formatCargoSummary({
@@ -5703,7 +5703,15 @@ export default function TripDetailPage() {
                             </div>
                         )}
                     <div className="table-wrapper">
-                        <table>
+                        <table className="trip-cargo-table">
+                            <colgroup>
+                                <col className="trip-cargo-table-sj" />
+                                <col className="trip-cargo-table-pickup" />
+                                <col className="trip-cargo-table-description" />
+                                <col className="trip-cargo-table-koli" />
+                                <col className="trip-cargo-table-summary" />
+                                {canAppendCargoToDo && <col className="trip-cargo-table-actions" />}
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>SJ Pengirim</th>

@@ -2114,6 +2114,69 @@ tbody td {
   min-width: min(100%, 240px);
 }
 
+.trip-cargo-group-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.trip-cargo-group-card {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.8rem;
+  background: var(--color-gray-50);
+}
+
+.trip-cargo-group-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(220px, 1.35fr) minmax(220px, 1.15fr);
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+.trip-cargo-group-cell,
+.trip-cargo-table th,
+.trip-cargo-table td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.trip-cargo-table {
+  table-layout: fixed;
+}
+
+.trip-cargo-table-sj {
+  width: 15%;
+}
+
+.trip-cargo-table-pickup {
+  width: 22%;
+}
+
+.trip-cargo-table-description {
+  width: 22%;
+}
+
+.trip-cargo-table-koli {
+  width: 14%;
+}
+
+.trip-cargo-table-summary {
+  width: 20%;
+}
+
+.trip-cargo-table-actions {
+  width: 7%;
+}
+
+.trip-cargo-history-summary {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
 /* ── Status indicator ── */
 .status-indicator {
   display: inline-flex;
@@ -3269,6 +3332,10 @@ tbody td {
   }
 
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trip-cargo-group-grid {
     grid-template-columns: 1fr;
   }
 

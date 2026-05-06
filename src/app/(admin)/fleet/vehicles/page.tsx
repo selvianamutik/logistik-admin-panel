@@ -212,7 +212,11 @@ export default function VehiclesPage() {
                                         return (
                                             <tr key={vehicle._id}>
                                                 <td className="font-mono text-muted">{vehicle.unitCode}</td>
-                                                <td className="font-semibold">{vehicle.plateNumber}</td>
+                                                <td className="font-semibold">
+                                                    <Link href={`/fleet/vehicles/${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                                                        {vehicle.plateNumber}
+                                                    </Link>
+                                                </td>
                                                 <td>{vehicle.brandModel}</td>
                                                 <td>{getVehicleServiceLabel(vehicle, services)}</td>
                                                 <td>{vehicle.vehicleType}</td>
@@ -252,7 +256,11 @@ export default function VehiclesPage() {
                                 <div key={vehicle._id} className="mobile-record-card">
                                     <div className="mobile-record-header">
                                         <div>
-                                            <div className="mobile-record-title">{vehicle.plateNumber}</div>
+                                            <div className="mobile-record-title">
+                                                <Link href={`/fleet/vehicles/${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                                                    {vehicle.plateNumber}
+                                                </Link>
+                                            </div>
                                             <div className="mobile-record-subtitle">{vehicle.brandModel}</div>
                                         </div>
                                         <span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}>
