@@ -2,6 +2,7 @@ import { loadScriptEnv } from './_env';
 
 loadScriptEnv();
 
+import { summarizeCustomerCreditUsage } from '../src/lib/customer-credit-limit';
 import { buildNotaRowsFromDeliveryOrder } from '../src/lib/invoice-create-page-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Order, Vehicle } from '../src/lib/types';
 import type { SuratJalanDocument } from '../src/lib/trip-document-types';
@@ -15,6 +16,7 @@ type ApiResponse<T> = {
 type CustomerLike = {
     _id: string;
     name?: string;
+    creditLimitAmount?: number;
     active?: boolean;
 };
 
@@ -44,6 +46,7 @@ type ProvisionedAuditResources = {
 
 const AUDIT_DATE = '2026-04-21';
 const REQUEST_TIMEOUT_MS = Number(process.env.AUDIT_REQUEST_TIMEOUT_MS || 45000);
+const REQUIRED_AUDIT_TRIP_RESOURCES = 5;
 
 function getBaseUrl() {
     return (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -373,6 +376,7 @@ function pickAuditResources(params: {
     drivers: Driver[];
     bankAccounts: BankAccountLike[];
     deliveryOrders: DeliveryOrder[];
+    freightNotas: FreightNota[];
 }) {
     const activeDeliveryOrders = params.deliveryOrders.filter(item =>
         ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status))
@@ -386,33 +390,44 @@ function pickAuditResources(params: {
         !busyVehicleIds.has(item._id)
     );
     const availableDrivers = params.drivers.filter(item => item.active !== false && !busyDriverIds.has(item._id));
+    const customer = pickAvailableAuditCustomer(params.customers, params.freightNotas);
 
     for (const service of activeServices) {
         const matchingVehicles = availableVehicles.filter(vehicle => normalizeText(vehicle.serviceRef) === service._id);
-        if (matchingVehicles.length >= 2 && availableDrivers.length >= 1) {
+        if (matchingVehicles.length >= REQUIRED_AUDIT_TRIP_RESOURCES && availableDrivers.length >= REQUIRED_AUDIT_TRIP_RESOURCES) {
             return {
-                customer: params.customers.find(item => item.active !== false),
+                customer,
                 service,
-                vehicles: matchingVehicles.slice(0, 2),
-                drivers: availableDrivers.length >= 2 ? availableDrivers.slice(0, 2) : [availableDrivers[0], availableDrivers[0]],
+                vehicles: matchingVehicles.slice(0, REQUIRED_AUDIT_TRIP_RESOURCES),
+                drivers: availableDrivers.slice(0, REQUIRED_AUDIT_TRIP_RESOURCES),
                 bankAccount: params.bankAccounts.find(item => item.active !== false),
             };
         }
     }
 
     return {
-        customer: params.customers.find(item => item.active !== false),
+        customer,
         service: undefined,
-        vehicles: availableVehicles.slice(0, 2),
-        drivers: availableDrivers.length >= 2 ? availableDrivers.slice(0, 2) : availableDrivers.length === 1 ? [availableDrivers[0], availableDrivers[0]] : [],
+        vehicles: availableVehicles.slice(0, REQUIRED_AUDIT_TRIP_RESOURCES),
+        drivers: availableDrivers.slice(0, REQUIRED_AUDIT_TRIP_RESOURCES),
         bankAccount: params.bankAccounts.find(item => item.active !== false),
     };
+}
+
+function pickAvailableAuditCustomer(customers: CustomerLike[], freightNotas: FreightNota[]) {
+    const activeCustomers = customers.filter(item => item.active !== false);
+
+    return activeCustomers.find(customer => {
+        const customerNotas = freightNotas.filter(nota => normalizeText(nota.customerRef) === customer._id);
+        return !summarizeCustomerCreditUsage(customer, customerNotas).isBlocked;
+    }) || activeCustomers.find(customer => !customer.creditLimitAmount) || activeCustomers[0];
 }
 
 async function provisionAuditResources(service: ServiceLike, suffix: string): Promise<ProvisionedAuditResources> {
     const now = new Date().toISOString();
     const serviceName = normalizeText(service.name) || 'Audit Service';
-    const drivers: Driver[] = [1, 2].map(index => ({
+    const indexes = Array.from({ length: REQUIRED_AUDIT_TRIP_RESOURCES }, (_, index) => index + 1);
+    const drivers: Driver[] = indexes.map(index => ({
         _id: `drv-audit-e2e-${suffix}-${index}`,
         _type: 'driver',
         name: `Audit E2E Driver ${index}`,
@@ -423,7 +438,7 @@ async function provisionAuditResources(service: ServiceLike, suffix: string): Pr
         address: 'Audit temporary resource',
         active: true,
     }) as Driver);
-    const vehicles: Vehicle[] = [1, 2].map(index => ({
+    const vehicles: Vehicle[] = indexes.map(index => ({
         _id: `veh-audit-e2e-${suffix}-${index}`,
         _type: 'vehicle',
         unitCode: `AUD-${suffix}-${index}`,
@@ -580,13 +595,14 @@ async function main() {
         auditStep('cleanup data audit lama');
         await cleanupStaleAuditOrders();
         auditStep('ambil master data dan DO aktif');
-        const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, deliveryOrderResponse] = await Promise.all([
+        const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, deliveryOrderResponse, freightNotaResponse] = await Promise.all([
             requestJson<{ data: CustomerLike[] }>('/api/data?entity=customers', cookieHeader),
             requestJson<{ data: ServiceLike[] }>('/api/data?entity=services', cookieHeader),
             requestJson<{ data: Vehicle[] }>('/api/data?entity=vehicles', cookieHeader),
             requestJson<{ data: Driver[] }>('/api/data?entity=drivers', cookieHeader),
             requestJson<{ data: BankAccountLike[] }>('/api/data?entity=bank-accounts', cookieHeader),
             requestJson<{ data: DeliveryOrder[] }>('/api/data?entity=delivery-orders', cookieHeader),
+            requestJson<{ data: FreightNota[] }>('/api/data?entity=freight-notas', cookieHeader),
         ]);
         let resources = pickAuditResources({
             customers: customerResponse.data || [],
@@ -595,9 +611,10 @@ async function main() {
             drivers: driverResponse.data || [],
             bankAccounts: bankResponse.data || [],
             deliveryOrders: deliveryOrderResponse.data || [],
+            freightNotas: freightNotaResponse.data || [],
         });
 
-        if (!resources.service || resources.vehicles.length < 2 || resources.drivers.length < 1) {
+        if (!resources.service || resources.vehicles.length < REQUIRED_AUDIT_TRIP_RESOURCES || resources.drivers.length < REQUIRED_AUDIT_TRIP_RESOURCES) {
             const fallbackService = resources.service || (serviceResponse.data || []).find(item => item.active !== false);
             if (fallbackService) {
                 auditStep('provision resource audit sementara karena driver/kendaraan aktif sedang penuh');
@@ -611,14 +628,15 @@ async function main() {
                     drivers: [...(driverResponse.data || []), ...provisioned.drivers],
                     bankAccounts: bankResponse.data || [],
                     deliveryOrders: deliveryOrderResponse.data || [],
+                    freightNotas: freightNotaResponse.data || [],
                 });
             }
         }
 
         assert(resources.customer, 'Audit butuh minimal 1 customer aktif.');
-        assert(resources.service, 'Audit butuh minimal 1 kategori armada dengan 2 kendaraan tersedia.');
-        assert(resources.vehicles.length >= 2, 'Audit butuh minimal 2 kendaraan tersedia pada kategori armada yang sama.');
-        assert(resources.drivers.length >= 2, 'Audit butuh minimal 1 supir tersedia untuk dipakai berurutan pada 2 trip.');
+        assert(resources.service, 'Audit butuh minimal 1 kategori armada dengan kendaraan tersedia.');
+        assert(resources.vehicles.length >= REQUIRED_AUDIT_TRIP_RESOURCES, `Audit butuh minimal ${REQUIRED_AUDIT_TRIP_RESOURCES} kendaraan tersedia pada kategori armada yang sama.`);
+        assert(resources.drivers.length >= REQUIRED_AUDIT_TRIP_RESOURCES, `Audit butuh minimal ${REQUIRED_AUDIT_TRIP_RESOURCES} supir tersedia untuk skenario multi-trip.`);
         assert(resources.bankAccount, 'Audit butuh minimal 1 rekening/kas aktif.');
 
         auditStep('create lalu hapus order header booking tanpa DO');
@@ -702,8 +720,8 @@ async function main() {
                     {
                         _key: tripSplitKey,
                         pickupStopKeys: [pickupTwoKey],
-                        vehicleRef: resources.vehicles[1]._id,
-                        driverRef: resources.drivers[1]._id,
+                        vehicleRef: resources.vehicles[2]._id,
+                        driverRef: resources.drivers[2]._id,
                         taripBorongan: 285000,
                         issueBankRef: resources.bankAccount._id,
                         cashGiven: 130000,
@@ -712,8 +730,8 @@ async function main() {
                     {
                         _key: tripOverKey,
                         pickupStopKeys: [pickupTwoKey],
-                        vehicleRef: resources.vehicles[0]._id,
-                        driverRef: resources.drivers[0]._id,
+                        vehicleRef: resources.vehicles[3]._id,
+                        driverRef: resources.drivers[3]._id,
                         taripBorongan: 295000,
                         issueBankRef: resources.bankAccount._id,
                         cashGiven: 140000,
@@ -722,8 +740,8 @@ async function main() {
                     {
                         _key: tripCancelKey,
                         pickupStopKeys: [pickupTwoKey],
-                        vehicleRef: resources.vehicles[0]._id,
-                        driverRef: resources.drivers[0]._id,
+                        vehicleRef: resources.vehicles[4]._id,
+                        driverRef: resources.drivers[4]._id,
                         taripBorongan: 125000,
                         issueBankRef: resources.bankAccount._id,
                         cashGiven: 50000,

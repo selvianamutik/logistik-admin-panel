@@ -36,6 +36,11 @@ function money(value: unknown) {
     return Number.isFinite(numeric) ? Math.round(numeric) : 0;
 }
 
+function quantity(value: unknown) {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function assert(condition: unknown, message: string): asserts condition {
     if (!condition) {
         throw new Error(message);
@@ -301,7 +306,7 @@ async function main() {
     }
 
     const freightItemsByNota = groupBy(activeFreightNotaItems, row => row.notaRef);
-    const billedItemRefs = new Map<string, string>();
+    const billedItemTotals = new Map<string, { itemRef: string; invoiceRefs: Set<string>; collie: number; weightKg: number }>();
     const billedWholeSjKeys = new Map<string, string>();
     const billedItemSjKeys = new Map<string, string[]>();
     for (const item of activeFreightNotaItems) {
@@ -334,11 +339,16 @@ async function main() {
                 }
 
                 const itemKey = `${item.doRef}::item::${itemRef}`;
-                assert(
-                    !billedItemRefs.has(itemKey),
-                    `Barang DO ${itemRef} tertagih dobel di invoice ${billedItemRefs.get(itemKey)} dan ${item.notaRef}.`
-                );
-                billedItemRefs.set(itemKey, item.notaRef);
+                const currentBilledItemTotal = billedItemTotals.get(itemKey) || {
+                    itemRef,
+                    invoiceRefs: new Set<string>(),
+                    collie: 0,
+                    weightKg: 0,
+                };
+                currentBilledItemTotal.invoiceRefs.add(item.notaRef);
+                currentBilledItemTotal.collie += quantity(item.collie);
+                currentBilledItemTotal.weightKg += quantity(item.beratKg);
+                billedItemTotals.set(itemKey, currentBilledItemTotal);
 
                 const sjNumber = item.noSJ || deliveryOrderItem.shipperReferenceNumber;
                 if (sjNumber) {
@@ -361,6 +371,24 @@ async function main() {
             );
             billedWholeSjKeys.set(sjKey, item.notaRef);
         }
+    }
+
+    for (const billedTotal of billedItemTotals.values()) {
+        const deliveryOrderItem = deliveryOrderItemById.get(billedTotal.itemRef);
+        assert(deliveryOrderItem, `Barang DO ${billedTotal.itemRef} pada audit invoice tidak ditemukan.`);
+
+        const actualKoli = quantity(deliveryOrderItem.actualQtyKoli ?? deliveryOrderItem.shippedQtyKoli ?? deliveryOrderItem.orderItemQtyKoli);
+        const actualWeightKg = quantity(deliveryOrderItem.actualWeightKg ?? deliveryOrderItem.shippedWeight ?? deliveryOrderItem.orderItemWeight);
+        const invoiceRefs = [...billedTotal.invoiceRefs].join(', ');
+
+        assert(
+            actualKoli <= 0 || billedTotal.collie <= actualKoli + 0.0001,
+            `Barang DO ${billedTotal.itemRef} tertagih melebihi koli aktual di invoice ${invoiceRefs}: ${billedTotal.collie} > ${actualKoli}.`
+        );
+        assert(
+            actualWeightKg <= 0 || billedTotal.weightKg <= actualWeightKg + 0.0001,
+            `Barang DO ${billedTotal.itemRef} tertagih melebihi berat aktual di invoice ${invoiceRefs}: ${billedTotal.weightKg} > ${actualWeightKg}.`
+        );
     }
 
     const paymentsByInvoice = groupBy(payments, row => row.invoiceRef);
