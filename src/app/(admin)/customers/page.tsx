@@ -8,6 +8,7 @@ import AppPagination from '@/components/AppPagination';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { formatCreditLimitCurrency } from '@/lib/customer-credit-limit';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -31,7 +32,7 @@ export default function CustomersPage() {
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editItem, setEditItem] = useState<Customer | null>(null);
-    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' });
+    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, creditLimitAmount: 0, npwp: '', deliveryOrderPrefix: 'SJ' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const canCreateCustomers = user ? hasPermission(user.role, 'customers', 'create') : false;
@@ -128,7 +129,7 @@ export default function CustomersPage() {
 
     const openNew = () => {
         setEditItem(null);
-        setForm({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' });
+        setForm({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, creditLimitAmount: 0, npwp: '', deliveryOrderPrefix: 'SJ' });
         setShowModal(true);
     };
 
@@ -141,6 +142,7 @@ export default function CustomersPage() {
             phone: customer.phone,
             email: customer.email,
             defaultPaymentTerm: customer.defaultPaymentTerm,
+            creditLimitAmount: customer.creditLimitAmount || 0,
             npwp: customer.npwp || '',
             deliveryOrderPrefix: customer.deliveryOrderPrefix || 'SJ',
         });
@@ -245,6 +247,7 @@ export default function CustomersPage() {
                                     { header: 'Email', key: 'email', width: 25 },
                                     { header: 'Alamat', key: 'address', width: 35 },
                                     { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
+                                    { header: 'Limit Piutang', key: 'creditLimitAmount', width: 16 },
                                 ], `customer-${getBusinessDateValue()}`, 'Customer');
                                 addToast('success', 'Excel customer berhasil di-download');
                             } catch (error) {
@@ -286,6 +289,7 @@ export default function CustomersPage() {
                                                 <th>Email</th>
                                                 <th>Alamat</th>
                                                 <th>Format SJ</th>
+                                                <th>Limit Piutang</th>
                                                 <th>Master Barang</th>
                                             </tr>
                                         </thead>
@@ -297,6 +301,7 @@ export default function CustomersPage() {
                                                 <td>${customer.email || '-'}</td>
                                                 <td>${customer.address || '-'}</td>
                                                 <td>${customer.deliveryOrderPrefix || 'SJ'}</td>
+                                                <td>${customer.creditLimitAmount ? formatCreditLimitCurrency(customer.creditLimitAmount) : 'Tanpa limit'}</td>
                                                 <td>${printableCounts[customer._id] || 0} barang</td>
                                             </tr>`).join('')}
                                         </tbody>
@@ -368,6 +373,7 @@ export default function CustomersPage() {
                                 <th>Telepon</th>
                                 <th>Email</th>
                                 <th>Format SJ</th>
+                                <th>Limit Piutang</th>
                                 <th>Master Barang</th>
                                 <th>Status Setup</th>
                                 <th>Termin</th>
@@ -378,14 +384,14 @@ export default function CustomersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : filteredTotalCustomers === 0 ? (
                                 <tr>
-                                    <td colSpan={9}>
+                                    <td colSpan={10}>
                                         <div className="empty-state">
                                             <Users size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada customer</div>
@@ -404,6 +410,7 @@ export default function CustomersPage() {
                                         <td>{customer.phone}</td>
                                         <td className="text-muted">{customer.email}</td>
                                         <td className="font-mono">{customer.deliveryOrderPrefix || 'SJ'}</td>
+                                        <td>{customer.creditLimitAmount ? formatCreditLimitCurrency(customer.creditLimitAmount) : 'Tanpa limit'}</td>
                                         <td><span className="badge badge-info">{customerProductCounts[customer._id] || 0} barang</span></td>
                                         <td>
                                             {(customerProductCounts[customer._id] || 0) > 0 ? (
@@ -456,6 +463,10 @@ export default function CustomersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Master Barang</span>
                                         <span className="mobile-record-value">{customerProductCounts[customer._id] || 0} barang</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Limit Piutang</span>
+                                        <span className="mobile-record-value">{customer.creditLimitAmount ? formatCreditLimitCurrency(customer.creditLimitAmount) : 'Tanpa limit'}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Status Setup</span>
@@ -531,6 +542,12 @@ export default function CustomersPage() {
                                     <label className="form-label">Termin Pembayaran (hari)</label>
                                     <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">Limit Piutang</label>
+                                    <FormattedNumberInput allowDecimal={false} value={form.creditLimitAmount} onValueChange={value => setForm({ ...form, creditLimitAmount: value })} placeholder="0 = tanpa limit" />
+                                </div>
+                            </div>
+                            <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">NPWP</label>
                                     <input className="form-input" value={form.npwp} onChange={event => setForm({ ...form, npwp: event.target.value })} />

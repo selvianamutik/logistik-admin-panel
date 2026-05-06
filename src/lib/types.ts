@@ -148,6 +148,7 @@ export interface Customer {
   phone: string;
   email: string;
   defaultPaymentTerm: number;
+  creditLimitAmount?: number;
   npwp?: string;
   deliveryOrderPrefix?: string;
   deliveryOrderCounter?: number;

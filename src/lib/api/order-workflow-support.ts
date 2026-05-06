@@ -179,7 +179,7 @@ export type ActualCargoTotals = {
 };
 
 export type ResolvedOrderPartyData = {
-    customer: { _id: string; _rev?: string; name?: string; address?: string; active?: boolean };
+    customer: { _id: string; _rev?: string; name?: string; address?: string; active?: boolean; creditLimitAmount?: number };
     service?: { _id: string; _rev?: string; name?: string; active?: boolean };
     serviceName?: string;
 };
@@ -328,7 +328,7 @@ export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
 }
 
 export async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
-    const customer = await getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef, 'customer');
+    const customer = await getDocumentById<ResolvedOrderPartyData['customer']>(customerRef, 'customer');
     if (!customer) {
         throw new Error('Customer order tidak ditemukan');
     }

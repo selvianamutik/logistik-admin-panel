@@ -21,6 +21,7 @@ export default function CustomerNewPage() {
         phone: string;
         email: string;
         defaultPaymentTerm: number;
+        creditLimitAmount: number;
         npwp: string;
         deliveryOrderPrefix: string;
         defaultFreightNotaBillingMode: CustomerBillingRateBasis;
@@ -29,7 +30,7 @@ export default function CustomerNewPage() {
         defaultPph23BaseMode: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
     }>({
         name: '', address: '', contactPerson: '', phone: '', email: '',
-        defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ', defaultFreightNotaBillingMode: 'PER_KG',
+        defaultPaymentTerm: 14, creditLimitAmount: 0, npwp: '', deliveryOrderPrefix: 'SJ', defaultFreightNotaBillingMode: 'PER_KG',
         defaultPph23Enabled: false, defaultPph23RatePercent: DEFAULT_PPH23_RATE_PERCENT, defaultPph23BaseMode: 'BEFORE_CLAIM',
     });
 
@@ -86,9 +87,15 @@ export default function CustomerNewPage() {
                             <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                             <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                         </div>
-                        <div className="form-group" style={{ maxWidth: 200 }}>
-                            <label className="form-label">Default Payment Term (hari)</label>
-                            <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label className="form-label">Default Payment Term (hari)</label>
+                                <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Limit Piutang</label>
+                                <FormattedNumberInput allowDecimal={false} value={form.creditLimitAmount} onValueChange={value => setForm({ ...form, creditLimitAmount: value })} placeholder="0 = tanpa limit" />
+                            </div>
                         </div>
                         <div className="form-group" style={{ maxWidth: 260 }}>
                             <label className="form-label">Awalan Referensi SJ Pengirim</label>

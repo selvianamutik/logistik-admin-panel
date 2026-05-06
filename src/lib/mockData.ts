@@ -106,6 +106,7 @@ const seedData: DataStore = {
             phone: '081-234-5678',
             email: 'budi@majusejahtera.co.id',
             defaultPaymentTerm: 14,
+            creditLimitAmount: 10000000,
             npwp: '02.345.678.9-013.000',
             deliveryOrderPrefix: 'SJ',
             deliveryOrderCounter: 1,
@@ -121,6 +122,7 @@ const seedData: DataStore = {
             phone: '082-345-6789',
             email: 'siti@berkahlogistik.com',
             defaultPaymentTerm: 30,
+            creditLimitAmount: 7500000,
             deliveryOrderPrefix: 'BK',
             deliveryOrderCounter: 0,
             active: true

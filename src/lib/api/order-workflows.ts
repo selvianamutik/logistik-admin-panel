@@ -9,6 +9,7 @@ import {
     roundQuantity,
 } from '@/lib/order-item-progress';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
+import { formatCustomerCreditBlockMessage, summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
 import { isSupabaseBackendEnabled } from '@/lib/data-backend';
 import {
     createDocument,
@@ -68,6 +69,7 @@ import {
 } from './order-workflow-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
+import { getFreightNotaList } from './data-query-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals, getDriverVoucherIssuedAmount } from './driver-workflow-support';
 import {
@@ -1353,6 +1355,18 @@ export async function handleOrderCreate(
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
     }
+
+    const customerCreditUsage = summarizeCustomerCreditUsage(
+        customer,
+        (await getFreightNotaList({ filterObj: { customerRef } })).items
+    );
+    if (customerCreditUsage.isBlocked) {
+        return NextResponse.json(
+            { error: formatCustomerCreditBlockMessage(customer.name, customerCreditUsage), creditUsage: customerCreditUsage },
+            { status: 409 }
+        );
+    }
+
     const firstTripDestination = normalizeOptionalText(tripPlans[0]?.tripDestinationArea);
     const firstPickupAddress = normalizeOptionalText(pickupStops[0]?.pickupAddress);
     const receiverName =

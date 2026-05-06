@@ -8,6 +8,7 @@ import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
 import { buildPph23Label, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
@@ -138,6 +139,7 @@ export default function CustomerDetailPage() {
         contactPerson: '',
         phone: '',
         email: '',
+        creditLimitAmount: 0,
         npwp: '',
         deliveryOrderPrefix: 'SJ',
         defaultFreightNotaBillingMode: 'PER_KG' as CustomerBillingRateBasis,
@@ -183,6 +185,7 @@ export default function CustomerDetailPage() {
                         contactPerson: cust.contactPerson,
                         phone: cust.phone,
                         email: cust.email,
+                        creditLimitAmount: cust.creditLimitAmount || 0,
                         npwp: cust.npwp || '',
                         deliveryOrderPrefix: cust.deliveryOrderPrefix || 'SJ',
                         defaultFreightNotaBillingMode: cust.defaultFreightNotaBillingMode || 'PER_KG',
@@ -567,6 +570,7 @@ export default function CustomerDetailPage() {
 
     const activeOrderCount = orders.filter(order => !['COMPLETE', 'CANCELLED'].includes(order.status)).length;
     const activeNotas = notas.filter(nota => nota.status !== 'VOID');
+    const creditUsage = summarizeCustomerCreditUsage(customer, notas);
     const activeNotaCount = activeNotas.filter(nota => nota.status !== 'PAID').length;
     const totalNotaNetAmount = activeNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
     const sortedRecipients = [...customerRecipients].sort((a, b) => {
@@ -621,6 +625,15 @@ export default function CustomerDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
+                                </div>
+                                <div className="form-group" style={{ maxWidth: 280 }}>
+                                    <label className="form-label">Limit Piutang</label>
+                                    <FormattedNumberInput
+                                        allowDecimal={false}
+                                        value={form.creditLimitAmount}
+                                        onValueChange={value => setForm({ ...form, creditLimitAmount: value })}
+                                        placeholder="0 = tanpa limit"
+                                    />
                                 </div>
                                 <div className="form-group" style={{ maxWidth: 320 }}>
                                     <label className="form-label">Default Basis Billing Invoice</label>
@@ -706,6 +719,10 @@ export default function CustomerDetailPage() {
                                 <div className="detail-row">
                                     <div className="detail-item"><div className="detail-label">Awalan Referensi SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
                                     <div className="detail-item"><div className="detail-label">Termin Default</div><div className="detail-value">{customer.defaultPaymentTerm || 0} hari</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Limit Piutang</div><div className="detail-value">{customer.creditLimitAmount ? formatCurrency(customer.creditLimitAmount) : 'Tanpa limit'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Outstanding Invoice</div><div className="detail-value" style={{ color: creditUsage.isBlocked ? 'var(--color-danger)' : undefined }}>{formatCurrency(creditUsage.outstandingAmount)}</div></div>
                                 </div>
                                 <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{customer.address}</div></div>
                                 {customer.npwp && <div className="detail-item mt-2"><div className="detail-label">NPWP</div><div className="detail-value font-mono">{customer.npwp}</div></div>}

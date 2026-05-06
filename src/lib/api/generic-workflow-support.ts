@@ -367,6 +367,18 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
         next.defaultPaymentTerm = Math.round(defaultPaymentTerm);
     }
 
+    if (Object.prototype.hasOwnProperty.call(data, 'creditLimitAmount') || !existing) {
+        const creditLimitAmount = parseStrictNumericInput(
+            data.creditLimitAmount ?? 0,
+            'Limit piutang customer tidak valid',
+            { allowDecimal: false, maxFractionDigits: 0 }
+        );
+        if (!Number.isFinite(creditLimitAmount) || creditLimitAmount < 0) {
+            throw new Error('Limit piutang customer tidak valid');
+        }
+        next.creditLimitAmount = Math.round(creditLimitAmount);
+    }
+
     if (Object.prototype.hasOwnProperty.call(data, 'deliveryOrderPrefix') || !existing) {
         next.deliveryOrderPrefix = normalizeCustomerDoPrefix(data.deliveryOrderPrefix);
     }

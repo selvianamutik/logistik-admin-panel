@@ -8,9 +8,10 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { formatCreditLimitCurrency, formatCustomerCreditBlockMessage, summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, Service, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, FreightNota, Service, TripRouteRate, Vehicle } from '@/lib/types';
 import {
     applyCustomerPickupToStop,
     createDefaultPickupStopForm,
@@ -61,6 +62,8 @@ export default function NewOrderPage() {
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
+    const [customerCreditNotas, setCustomerCreditNotas] = useState<FreightNota[]>([]);
+    const [customerCreditLoading, setCustomerCreditLoading] = useState(false);
     const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
@@ -78,6 +81,7 @@ export default function NewOrderPage() {
     const [notes, setNotes] = useState('');
 
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
+    const customerCreditUsage = summarizeCustomerCreditUsage(selectedCustomer, customerCreditNotas);
     const selectedService = services.find(service => service._id === serviceRef) || null;
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services);
@@ -150,6 +154,42 @@ export default function NewOrderPage() {
         };
 
         void loadCustomerScopedMasters();
+        return () => {
+            cancelled = true;
+        };
+    }, [addToast, customerRef]);
+
+    useEffect(() => {
+        if (!customerRef) {
+            setCustomerCreditNotas([]);
+            setCustomerCreditLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        setCustomerCreditLoading(true);
+        const loadCustomerCredit = async () => {
+            try {
+                const notaRows = await fetchAdminCollectionData<FreightNota[]>(
+                    `/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef }))}`,
+                    'Gagal memuat limit piutang customer'
+                );
+                if (!cancelled) {
+                    setCustomerCreditNotas(notaRows || []);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setCustomerCreditNotas([]);
+                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat limit piutang customer');
+                }
+            } finally {
+                if (!cancelled) {
+                    setCustomerCreditLoading(false);
+                }
+            }
+        };
+
+        void loadCustomerCredit();
         return () => {
             cancelled = true;
         };
@@ -308,6 +348,10 @@ export default function NewOrderPage() {
             addToast('error', 'Customer wajib dipilih');
             return;
         }
+        if (customerCreditUsage.isBlocked) {
+            addToast('error', formatCustomerCreditBlockMessage(selectedCustomer?.name, customerCreditUsage));
+            return;
+        }
 
         const draftPickupStops = getDraftPickupStops(pickupStops);
         if (draftPickupStops.length === 0) {
@@ -460,6 +504,27 @@ export default function NewOrderPage() {
                                     {customers.map(customer => <option key={customer._id} value={customer._id}>{customer.name}</option>)}
                                 </select>
                             </div>
+                            {selectedCustomer && customerCreditUsage.isLimited && (
+                                <div
+                                    style={{
+                                        border: `1px solid ${customerCreditUsage.isBlocked ? 'var(--color-danger)' : 'var(--color-warning)'}`,
+                                        background: customerCreditUsage.isBlocked ? 'var(--color-danger-light)' : 'var(--color-warning-light)',
+                                        color: customerCreditUsage.isBlocked ? 'var(--color-danger-dark)' : 'var(--color-warning-dark)',
+                                        borderRadius: '0.8rem',
+                                        padding: '0.8rem 0.9rem',
+                                        marginBottom: '1rem',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1.5,
+                                    }}
+                                >
+                                    <strong>{customerCreditUsage.isBlocked ? 'Order diblokir' : 'Limit piutang'}</strong>
+                                    <div>
+                                        Outstanding {formatCreditLimitCurrency(customerCreditUsage.outstandingAmount)} dari limit {formatCreditLimitCurrency(customerCreditUsage.limitAmount)}
+                                        {customerCreditUsage.availableAmount !== null && !customerCreditUsage.isBlocked ? `, sisa ${formatCreditLimitCurrency(customerCreditUsage.availableAmount)}` : ''}.
+                                    </div>
+                                    {customerCreditLoading && <div className="text-muted text-sm">Memuat status invoice...</div>}
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Kategori Truk / Armada</label>
                                 <select
@@ -818,8 +883,8 @@ export default function NewOrderPage() {
                     </div>
                     <div className="card-footer">
                         <button type="button" className="btn btn-secondary" onClick={() => router.push('/orders')}>Batal</button>
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
-                            <Save size={16} /> {loading ? 'Menyimpan...' : 'Simpan Order'}
+                        <button type="submit" className="btn btn-primary" disabled={loading || customerCreditUsage.isBlocked}>
+                            <Save size={16} /> {loading ? 'Menyimpan...' : customerCreditUsage.isBlocked ? 'Limit Piutang Tercapai' : 'Simpan Order'}
                         </button>
                     </div>
                 </div>
