@@ -328,7 +328,7 @@ export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
 }
 
 export async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
-    const customer = await getDocumentById<ResolvedOrderPartyData['customer']>(customerRef, 'customer');
+    const customer = await getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef, 'customer') as ResolvedOrderPartyData['customer'] | null;
     if (!customer) {
         throw new Error('Customer order tidak ditemukan');
     }

@@ -278,6 +278,43 @@ function sortAuditLogs(logs: AuditLog[], sortField?: string, sortDir?: 'asc' | '
     });
 }
 
+const AUDIT_LOG_FILTER_CACHE_TTL_MS = Math.max(
+    0,
+    Number.parseInt(process.env.AUDIT_LOG_FILTER_CACHE_TTL_MS || '1500', 10) || 1500
+);
+
+const auditLogFilterCache = new Map<string, { expiresAt: number; logs: AuditLog[] }>();
+
+function normalizeStringList(values?: Array<string | null | undefined>) {
+    return Array.from(new Set(
+        (values || [])
+            .map(value => (typeof value === 'string' ? value.trim() : ''))
+            .filter(Boolean)
+    ));
+}
+
+function buildAuditLogFilterCacheKey(params: {
+    search?: string;
+    searchFields?: string[];
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    period?: string | null;
+    entityRef?: string | null;
+    entityRefs?: string[];
+    entityType?: string | null;
+    entityTypes?: string[];
+}) {
+    return JSON.stringify({
+        search: params.search?.trim().toLowerCase() || '',
+        searchFields: normalizeStringList(params.searchFields).sort(),
+        sortField: params.sortField?.trim() || '',
+        sortDir: params.sortDir === 'asc' ? 'asc' : 'desc',
+        period: normalizeAuditLogPeriod(params.period),
+        entityRefs: normalizeStringList([params.entityRef, ...(params.entityRefs ?? [])]).sort(),
+        entityTypes: normalizeStringList([params.entityType, ...(params.entityTypes ?? [])]).sort(),
+    });
+}
+
 async function getFilteredAuditLogs(params: {
     search?: string;
     searchFields?: string[];
@@ -289,8 +326,33 @@ async function getFilteredAuditLogs(params: {
     entityType?: string | null;
     entityTypes?: string[];
 }) {
+    const cacheKey = buildAuditLogFilterCacheKey(params);
+    if (AUDIT_LOG_FILTER_CACHE_TTL_MS > 0) {
+        const cached = auditLogFilterCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            return cached.logs.map(log => ({ ...log }));
+        }
+        if (cached) {
+            auditLogFilterCache.delete(cacheKey);
+        }
+    }
+
+    const entityRefFilters = normalizeStringList([params.entityRef, ...(params.entityRefs ?? [])]);
+    const entityTypeFilters = normalizeStringList([params.entityType, ...(params.entityTypes ?? [])]);
+    const rawLogFilter: Record<string, unknown> = {};
+    if (entityRefFilters.length === 1) {
+        rawLogFilter.entityRef = entityRefFilters[0];
+    } else if (entityRefFilters.length > 1) {
+        rawLogFilter.entityRef = entityRefFilters;
+    }
+    if (entityTypeFilters.length === 1) {
+        rawLogFilter.entityType = entityTypeFilters[0];
+    } else if (entityTypeFilters.length > 1) {
+        rawLogFilter.entityType = entityTypeFilters;
+    }
+
     const [rawLogs, users] = await Promise.all([
-        listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', {}),
+        listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', rawLogFilter),
         listDocumentsByFilter<{ _id: string; name?: string; email?: string; role?: string }>('user', {}),
     ]);
     const search = params.search?.trim().toLowerCase() || '';
@@ -352,7 +414,20 @@ async function getFilteredAuditLogs(params: {
         });
     });
 
-    return sortAuditLogs(filtered, params.sortField, params.sortDir);
+    const sorted = sortAuditLogs(filtered, params.sortField, params.sortDir);
+    if (AUDIT_LOG_FILTER_CACHE_TTL_MS > 0) {
+        auditLogFilterCache.set(cacheKey, {
+            expiresAt: Date.now() + AUDIT_LOG_FILTER_CACHE_TTL_MS,
+            logs: sorted.map(log => ({ ...log })),
+        });
+        while (auditLogFilterCache.size > 50) {
+            const oldestKey = auditLogFilterCache.keys().next().value as string | undefined;
+            if (!oldestKey) break;
+            auditLogFilterCache.delete(oldestKey);
+        }
+    }
+
+    return sorted;
 }
 
 export async function getAuditLogList(params: {

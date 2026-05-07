@@ -5246,6 +5246,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     try {
         await updateDocument(id, {
             ...clearLegacyPendingDriverRequestFields(),
+            pendingDriverStatus: null,
             ...tripEndOdometerPatch,
             pendingDriverRequests: nextPendingDriverRequests,
         }, 'deliveryOrder');

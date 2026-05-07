@@ -98,7 +98,18 @@ type FetchRowsResult = {
 };
 
 const META_FIELDS = new Set(['_id', '_type', '_createdAt', '_updatedAt', '_rev']);
-const FETCH_BATCH_SIZE = 500;
+const FETCH_BATCH_SIZE = 1000;
+const RELATIONAL_READ_CACHE_TTL_MS = Math.max(
+    0,
+    Number.parseInt(process.env.RELATIONAL_READ_CACHE_TTL_MS || '1500', 10) || 1500
+);
+const RELATIONAL_READ_CACHE_MAX_ENTRIES = 300;
+
+type RelationalReadCacheEntry = FetchRowsResult & {
+    expiresAt: number;
+};
+
+const relationalReadCache = new Map<string, RelationalReadCacheEntry>();
 
 const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
     companyProfile: {
@@ -1316,6 +1327,53 @@ function parseContentRangeTotal(value: string | null) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function cloneRelationalRows(rows: RelationalRow[]) {
+    return rows.map(row => ({ ...row }));
+}
+
+function cloneFetchRowsResult(result: FetchRowsResult): FetchRowsResult {
+    return {
+        rows: cloneRelationalRows(result.rows),
+        total: result.total,
+    };
+}
+
+function getReadCacheKey(path: string, init: RequestInit) {
+    const method = typeof init.method === 'string' ? init.method.toUpperCase() : 'GET';
+    if (method !== 'GET' || RELATIONAL_READ_CACHE_TTL_MS <= 0) {
+        return null;
+    }
+
+    let preferHeader = '';
+    if (init.headers) {
+        try {
+            preferHeader = new Headers(init.headers).get('Prefer') || '';
+        } catch {
+            preferHeader = '';
+        }
+    }
+
+    return `${preferHeader}::${path}`;
+}
+
+function pruneRelationalReadCache(now = Date.now()) {
+    for (const [key, entry] of relationalReadCache) {
+        if (entry.expiresAt <= now) {
+            relationalReadCache.delete(key);
+        }
+    }
+
+    while (relationalReadCache.size > RELATIONAL_READ_CACHE_MAX_ENTRIES) {
+        const oldestKey = relationalReadCache.keys().next().value as string | undefined;
+        if (!oldestKey) break;
+        relationalReadCache.delete(oldestKey);
+    }
+}
+
+export function clearRelationalReadCache() {
+    relationalReadCache.clear();
+}
+
 function buildFilterParams(
     config: RelationalConfig,
     filterObj: Record<string, unknown>,
@@ -1639,12 +1697,34 @@ function buildQueryPath(table: string, params: URLSearchParams) {
 }
 
 async function fetchRows(path: string, init: RequestInit = {}): Promise<FetchRowsResult> {
+    const cacheKey = getReadCacheKey(path, init);
+    if (cacheKey) {
+        const now = Date.now();
+        const cached = relationalReadCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            return cloneFetchRowsResult(cached);
+        }
+        if (cached) {
+            relationalReadCache.delete(cacheKey);
+        }
+    }
+
     const response = await getSupabaseClient().fetch(path, init);
     const rows = await response.json() as RelationalRow[];
-    return {
+    const result = {
         rows,
         total: parseContentRangeTotal(response.headers.get('content-range')),
     };
+
+    if (cacheKey) {
+        relationalReadCache.set(cacheKey, {
+            ...cloneFetchRowsResult(result),
+            expiresAt: Date.now() + RELATIONAL_READ_CACHE_TTL_MS,
+        });
+        pruneRelationalReadCache();
+    }
+
+    return result;
 }
 
 async function fetchAllRows(
@@ -1954,6 +2034,7 @@ export async function relationalUpsertDocument<T = Record<string, unknown>>(
             body: JSON.stringify(mapDocumentToRow(doc._type, doc)),
         });
         const rows = await response.json() as RelationalRow[];
+        clearRelationalReadCache();
         return rows[0] ? mapRowToDocument(doc._type, rows[0]) as T : null;
     } catch (error) {
         if (isMissingRelationalTableError(error)) {
@@ -2045,6 +2126,7 @@ export async function relationalPatchDocument<T = Record<string, unknown>>(
             }
         );
         const rows = await response.json() as RelationalRow[];
+        clearRelationalReadCache();
         return rows[0] ? mapRowToDocument(docType, rows[0]) as T : null;
     } catch (error) {
         if (isMissingRelationalTableError(error)) {
@@ -2062,6 +2144,7 @@ export async function relationalDeleteDocument(docType: SupportedDocType, id: st
             `${config.table}?source_document_id=eq.${encodeURIComponent(id)}`,
             { method: 'DELETE' }
         );
+        clearRelationalReadCache();
         return true;
     } catch (error) {
         if (isMissingRelationalTableError(error)) {

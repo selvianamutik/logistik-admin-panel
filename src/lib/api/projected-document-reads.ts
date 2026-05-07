@@ -43,6 +43,26 @@ type ProjectedListParams = {
     permissions?: ProjectedReadPermissions;
 };
 
+type ProjectedSourceData = {
+    derivedDeliveryOrders: Awaited<ReturnType<typeof deriveDeliveryOrdersForResponse>>;
+    allTripRecords: TripRecord[];
+    allSuratJalanRecords: SuratJalanRecord[];
+    allSuratJalanItemRecords: SuratJalanItemRecord[];
+    allDeliveryOrderItems: DeliveryOrderItem[];
+    allTrackingLogs: TrackingLog[];
+    allDriverVouchers: DriverVoucher[];
+};
+
+const PROJECTED_SOURCE_CACHE_TTL_MS = Math.max(
+    0,
+    Number.parseInt(process.env.PROJECTED_SOURCE_CACHE_TTL_MS || '1000', 10) || 1000
+);
+
+let projectedSourceCache: {
+    expiresAt: number;
+    promise: Promise<ProjectedSourceData>;
+} | null = null;
+
 function matchesProjectedSearchValue(value: unknown, needle: string): boolean {
     if (!needle) return true;
     if (value === undefined || value === null) return false;
@@ -193,7 +213,7 @@ function matchesProjectedFilter(
     });
 }
 
-async function loadProjectedSourceData() {
+async function loadProjectedSourceDataUncached(): Promise<ProjectedSourceData> {
     const allDeliveryOrders = await getAllDocuments<DeliveryOrder>('deliveryOrder');
     const derivedDeliveryOrders = await deriveDeliveryOrdersForResponse(allDeliveryOrders);
     const allTripRecords = await getAllDocuments<TripRecord>('trip');
@@ -211,6 +231,36 @@ async function loadProjectedSourceData() {
         allTrackingLogs,
         allDriverVouchers,
     };
+}
+
+async function loadProjectedSourceData() {
+    if (PROJECTED_SOURCE_CACHE_TTL_MS <= 0) {
+        return loadProjectedSourceDataUncached();
+    }
+
+    const now = Date.now();
+    if (projectedSourceCache && projectedSourceCache.expiresAt > now) {
+        return projectedSourceCache.promise;
+    }
+
+    const promise = loadProjectedSourceDataUncached();
+    projectedSourceCache = {
+        expiresAt: now + PROJECTED_SOURCE_CACHE_TTL_MS,
+        promise,
+    };
+    try {
+        const data = await promise;
+        projectedSourceCache = {
+            expiresAt: Date.now() + PROJECTED_SOURCE_CACHE_TTL_MS,
+            promise: Promise.resolve(data),
+        };
+        return data;
+    } catch (error) {
+        if (projectedSourceCache?.promise === promise) {
+            projectedSourceCache = null;
+        }
+        throw error;
+    }
 }
 
 export async function getProjectedDocumentRead(params: ProjectedListParams) {
