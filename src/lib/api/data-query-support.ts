@@ -281,7 +281,7 @@ function sortAuditLogs(logs: AuditLog[], sortField?: string, sortDir?: 'asc' | '
 
 const AUDIT_LOG_FILTER_CACHE_TTL_MS = Math.max(
     0,
-    Number.parseInt(process.env.AUDIT_LOG_FILTER_CACHE_TTL_MS || '1500', 10) || 1500
+    Number.parseInt(process.env.AUDIT_LOG_FILTER_CACHE_TTL_MS || '5000', 10) || 5000
 );
 
 const auditLogFilterCache = new Map<string, { expiresAt: number; logs: AuditLog[] }>();

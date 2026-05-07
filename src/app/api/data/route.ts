@@ -1429,17 +1429,7 @@ export async function GET(request: Request) {
         }
 
         if (entity === 'audit-logs') {
-            items = [...items].sort((left, right) => {
-                const leftTime =
-                    (typeof left.timestamp === 'string' && left.timestamp) ||
-                    (typeof left._createdAt === 'string' && left._createdAt) ||
-                    '';
-                const rightTime =
-                    (typeof right.timestamp === 'string' && right.timestamp) ||
-                    (typeof right._createdAt === 'string' && right._createdAt) ||
-                    '';
-                return rightTime.localeCompare(leftTime);
-            }).map(item => {
+            items = items.map(item => {
                 const actorUserEmail =
                     (typeof item.actorUserEmail === 'string' && item.actorUserEmail.trim())
                     || inferAuditActorEmailFromRef(item.actorUserRef, item.entityRef);
