@@ -1,4 +1,4 @@
-import { getAllDocuments, getDocumentById } from '@/lib/repositories/document-store';
+import { getAllDocuments, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import { isPlainObject } from '@/lib/api/data-helpers';
 import { getDeliveryOrderTripCashLink } from '@/lib/api/data-query-support';
 import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
@@ -56,16 +56,21 @@ type ProjectedSourceData = {
 
 const PROJECTED_SOURCE_CACHE_TTL_MS = Math.max(
     0,
-    Number.parseInt(process.env.PROJECTED_SOURCE_CACHE_TTL_MS || '1000', 10) || 1000
+    Number.parseInt(process.env.PROJECTED_SOURCE_CACHE_TTL_MS || '10000', 10) || 10000
 );
 
 let projectedSourceCache: {
     expiresAt: number;
     promise: Promise<ProjectedSourceData>;
 } | null = null;
+const projectedDetailSourceCache = new Map<string, {
+    expiresAt: number;
+    promise: Promise<ProjectedSourceData | null>;
+}>();
 
 export function clearProjectedSourceCache() {
     projectedSourceCache = null;
+    projectedDetailSourceCache.clear();
 }
 
 registerApiReadCacheInvalidator(clearProjectedSourceCache);
@@ -221,14 +226,24 @@ function matchesProjectedFilter(
 }
 
 async function loadProjectedSourceDataUncached(): Promise<ProjectedSourceData> {
-    const allDeliveryOrders = await getAllDocuments<DeliveryOrder>('deliveryOrder');
+    const [
+        allDeliveryOrders,
+        allTripRecords,
+        allSuratJalanRecords,
+        allSuratJalanItemRecords,
+        allDeliveryOrderItems,
+        allTrackingLogs,
+        allDriverVouchers,
+    ] = await Promise.all([
+        getAllDocuments<DeliveryOrder>('deliveryOrder'),
+        getAllDocuments<TripRecord>('trip'),
+        getAllDocuments<SuratJalanRecord>('suratJalan'),
+        getAllDocuments<SuratJalanItemRecord>('suratJalanItem'),
+        getAllDocuments<DeliveryOrderItem>('deliveryOrderItem'),
+        getAllDocuments<TrackingLog>('trackingLog'),
+        getAllDocuments<DriverVoucher>('driverVoucher'),
+    ]);
     const derivedDeliveryOrders = await deriveDeliveryOrdersForResponse(allDeliveryOrders);
-    const allTripRecords = await getAllDocuments<TripRecord>('trip');
-    const allSuratJalanRecords = await getAllDocuments<SuratJalanRecord>('suratJalan');
-    const allSuratJalanItemRecords = await getAllDocuments<SuratJalanItemRecord>('suratJalanItem');
-    const allDeliveryOrderItems = await getAllDocuments<DeliveryOrderItem>('deliveryOrderItem');
-    const allTrackingLogs = await getAllDocuments<TrackingLog>('trackingLog');
-    const allDriverVouchers = await getAllDocuments<DriverVoucher>('driverVoucher');
     return {
         derivedDeliveryOrders,
         allTripRecords,
@@ -238,6 +253,129 @@ async function loadProjectedSourceDataUncached(): Promise<ProjectedSourceData> {
         allTrackingLogs,
         allDriverVouchers,
     };
+}
+
+function uniqueById<T extends { _id?: string }>(items: T[]): T[] {
+    const seen = new Set<string>();
+    const result: T[] = [];
+    for (const item of items) {
+        const id = item._id || '';
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        result.push(item);
+    }
+    return result;
+}
+
+function uniqueText(values: Array<string | undefined | null>) {
+    return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
+}
+
+async function loadTripRecordsForDeliveryOrder(deliveryOrderId: string) {
+    const [byId, byDeliveryOrderRef] = await Promise.all([
+        getDocumentById<TripRecord>(deliveryOrderId, 'trip').then(item => item ? [item] : []),
+        listDocumentsByFilter<TripRecord>('trip', { deliveryOrderRef: deliveryOrderId }),
+    ]);
+    return uniqueById([...byId, ...byDeliveryOrderRef]);
+}
+
+async function loadSuratJalanRecordsForDeliveryOrder(deliveryOrderId: string) {
+    const [byTripRef, byDeliveryOrderRef] = await Promise.all([
+        listDocumentsByFilter<SuratJalanRecord>('suratJalan', { tripRef: deliveryOrderId }),
+        listDocumentsByFilter<SuratJalanRecord>('suratJalan', { deliveryOrderRef: deliveryOrderId }),
+    ]);
+    return uniqueById([...byTripRef, ...byDeliveryOrderRef]);
+}
+
+async function loadProjectedSourceDataForDeliveryOrderUncached(deliveryOrderId: string): Promise<ProjectedSourceData | null> {
+    const deliveryOrder = await getDocumentById<DeliveryOrder>(deliveryOrderId, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return null;
+    }
+
+    const [
+        derivedDeliveryOrders,
+        allTripRecords,
+        allSuratJalanRecords,
+        allDeliveryOrderItems,
+        allTrackingLogs,
+        allDriverVouchers,
+    ] = await Promise.all([
+        deriveDeliveryOrdersForResponse([deliveryOrder]),
+        loadTripRecordsForDeliveryOrder(deliveryOrderId),
+        loadSuratJalanRecordsForDeliveryOrder(deliveryOrderId),
+        listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: deliveryOrderId }),
+        listDocumentsByFilter<TrackingLog>('trackingLog', { refType: 'DO', refRef: deliveryOrderId }),
+        listDocumentsByFilter<DriverVoucher>('driverVoucher', { deliveryOrderRef: deliveryOrderId }),
+    ]);
+
+    const derivedDeliveryOrder = derivedDeliveryOrders[0] || deliveryOrder;
+    const derivedSuratJalanDocuments = mapDeliveryOrderToSuratJalanDocuments(
+        derivedDeliveryOrder,
+        allDeliveryOrderItems
+    );
+    const suratJalanRefs = uniqueText([
+        ...allSuratJalanRecords.map(item => item._id),
+        ...derivedSuratJalanDocuments.map(item => item._id),
+    ]);
+    const allSuratJalanItemRecords = suratJalanRefs.length > 0
+        ? await listDocumentsByFilter<SuratJalanItemRecord>('suratJalanItem', { suratJalanRef: suratJalanRefs })
+        : [];
+
+    return {
+        derivedDeliveryOrders,
+        allTripRecords,
+        allSuratJalanRecords,
+        allSuratJalanItemRecords,
+        allDeliveryOrderItems,
+        allTrackingLogs,
+        allDriverVouchers,
+    };
+}
+
+async function loadProjectedSourceDataForDeliveryOrder(deliveryOrderId: string) {
+    if (PROJECTED_SOURCE_CACHE_TTL_MS <= 0) {
+        return loadProjectedSourceDataForDeliveryOrderUncached(deliveryOrderId);
+    }
+
+    const now = Date.now();
+    const cached = projectedDetailSourceCache.get(deliveryOrderId);
+    if (cached && cached.expiresAt > now) {
+        return cached.promise;
+    }
+
+    const promise = loadProjectedSourceDataForDeliveryOrderUncached(deliveryOrderId);
+    projectedDetailSourceCache.set(deliveryOrderId, {
+        expiresAt: now + PROJECTED_SOURCE_CACHE_TTL_MS,
+        promise,
+    });
+    try {
+        const data = await promise;
+        projectedDetailSourceCache.set(deliveryOrderId, {
+            expiresAt: Date.now() + PROJECTED_SOURCE_CACHE_TTL_MS,
+            promise: Promise.resolve(data),
+        });
+        return data;
+    } catch (error) {
+        if (projectedDetailSourceCache.get(deliveryOrderId)?.promise === promise) {
+            projectedDetailSourceCache.delete(deliveryOrderId);
+        }
+        throw error;
+    }
+}
+
+async function loadProjectedSourceDataForTripDetailId(id: string) {
+    const deliveryOrderData = await loadProjectedSourceDataForDeliveryOrder(id);
+    if (deliveryOrderData) {
+        return deliveryOrderData;
+    }
+
+    const tripRecord = await getDocumentById<TripRecord>(id, 'trip');
+    if (tripRecord?.deliveryOrderRef && tripRecord.deliveryOrderRef !== id) {
+        return loadProjectedSourceDataForDeliveryOrder(tripRecord.deliveryOrderRef);
+    }
+
+    return null;
 }
 
 async function loadProjectedSourceData() {
@@ -285,7 +423,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
         permissions,
     } = params;
 
-    const { derivedDeliveryOrders, allTripRecords, allSuratJalanRecords, allSuratJalanItemRecords, allDeliveryOrderItems, allTrackingLogs, allDriverVouchers } = await loadProjectedSourceData();
+    const detailSourceData =
+        id && (entity === 'trip-detail' || entity === 'trip-detail-references')
+            ? await loadProjectedSourceDataForTripDetailId(id)
+            : id && entity === 'surat-jalan-detail'
+                ? await loadProjectedSourceDataForDeliveryOrder(parseSuratJalanDocumentId(id).tripRef)
+                : null;
+    const { derivedDeliveryOrders, allTripRecords, allSuratJalanRecords, allSuratJalanItemRecords, allDeliveryOrderItems, allTrackingLogs, allDriverVouchers } =
+        detailSourceData || await loadProjectedSourceData();
     const filterObj = parseProjectedFilter(filter || null);
     const realTrips = allTripRecords.map(mapTripRecordToTrip);
     const realTripById = new Map(realTrips.map(item => [item._id, item] as const));

@@ -101,7 +101,7 @@ const META_FIELDS = new Set(['_id', '_type', '_createdAt', '_updatedAt', '_rev']
 const FETCH_BATCH_SIZE = 1000;
 const RELATIONAL_READ_CACHE_TTL_MS = Math.max(
     0,
-    Number.parseInt(process.env.RELATIONAL_READ_CACHE_TTL_MS || '5000', 10) || 5000
+    Number.parseInt(process.env.RELATIONAL_READ_CACHE_TTL_MS || '10000', 10) || 10000
 );
 const RELATIONAL_READ_CACHE_MAX_ENTRIES = 300;
 
