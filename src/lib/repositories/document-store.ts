@@ -8,6 +8,7 @@ import {
     relationalFindDocumentByIdAcrossTypes,
     relationalGetAll,
     relationalGetByFilter,
+    relationalGetFieldsByFilter,
     relationalGetById,
     relationalList,
     relationalMaxNumericSuffixByPrefix,
@@ -189,6 +190,19 @@ export async function listDocumentsByFilter<T = Record<string, unknown>>(
 ) {
     if (supportsRelationalDocType(docType)) {
         const documents = await relationalGetByFilter<T>(docType, filterObj);
+        rememberDocumentTypes(documents);
+        return documents;
+    }
+    return [];
+}
+
+export async function listDocumentFieldsByFilter<T = Record<string, unknown>>(
+    docType: string,
+    fields: string[],
+    filterObj: Record<string, unknown>
+) {
+    if (supportsRelationalDocType(docType)) {
+        const documents = await relationalGetFieldsByFilter<T>(docType, fields, filterObj);
         rememberDocumentTypes(documents);
         return documents;
     }

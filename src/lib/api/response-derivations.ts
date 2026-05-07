@@ -20,7 +20,9 @@ type OrderResponseSource = Order & {
     _updatedAt?: string;
 };
 
-type DeliveryOrderTrackingLogSource = Pick<TrackingLog, 'refRef' | 'status' | 'timestamp' | 'userRef' | 'userName'>;
+type DeliveryOrderTrackingLogSource = Pick<TrackingLog, 'refRef' | 'status' | 'timestamp' | 'userRef' | 'userName'> & {
+    refType?: TrackingLog['refType'];
+};
 
 type DeliveryOrderServiceSource = {
     _id: string;
@@ -30,6 +32,14 @@ type DeliveryOrderServiceSource = {
 type DeliveryOrderVehicleSource = {
     _id: string;
     capacityKg?: number;
+};
+
+type DeliveryOrderResponseDerivationOptions = {
+    deliveryOrderItems?: DeliveryOrderItem[];
+    trackingLogs?: DeliveryOrderTrackingLogSource[];
+    services?: DeliveryOrderServiceSource[];
+    vehicles?: DeliveryOrderVehicleSource[];
+    tripRouteRates?: Array<Pick<TripRouteRate, '_id' | 'overtonaseDriverRatePerTon' | 'notes'> & { overtonaseReferencePerTon?: number }>;
 };
 
 type FreightNotaDeliveryOrderSource = Pick<
@@ -211,7 +221,10 @@ function resolveFreightNotaNoSj(
     );
 }
 
-export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOrderResponseSource[]) {
+export async function deriveDeliveryOrdersForResponse(
+    deliveryOrders: DeliveryOrderResponseSource[],
+    options: DeliveryOrderResponseDerivationOptions = {},
+) {
     if (deliveryOrders.length === 0) {
         return deliveryOrders;
     }
@@ -239,19 +252,49 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
         ),
     ];
 
-    const [deliveryOrderItems, trackingLogs, services, vehicles, tripRouteRates] = await Promise.all([
-        listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: deliveryOrderIds }),
-        listDocumentsByFilter<DeliveryOrderTrackingLogSource>('trackingLog', { refType: 'DO', refRef: deliveryOrderIds }),
-        serviceRefs.length > 0
+    const deliveryOrderIdSet = new Set(deliveryOrderIds);
+    const serviceRefSet = new Set(serviceRefs);
+    const vehicleRefSet = new Set(vehicleRefs);
+    const tripRouteRateRefSet = new Set(tripRouteRateRefs);
+
+    const [
+        rawDeliveryOrderItems,
+        rawTrackingLogs,
+        rawServices,
+        rawVehicles,
+        rawTripRouteRates,
+    ] = await Promise.all([
+        options.deliveryOrderItems
+            ? Promise.resolve(options.deliveryOrderItems)
+            : listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: deliveryOrderIds }),
+        options.trackingLogs
+            ? Promise.resolve(options.trackingLogs)
+            : listDocumentsByFilter<DeliveryOrderTrackingLogSource>('trackingLog', { refType: 'DO', refRef: deliveryOrderIds }),
+        options.services
+            ? Promise.resolve(options.services)
+            : serviceRefs.length > 0
             ? listDocumentsByFilter<DeliveryOrderServiceSource>('service', { _id: serviceRefs })
             : Promise.resolve([]),
-        vehicleRefs.length > 0
+        options.vehicles
+            ? Promise.resolve(options.vehicles)
+            : vehicleRefs.length > 0
             ? listDocumentsByFilter<DeliveryOrderVehicleSource>('vehicle', { _id: vehicleRefs })
             : Promise.resolve([]),
-        tripRouteRateRefs.length > 0
+        options.tripRouteRates
+            ? Promise.resolve(options.tripRouteRates)
+            : tripRouteRateRefs.length > 0
             ? listDocumentsByFilter<Pick<TripRouteRate, '_id' | 'overtonaseDriverRatePerTon' | 'notes'> & { overtonaseReferencePerTon?: number }>('tripRouteRate', { _id: tripRouteRateRefs })
             : Promise.resolve([]),
     ]);
+    const deliveryOrderItems = rawDeliveryOrderItems.filter(item =>
+        deliveryOrderIdSet.has(normalizeOptionalText(item.deliveryOrderRef) || '')
+    );
+    const trackingLogs = rawTrackingLogs.filter(log =>
+        (!log.refType || log.refType === 'DO') && deliveryOrderIdSet.has(normalizeOptionalText(log.refRef) || '')
+    );
+    const services = rawServices.filter(service => serviceRefSet.size === 0 || serviceRefSet.has(service._id));
+    const vehicles = rawVehicles.filter(vehicle => vehicleRefSet.size === 0 || vehicleRefSet.has(vehicle._id));
+    const tripRouteRates = rawTripRouteRates.filter(rate => tripRouteRateRefSet.size === 0 || tripRouteRateRefSet.has(rate._id));
 
     const itemsByDeliveryOrderRef = new Map<string, DeliveryOrderItem[]>();
     for (const item of deliveryOrderItems) {

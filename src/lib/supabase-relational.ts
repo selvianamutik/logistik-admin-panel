@@ -1749,6 +1749,18 @@ function buildQueryPath(table: string, params: URLSearchParams) {
     return query ? `${table}?${query}` : table;
 }
 
+function buildSelectColumns(config: RelationalConfig, fields: string[]) {
+    const columns = new Set<string>(['source_document_id']);
+    for (const field of fields) {
+        const column = getColumnName(config, field);
+        if (!column) {
+            return null;
+        }
+        columns.add(column);
+    }
+    return Array.from(columns).join(',');
+}
+
 async function fetchRows(path: string, init: RequestInit = {}): Promise<FetchRowsResult> {
     const cacheKey = getReadCacheKey(path, init);
     const requestCacheVersion = relationalReadCacheVersion;
@@ -1961,6 +1973,31 @@ export async function relationalGetByFilter<T = Record<string, unknown>>(
 
     const docs = await relationalGetAll<Record<string, unknown>>(docType);
     return docs.filter(doc => matchesFilter(doc, filterObj)) as T[];
+}
+
+export async function relationalGetFieldsByFilter<T = Record<string, unknown>>(
+    docType: SupportedDocType,
+    fields: string[],
+    filterObj: Record<string, unknown>
+): Promise<T[]> {
+    const config = RELATIONAL_CONFIG[docType];
+    const filterParams = buildFilterParams(config, filterObj);
+    const selectedColumns = buildSelectColumns(config, fields);
+
+    if (!filterParams || !selectedColumns) {
+        return relationalGetByFilter<T>(docType, filterObj);
+    }
+
+    try {
+        filterParams.set('select', selectedColumns);
+        const { rows } = await fetchAllRows(config.table, filterParams);
+        return rows.map(row => mapRowToDocument(docType, row) as T);
+    } catch (error) {
+        if (isMissingRelationalTableError(error)) {
+            return [];
+        }
+        throw error;
+    }
 }
 
 export async function relationalList<T = Record<string, unknown>>(

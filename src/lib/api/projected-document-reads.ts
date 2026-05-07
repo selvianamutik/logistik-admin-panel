@@ -243,7 +243,10 @@ async function loadProjectedSourceDataUncached(): Promise<ProjectedSourceData> {
         getAllDocuments<TrackingLog>('trackingLog'),
         getAllDocuments<DriverVoucher>('driverVoucher'),
     ]);
-    const derivedDeliveryOrders = await deriveDeliveryOrdersForResponse(allDeliveryOrders);
+    const derivedDeliveryOrders = await deriveDeliveryOrdersForResponse(allDeliveryOrders, {
+        deliveryOrderItems: allDeliveryOrderItems,
+        trackingLogs: allTrackingLogs,
+    });
     return {
         derivedDeliveryOrders,
         allTripRecords,
@@ -294,20 +297,22 @@ async function loadProjectedSourceDataForDeliveryOrderUncached(deliveryOrderId: 
     }
 
     const [
-        derivedDeliveryOrders,
         allTripRecords,
         allSuratJalanRecords,
         allDeliveryOrderItems,
         allTrackingLogs,
         allDriverVouchers,
     ] = await Promise.all([
-        deriveDeliveryOrdersForResponse([deliveryOrder]),
         loadTripRecordsForDeliveryOrder(deliveryOrderId),
         loadSuratJalanRecordsForDeliveryOrder(deliveryOrderId),
         listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: deliveryOrderId }),
         listDocumentsByFilter<TrackingLog>('trackingLog', { refType: 'DO', refRef: deliveryOrderId }),
         listDocumentsByFilter<DriverVoucher>('driverVoucher', { deliveryOrderRef: deliveryOrderId }),
     ]);
+    const derivedDeliveryOrders = await deriveDeliveryOrdersForResponse([deliveryOrder], {
+        deliveryOrderItems: allDeliveryOrderItems,
+        trackingLogs: allTrackingLogs,
+    });
 
     const derivedDeliveryOrder = derivedDeliveryOrders[0] || deliveryOrder;
     const derivedSuratJalanDocuments = mapDeliveryOrderToSuratJalanDocuments(

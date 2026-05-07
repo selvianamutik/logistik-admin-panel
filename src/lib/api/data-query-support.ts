@@ -1,7 +1,7 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
 import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
-import { getDocumentById, listDocuments, listDocumentsByFilter } from '@/lib/repositories/document-store';
+import { getDocumentById, listDocumentFieldsByFilter, listDocuments, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
     EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
     summarizeEmployeeAttendanceRecords,
@@ -337,14 +337,53 @@ const AUDIT_LOG_FILTER_CACHE_TTL_MS = Math.max(
     0,
     Number.parseInt(process.env.AUDIT_LOG_FILTER_CACHE_TTL_MS || '10000', 10) || 10000
 );
+const SUMMARY_READ_CACHE_TTL_MS = Math.max(
+    0,
+    Number.parseInt(process.env.SUMMARY_READ_CACHE_TTL_MS || '10000', 10) || 10000
+);
 
 const auditLogFilterCache = new Map<string, { expiresAt: number; logs: AuditLog[] }>();
+const summaryReadCache = new Map<string, { expiresAt: number; value: unknown }>();
 
 export function clearAuditLogFilterCache() {
     auditLogFilterCache.clear();
+    summaryReadCache.clear();
 }
 
 registerApiReadCacheInvalidator(clearAuditLogFilterCache);
+
+function cloneSummaryValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function getSummaryReadCache<T>(key: string): T | null {
+    if (SUMMARY_READ_CACHE_TTL_MS <= 0) {
+        return null;
+    }
+    const cached = summaryReadCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cloneSummaryValue(cached.value as T);
+    }
+    if (cached) {
+        summaryReadCache.delete(key);
+    }
+    return null;
+}
+
+function setSummaryReadCache<T>(key: string, value: T) {
+    if (SUMMARY_READ_CACHE_TTL_MS <= 0) {
+        return;
+    }
+    summaryReadCache.set(key, {
+        expiresAt: Date.now() + SUMMARY_READ_CACHE_TTL_MS,
+        value: cloneSummaryValue(value),
+    });
+    while (summaryReadCache.size > 50) {
+        const oldestKey = summaryReadCache.keys().next().value as string | undefined;
+        if (!oldestKey) break;
+        summaryReadCache.delete(oldestKey);
+    }
+}
 
 function normalizeStringList(values?: Array<string | null | undefined>) {
     return Array.from(new Set(
@@ -1717,6 +1756,12 @@ export type DashboardSummary = {
 };
 
 export async function getDashboardSummary(session: ApiSession): Promise<DashboardSummary> {
+    const cacheKey = `dashboard-summary:${session.role}`;
+    const cached = getSummaryReadCache<DashboardSummary>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const canViewOrders = hasPageAccess(session.role, 'orders');
     const canViewInvoices = hasPermission(session.role, 'freightNotas', 'view');
     const canViewTripCash = hasPermission(session.role, 'driverVouchers', 'view');
@@ -1733,35 +1778,44 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         recentNotas,
     ] = await Promise.all([
         canViewOrders
-            ? Promise.all([
-                getDocumentCount('order'),
-                getDocumentCount('order', { status: 'OPEN' }),
-                getDocumentCount('order', { status: 'PARTIAL' }),
-                getDocumentCount('order', { status: 'COMPLETE' }),
-                getDocumentCount('order', { status: 'ON_HOLD' }),
-            ]).then(([total, open, partial, complete, onHold]) => ({
-                total,
-                open,
-                partial,
-                complete,
-                onHold,
-            }))
+            ? listDocumentFieldsByFilter<{ status?: string }>('order', ['status'], {})
+                .then(rows => rows.reduce(
+                    (acc, row) => {
+                        acc.total += 1;
+                        if (row.status === 'OPEN') acc.open += 1;
+                        if (row.status === 'PARTIAL') acc.partial += 1;
+                        if (row.status === 'COMPLETE') acc.complete += 1;
+                        if (row.status === 'ON_HOLD') acc.onHold += 1;
+                        return acc;
+                    },
+                    { total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }
+                ))
             : Promise.resolve({ total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }),
-        Promise.all([
-            getDocumentCount('deliveryOrder'),
-            getDocumentCount('deliveryOrder', { status: 'ON_DELIVERY' }),
-        ]).then(([total, onDelivery]) => ({
-            total,
-            onDelivery,
-        })),
+        listDocumentFieldsByFilter<{ status?: string }>('deliveryOrder', ['status'], {})
+            .then(rows => ({
+                total: rows.length,
+                onDelivery: rows.filter(row => row.status === 'ON_DELIVERY').length,
+            })),
         canViewInvoices
-            ? listDocumentsByFilter<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>('freightNota', {})
+            ? listDocumentFieldsByFilter<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>(
+                'freightNota',
+                ['status', 'totalAmount', 'totalAdjustmentAmount', 'pph23Enabled', 'pph23RatePercent', 'pph23BaseMode', 'pph23Amount', 'netAmount'],
+                { status: { neq: 'VOID' } },
+            )
             : Promise.resolve([]),
         canSeeBorongan
-            ? listDocumentsByFilter<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>('driverBorongan', {})
+            ? listDocumentFieldsByFilter<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>(
+                'driverBorongan',
+                ['status', 'totalAmount', 'totalCollie', 'totalWeightKg', 'paidDate', 'paidMethod', 'paidBankRef', 'paidBankName', 'paidBankNumber'],
+                {},
+            )
             : Promise.resolve([]),
         canViewTripCash
-            ? listDocumentsByFilter<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>('driverVoucher', {})
+            ? listDocumentFieldsByFilter<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>(
+                'driverVoucher',
+                ['status', 'settledDate', 'settledBy', 'settlementBankRef', 'settlementBankName', 'cashGiven', 'initialCashGiven', 'topUpCount', 'totalIssuedAmount', 'totalSpent', 'driverFeeAmount', 'totalClaimAmount', 'balance'],
+                {},
+            )
             : Promise.resolve([]),
         canViewFleet
             ? Promise.all([
@@ -1865,7 +1919,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     );
     const canSeeFinancialTotals = session.role === 'OWNER' || session.role === 'FINANCE';
 
-    return {
+    const summary = {
         orderStats,
         doStats,
         notaStats: {
@@ -1884,6 +1938,8 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         recentOrders,
         recentNotas: recentNotasWithDerivedStatus,
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
 export async function getCustomersSummary(ids: string[] = []) {
@@ -1925,18 +1981,28 @@ type VehicleTireSummary = {
     missing: number;
 };
 
+type VehiclesSummary = {
+    totalVehicles: number;
+    activeVehicleCount: number;
+    nonOperationalCount: number;
+    incompleteTireCount: number;
+    tireSummaries: Record<string, VehicleTireSummary>;
+};
+
 function buildVehicleTireSummary(
     vehicle: Pick<Vehicle, '_id' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>,
-    tireEvents: Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>
+    tireEventsOrActiveSlotCodes: Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>> | string[]
 ): VehicleTireSummary {
-    const activeSlotCodes = Array.from(
-        new Set(
-            tireEvents
-                .filter(event => event.vehicleRef === vehicle._id && resolveTireAssetStatus(event) === 'IN_USE')
-                .map(event => resolveTireSlotCode(event) || '')
-                .filter(Boolean)
-        )
-    );
+    const activeSlotCodes = typeof tireEventsOrActiveSlotCodes[0] === 'string'
+        ? tireEventsOrActiveSlotCodes as string[]
+        : Array.from(
+            new Set(
+                (tireEventsOrActiveSlotCodes as Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>)
+                    .filter(event => event.vehicleRef === vehicle._id && resolveTireAssetStatus(event) === 'IN_USE')
+                    .map(event => resolveTireSlotCode(event) || '')
+                    .filter(Boolean)
+            )
+        );
     const layout = getSuggestedVehicleTireLayout(vehicle.vehicleType, vehicle.serviceName, activeSlotCodes, vehicle.tireLayoutConfig);
     const filled = activeSlotCodes.length;
     const expected = layout.allSlots.length;
@@ -1947,7 +2013,13 @@ function buildVehicleTireSummary(
     };
 }
 
-export async function getVehiclesSummary(ids: string[] = []) {
+export async function getVehiclesSummary(ids: string[] = []): Promise<VehiclesSummary> {
+    const cacheKey = `vehicles-summary:${[...ids].sort().join(',')}`;
+    const cached = getSummaryReadCache<VehiclesSummary>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const vehicles = await listDocumentsByFilter<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>('vehicle', {});
     const vehicleIds = vehicles.map(vehicle => vehicle._id).filter(Boolean);
     const tireEvents = vehicleIds.length > 0
@@ -1956,29 +2028,46 @@ export async function getVehiclesSummary(ids: string[] = []) {
         })
         : [];
     const filteredTireEvents = tireEvents.filter(event => Boolean(event.vehicleRef));
+    const activeSlotCodesByVehicleRef = filteredTireEvents.reduce<Map<string, Set<string>>>((acc, event) => {
+        if (!event.vehicleRef || resolveTireAssetStatus(event) !== 'IN_USE') {
+            return acc;
+        }
+        const slotCode = resolveTireSlotCode(event) || '';
+        if (!slotCode) {
+            return acc;
+        }
+        const current = acc.get(event.vehicleRef) || new Set<string>();
+        current.add(slotCode);
+        acc.set(event.vehicleRef, current);
+        return acc;
+    }, new Map());
+    const getActiveSlotCodes = (vehicleRef: string) =>
+        Array.from(activeSlotCodesByVehicleRef.get(vehicleRef) || []);
 
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
     const tireSummaries = ids.reduce<Record<string, VehicleTireSummary>>((acc, id) => {
         const vehicle = vehicleMap.get(id);
         if (!vehicle) return acc;
-        acc[id] = buildVehicleTireSummary(vehicle, filteredTireEvents);
+        acc[id] = buildVehicleTireSummary(vehicle, getActiveSlotCodes(id));
         return acc;
     }, {});
 
     const totalVehicles = vehicles.length;
     const activeVehicleCount = vehicles.filter(vehicle => vehicle.status === 'ACTIVE').length;
     const incompleteTireCount = vehicles.reduce((sum, vehicle) => {
-        const summary = buildVehicleTireSummary(vehicle, filteredTireEvents);
+        const summary = buildVehicleTireSummary(vehicle, getActiveSlotCodes(vehicle._id));
         return sum + (summary.missing > 0 ? 1 : 0);
     }, 0);
 
-    return {
+    const summary = {
         totalVehicles,
         activeVehicleCount,
         nonOperationalCount: Math.max(totalVehicles - activeVehicleCount, 0),
         incompleteTireCount,
         tireSummaries,
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
 type ExpenseListParams = {
@@ -1992,6 +2081,13 @@ type ExpenseListParams = {
     dateFrom?: string | null;
     dateTo?: string | null;
     countOnly?: boolean;
+};
+
+type ExpensesSummary = {
+    grandTotal: number;
+    transactionCount: number;
+    avgAmount: number;
+    categoryTotals: Array<{ name: string; total: number }>;
 };
 
 const DEFAULT_EXPENSE_SEARCH_FIELDS = [
@@ -2076,10 +2172,22 @@ export async function getExpenseList(session: ApiSession, params: ExpenseListPar
     };
 }
 
-export async function getExpensesSummary(session: ApiSession, paramsOrSearch: string | ExpenseListParams = '') {
+export async function getExpensesSummary(session: ApiSession, paramsOrSearch: string | ExpenseListParams = ''): Promise<ExpensesSummary> {
     const params: ExpenseListParams = typeof paramsOrSearch === 'string'
         ? { search: paramsOrSearch }
         : paramsOrSearch;
+    const cacheKey = `expenses-summary:${session.role}:${JSON.stringify({
+        search: params.search?.trim().toLowerCase() || '',
+        searchFields: normalizeStringList(params.searchFields).sort(),
+        filterObj: params.filterObj || {},
+        dateFrom: normalizeExpenseDateFilter(params.dateFrom),
+        dateTo: normalizeExpenseDateFilter(params.dateTo),
+    })}`;
+    const cached = getSummaryReadCache<ExpensesSummary>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const expenseRows = await listDocumentsByFilter<Expense>('expense', {});
     const filteredExpenses = filterExpenseRows(expenseRows, params, session.role);
     const grandTotal = filteredExpenses.reduce((sum, expense) => sum + parseWholeMoneyLike(expense.amount), 0);
@@ -2093,15 +2201,31 @@ export async function getExpensesSummary(session: ApiSession, paramsOrSearch: st
         .sort((left, right) => right[1] - left[1])
         .map(([name, total]) => ({ name, total }));
 
-    return {
+    const summary = {
         grandTotal,
         transactionCount: filteredExpenses.length,
         avgAmount: filteredExpenses.length > 0 ? grandTotal / filteredExpenses.length : 0,
         categoryTotals,
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
-export async function getBankAccountsSummary() {
+type BankAccountsSummary = {
+    totalAccounts: number;
+    totalBalance: number;
+    totalInitial: number;
+    cashBalance: number;
+    bankBalance: number;
+};
+
+export async function getBankAccountsSummary(): Promise<BankAccountsSummary> {
+    const cacheKey = 'bank-accounts-summary';
+    const cached = getSummaryReadCache<BankAccountsSummary>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const accounts = await listDocumentsByFilter<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>('bankAccount', {
         active: true,
     });
@@ -2122,13 +2246,15 @@ export async function getBankAccountsSummary() {
     const cashBalance = accountsWithDerivedBalances.filter(isCash).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
     const bankBalance = accountsWithDerivedBalances.filter(account => !isCash(account)).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
 
-    return {
+    const summary = {
         totalAccounts: accountsWithDerivedBalances.length,
         totalBalance,
         totalInitial,
         cashBalance,
         bankBalance,
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
 export async function getDriverBoronganDoRefsSummary() {
