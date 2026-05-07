@@ -34,8 +34,34 @@ const NUMBERING_CONFIG = {
     incident: { prefixField: 'incidentPrefix', counterField: 'incidentCounter', periodField: 'incidentPeriod', defaultPrefix: 'INC-', docType: 'incident', docField: 'incidentNumber' },
 } as const;
 
+const DOCUMENT_TYPE_HINT_LIMIT = 10000;
+const documentTypeHints = new Map<string, string>();
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function rememberDocumentType(value: unknown) {
+    if (!isRecord(value)) return;
+    const id = typeof value._id === 'string' ? value._id : '';
+    const type = typeof value._type === 'string' ? value._type : '';
+    if (!id || !type || !supportsRelationalDocType(type)) return;
+
+    if (!documentTypeHints.has(id) && documentTypeHints.size >= DOCUMENT_TYPE_HINT_LIMIT) {
+        const oldestKey = documentTypeHints.keys().next().value;
+        if (oldestKey) documentTypeHints.delete(oldestKey);
+    }
+    documentTypeHints.set(id, type);
+}
+
+function rememberDocumentTypes(values: unknown[]) {
+    for (const value of values) {
+        rememberDocumentType(value);
+    }
+}
+
+function forgetDocumentType(id: string) {
+    documentTypeHints.delete(id);
 }
 
 function normalizePrefix(prefix: unknown, fallback: string) {
@@ -133,11 +159,24 @@ async function getRelationalNextNumber(prefix: string, dateValue?: string) {
 
 export async function getDocumentById<T = Record<string, unknown>>(id: string, docType?: string) {
     if (docType && supportsRelationalDocType(docType)) {
-        return relationalGetById<T>(docType, id);
+        const document = await relationalGetById<T>(docType, id);
+        rememberDocumentType(document);
+        return document;
+    }
+
+    const hintedDocType = documentTypeHints.get(id);
+    if (hintedDocType && supportsRelationalDocType(hintedDocType)) {
+        const hintedDocument = await relationalGetById<T>(hintedDocType, id);
+        if (hintedDocument) {
+            rememberDocumentType(hintedDocument);
+            return hintedDocument;
+        }
+        forgetDocumentType(id);
     }
 
     const relationalDoc = await relationalFindDocumentByIdAcrossTypes<T>(id);
     if (relationalDoc) {
+        rememberDocumentType(relationalDoc);
         return relationalDoc;
     }
 
@@ -149,14 +188,18 @@ export async function listDocumentsByFilter<T = Record<string, unknown>>(
     filterObj: Record<string, unknown>
 ) {
     if (supportsRelationalDocType(docType)) {
-        return relationalGetByFilter<T>(docType, filterObj);
+        const documents = await relationalGetByFilter<T>(docType, filterObj);
+        rememberDocumentTypes(documents);
+        return documents;
     }
     return [];
 }
 
 export async function getAllDocuments<T = Record<string, unknown>>(docType: string) {
     if (supportsRelationalDocType(docType)) {
-        return relationalGetAll<T>(docType);
+        const documents = await relationalGetAll<T>(docType);
+        rememberDocumentTypes(documents);
+        return documents;
     }
     return [];
 }
@@ -180,7 +223,9 @@ export async function listDocuments<T = Record<string, unknown>>(
     options: DocumentListOptions = {}
 ) {
     if (supportsRelationalDocType(docType)) {
-        return relationalList<T>(docType, options);
+        const result = await relationalList<T>(docType, options);
+        rememberDocumentTypes(result.items);
+        return result;
     }
     return { items: [], total: 0 };
 }
@@ -193,6 +238,7 @@ export async function createDocument<T = Record<string, unknown>>(
         if (!created) {
             throw new Error(`Failed to create relational document for type: ${doc._type}`);
         }
+        rememberDocumentType(created);
         clearApiReadCaches();
         return created;
     }
@@ -209,8 +255,20 @@ export async function updateDocument<T = Record<string, unknown>>(
         if (!updated) {
             throw new Error(`Document not found: ${id}`);
         }
+        rememberDocumentType(updated);
         clearApiReadCaches();
         return updated;
+    }
+
+    const hintedDocType = documentTypeHints.get(id);
+    if (hintedDocType && supportsRelationalDocType(hintedDocType)) {
+        const updated = await relationalPatchDocument<T>(hintedDocType, id, updates);
+        if (updated) {
+            rememberDocumentType(updated);
+            clearApiReadCaches();
+            return updated;
+        }
+        forgetDocumentType(id);
     }
 
     const existing = await getDocumentById<Record<string, unknown> & { _type?: string }>(id, docType);
@@ -219,15 +277,11 @@ export async function updateDocument<T = Record<string, unknown>>(
     }
 
     if (supportsRelationalDocType(existing._type)) {
-        const updated = await relationalUpsertDocument<T>({
-            ...existing,
-            ...updates,
-            _id: id,
-            _type: existing._type,
-        });
+        const updated = await relationalPatchDocument<T>(existing._type, id, updates);
         if (!updated) {
             throw new Error(`Failed to update relational document for type: ${existing._type}`);
         }
+        rememberDocumentType(updated);
         clearApiReadCaches();
         return updated;
     }
@@ -238,8 +292,21 @@ export async function updateDocument<T = Record<string, unknown>>(
 export async function deleteDocument(id: string, docType?: string) {
     if (docType && supportsRelationalDocType(docType)) {
         await relationalDeleteDocument(docType, id);
+        forgetDocumentType(id);
         clearApiReadCaches();
         return true;
+    }
+
+    const hintedDocType = documentTypeHints.get(id);
+    if (hintedDocType && supportsRelationalDocType(hintedDocType)) {
+        const hintedDocument = await relationalGetById(hintedDocType, id);
+        if (hintedDocument) {
+            await relationalDeleteDocument(hintedDocType, id);
+            forgetDocumentType(id);
+            clearApiReadCaches();
+            return true;
+        }
+        forgetDocumentType(id);
     }
 
     const existing = await getDocumentById<{ _type?: string }>(id, docType);
@@ -249,6 +316,7 @@ export async function deleteDocument(id: string, docType?: string) {
 
     if (existing?._type && supportsRelationalDocType(existing._type)) {
         await relationalDeleteDocument(existing._type, id);
+        forgetDocumentType(id);
         clearApiReadCaches();
         return true;
     }

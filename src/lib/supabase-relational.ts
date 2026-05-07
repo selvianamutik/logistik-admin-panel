@@ -110,6 +110,8 @@ type RelationalReadCacheEntry = FetchRowsResult & {
 };
 
 const relationalReadCache = new Map<string, RelationalReadCacheEntry>();
+const relationalInFlightReads = new Map<string, Promise<FetchRowsResult>>();
+let relationalReadCacheVersion = 0;
 
 const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
     companyProfile: {
@@ -1371,7 +1373,9 @@ function pruneRelationalReadCache(now = Date.now()) {
 }
 
 export function clearRelationalReadCache() {
+    relationalReadCacheVersion += 1;
     relationalReadCache.clear();
+    relationalInFlightReads.clear();
 }
 
 function buildFilterParams(
@@ -1698,6 +1702,7 @@ function buildQueryPath(table: string, params: URLSearchParams) {
 
 async function fetchRows(path: string, init: RequestInit = {}): Promise<FetchRowsResult> {
     const cacheKey = getReadCacheKey(path, init);
+    const requestCacheVersion = relationalReadCacheVersion;
     if (cacheKey) {
         const now = Date.now();
         const cached = relationalReadCache.get(cacheKey);
@@ -1707,16 +1712,36 @@ async function fetchRows(path: string, init: RequestInit = {}): Promise<FetchRow
         if (cached) {
             relationalReadCache.delete(cacheKey);
         }
+
+        const inFlight = relationalInFlightReads.get(cacheKey);
+        if (inFlight) {
+            return cloneFetchRowsResult(await inFlight);
+        }
     }
 
-    const response = await getSupabaseClient().fetch(path, init);
-    const rows = await response.json() as RelationalRow[];
-    const result = {
-        rows,
-        total: parseContentRangeTotal(response.headers.get('content-range')),
-    };
+    const request = (async () => {
+        const response = await getSupabaseClient().fetch(path, init);
+        const rows = await response.json() as RelationalRow[];
+        return {
+            rows,
+            total: parseContentRangeTotal(response.headers.get('content-range')),
+        };
+    })();
 
     if (cacheKey) {
+        relationalInFlightReads.set(cacheKey, request);
+    }
+
+    let result: FetchRowsResult;
+    try {
+        result = await request;
+    } finally {
+        if (cacheKey) {
+            relationalInFlightReads.delete(cacheKey);
+        }
+    }
+
+    if (cacheKey && requestCacheVersion === relationalReadCacheVersion) {
         relationalReadCache.set(cacheKey, {
             ...cloneFetchRowsResult(result),
             expiresAt: Date.now() + RELATIONAL_READ_CACHE_TTL_MS,

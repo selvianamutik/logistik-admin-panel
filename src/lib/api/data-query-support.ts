@@ -314,7 +314,7 @@ function buildAuditLogFilterCacheKey(params: {
     return JSON.stringify({
         search: params.search?.trim().toLowerCase() || '',
         searchFields: normalizeStringList(params.searchFields).sort(),
-        sortField: params.sortField?.trim() || '',
+        sortField: params.sortField?.trim() || 'timestamp',
         sortDir: params.sortDir === 'asc' ? 'asc' : 'desc',
         period: normalizeAuditLogPeriod(params.period),
         entityRefs: normalizeStringList([params.entityRef, ...(params.entityRefs ?? [])]).sort(),

@@ -31,5 +31,5 @@ export async function updateUserLoginState(
     return updateDocument<User>(id, {
         lastLoginAt: updates.lastLoginAt,
         ...(updates.passwordHash ? { passwordHash: updates.passwordHash } : {}),
-    });
+    }, 'user');
 }
