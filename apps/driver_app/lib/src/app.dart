@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 
 import 'features/auth/presentation/login_page.dart';
 import 'features/tracking/presentation/tracking_home_page.dart';
+import 'shared/branding.dart';
 import 'shared/theme.dart';
 
 class DriverTrackingApp extends StatefulWidget {
@@ -86,7 +87,7 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Logistik Driver',
+      title: gmsDriverAppTitle,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       home: _isPreparingLocation
@@ -197,6 +198,19 @@ class _StartupLocationPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Image.asset(
+                gmsLogoAsset,
+                width: 96,
+                height: 58,
+                fit: BoxFit.contain,
+                semanticLabel: 'Logo GMS',
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.local_shipping_rounded,
+                  size: 42,
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(height: 18),
               SizedBox(
                 width: 42,
                 height: 42,

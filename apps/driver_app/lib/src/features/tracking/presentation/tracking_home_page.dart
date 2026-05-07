@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../app.dart';
+import '../../../shared/branding.dart';
 import '../data/driver_access_service.dart';
 import '../data/delivery_order_service.dart';
 import '../data/driver_tracking_service.dart';
@@ -1518,7 +1519,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'GMS Driver',
+          gmsCompanyName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
         actions: [

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 
 import 'package:driver_app/src/features/auth/presentation/login_page.dart';
+import 'package:driver_app/src/shared/branding.dart';
 import 'package:driver_app/src/shared/theme.dart';
 
 void main() {
@@ -22,7 +23,7 @@ void main() {
       ),
     );
 
-    expect(find.text('GMS Driver'), findsOneWidget);
-    expect(find.text('Masuk'), findsOneWidget);
+    expect(find.text(gmsCompanyName), findsOneWidget);
+    expect(find.textContaining('Aplikasi driver'), findsOneWidget);
   });
 }

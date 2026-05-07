@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app.dart';
+import '../../../shared/branding.dart';
 import '../data/driver_auth_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -72,21 +73,37 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: compact ? 52 : 56,
+                    width: compact ? 74 : 82,
                     height: compact ? 52 : 56,
+                    padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: scheme.primary,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.local_shipping_rounded,
                       color: Colors.white,
-                      size: 26,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      gmsLogoAsset,
+                      fit: BoxFit.contain,
+                      semanticLabel: 'Logo GMS',
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.local_shipping_rounded,
+                        color: scheme.primary,
+                        size: 26,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'GMS Driver',
+                    gmsCompanyName,
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: compact ? 26 : 30,
@@ -96,7 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Masuk untuk lihat trip dan kirim lokasi.',
+                    'Aplikasi driver untuk cek trip, uang jalan, dan kirim lokasi.',
                     style: TextStyle(
                       color: scheme.onSurface.withValues(alpha: 0.56),
                       fontSize: 14,
