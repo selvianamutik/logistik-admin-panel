@@ -1407,6 +1407,29 @@ function buildFilterParams(
             continue;
         }
 
+        if (isRecord(expected)) {
+            for (const [operator, operatorValue] of Object.entries(expected)) {
+                if (operatorValue === '' || operatorValue === null || operatorValue === undefined) {
+                    continue;
+                }
+                if (
+                    operator !== 'eq' &&
+                    operator !== 'neq' &&
+                    operator !== 'gt' &&
+                    operator !== 'gte' &&
+                    operator !== 'lt' &&
+                    operator !== 'lte'
+                ) {
+                    return null;
+                }
+                if (!isServerFilterScalar(operatorValue)) {
+                    return null;
+                }
+                params.append(column, `${operator}.${formatServerFilterValue(operatorValue)}`);
+            }
+            continue;
+        }
+
         if (!isServerFilterScalar(expected)) {
             return null;
         }
@@ -1491,6 +1514,32 @@ function compareValues(left: unknown, right: unknown) {
 
 function matchesFilterValue(actual: unknown, expected: unknown) {
     if (expected === '' || expected === null || expected === undefined) {
+        return true;
+    }
+
+    if (isRecord(expected)) {
+        for (const [operator, operatorValue] of Object.entries(expected)) {
+            if (operatorValue === '' || operatorValue === null || operatorValue === undefined) {
+                continue;
+            }
+            const comparison = compareValues(actual, operatorValue);
+            if (operator === 'eq' && comparison !== 0) return false;
+            if (operator === 'neq' && comparison === 0) return false;
+            if (operator === 'gt' && comparison <= 0) return false;
+            if (operator === 'gte' && comparison < 0) return false;
+            if (operator === 'lt' && comparison >= 0) return false;
+            if (operator === 'lte' && comparison > 0) return false;
+            if (
+                operator !== 'eq' &&
+                operator !== 'neq' &&
+                operator !== 'gt' &&
+                operator !== 'gte' &&
+                operator !== 'lt' &&
+                operator !== 'lte'
+            ) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -1810,7 +1859,7 @@ function buildServerListParams(
         return null;
     }
     for (const [key, value] of filterParams.entries()) {
-        params.set(key, value);
+        params.append(key, value);
     }
 
     const searchClause = buildSearchClause(config, options.search ?? '', options.searchFields ?? []);

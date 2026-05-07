@@ -261,6 +261,59 @@ function matchesAuditLogPeriod(
     return true;
 }
 
+function getFirstDayOfNextMonth(dateValue: string) {
+    const parts = getBusinessCalendarDateParts(dateValue);
+    if (!parts) return '';
+    const year = Number(parts.year);
+    const month = Number(parts.month);
+    const nextMonthDate = new Date(Date.UTC(year, month, 1));
+    return `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function getFirstDayOfNextYear(dateValue: string) {
+    const parts = getBusinessCalendarDateParts(dateValue);
+    if (!parts) return '';
+    return `${Number(parts.year) + 1}-01-01`;
+}
+
+function toJakartaMidnightUtcIso(dateValue: string) {
+    const parts = getBusinessCalendarDateParts(dateValue);
+    if (!parts) return '';
+    return new Date(Date.UTC(
+        Number(parts.year),
+        Number(parts.month) - 1,
+        Number(parts.day),
+        -7,
+        0,
+        0,
+        0
+    )).toISOString();
+}
+
+function getAuditLogPeriodTimestampFilter(period: AuditLogPeriod, today: string) {
+    if (period === 'all') return null;
+
+    let startDate = today;
+    let endDate = addDaysToDateValue(today, 1);
+
+    if (period === 'yesterday') {
+        startDate = addDaysToDateValue(today, -1);
+        endDate = today;
+    } else if (period === 'last7days') {
+        startDate = addDaysToDateValue(today, -6);
+    } else if (period === 'thisMonth') {
+        startDate = `${today.slice(0, 7)}-01`;
+        endDate = getFirstDayOfNextMonth(today);
+    } else if (period === 'thisYear') {
+        startDate = `${today.slice(0, 4)}-01-01`;
+        endDate = getFirstDayOfNextYear(today);
+    }
+
+    const gte = toJakartaMidnightUtcIso(startDate);
+    const lt = toJakartaMidnightUtcIso(endDate);
+    return gte && lt ? { gte, lt } : null;
+}
+
 function sortAuditLogs(logs: AuditLog[], sortField?: string, sortDir?: 'asc' | 'desc') {
     const field = sortField?.trim() || 'timestamp';
     const direction = sortDir === 'asc' ? 'asc' : 'desc';
@@ -347,6 +400,8 @@ async function getFilteredAuditLogs(params: {
 
     const entityRefFilters = normalizeStringList([params.entityRef, ...(params.entityRefs ?? [])]);
     const entityTypeFilters = normalizeStringList([params.entityType, ...(params.entityTypes ?? [])]);
+    const today = getBusinessDateValue();
+    const period = normalizeAuditLogPeriod(params.period);
     const rawLogFilter: Record<string, unknown> = {};
     if (entityRefFilters.length === 1) {
         rawLogFilter.entityRef = entityRefFilters[0];
@@ -359,17 +414,24 @@ async function getFilteredAuditLogs(params: {
         rawLogFilter.entityType = entityTypeFilters;
     }
 
-    const [rawLogs, users] = await Promise.all([
-        listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', rawLogFilter),
-        listDocumentsByFilter<{ _id: string; name?: string; email?: string; role?: string }>('user', {}),
-    ]);
+    const timestampFilter = getAuditLogPeriodTimestampFilter(period, today);
+    if (timestampFilter) {
+        rawLogFilter.timestamp = timestampFilter;
+    }
+
+    const rawLogs = await listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', rawLogFilter);
+    const needsUserHydration = rawLogs.some(log =>
+        Boolean(log.actorUserRef) &&
+        (!log.actorUserName || !log.actorUserEmail || !log.actorUserRole)
+    );
+    const users = needsUserHydration
+        ? await listDocumentsByFilter<{ _id: string; name?: string; email?: string; role?: string }>('user', {})
+        : [];
     const search = params.search?.trim().toLowerCase() || '';
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
     const searchableFields = searchFields.length > 0
         ? searchFields
         : ['changesSummary', 'actorUserName', 'actorUserRole', 'actorUserEmail', 'actorUserRef', 'entityType', 'entityRef', 'action'];
-    const today = getBusinessDateValue();
-    const period = normalizeAuditLogPeriod(params.period);
     const usersById = new Map(users.map(user => [user._id, user]));
     const entityRefs = new Set([
         params.entityRef,
