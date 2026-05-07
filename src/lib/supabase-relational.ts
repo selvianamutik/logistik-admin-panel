@@ -72,7 +72,7 @@ type RelationalListOptions = {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
     sortPreset?: string | null;
-    countStrategy?: 'exact' | 'planned' | 'estimated';
+    countStrategy?: 'exact' | 'planned' | 'estimated' | 'none';
 };
 
 type RelationalListResult<T> = {
@@ -1930,10 +1930,19 @@ export async function relationalList<T = Record<string, unknown>>(
         pagedParams.set('offset', String((page - 1) * pageSize));
 
         try {
+            const countStrategy = options.countStrategy || 'exact';
             const result = await fetchRows(
                 buildQueryPath(config.table, pagedParams),
-                { headers: { Prefer: `count=${options.countStrategy || 'exact'}` } },
+                countStrategy === 'none'
+                    ? undefined
+                    : { headers: { Prefer: `count=${countStrategy}` } },
             );
+            if (countStrategy === 'none') {
+                return {
+                    items: result.rows.map(row => mapRowToDocument(docType, row) as T),
+                    total: result.rows.length,
+                };
+            }
             if (result.total !== null) {
                 return {
                     items: result.rows.map(row => mapRowToDocument(docType, row) as T),

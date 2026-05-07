@@ -215,7 +215,7 @@ type DocumentListOptions = {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
     sortPreset?: string | null;
-    countStrategy?: 'exact' | 'planned' | 'estimated';
+    countStrategy?: 'exact' | 'planned' | 'estimated' | 'none';
 };
 
 export async function listDocuments<T = Record<string, unknown>>(

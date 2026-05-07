@@ -48,17 +48,18 @@ function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
-function isActiveDriverVoucherDisbursement(row: Pick<DriverVoucherDisbursement, 'status'>) {
-    return row.status !== 'VOID';
-}
-
 async function getDocumentCount(docType: string, filterObj: Record<string, unknown> = {}) {
     const result = await listDocuments(docType, {
         filterObj,
         page: 1,
         pageSize: 1,
+        countStrategy: 'estimated',
     });
     return result.total;
+}
+
+function isActiveDriverVoucherDisbursement(row: Pick<DriverVoucherDisbursement, 'status'>) {
+    return row.status !== 'VOID';
 }
 
 function normalizeTextSearch(value: unknown) {
@@ -1715,6 +1716,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
                 pageSize: 5,
                 sortField: 'createdAt',
                 sortDir: 'desc',
+                countStrategy: 'none',
             }).then(result => result.items)
             : Promise.resolve([]),
         canViewInvoices
@@ -1723,6 +1725,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
                 pageSize: 5,
                 sortField: 'issueDate',
                 sortDir: 'desc',
+                countStrategy: 'none',
             }).then(result => result.items)
             : Promise.resolve([]),
     ]);
