@@ -1,4 +1,5 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
+import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import { getDocumentById, listDocuments, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
@@ -284,6 +285,12 @@ const AUDIT_LOG_FILTER_CACHE_TTL_MS = Math.max(
 );
 
 const auditLogFilterCache = new Map<string, { expiresAt: number; logs: AuditLog[] }>();
+
+export function clearAuditLogFilterCache() {
+    auditLogFilterCache.clear();
+}
+
+registerApiReadCacheInvalidator(clearAuditLogFilterCache);
 
 function normalizeStringList(values?: Array<string | null | undefined>) {
     return Array.from(new Set(

@@ -4,6 +4,7 @@ loadScriptEnv();
 
 import { summarizeCustomerCreditUsage } from '../src/lib/customer-credit-limit';
 import { buildNotaRowsFromDeliveryOrder } from '../src/lib/invoice-create-page-support';
+import { buildTripResourceLocks, isDeliveryOrderResourceLocked, isOrderTripPlanResourceLocked } from '../src/lib/trip-resource-lock-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Order, Vehicle } from '../src/lib/types';
 import type { SuratJalanDocument } from '../src/lib/trip-document-types';
 
@@ -58,6 +59,10 @@ function normalizeText(value: unknown) {
 
 function normalizeNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeLookup(value: unknown) {
+    return normalizeText(value).toLowerCase();
 }
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -375,21 +380,40 @@ function pickAuditResources(params: {
     vehicles: Vehicle[];
     drivers: Driver[];
     bankAccounts: BankAccountLike[];
+    orders: Order[];
     deliveryOrders: DeliveryOrder[];
     freightNotas: FreightNota[];
 }) {
-    const activeDeliveryOrders = params.deliveryOrders.filter(item =>
-        ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status))
+    const tripResourceLocks = buildTripResourceLocks({
+        deliveryOrders: params.deliveryOrders,
+        orders: params.orders,
+    });
+    const busyVehicleIds = new Set(tripResourceLocks.busyVehicleIds.map(normalizeText).filter(Boolean));
+    const busyDriverIds = new Set(tripResourceLocks.busyDriverIds.map(normalizeText).filter(Boolean));
+    const lockedDeliveryOrders = params.deliveryOrders.filter(isDeliveryOrderResourceLocked);
+    const lockedOrderTripPlans = params.orders.flatMap(order =>
+        (order.tripPlans || []).filter(plan => isOrderTripPlanResourceLocked(order, plan))
     );
-    const busyVehicleIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.vehicleRef)).filter(Boolean));
-    const busyDriverIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.driverRef)).filter(Boolean));
+    const busyVehiclePlates = new Set([
+        ...lockedDeliveryOrders.map(item => normalizeLookup(item.vehiclePlate)),
+        ...lockedOrderTripPlans.map(item => normalizeLookup(item.vehiclePlate)),
+    ].filter(Boolean));
+    const busyDriverNames = new Set([
+        ...lockedDeliveryOrders.map(item => normalizeLookup(item.driverName)),
+        ...lockedOrderTripPlans.map(item => normalizeLookup(item.driverName)),
+    ].filter(Boolean));
     const activeServices = params.services.filter(item => item.active !== false);
     const availableVehicles = params.vehicles.filter(item =>
         item.status !== 'SOLD' &&
         item.status !== 'OUT_OF_SERVICE' &&
-        !busyVehicleIds.has(item._id)
+        !busyVehicleIds.has(item._id) &&
+        !busyVehiclePlates.has(normalizeLookup(item.plateNumber))
     );
-    const availableDrivers = params.drivers.filter(item => item.active !== false && !busyDriverIds.has(item._id));
+    const availableDrivers = params.drivers.filter(item =>
+        item.active !== false &&
+        !busyDriverIds.has(item._id) &&
+        !busyDriverNames.has(normalizeLookup(item.name))
+    );
     const customer = pickAvailableAuditCustomer(params.customers, params.freightNotas);
 
     for (const service of activeServices) {
@@ -595,38 +619,48 @@ async function main() {
         auditStep('cleanup data audit lama');
         await cleanupStaleAuditOrders();
         auditStep('ambil master data dan DO aktif');
-        const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, deliveryOrderResponse, freightNotaResponse] = await Promise.all([
+        const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, orderResponse, deliveryOrderResponse, freightNotaResponse] = await Promise.all([
             requestJson<{ data: CustomerLike[] }>('/api/data?entity=customers', cookieHeader),
             requestJson<{ data: ServiceLike[] }>('/api/data?entity=services', cookieHeader),
             requestJson<{ data: Vehicle[] }>('/api/data?entity=vehicles', cookieHeader),
             requestJson<{ data: Driver[] }>('/api/data?entity=drivers', cookieHeader),
             requestJson<{ data: BankAccountLike[] }>('/api/data?entity=bank-accounts', cookieHeader),
-            requestJson<{ data: DeliveryOrder[] }>('/api/data?entity=delivery-orders', cookieHeader),
-            requestJson<{ data: FreightNota[] }>('/api/data?entity=freight-notas', cookieHeader),
+            requestJson<{ data: Order[] }>('/api/data?entity=orders&pageSize=1000', cookieHeader),
+            requestJson<{ data: DeliveryOrder[] }>('/api/data?entity=delivery-orders&pageSize=1000', cookieHeader),
+            requestJson<{ data: FreightNota[] }>('/api/data?entity=freight-notas&pageSize=1000', cookieHeader),
         ]);
+        const fallbackService = (serviceResponse.data || []).find(item => item.active !== false);
+        assert(fallbackService, 'Audit butuh minimal 1 kategori armada aktif untuk membuat resource sementara.');
+        auditStep('provision resource audit sementara agar E2E tidak memakai driver/kendaraan produksi yang mungkin terkunci');
+        const provisioned = await provisionAuditResources(fallbackService, suffix);
+        createdState.auditDriverIds = provisioned.drivers.map(driver => driver._id);
+        createdState.auditVehicleIds = provisioned.vehicles.map(vehicle => vehicle._id);
+
         let resources = pickAuditResources({
             customers: customerResponse.data || [],
             services: serviceResponse.data || [],
-            vehicles: vehicleResponse.data || [],
-            drivers: driverResponse.data || [],
+            vehicles: [...provisioned.vehicles, ...(vehicleResponse.data || [])],
+            drivers: [...provisioned.drivers, ...(driverResponse.data || [])],
             bankAccounts: bankResponse.data || [],
+            orders: orderResponse.data || [],
             deliveryOrders: deliveryOrderResponse.data || [],
             freightNotas: freightNotaResponse.data || [],
         });
 
         if (!resources.service || resources.vehicles.length < REQUIRED_AUDIT_TRIP_RESOURCES || resources.drivers.length < REQUIRED_AUDIT_TRIP_RESOURCES) {
-            const fallbackService = resources.service || (serviceResponse.data || []).find(item => item.active !== false);
-            if (fallbackService) {
+            const secondaryFallbackService = resources.service || fallbackService;
+            if (secondaryFallbackService) {
                 auditStep('provision resource audit sementara karena driver/kendaraan aktif sedang penuh');
-                const provisioned = await provisionAuditResources(fallbackService, suffix);
-                createdState.auditDriverIds = provisioned.drivers.map(driver => driver._id);
-                createdState.auditVehicleIds = provisioned.vehicles.map(vehicle => vehicle._id);
+                const extraProvisioned = await provisionAuditResources(secondaryFallbackService, `${suffix}-extra`);
+                createdState.auditDriverIds = [...(createdState.auditDriverIds || []), ...extraProvisioned.drivers.map(driver => driver._id)];
+                createdState.auditVehicleIds = [...(createdState.auditVehicleIds || []), ...extraProvisioned.vehicles.map(vehicle => vehicle._id)];
                 resources = pickAuditResources({
                     customers: customerResponse.data || [],
                     services: serviceResponse.data || [],
-                    vehicles: [...(vehicleResponse.data || []), ...provisioned.vehicles],
-                    drivers: [...(driverResponse.data || []), ...provisioned.drivers],
+                    vehicles: [...extraProvisioned.vehicles, ...provisioned.vehicles, ...(vehicleResponse.data || [])],
+                    drivers: [...extraProvisioned.drivers, ...provisioned.drivers, ...(driverResponse.data || [])],
                     bankAccounts: bankResponse.data || [],
+                    orders: orderResponse.data || [],
                     deliveryOrders: deliveryOrderResponse.data || [],
                     freightNotas: freightNotaResponse.data || [],
                 });

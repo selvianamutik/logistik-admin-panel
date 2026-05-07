@@ -3,6 +3,7 @@ import {
 } from '@/lib/supabase';
 import { getBusinessDateValue, parseBusinessDateValue } from '@/lib/business-date';
 import {
+    clearRelationalReadCache,
     relationalDeleteDocument,
     relationalFindDocumentByIdAcrossTypes,
     relationalGetAll,
@@ -14,6 +15,7 @@ import {
     relationalUpsertDocument,
     supportsRelationalDocType,
 } from '@/lib/supabase-relational';
+import { clearApiReadCaches } from '@/lib/api/read-cache';
 
 type CompanyProfileNumberingRow = {
     source_document_id: string;
@@ -120,6 +122,8 @@ async function getRelationalNextNumber(prefix: string, dateValue?: string) {
         );
         const rows = await response.json() as CompanyProfileNumberingRow[];
         if (rows.length > 0) {
+            clearRelationalReadCache();
+            clearApiReadCaches();
             return nextNumber;
         }
     }
@@ -189,6 +193,7 @@ export async function createDocument<T = Record<string, unknown>>(
         if (!created) {
             throw new Error(`Failed to create relational document for type: ${doc._type}`);
         }
+        clearApiReadCaches();
         return created;
     }
     throw new Error(`Unsupported relational document type: ${doc._type}`);
@@ -204,6 +209,7 @@ export async function updateDocument<T = Record<string, unknown>>(
         if (!updated) {
             throw new Error(`Document not found: ${id}`);
         }
+        clearApiReadCaches();
         return updated;
     }
 
@@ -222,6 +228,7 @@ export async function updateDocument<T = Record<string, unknown>>(
         if (!updated) {
             throw new Error(`Failed to update relational document for type: ${existing._type}`);
         }
+        clearApiReadCaches();
         return updated;
     }
 
@@ -231,6 +238,7 @@ export async function updateDocument<T = Record<string, unknown>>(
 export async function deleteDocument(id: string, docType?: string) {
     if (docType && supportsRelationalDocType(docType)) {
         await relationalDeleteDocument(docType, id);
+        clearApiReadCaches();
         return true;
     }
 
@@ -241,6 +249,7 @@ export async function deleteDocument(id: string, docType?: string) {
 
     if (existing?._type && supportsRelationalDocType(existing._type)) {
         await relationalDeleteDocument(existing._type, id);
+        clearApiReadCaches();
         return true;
     }
 

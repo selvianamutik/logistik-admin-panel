@@ -1,6 +1,7 @@
 import { getAllDocuments, getDocumentById } from '@/lib/repositories/document-store';
 import { isPlainObject } from '@/lib/api/data-helpers';
 import { getDeliveryOrderTripCashLink } from '@/lib/api/data-query-support';
+import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
 import { deriveDeliveryOrdersForResponse } from '@/lib/api/response-derivations';
 import {
     mapDeliveryOrdersToSuratJalanDocuments,
@@ -62,6 +63,12 @@ let projectedSourceCache: {
     expiresAt: number;
     promise: Promise<ProjectedSourceData>;
 } | null = null;
+
+export function clearProjectedSourceCache() {
+    projectedSourceCache = null;
+}
+
+registerApiReadCacheInvalidator(clearProjectedSourceCache);
 
 function matchesProjectedSearchValue(value: unknown, needle: string): boolean {
     if (!needle) return true;
