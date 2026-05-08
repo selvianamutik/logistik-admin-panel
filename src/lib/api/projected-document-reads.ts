@@ -54,6 +54,15 @@ type ProjectedSourceData = {
     allDriverVouchers: DriverVoucher[];
 };
 
+type ProjectedListReadResult = {
+    data: unknown;
+    meta: {
+        page: number;
+        pageSize: number;
+        total: number;
+    } | undefined;
+};
+
 const PROJECTED_SOURCE_CACHE_TTL_MS = Math.max(
     0,
     Number.parseInt(process.env.PROJECTED_SOURCE_CACHE_TTL_MS || '10000', 10) || 10000
@@ -67,13 +76,75 @@ const projectedDetailSourceCache = new Map<string, {
     expiresAt: number;
     promise: Promise<ProjectedSourceData | null>;
 }>();
+const projectedListResultCache = new Map<string, {
+    expiresAt: number;
+    value: ProjectedListReadResult;
+}>();
 
 export function clearProjectedSourceCache() {
     projectedSourceCache = null;
     projectedDetailSourceCache.clear();
+    projectedListResultCache.clear();
 }
 
 registerApiReadCacheInvalidator(clearProjectedSourceCache);
+
+function cloneProjectedListResult<T extends ProjectedListReadResult>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function shouldCacheProjectedListResult(entity: ProjectedEntity, id?: string | null) {
+    return !id && (
+        entity === 'trips' ||
+        entity === 'surat-jalan' ||
+        entity === 'surat-jalan-items' ||
+        entity === 'trip-tracking'
+    );
+}
+
+function getProjectedListResultCacheKey(params: ProjectedListParams) {
+    return JSON.stringify({
+        entity: params.entity,
+        filter: params.filter || '',
+        searchQuery: params.searchQuery || '',
+        searchFields: params.searchFields || [],
+        sortField: params.sortField || '',
+        sortDir: params.sortDir || '',
+        page: params.page,
+        pageSize: params.pageSize,
+        countOnly: params.countOnly === true,
+        permissions: params.permissions || {},
+    });
+}
+
+function getProjectedListResultFromCache(key: string) {
+    if (!key || PROJECTED_SOURCE_CACHE_TTL_MS <= 0) {
+        return null;
+    }
+
+    const cached = projectedListResultCache.get(key);
+    if (!cached) {
+        return null;
+    }
+
+    if (cached.expiresAt <= Date.now()) {
+        projectedListResultCache.delete(key);
+        return null;
+    }
+
+    return cloneProjectedListResult(cached.value);
+}
+
+function cacheProjectedListResult<T extends ProjectedListReadResult>(key: string, result: T) {
+    if (key && PROJECTED_SOURCE_CACHE_TTL_MS > 0) {
+        projectedListResultCache.set(key, {
+            expiresAt: Date.now() + PROJECTED_SOURCE_CACHE_TTL_MS,
+            value: cloneProjectedListResult(result),
+        });
+    }
+
+    return result;
+}
 
 function matchesProjectedSearchValue(value: unknown, needle: string): boolean {
     if (!needle) return true;
@@ -427,6 +498,13 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
         countOnly = false,
         permissions,
     } = params;
+    const listResultCacheKey = shouldCacheProjectedListResult(entity, id)
+        ? getProjectedListResultCacheKey(params)
+        : '';
+    const cachedListResult = getProjectedListResultFromCache(listResultCacheKey);
+    if (cachedListResult) {
+        return cachedListResult;
+    }
 
     const detailSourceData =
         id && (entity === 'trip-detail' || entity === 'trip-detail-references')
@@ -483,14 +561,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                 : ['tripNumber', 'masterResi', 'customerName', 'vehiclePlate', 'driverName', 'pickupAddress', 'receiverAddress', 'tripOriginArea', 'tripDestinationArea']
         );
         const sorted = sortProjectedItems(filtered, sortField, sortDir, 'date');
-        return {
+        return cacheProjectedListResult(listResultCacheKey, {
             data: countOnly ? [] : paginateProjectedItems(sorted, page, pageSize),
             meta: {
                 page,
                 pageSize,
                 total: sorted.length,
             },
-        };
+        });
     }
 
     if (entity === 'trip-detail') {
@@ -734,14 +812,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                 : ['suratJalanNumber', 'tripNumber', 'masterResi', 'customerName', 'pickupAddress', 'receiverName', 'receiverCompany', 'receiverAddress', 'vehiclePlate', 'driverName']
         );
         const sorted = sortProjectedItems(filtered, sortField, sortDir, 'tripDate');
-        return {
+        return cacheProjectedListResult(listResultCacheKey, {
             data: countOnly ? [] : paginateProjectedItems(sorted, page, pageSize),
             meta: {
                 page,
                 pageSize,
                 total: sorted.length,
             },
-        };
+        });
     }
 
     const derivedDocumentItems = mapDeliveryOrdersToSuratJalanDocumentItems(derivedDeliveryOrders, allDeliveryOrderItems);
@@ -779,14 +857,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
             searchFields.length > 0 ? searchFields : ['status', 'note', 'locationText', 'userName']
         );
         const sorted = sortProjectedItems(filtered, sortField, sortDir, 'timestamp');
-        return {
+        return cacheProjectedListResult(listResultCacheKey, {
             data: countOnly ? [] : paginateProjectedItems(sorted, page, pageSize),
             meta: {
                 page,
                 pageSize,
                 total: sorted.length,
             },
-        };
+        });
     }
 
     if (id) {
@@ -804,12 +882,12 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
             : ['suratJalanNumber', 'orderItemDescription']
     );
     const sorted = sortProjectedItems(filtered, sortField, sortDir, 'orderItemDescription');
-    return {
+    return cacheProjectedListResult(listResultCacheKey, {
         data: countOnly ? [] : paginateProjectedItems(sorted, page, pageSize),
         meta: {
             page,
             pageSize,
             total: sorted.length,
         },
-    };
+    });
 }
