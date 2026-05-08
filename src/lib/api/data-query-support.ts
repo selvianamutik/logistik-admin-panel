@@ -345,6 +345,17 @@ const SUMMARY_READ_CACHE_TTL_MS = Math.max(
 const auditLogFilterCache = new Map<string, { expiresAt: number; logs: AuditLog[] }>();
 const summaryReadCache = new Map<string, { expiresAt: number; value: unknown }>();
 
+type ApiListReadParams = {
+    page?: number;
+    pageSize?: number;
+    countOnly?: boolean;
+};
+
+type ApiListReadResult<T> = {
+    items: T[];
+    total: number;
+};
+
 export function clearAuditLogFilterCache() {
     auditLogFilterCache.clear();
     summaryReadCache.clear();
@@ -383,6 +394,43 @@ function setSummaryReadCache<T>(key: string, value: T) {
         if (!oldestKey) break;
         summaryReadCache.delete(oldestKey);
     }
+}
+
+function stableStringifyCacheValue(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringifyCacheValue).join(',')}]`;
+    }
+
+    if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        return `{${Object.keys(record)
+            .sort()
+            .map(key => `${JSON.stringify(key)}:${stableStringifyCacheValue(record[key])}`)
+            .join(',')}}`;
+    }
+
+    return JSON.stringify(value) ?? 'undefined';
+}
+
+function buildApiReadCacheKey(namespace: string, value: unknown) {
+    return `${namespace}:${stableStringifyCacheValue(value)}`;
+}
+
+function buildPagedListResult<T>(items: T[], params: ApiListReadParams): ApiListReadResult<T> {
+    const total = items.length;
+    if (params.countOnly) {
+        return { items: [], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: items.slice(offset, offset + params.pageSize),
+        total,
+    };
 }
 
 function normalizeStringList(values?: Array<string | null | undefined>) {
@@ -608,6 +656,19 @@ export async function getAuditLogsSummary(params?: {
 }
 
 export async function getUsersSummary() {
+    const cacheKey = 'users-summary';
+    const cached = getSummaryReadCache<{
+        total: number;
+        inactive: number;
+        owner: number;
+        operational: number;
+        finance: number;
+        armada: number;
+    }>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const rows = await listDocumentsByFilter<{
         role?: UserRole;
         active?: boolean;
@@ -619,7 +680,7 @@ export async function getUsersSummary() {
         row.role === 'ARMADA'
     );
 
-    return internalRows.reduce(
+    const summary = internalRows.reduce(
         (summary, row) => {
             summary.total += 1;
             if (row.active === false) summary.inactive += 1;
@@ -638,6 +699,8 @@ export async function getUsersSummary() {
             armada: 0,
         }
     );
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
 type EmployeeAttendanceListParams = {
@@ -665,20 +728,7 @@ export async function getEmployeeAttendanceList(params: EmployeeAttendanceListPa
     const { attendanceRows } = await getEmployeeAttendanceDataset();
     const filtered = filterEmployeeAttendanceRecords(attendanceRows, params);
     const sorted = sortEmployeeAttendanceRecords(filtered, params.sortField, params.sortDir);
-    const total = sorted.length;
-    if (params.countOnly) {
-        return { items: [] as EmployeeAttendanceRecord[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: sorted, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: sorted.slice(offset, offset + params.pageSize),
-        total,
-    };
+    return buildPagedListResult<EmployeeAttendanceRecord>(sorted, params);
 }
 
 export async function getEmployeeAttendanceSummary(params?: {
@@ -1102,6 +1152,12 @@ export async function getFreightNotaList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
+    const cacheKey = buildApiReadCacheKey('freight-nota-list', params);
+    const cached = getSummaryReadCache<ApiListReadResult<FreightNota>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const notaRows = await listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {});
     const activeNotaRows = notaRows.filter(isActiveFreightNota);
     const notaIds = activeNotaRows
@@ -1161,20 +1217,9 @@ export async function getFreightNotaList(params: {
         });
     }
 
-    const total = filtered.length;
-    if (params.countOnly) {
-        return { items: [] as FreightNota[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: filtered, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: filtered.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<FreightNota>(filtered, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export async function getFreightNotaById(id: string) {
@@ -1290,6 +1335,12 @@ export async function getDriverVoucherList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
+    const cacheKey = buildApiReadCacheKey('driver-voucher-list', params);
+    const cached = getSummaryReadCache<ApiListReadResult<DriverVoucher>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const voucherRows = await listDocumentsByFilter<DriverVoucher>('driverVoucher', {});
     const voucherIds = voucherRows.map(voucher => voucher._id).filter(Boolean);
     const [disbursementRows, itemRows] = await Promise.all([
@@ -1339,20 +1390,9 @@ export async function getDriverVoucherList(params: {
         });
     }
 
-    const total = filtered.length;
-    if (params.countOnly) {
-        return { items: [] as DriverVoucher[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: filtered, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: filtered.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<DriverVoucher>(filtered, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export async function getDriverBoronganById(id: string) {
@@ -1377,6 +1417,12 @@ export async function getDriverBoronganList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
+    const cacheKey = buildApiReadCacheKey('driver-borongan-list', params);
+    const cached = getSummaryReadCache<ApiListReadResult<DriverBorongan>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const docs = await listDocumentsByFilter<DriverBorongan>('driverBorongan', {});
     const boronganIds = docs.map(doc => doc._id).filter(Boolean);
     const itemTotals = boronganIds.length > 0
@@ -1432,20 +1478,9 @@ export async function getDriverBoronganList(params: {
         );
     }
 
-    const total = filtered.length;
-    if (params.countOnly) {
-        return { items: [] as DriverBorongan[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: filtered, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: filtered.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<DriverBorongan>(filtered, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export async function getCustomerReceiptById(id: string) {
@@ -1478,6 +1513,12 @@ export async function getCustomerReceiptList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
+    const cacheKey = buildApiReadCacheKey('customer-receipt-list', params);
+    const cached = getSummaryReadCache<ApiListReadResult<CustomerReceipt>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const docs = await listDocumentsByFilter<CustomerReceipt>('customerReceipt', {});
     const receiptIds = docs.map(doc => doc._id).filter(Boolean);
     const [paymentRows, refundRows] = await Promise.all([
@@ -1543,20 +1584,9 @@ export async function getCustomerReceiptList(params: {
         );
     }
 
-    const total = filtered.length;
-    if (params.countOnly) {
-        return { items: [] as CustomerReceipt[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: filtered, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: filtered.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<CustomerReceipt>(filtered, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export async function getCustomerOverpaymentById(id: string) {
@@ -1628,6 +1658,12 @@ export async function getCustomerOverpaymentList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
+    const cacheKey = buildApiReadCacheKey('customer-overpayment-list', params);
+    const cached = getSummaryReadCache<ApiListReadResult<CustomerOverpayment>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const [receipts, notas] = await Promise.all([
         listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
         listDocumentsByFilter<FreightNota>('freightNota', {}),
@@ -1716,20 +1752,9 @@ export async function getCustomerOverpaymentList(params: {
 
     filtered = sortCustomerOverpaymentCases(filtered, params.sortField, params.sortDir, params.sortPreset);
 
-    const total = filtered.length;
-    if (params.countOnly) {
-        return { items: [] as CustomerOverpayment[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: filtered, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: filtered.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<CustomerOverpayment>(filtered, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export type DashboardSummary = {
@@ -1943,6 +1968,18 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
 }
 
 export async function getCustomersSummary(ids: string[] = []) {
+    const cacheKey = buildApiReadCacheKey('customers-summary', [...ids].sort());
+    const cached = getSummaryReadCache<{
+        totalCustomers: number;
+        totalProducts: number;
+        customersWithCustomPrefix: number;
+        customersNeedingCatalog: number;
+        productCounts: Record<string, number>;
+    }>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const [customers, customerProducts] = await Promise.all([
         listDocumentsByFilter<Array<Record<string, unknown>>[number]>('customer', {}),
         listDocumentsByFilter<Array<{ customerRef?: string }>[number]>('customerProduct', {}),
@@ -1966,13 +2003,15 @@ export async function getCustomersSummary(ids: string[] = []) {
 
     const customersWithProducts = Array.isArray(customersWithProductsRaw) ? customersWithProductsRaw.length : 0;
 
-    return {
+    const summary = {
         totalCustomers,
         totalProducts,
         customersWithCustomPrefix,
         customersNeedingCatalog: Math.max(totalCustomers - customersWithProducts, 0),
         productCounts,
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
 type VehicleTireSummary = {
@@ -2152,24 +2191,21 @@ function filterExpenseRows(rows: Expense[], params: ExpenseListParams, role: Use
 }
 
 export async function getExpenseList(session: ApiSession, params: ExpenseListParams = {}) {
+    const cacheKey = buildApiReadCacheKey('expense-list', {
+        role: session.role,
+        params,
+    });
+    const cached = getSummaryReadCache<ApiListReadResult<Expense>>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const expenseRows = await listDocumentsByFilter<Expense>('expense', {});
     const filteredExpenses = filterExpenseRows(expenseRows, params, session.role);
     const sortedExpenses = sortExpenses(filteredExpenses, params.sortField, params.sortDir);
-    const total = sortedExpenses.length;
-
-    if (params.countOnly) {
-        return { items: [] as Expense[], total };
-    }
-
-    if (!params.page || !params.pageSize) {
-        return { items: sortedExpenses, total };
-    }
-
-    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
-    return {
-        items: sortedExpenses.slice(offset, offset + params.pageSize),
-        total,
-    };
+    const result = buildPagedListResult<Expense>(sortedExpenses, params);
+    setSummaryReadCache(cacheKey, result);
+    return result;
 }
 
 export async function getExpensesSummary(session: ApiSession, paramsOrSearch: string | ExpenseListParams = ''): Promise<ExpensesSummary> {
@@ -2258,10 +2294,16 @@ export async function getBankAccountsSummary(): Promise<BankAccountsSummary> {
 }
 
 export async function getDriverBoronganDoRefsSummary() {
+    const cacheKey = 'driver-borongan-do-refs-summary';
+    const cached = getSummaryReadCache<{ doRefs: string[] }>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const rows = (await listDocumentsByFilter<Array<{ doRef?: string }>[number]>('driverBoronganItem', {}))
         .filter(item => Boolean(item.doRef));
 
-    return {
+    const summary = {
         doRefs: Array.from(
             new Set(
                 rows
@@ -2270,5 +2312,7 @@ export async function getDriverBoronganDoRefsSummary() {
             )
         ),
     };
+    setSummaryReadCache(cacheKey, summary);
+    return summary;
 }
 
