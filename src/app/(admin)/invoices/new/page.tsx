@@ -48,6 +48,17 @@ function getInvoiceRowItemRefs(row: Pick<NotaItemRow, 'deliveryOrderItemRef' | '
             : [];
 }
 
+function getInvoiceRowItemCoverageKeys(row: Pick<NotaItemRow, 'doRef' | 'deliveryOrderItemRef' | 'deliveryOrderItemRefs' | 'tujuan' | 'actualDropPointKey'>) {
+    const itemRefs = getInvoiceRowItemRefs(row);
+    const doRef = row.doRef || 'manual';
+    const actualDropPointKey = row.actualDropPointKey?.trim();
+    if (actualDropPointKey) {
+        const tujuan = row.tujuan?.trim() || '-';
+        return itemRefs.map(itemRef => `${doRef}::item::${itemRef}::tujuan::${tujuan}::drop::${actualDropPointKey}`);
+    }
+    return itemRefs.map(itemRef => `${doRef}::item::${itemRef}`);
+}
+
 function getInvoiceRowSjGroupKey(row: NotaItemRow) {
     return `${row.doRef || 'manual'}::sj::${row.noSJ?.trim() || row.doNumber || row.id}::customer::${row.customerRef || ''}`;
 }
@@ -101,6 +112,8 @@ export default function NewNotaPage() {
                         notaRef?: string;
                         deliveryOrderItemRef?: string;
                         deliveryOrderItemRefs?: string[];
+                        actualDropPointKey?: string;
+                        tujuan?: string;
                         status?: string;
                     }>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                     editNotaId
@@ -137,26 +150,52 @@ export default function NewNotaPage() {
                         if (!matchedDeliveryOrder) {
                             const noSJ = item.noSJ?.trim();
                             return itemRefs.length > 0
-                                ? itemRefs.map(itemRef => `${doRef}::item::${itemRef}`)
+                                ? getInvoiceRowItemCoverageKeys({
+                                    doRef,
+                                    deliveryOrderItemRef: itemRefs[0],
+                                    deliveryOrderItemRefs: itemRefs,
+                                    tujuan: item.tujuan || '',
+                                    actualDropPointKey: item.actualDropPointKey,
+                                })
                                 : noSJ
                                     ? [`${doRef}::${noSJ}`]
                                     : [];
                         }
-                        return buildFreightNotaCoverageRowKeys({
-                            deliveryOrder: matchedDeliveryOrder,
-                            noSJ: item.noSJ,
-                            deliveryOrderItemRefs: itemRefs,
-                        });
+                        return itemRefs.length > 0
+                            ? getInvoiceRowItemCoverageKeys({
+                                doRef,
+                                deliveryOrderItemRef: itemRefs[0],
+                                deliveryOrderItemRefs: itemRefs,
+                                tujuan: item.tujuan || '',
+                                actualDropPointKey: item.actualDropPointKey,
+                            })
+                            : buildFreightNotaCoverageRowKeys({
+                                deliveryOrder: matchedDeliveryOrder,
+                                noSJ: item.noSJ,
+                                deliveryOrderItemRefs: itemRefs,
+                            });
                     })
                 );
                 setUsedNotaDoItemRefs(
-                    usableNotaItems.flatMap(item => (
-                        Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
-                            ? item.deliveryOrderItemRefs
-                            : item.deliveryOrderItemRef
-                                ? [item.deliveryOrderItemRef]
-                                : []
-                    ))
+                    usableNotaItems.flatMap(item => {
+                        const doRef = item.doRef?.trim() || '';
+                        if (!doRef) {
+                            return [];
+                        }
+                        const itemRefs =
+                            Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
+                                ? item.deliveryOrderItemRefs
+                                : item.deliveryOrderItemRef
+                                    ? [item.deliveryOrderItemRef]
+                                    : [];
+                        return getInvoiceRowItemCoverageKeys({
+                            doRef,
+                            deliveryOrderItemRef: itemRefs[0],
+                            deliveryOrderItemRefs: itemRefs,
+                            tujuan: item.tujuan || '',
+                            actualDropPointKey: item.actualDropPointKey,
+                        });
+                    })
                 );
                 if (editNotaId) {
                     if (!editNota) {
@@ -184,6 +223,7 @@ export default function NewNotaPage() {
                                 doRef: item.doRef || '',
                                 deliveryOrderItemRef: item.deliveryOrderItemRef,
                                 deliveryOrderItemRefs: item.deliveryOrderItemRefs,
+                                actualDropPointKey: item.actualDropPointKey,
                                 customerRef: item.customerRef,
                                 customerName: item.customerName,
                                 doNumber: item.doNumber || '',
@@ -340,16 +380,16 @@ export default function NewNotaPage() {
         const usedDoRowKeySet = new Set(usedNotaDoRowKeys);
         const usedDoItemRefSet = new Set(usedNotaDoItemRefs);
         const selectedDoItemRefSet = new Set(
-            rows.flatMap(row => getInvoiceRowItemRefs(row))
+            rows.flatMap(row => getInvoiceRowItemCoverageKeys(row))
         );
         const selectedRowKeys = new Set(
             rows.flatMap(row => {
                 if (isEmptyNotaRow(row)) {
                     return [];
                 }
-                const rowItemRefs = getInvoiceRowItemRefs(row);
-                return rowItemRefs.length > 0
-                    ? rowItemRefs.map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
+                const rowItemCoverageKeys = getInvoiceRowItemCoverageKeys(row);
+                return rowItemCoverageKeys.length > 0
+                    ? rowItemCoverageKeys
                     : [`${row.doRef || 'manual'}::${row.noSJ || row.id}`];
             })
         );
@@ -359,16 +399,16 @@ export default function NewNotaPage() {
             orders,
             deliveryOrderItems,
         }).filter(row => {
-            const rowItemRefs = getInvoiceRowItemRefs(row);
-            if (rowItemRefs.length > 0 && rowItemRefs.some(itemRef => usedDoItemRefSet.has(itemRef) || selectedDoItemRefSet.has(itemRef))) {
+            const rowItemCoverageKeys = getInvoiceRowItemCoverageKeys(row);
+            if (rowItemCoverageKeys.length > 0 && rowItemCoverageKeys.some(itemKey => usedDoItemRefSet.has(itemKey) || selectedDoItemRefSet.has(itemKey))) {
                 return false;
             }
             if (targetCustomerRef && (row.customerRef || '') !== targetCustomerRef) {
                 return false;
             }
             const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
-            const rowCoverageKeys = rowItemRefs.length > 0
-                ? rowItemRefs.map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
+            const rowCoverageKeys = rowItemCoverageKeys.length > 0
+                ? rowItemCoverageKeys
                 : [rowKey];
             if (rowCoverageKeys.some(key => usedDoRowKeySet.has(key) || selectedRowKeys.has(key))) {
                 return false;

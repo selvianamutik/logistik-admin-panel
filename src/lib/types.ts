@@ -914,6 +914,7 @@ export interface FreightNotaItem {
   doRef?: string;
   deliveryOrderItemRef?: string;
   deliveryOrderItemRefs?: string[];
+  actualDropPointKey?: string;
   customerRef?: string;
   customerName?: string;
   doNumber?: string;

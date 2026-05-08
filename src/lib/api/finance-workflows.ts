@@ -151,6 +151,50 @@ function normalizeFreightNotaRowItemRefs(row: Pick<NormalizedFreightNotaRow, 'de
     )];
 }
 
+function buildFreightNotaPayloadItemCoverageKey(params: {
+    doRef?: string;
+    itemRef: string;
+    tujuan?: string;
+    actualDropPointKey?: string;
+}) {
+    const doRef = normalizeOptionalText(params.doRef) || 'manual';
+    const itemRef = normalizeOptionalText(params.itemRef) || '-';
+    const tujuan = normalizeOptionalText(params.tujuan) || '-';
+    const actualDropPointKey = normalizeOptionalText(params.actualDropPointKey) || '-';
+    return `${doRef}::item::${itemRef}::tujuan::${tujuan}::drop::${actualDropPointKey}`;
+}
+
+function buildFreightNotaPayloadItemDestinationKey(params: {
+    itemRef: string;
+    tujuan?: string;
+    actualDropPointKey?: string;
+}) {
+    const itemRef = normalizeOptionalText(params.itemRef) || '-';
+    const tujuan = normalizeOptionalText(params.tujuan) || '-';
+    const actualDropPointKey = normalizeOptionalText(params.actualDropPointKey) || '-';
+    return `${itemRef}::${tujuan}::drop::${actualDropPointKey}`;
+}
+
+function buildFreightNotaLegacyItemCoverageKey(params: {
+    doRef?: string;
+    itemRef: string;
+    tujuan?: string;
+}) {
+    const doRef = normalizeOptionalText(params.doRef) || 'manual';
+    const itemRef = normalizeOptionalText(params.itemRef) || '-';
+    const tujuan = normalizeOptionalText(params.tujuan) || '-';
+    return `${doRef}::item::${itemRef}::tujuan::${tujuan}`;
+}
+
+function buildFreightNotaLegacyItemDestinationKey(params: {
+    itemRef: string;
+    tujuan?: string;
+}) {
+    const itemRef = normalizeOptionalText(params.itemRef) || '-';
+    const tujuan = normalizeOptionalText(params.tujuan) || '-';
+    return `${itemRef}::${tujuan}`;
+}
+
 function haveSameFreightNotaRowItemRefs(left: string[], right: string[]) {
     return left.length === right.length && left.every(value => right.includes(value));
 }
@@ -174,6 +218,15 @@ function findBuiltNotaRowMatch(params: {
         );
         if (candidates.length <= 1) {
             return candidates[0] || null;
+        }
+        const normalizedActualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
+        if (normalizedActualDropPointKey) {
+            const exactDropCandidate = candidates.find(candidate =>
+                normalizeOptionalText(candidate.actualDropPointKey) === normalizedActualDropPointKey
+            );
+            if (exactDropCandidate) {
+                return exactDropCandidate;
+            }
         }
         const normalizedDestination = normalizeOptionalText(row.tujuan);
         return candidates.find(candidate => normalizeOptionalText(candidate.tujuan) === normalizedDestination)
@@ -2287,6 +2340,7 @@ export async function handleFreightNotaCreate(
                     : deliveryOrderItemRef
                         ? [deliveryOrderItemRef]
                         : [];
+                const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
                 if (normalizedDeliveryOrderItemRefs.length > 0 && !doRef) {
                     throw new Error('Baris invoice dari DO wajib punya referensi DO');
                 }
@@ -2327,6 +2381,7 @@ export async function handleFreightNotaCreate(
                     doRef,
                     deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
                     deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 0 ? normalizedDeliveryOrderItemRefs : undefined,
+                    actualDropPointKey,
                     customerRef: normalizeOptionalText(row.customerRef),
                     customerName: normalizeOptionalText(row.customerName),
                     doNumber,
@@ -2638,8 +2693,14 @@ export async function handleFreightNotaCreate(
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
+        const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
         const rowCoverageKeys = rowItemRefs.length > 0
-            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+            ? rowItemRefs.map(itemRef => buildFreightNotaPayloadItemCoverageKey({
+                doRef: row.doRef,
+                itemRef,
+                tujuan: row.tujuan,
+                actualDropPointKey,
+            }))
             : deliveryOrder
                 ? buildFreightNotaCoverageRowKeys({
                     deliveryOrder: deliveryOrder as DeliveryOrder,
@@ -2661,7 +2722,11 @@ export async function handleFreightNotaCreate(
             );
         }
         for (const itemRef of rowItemRefs) {
-            const itemDestinationKey = `${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`;
+            const itemDestinationKey = buildFreightNotaPayloadItemDestinationKey({
+                itemRef,
+                tujuan: row.tujuan,
+                actualDropPointKey,
+            });
             if (coverage.deliveryOrderItemRefs.has(itemDestinationKey)) {
                 return NextResponse.json(
                     {
@@ -2672,7 +2737,11 @@ export async function handleFreightNotaCreate(
             }
         }
         rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
-        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`));
+        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(buildFreightNotaPayloadItemDestinationKey({
+            itemRef,
+            tujuan: row.tujuan,
+            actualDropPointKey,
+        })));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
 
@@ -2714,6 +2783,7 @@ export async function handleFreightNotaCreate(
             tujuan?: string;
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
+            actualDropPointKey?: string;
             status?: string;
         }>[number]>('freightNotaItem', { doRef: uniqueDoRefs });
         const existingItemUsage = new Map<string, { doRef?: string; doNumber?: string; noSJ?: string }>();
@@ -2726,12 +2796,28 @@ export async function handleFreightNotaCreate(
                 : item.deliveryOrderItemRef
                     ? [item.deliveryOrderItemRef]
                     : [];
+            const existingActualDropPointKey = normalizeOptionalText(item.actualDropPointKey);
             if (existingDoRef && existingNoSJ) {
                 const matchedDeliveryOrder = deliveryOrderMap.get(existingDoRef);
                 if (matchedDeliveryOrder) {
                     const existingDestination = normalizeOptionalText(item.tujuan) || '-';
                     const rowKeys = existingItemRefs.length > 0
-                        ? existingItemRefs.map(itemRef => `${existingDoRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${existingDestination}`)
+                        ? existingItemRefs.flatMap(itemRef => {
+                            const keys = [buildFreightNotaPayloadItemCoverageKey({
+                                doRef: existingDoRef,
+                                itemRef,
+                                tujuan: existingDestination,
+                                actualDropPointKey: existingActualDropPointKey,
+                            })];
+                            if (!existingActualDropPointKey) {
+                                keys.push(buildFreightNotaLegacyItemCoverageKey({
+                                    doRef: existingDoRef,
+                                    itemRef,
+                                    tujuan: existingDestination,
+                                }));
+                            }
+                            return keys;
+                        })
                         : buildFreightNotaCoverageRowKeys({
                             deliveryOrder: matchedDeliveryOrder,
                             noSJ: existingNoSJ,
@@ -2740,18 +2826,47 @@ export async function handleFreightNotaCreate(
                     rowKeys.forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
                     if (existingItemRefs.length > 0) {
-                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}::tujuan::${normalizeOptionalText(item.tujuan) || '-'}`));
+                        existingItemRefs.forEach(itemRef => {
+                            existingRowKeys.add(buildFreightNotaPayloadItemCoverageKey({
+                                doRef: existingDoRef,
+                                itemRef,
+                                tujuan: item.tujuan,
+                                actualDropPointKey: existingActualDropPointKey,
+                            }));
+                            if (!existingActualDropPointKey) {
+                                existingRowKeys.add(buildFreightNotaLegacyItemCoverageKey({
+                                    doRef: existingDoRef,
+                                    itemRef,
+                                    tujuan: item.tujuan,
+                                }));
+                            }
+                        });
                     } else {
                         existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
                     }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
-                existingItemUsage.set(`${itemRef}::${normalizeOptionalText(item.tujuan) || '-'}`, {
+                const exactUsageKey = buildFreightNotaPayloadItemDestinationKey({
+                    itemRef,
+                    tujuan: item.tujuan,
+                    actualDropPointKey: existingActualDropPointKey,
+                });
+                existingItemUsage.set(exactUsageKey, {
                     doRef: existingDoRef,
                     doNumber: normalizeOptionalText(item.doNumber) || undefined,
                     noSJ: normalizeOptionalText(item.noSJ) || undefined,
                 });
+                if (!existingActualDropPointKey) {
+                    existingItemUsage.set(buildFreightNotaLegacyItemDestinationKey({
+                        itemRef,
+                        tujuan: item.tujuan,
+                    }), {
+                        doRef: existingDoRef,
+                        doNumber: normalizeOptionalText(item.doNumber) || undefined,
+                        noSJ: normalizeOptionalText(item.noSJ) || undefined,
+                    });
+                }
             }
         }
         for (const row of rows) {
@@ -2765,8 +2880,24 @@ export async function handleFreightNotaCreate(
             if (!rowDeliveryOrder) {
         return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
             }
+            const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
             const rowKeys = rowItemRefs.length > 0
-                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+                ? rowItemRefs.flatMap(itemRef => {
+                    const keys = [buildFreightNotaPayloadItemCoverageKey({
+                        doRef: row.doRef,
+                        itemRef,
+                        tujuan: row.tujuan,
+                        actualDropPointKey,
+                    })];
+                    if (actualDropPointKey) {
+                        keys.push(buildFreightNotaLegacyItemCoverageKey({
+                            doRef: row.doRef,
+                            itemRef,
+                            tujuan: row.tujuan,
+                        }));
+                    }
+                    return keys;
+                })
                 : buildFreightNotaCoverageRowKeys({
                     deliveryOrder: rowDeliveryOrder,
                     noSJ: row.noSJ,
@@ -2779,7 +2910,16 @@ export async function handleFreightNotaCreate(
                 );
             }
             for (const itemRef of rowItemRefs) {
-                const existingUsage = existingItemUsage.get(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`);
+                const existingUsage = existingItemUsage.get(buildFreightNotaPayloadItemDestinationKey({
+                    itemRef,
+                    tujuan: row.tujuan,
+                    actualDropPointKey,
+                })) || (actualDropPointKey
+                    ? existingItemUsage.get(buildFreightNotaLegacyItemDestinationKey({
+                        itemRef,
+                        tujuan: row.tujuan,
+                    }))
+                    : undefined);
                 if (existingUsage) {
                     return NextResponse.json(
                     { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },
@@ -3037,6 +3177,7 @@ export async function handleFreightNotaCreate(
             doRef: row.doRef,
             deliveryOrderItemRef: row.deliveryOrderItemRef,
             deliveryOrderItemRefs: row.deliveryOrderItemRefs,
+            actualDropPointKey: row.actualDropPointKey,
             customerRef: row.customerRef,
             customerName: row.customerName,
             doNumber: row.doNumber,
@@ -3125,6 +3266,7 @@ export async function handleFreightNotaUpdate(
                     : deliveryOrderItemRef
                         ? [deliveryOrderItemRef]
                         : [];
+                const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
                 if (normalizedDeliveryOrderItemRefs.length > 0 && !doRef) {
                     throw new Error('Baris invoice dari DO wajib punya referensi DO');
                 }
@@ -3158,6 +3300,7 @@ export async function handleFreightNotaUpdate(
                     doRef,
                     deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
                     deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 0 ? normalizedDeliveryOrderItemRefs : undefined,
+                    actualDropPointKey,
                     customerRef: normalizeOptionalText(row.customerRef),
                     customerName: normalizeOptionalText(row.customerName),
                     doNumber: normalizeOptionalText(row.doNumber),
@@ -3359,12 +3502,18 @@ export async function handleFreightNotaUpdate(
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
+        const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
         const rowDeliveryOrder = deliveryOrderMap.get(row.doRef);
         if (!rowDeliveryOrder) {
             return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
         const rowKeys = rowItemRefs.length > 0
-            ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+            ? rowItemRefs.map(itemRef => buildFreightNotaPayloadItemCoverageKey({
+                doRef: row.doRef,
+                itemRef,
+                tujuan: row.tujuan,
+                actualDropPointKey,
+            }))
             : buildFreightNotaCoverageRowKeys({
                 deliveryOrder: rowDeliveryOrder,
                 noSJ: row.noSJ,
@@ -3381,13 +3530,21 @@ export async function handleFreightNotaUpdate(
             );
         }
         for (const itemRef of rowItemRefs) {
-            const itemDestinationKey = `${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`;
+            const itemDestinationKey = buildFreightNotaPayloadItemDestinationKey({
+                itemRef,
+                tujuan: row.tujuan,
+                actualDropPointKey,
+            });
             if (coverage.deliveryOrderItemRefs.has(itemDestinationKey)) {
             return NextResponse.json({ error: `Item DO ${itemRef} duplikat dalam payload invoice` }, { status: 400 });
             }
         }
         rowKeys.forEach(rowKey => coverage.rowKeys.add(rowKey));
-        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`));
+        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(buildFreightNotaPayloadItemDestinationKey({
+            itemRef,
+            tujuan: row.tujuan,
+            actualDropPointKey,
+        })));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
 
@@ -3399,6 +3556,7 @@ export async function handleFreightNotaUpdate(
             tujuan?: string;
             deliveryOrderItemRef?: string;
             deliveryOrderItemRefs?: string[];
+            actualDropPointKey?: string;
             notaRef?: string;
             status?: string;
         }>('freightNotaItem')).filter(item => {
@@ -3416,12 +3574,28 @@ export async function handleFreightNotaUpdate(
                 : item.deliveryOrderItemRef
                     ? [item.deliveryOrderItemRef]
                     : [];
+            const existingActualDropPointKey = normalizeOptionalText(item.actualDropPointKey);
             if (existingDoRef && existingNoSJ) {
                 const matchedDeliveryOrder = deliveryOrderMap.get(existingDoRef);
                 if (matchedDeliveryOrder) {
                     const existingDestination = normalizeOptionalText(item.tujuan) || '-';
                     const rowKeys = existingItemRefs.length > 0
-                        ? existingItemRefs.map(itemRef => `${existingDoRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${existingDestination}`)
+                        ? existingItemRefs.flatMap(itemRef => {
+                            const keys = [buildFreightNotaPayloadItemCoverageKey({
+                                doRef: existingDoRef,
+                                itemRef,
+                                tujuan: existingDestination,
+                                actualDropPointKey: existingActualDropPointKey,
+                            })];
+                            if (!existingActualDropPointKey) {
+                                keys.push(buildFreightNotaLegacyItemCoverageKey({
+                                    doRef: existingDoRef,
+                                    itemRef,
+                                    tujuan: existingDestination,
+                                }));
+                            }
+                            return keys;
+                        })
                         : buildFreightNotaCoverageRowKeys({
                             deliveryOrder: matchedDeliveryOrder,
                             noSJ: existingNoSJ,
@@ -3430,18 +3604,47 @@ export async function handleFreightNotaUpdate(
                     rowKeys.forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
                     if (existingItemRefs.length > 0) {
-                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}::tujuan::${normalizeOptionalText(item.tujuan) || '-'}`));
+                        existingItemRefs.forEach(itemRef => {
+                            existingRowKeys.add(buildFreightNotaPayloadItemCoverageKey({
+                                doRef: existingDoRef,
+                                itemRef,
+                                tujuan: item.tujuan,
+                                actualDropPointKey: existingActualDropPointKey,
+                            }));
+                            if (!existingActualDropPointKey) {
+                                existingRowKeys.add(buildFreightNotaLegacyItemCoverageKey({
+                                    doRef: existingDoRef,
+                                    itemRef,
+                                    tujuan: item.tujuan,
+                                }));
+                            }
+                        });
                     } else {
                         existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
                     }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
-                existingItemUsage.set(`${itemRef}::${normalizeOptionalText(item.tujuan) || '-'}`, {
+                const exactUsageKey = buildFreightNotaPayloadItemDestinationKey({
+                    itemRef,
+                    tujuan: item.tujuan,
+                    actualDropPointKey: existingActualDropPointKey,
+                });
+                existingItemUsage.set(exactUsageKey, {
                     doRef: existingDoRef,
                     doNumber: normalizeOptionalText(item.doNumber) || undefined,
                     noSJ: existingNoSJ || undefined,
                 });
+                if (!existingActualDropPointKey) {
+                    existingItemUsage.set(buildFreightNotaLegacyItemDestinationKey({
+                        itemRef,
+                        tujuan: item.tujuan,
+                    }), {
+                        doRef: existingDoRef,
+                        doNumber: normalizeOptionalText(item.doNumber) || undefined,
+                        noSJ: existingNoSJ || undefined,
+                    });
+                }
             }
         }
         for (const row of rows) {
@@ -3455,8 +3658,24 @@ export async function handleFreightNotaUpdate(
             if (!rowDeliveryOrder) {
                 return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
             }
+            const actualDropPointKey = normalizeOptionalText(row.actualDropPointKey);
             const rowCoverageKeys = rowItemRefs.length > 0
-                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}::tujuan::${normalizeOptionalText(row.tujuan) || '-'}`)
+                ? rowItemRefs.flatMap(itemRef => {
+                    const keys = [buildFreightNotaPayloadItemCoverageKey({
+                        doRef: row.doRef,
+                        itemRef,
+                        tujuan: row.tujuan,
+                        actualDropPointKey,
+                    })];
+                    if (actualDropPointKey) {
+                        keys.push(buildFreightNotaLegacyItemCoverageKey({
+                            doRef: row.doRef,
+                            itemRef,
+                            tujuan: row.tujuan,
+                        }));
+                    }
+                    return keys;
+                })
                 : buildFreightNotaCoverageRowKeys({
                     deliveryOrder: rowDeliveryOrder,
                     noSJ: row.noSJ,
@@ -3469,7 +3688,16 @@ export async function handleFreightNotaUpdate(
                 );
             }
             for (const itemRef of rowItemRefs) {
-                const existingUsage = existingItemUsage.get(`${itemRef}::${normalizeOptionalText(row.tujuan) || '-'}`);
+                const existingUsage = existingItemUsage.get(buildFreightNotaPayloadItemDestinationKey({
+                    itemRef,
+                    tujuan: row.tujuan,
+                    actualDropPointKey,
+                })) || (actualDropPointKey
+                    ? existingItemUsage.get(buildFreightNotaLegacyItemDestinationKey({
+                        itemRef,
+                        tujuan: row.tujuan,
+                    }))
+                    : undefined);
                 if (existingUsage) {
                     return NextResponse.json(
                     { error: `SJ ${existingUsage.noSJ || row.noSJ || '-'} pada DO ${existingUsage.doNumber || existingUsage.doRef || row.doRef} sudah masuk invoice lain` },
@@ -3717,6 +3945,7 @@ export async function handleFreightNotaUpdate(
             doRef: row.doRef,
             deliveryOrderItemRef: row.deliveryOrderItemRef,
             deliveryOrderItemRefs: row.deliveryOrderItemRefs,
+            actualDropPointKey: row.actualDropPointKey,
             customerRef: row.customerRef,
             customerName: row.customerName,
             doNumber: row.doNumber,
