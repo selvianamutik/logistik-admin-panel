@@ -123,6 +123,43 @@ function buildTrackingConflictResponse(message = 'Status tracking berubah karena
     return jsonNoStore({ error: message }, { status: 409 });
 }
 
+async function releaseClosedDeliveryOrderTracking(input: {
+    deliveryOrder: DeliveryOrder;
+    driverId: string;
+    deliveryOrderRef: string;
+    now: string;
+    locationPatch: Record<string, unknown>;
+}) {
+    const { deliveryOrder, driverId, deliveryOrderRef, now, locationPatch } = input;
+    let updated = deliveryOrder;
+
+    if (deliveryOrder.trackingState !== 'STOPPED' || !deliveryOrder.trackingStoppedAt) {
+        try {
+            updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
+                trackingState: 'STOPPED',
+                trackingStoppedAt: deliveryOrder.trackingStoppedAt || now,
+                ...locationPatch,
+            });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return buildTrackingConflictResponse('Tracking berubah karena DO sudah ditutup admin. Refresh lalu cek status terbaru.');
+            }
+            throw error;
+        }
+    }
+
+    try {
+        await releaseDriverTrackingLockIfOwned(driverId, deliveryOrderRef, now);
+    } catch (error) {
+        console.warn('Failed to release closed driver tracking lock', error);
+    }
+
+    return jsonNoStore({
+        data: updated,
+        trackingStopped: true,
+    });
+}
+
 async function patchDeliveryOrderTrackingState(
     deliveryOrder: DeliveryOrder,
     setData: Record<string, unknown>,
@@ -183,7 +220,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
         }
 
-        if (deliveryOrder.status === 'CANCELLED') {
+        if (deliveryOrder.status === 'CANCELLED' && !['heartbeat', 'pause', 'stop'].includes(action)) {
             return jsonNoStore({ error: 'Surat jalan dibatalkan dan tidak bisa ditrack' }, { status: 409 });
         }
 
@@ -227,6 +264,16 @@ export async function POST(request: Request) {
                     trackingLastSeenAt: now,
                     trackingLastSource: 'DRIVER_APP' as const,
                 };
+
+        if (isClosedDeliveryOrder(deliveryOrder.status) && ['heartbeat', 'pause', 'stop'].includes(action)) {
+            return releaseClosedDeliveryOrderTracking({
+                deliveryOrder,
+                driverId: auth.driver._id,
+                deliveryOrderRef,
+                now,
+                locationPatch,
+            });
+        }
 
         if (action === 'start' || action === 'resume') {
             if (!extractRefId(deliveryOrder.vehicleRef) || !extractRefId(deliveryOrder.driverRef)) {

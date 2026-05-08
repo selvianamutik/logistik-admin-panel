@@ -165,8 +165,8 @@ class DriverTrackingService {
           )
           .timeout(const Duration(seconds: 10));
 
+      final body = _decodeJson(response.body);
       if (response.statusCode >= 400) {
-        final body = _decodeJson(response.body);
         final msg = body['error'] as String? ?? 'Ping gagal';
         if (action == 'heartbeat' &&
             response.statusCode == 409 &&
@@ -177,6 +177,9 @@ class DriverTrackingService {
         return TrackingPingResult(success: false, error: msg);
       }
 
+      if (action == 'heartbeat' && body['trackingStopped'] == true) {
+        onTrackingInactive?.call('Tracking selesai karena DO sudah ditutup.');
+      }
       onSuccess?.call();
       return const TrackingPingResult(success: true);
     } catch (e) {

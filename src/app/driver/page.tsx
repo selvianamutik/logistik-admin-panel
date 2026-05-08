@@ -4011,7 +4011,6 @@ export default function DriverPortalPage() {
                             const statusConfig = DRIVER_VOUCHER_STATUS_MAP[voucher.status] || { label: voucher.status || '-', cls: 'badge-gray' };
                             const statusColor = statusConfig.cls.replace('badge-', '') || 'gray';
                             const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, summary);
-                            const routeLabel = voucher.route || formatDriverTripRoute(undefined, undefined);
                             const settlementLabel = summary.balance < 0
                                 ? 'Tambahan bayar ke supir'
                                 : summary.balance > 0
@@ -4023,8 +4022,8 @@ export default function DriverPortalPage() {
                                     <div className="card-header driver-trip-panel-header">
                                         <div>
                                             <div className="driver-trip-panel-kicker">Uang Jalan Trip</div>
-                                            <div className="card-header-title">{voucher.bonNumber}</div>
-                                            <div className="text-muted text-sm">{voucher.doNumber || '-'} | {formatDate(voucher.issuedDate || '')}</div>
+                                            <div className="card-header-title">Ringkasan Uang Jalan</div>
+                                            <div className="text-muted text-sm">{formatDate(voucher.issuedDate || '')}</div>
                                         </div>
                                         <div className="driver-trip-status-stack">
                                             <span className={`badge badge-${statusColor}`}>{statusConfig.label}</span>
@@ -4033,20 +4032,12 @@ export default function DriverPortalPage() {
                                                 className="btn btn-secondary btn-sm"
                                                 onClick={() => void handlePreviewDriverVoucher(voucher)}
                                             >
-                                                <Printer size={15} /> Preview Print
+                                                <Printer size={15} /> Preview / PDF
                                             </button>
                                         </div>
                                     </div>
                                     <div className="card-body driver-trip-panel-body">
                                         <div className="detail-grid driver-trip-detail-grid">
-                                            <div className="detail-item">
-                                                <div className="detail-label">Kendaraan</div>
-                                                <div className="detail-value">{voucher.vehiclePlate || '-'}</div>
-                                            </div>
-                                            <div className="detail-item">
-                                                <div className="detail-label">Rute</div>
-                                                <div className="detail-value">{routeLabel || '-'}</div>
-                                            </div>
                                             <div className="detail-item">
                                                 <div className="detail-label">Total Uang Diberikan</div>
                                                 <div className="detail-value">{formatCurrency(summary.totalIssuedAmount)}</div>

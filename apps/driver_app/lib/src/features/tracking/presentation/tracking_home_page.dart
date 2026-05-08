@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../../app.dart';
 import '../../../shared/branding.dart';
@@ -250,6 +254,27 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       }
       final trips = portalData.trips;
       if (!mounted) return;
+      final activeId = _activeTrip?.deliveryOrderId;
+      final selectedId = _selectedTrip?.deliveryOrderId;
+      final lockedTrip = trips.firstWhereOrNull(
+        (t) => t.trackingState == 'ACTIVE' || t.trackingState == 'PAUSED',
+      );
+      final fallbackActiveTrip =
+          lockedTrip ??
+          trips.firstWhereOrNull((t) => t.status == TripStatus.onDelivery);
+      final retainedActiveTrip = activeId != null
+          ? trips.firstWhereOrNull((t) => t.deliveryOrderId == activeId)
+          : null;
+      final nextActiveTrip = retainedActiveTrip ?? fallbackActiveTrip;
+      final shouldStopLocalTracking =
+          _trackingService.isRunning &&
+          (nextActiveTrip == null ||
+              nextActiveTrip.trackingState != 'ACTIVE' ||
+              (activeId != null && retainedActiveTrip == null));
+      if (shouldStopLocalTracking) {
+        _pingCounterTimer?.cancel();
+        _trackingService.stop();
+      }
       setState(() {
         _trips = trips;
         _plannedTrips = portalData.plannedTrips;
@@ -260,17 +285,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         // DO NOT clear _accessNotice here. It should only be cleared by
         // explicit server response (notice = null) or after acknowledgement.
         // The previous code was wiping warnings incorrectly.
-        final activeId = _activeTrip?.deliveryOrderId;
-        final selectedId = _selectedTrip?.deliveryOrderId;
-        final lockedTrip = trips.firstWhereOrNull(
-          (t) => t.trackingState == 'ACTIVE' || t.trackingState == 'PAUSED',
-        );
-        _activeTrip = activeId != null
-            ? trips.firstWhereOrNull((t) => t.deliveryOrderId == activeId)
-            : lockedTrip ??
-                  trips.firstWhereOrNull(
-                    (t) => t.status == TripStatus.onDelivery,
-                  );
+        _activeTrip = nextActiveTrip;
         _selectedTrip =
             (selectedId != null
                 ? trips.firstWhereOrNull((t) => t.deliveryOrderId == selectedId)
@@ -278,6 +293,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             _activeTrip ??
             (trips.isNotEmpty ? trips.first : null);
         _trackingEnabled = _activeTrip?.trackingState == 'ACTIVE';
+        if (shouldStopLocalTracking) {
+          _pingCount = 0;
+        }
         _loadingTrips = false;
       });
     } on DeliveryOrderException catch (err) {
@@ -2065,6 +2083,200 @@ String _voucherDisbursementLabel(
   return disbursement.kind;
 }
 
+String _voucherPdfFileName(DriverTripVoucher voucher) {
+  final safeBon = voucher.bonNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
+  return 'uang-jalan-$safeBon.pdf';
+}
+
+pw.Widget _pdfKeyValue(String label, String value) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.only(bottom: 6),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(
+          width: 105,
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.Expanded(child: pw.Text(value)),
+      ],
+    ),
+  );
+}
+
+pw.TableRow _pdfTableHeader(List<String> cells) {
+  return pw.TableRow(
+    decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFEFF4FA)),
+    children: cells
+        .map(
+          (cell) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(
+              cell,
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+            ),
+          ),
+        )
+        .toList(growable: false),
+  );
+}
+
+pw.TableRow _pdfTableRow(List<String> cells) {
+  return pw.TableRow(
+    children: cells
+        .map(
+          (cell) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(cell, style: const pw.TextStyle(fontSize: 9)),
+          ),
+        )
+        .toList(growable: false),
+  );
+}
+
+Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
+  final document = pw.Document();
+  final disbursements = voucher.disbursements;
+  final expenses = voucher.items;
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(28),
+      build: (context) => [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'PT Gading Mas Surya',
+                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text('Uang Jalan Trip ${voucher.bonNumber}'),
+              ],
+            ),
+            pw.Text('Dicetak: ${_formatDateText(DateTime.now().toIso8601String())}'),
+          ],
+        ),
+        pw.SizedBox(height: 14),
+        pw.Divider(thickness: 1.2),
+        pw.SizedBox(height: 14),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _pdfKeyValue('No. Bon', voucher.bonNumber),
+                  _pdfKeyValue('Tanggal', _formatDateText(voucher.issuedDate)),
+                  _pdfKeyValue('No. DO', _textOrDash(voucher.doNumber)),
+                  _pdfKeyValue('Kendaraan', _textOrDash(voucher.vehiclePlate)),
+                  _pdfKeyValue('Rute', _textOrDash(voucher.route)),
+                  _pdfKeyValue('Status', voucher.statusLabel),
+                ],
+              ),
+            ),
+            pw.SizedBox(width: 18),
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _pdfKeyValue('Total Uang', _formatRupiah(voucher.totalIssuedAmount)),
+                  _pdfKeyValue('Biaya Lain-lain', _formatRupiah(voucher.operationalSpent)),
+                  _pdfKeyValue('Sisa Bon', _formatRupiah(voucher.operationalBalance)),
+                  _pdfKeyValue('Upah Borongan', _formatRupiah(voucher.driverFeeAmount)),
+                  _pdfKeyValue(
+                    'Net Settlement',
+                    '${voucher.netSettlementAmount < 0 ? '-' : ''}${_formatRupiah(voucher.netSettlementAmount.abs())}',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 18),
+        pw.Text(
+          'Riwayat Pencairan Uang Jalan',
+          style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Table(
+          border: pw.TableBorder.all(color: const PdfColor.fromInt(0xFFD6DEE8)),
+          columnWidths: const {
+            0: pw.FixedColumnWidth(28),
+            1: pw.FixedColumnWidth(70),
+            2: pw.FlexColumnWidth(),
+            3: pw.FlexColumnWidth(),
+            4: pw.FlexColumnWidth(),
+            5: pw.FixedColumnWidth(78),
+          },
+          children: [
+            _pdfTableHeader(['No', 'Tanggal', 'Jenis', 'Sumber Dana', 'Catatan', 'Jumlah']),
+            if (disbursements.isEmpty)
+              _pdfTableRow(['-', '-', 'Belum ada riwayat bon', '-', '-', '-'])
+            else
+              ...disbursements.indexed.map((entry) {
+                final index = entry.$1;
+                final item = entry.$2;
+                return _pdfTableRow([
+                  '${index + 1}',
+                  _formatDateText(item.date),
+                  _voucherDisbursementLabel(item, index),
+                  _textOrDash(item.bankAccountName),
+                  _textOrDash(item.note),
+                  _formatRupiah(item.amount),
+                ]);
+              }),
+          ],
+        ),
+        pw.SizedBox(height: 18),
+        pw.Text(
+          'Biaya Lain-lain',
+          style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Table(
+          border: pw.TableBorder.all(color: const PdfColor.fromInt(0xFFD6DEE8)),
+          columnWidths: const {
+            0: pw.FixedColumnWidth(28),
+            1: pw.FixedColumnWidth(70),
+            2: pw.FlexColumnWidth(),
+            3: pw.FlexColumnWidth(),
+            4: pw.FixedColumnWidth(78),
+          },
+          children: [
+            _pdfTableHeader(['No', 'Tanggal', 'Kategori', 'Deskripsi', 'Jumlah']),
+            if (expenses.isEmpty)
+              _pdfTableRow(['-', '-', 'Tidak ada biaya lain-lain', '-', '-'])
+            else
+              ...expenses.indexed.map((entry) {
+                final index = entry.$1;
+                final item = entry.$2;
+                return _pdfTableRow([
+                  '${index + 1}',
+                  _formatDateText(item.expenseDate),
+                  item.category,
+                  _textOrDash(item.description),
+                  _formatRupiah(item.amount),
+                ]);
+              }),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  return document.save();
+}
+
 String _incidentStatusLabel(String status) {
   return switch (status) {
     'OPEN' => 'Dilaporkan',
@@ -2298,7 +2510,7 @@ class _DriverVoucherCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        voucher.bonNumber,
+                        'Uang Jalan Trip',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 15,
@@ -2306,7 +2518,7 @@ class _DriverVoucherCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${_textOrDash(voucher.doNumber)} | ${_formatDateText(voucher.issuedDate)}',
+                        _formatDateText(voucher.issuedDate),
                         style: TextStyle(
                           color: scheme.onSurface.withValues(alpha: 0.62),
                           fontSize: 12,
@@ -2340,14 +2552,6 @@ class _DriverVoucherCard extends StatelessWidget {
             _VoucherInfoGrid(
               items: [
                 _VoucherInfoItem(
-                  label: 'Kendaraan',
-                  value: _textOrDash(voucher.vehiclePlate),
-                ),
-                _VoucherInfoItem(
-                  label: 'Rute',
-                  value: _textOrDash(voucher.route),
-                ),
-                _VoucherInfoItem(
                   label: 'Total Uang',
                   value: _formatRupiah(voucher.totalIssuedAmount),
                 ),
@@ -2373,7 +2577,7 @@ class _DriverVoucherCard extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onPreview,
                 icon: const Icon(Icons.print_outlined, size: 18),
-                label: const Text('Preview Uang Jalan'),
+                label: const Text('Preview / PDF'),
               ),
             ),
           ],
@@ -2476,6 +2680,18 @@ class _DriverVoucherPreviewDialog extends StatelessWidget {
 
   final DriverTripVoucher voucher;
 
+  Future<void> _downloadPdf(BuildContext context) async {
+    try {
+      final bytes = await _buildDriverVoucherPdf(voucher);
+      await Printing.sharePdf(bytes: bytes, filename: _voucherPdfFileName(voucher));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat PDF: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -2576,6 +2792,28 @@ class _DriverVoucherPreviewDialog extends StatelessWidget {
                     _VoucherHistorySection(voucher: voucher),
                   ],
                 ),
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Tutup'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _downloadPdf(context),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('Download PDF'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

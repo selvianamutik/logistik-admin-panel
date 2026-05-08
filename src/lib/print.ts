@@ -255,7 +255,8 @@ export function openBrandedPrint(opts: {
                     <div class="print-preview-subtitle">${safeBrowserTitle}</div>
                 </div>
                 <div class="print-preview-actions">
-                    <button class="primary" onclick="window.print()">Print</button>
+                    <button class="primary" onclick="window.print()">Download PDF</button>
+                    <button class="secondary" onclick="window.print()">Print</button>
                     <button class="secondary" onclick="window.close()">Tutup</button>
                 </div>
             </div>
