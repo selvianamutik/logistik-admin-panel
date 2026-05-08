@@ -28,9 +28,7 @@ import {
     createEmptyActualDropDraft,
     applyActualCargoAutoWeightFromQty,
     applyActualDropAutoWeightFromQty,
-    getActualCargoDraftsForDrop,
     shouldOpenAdvancedDropEditor,
-    summarizeActualCargoDraftDescriptions,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
     updateActualDropDraftWeightUnit,
@@ -166,14 +164,6 @@ function buildCompletionDropItemValueKey(draftKey: string, deliveryOrderItemRef:
     return `${draftKey}${COMPLETION_DROP_ITEM_VALUE_SEPARATOR}${deliveryOrderItemRef}`;
 }
 
-function parseCompletionDropItemValueKey(valueKey: string) {
-    const [draftKey, deliveryOrderItemRef] = valueKey.split(COMPLETION_DROP_ITEM_VALUE_SEPARATOR);
-    if (!draftKey || !deliveryOrderItemRef) {
-        return null;
-    }
-    return { draftKey, deliveryOrderItemRef };
-}
-
 function pickCompletionDropItemValues(drop: ActualDropDraft): CompletionDropItemValueDraft {
     return {
         qtyKoli: drop.qtyKoli,
@@ -247,41 +237,6 @@ function isDriverDashboardTripPlanVisible(plan: DriverAssignedTripPlan) {
         return plan.linkedDeliveryOrderStatus !== 'CANCELLED' && plan.linkedDeliveryOrderStatus !== 'UNKNOWN';
     }
     return true;
-}
-
-function getNextDriverProgressStatus(order: DriverAssignedDeliveryOrder): DriverProgressStatus | null {
-    if (
-        order.trackingState !== 'ACTIVE' ||
-        order.status === 'DELIVERED' ||
-        order.status === 'CANCELLED' ||
-        order.pendingDriverStatus === 'DELIVERED'
-    ) {
-        return null;
-    }
-
-    switch (order.status) {
-        case 'HEADING_TO_PICKUP':
-            return 'ON_DELIVERY';
-        case 'ON_DELIVERY':
-            return 'ARRIVED';
-        case 'ARRIVED':
-            return 'DELIVERED';
-        default:
-            return null;
-    }
-}
-
-function getDriverProgressButtonLabel(nextStatus: DriverProgressStatus) {
-    switch (nextStatus) {
-        case 'ON_DELIVERY':
-            return 'Tandai Dalam Pengiriman';
-        case 'ARRIVED':
-            return 'Tandai Sudah Tiba';
-        case 'DELIVERED':
-            return 'Update Batch SJ';
-        default:
-            return 'Lanjutkan Trip';
-    }
 }
 
 function getDriverProgressSuccessMessage(nextStatus: DriverProgressStatus) {
@@ -431,21 +386,6 @@ function completionDropMatchesCargoItem(drop: ActualDropDraft, cargoItem: Actual
         (dropReferenceNumber && itemReferenceNumber && dropReferenceNumber === itemReferenceNumber) ||
         !drop.deliveryOrderItemRef && !drop.shipperReferenceKey && !dropReferenceNumber
     );
-}
-
-function getCompletionDropAllocationScopeKey(drop: ActualDropDraft, cargoItem: ActualCargoDraft) {
-    const dropReferenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
-    const itemReferenceNumber = cargoItem.shipperReferenceNumber.trim().toUpperCase();
-    if (drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef) {
-        return `item:${cargoItem.deliveryOrderItemRef}`;
-    }
-    if (drop.shipperReferenceKey && drop.shipperReferenceKey === cargoItem.shipperReferenceKey) {
-        return `sj-key:${drop.shipperReferenceKey}`;
-    }
-    if (dropReferenceNumber && itemReferenceNumber && dropReferenceNumber === itemReferenceNumber) {
-        return `sj-number:${dropReferenceNumber}`;
-    }
-    return 'all-selected-sj';
 }
 
 function hasDriverCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; volumeM3?: number }) {
@@ -1164,7 +1104,7 @@ export default function DriverPortalPage() {
             ...baseDrop,
             ...getRemainingCompletionDropValuesForCargoItem(cargoItem, drop, drop.draftKey),
         };
-    }, [completionDropItemValueMap, orderedCompletionDropPoints, getRemainingCompletionDropValuesForCargoItem]);
+    }, [completionDropItemValueMap, getRemainingCompletionDropValuesForCargoItem]);
     const summarizeCompletionDropAllocationForItems = useCallback((
         drop: ActualDropDraft,
         cargoItems: ActualCargoDraft[]
@@ -1217,48 +1157,6 @@ export default function DriverPortalPage() {
             return '-';
         }
         return formatCargoSummary(totals);
-    }, [getCompletionDropAllocationForItem, selectedCompletionDropPoints]);
-    const summarizeCompletionRemainingUndroppedForItem = useCallback((cargoItem: ActualCargoDraft) => {
-        const droppedTotals = selectedCompletionDropPoints
-            .filter(drop => drop.stopType === 'DROP' || drop.stopType === 'EXTRA_DROP')
-            .reduce((sum, drop) => {
-                const allocation = getCompletionDropAllocationForItem(drop, cargoItem);
-                return {
-                    qtyKoli: sum.qtyKoli + parseFormattedNumberish(allocation.qtyKoli || 0, { maxFractionDigits: 2 }),
-                    weightKg: sum.weightKg + convertWeightToKg(
-                        parseFormattedNumberish(allocation.weightInputValue || 0, {
-                            maxFractionDigits: getWeightInputFractionDigits(allocation.weightInputUnit),
-                        }),
-                        allocation.weightInputUnit
-                    ),
-                    volumeM3: sum.volumeM3 + convertVolumeToM3(
-                        parseFormattedNumberish(allocation.volumeInputValue || 0, {
-                            maxFractionDigits: allocation.volumeInputUnit === 'LITER' ? 0 : 3,
-                        }),
-                        allocation.volumeInputUnit
-                    ),
-                };
-            }, { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-        const actualTotals = {
-            qtyKoli: parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 }),
-            weightKg: convertWeightToKg(
-                parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                    maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
-                }),
-                cargoItem.actualWeightInputUnit
-            ),
-            volumeM3: convertVolumeToM3(
-                parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
-                    maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                }),
-                cargoItem.actualVolumeInputUnit
-            ),
-        };
-        return formatCargoSummary({
-            qtyKoli: Math.max(actualTotals.qtyKoli - droppedTotals.qtyKoli, 0),
-            weightKg: Math.max(actualTotals.weightKg - droppedTotals.weightKg, 0),
-            volumeM3: Math.max(actualTotals.volumeM3 - droppedTotals.volumeM3, 0),
-        });
     }, [getCompletionDropAllocationForItem, selectedCompletionDropPoints]);
     const summarizeCompletionRemainingUnallocatedForItem = useCallback((cargoItem: ActualCargoDraft) => {
         const allocatedTotals = selectedCompletionDropPoints.reduce((sum, drop) => {
@@ -1584,26 +1482,6 @@ export default function DriverPortalPage() {
         () => summarizeDraftOrderCargo(flattenedTripCreateItems),
         [flattenedTripCreateItems]
     );
-    const completionCargoSummary = useMemo(
-        () => formatCargoSummary({
-            qtyKoli: selectedCompletionDerivedActualCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0), 0),
-            weightKg: selectedCompletionDerivedActualCargoItems.reduce((sum, item) => {
-                const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-                });
-                return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
-            }, 0),
-            volumeM3: selectedCompletionDerivedActualCargoItems.reduce((sum, item) => {
-                const value = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                });
-                if (item.actualVolumeInputUnit === 'LITER') return sum + value / 1000;
-                if (item.actualVolumeInputUnit === 'KL') return sum + value;
-                return sum + value;
-            }, 0),
-        }),
-        [selectedCompletionDerivedActualCargoItems]
-    );
     const completionBatchSjCargoSummary = useMemo(
         () => formatCargoSummary({
             qtyKoli: selectedCompletionCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }), 0),
@@ -1621,10 +1499,6 @@ export default function DriverPortalPage() {
             }, 0),
         }),
         [selectedCompletionCargoItems]
-    );
-    const completionShipperReferences = useMemo(
-        () => completionOrder?.shipperReferences || [],
-        [completionOrder?.shipperReferences]
     );
     const completionBillingCustomerOptions = useMemo(() => {
         const activeCustomers = billingCustomers.filter(customer => customer.active !== false);
@@ -1654,51 +1528,6 @@ export default function DriverPortalPage() {
     const completionOdometerTooLow = completionMode === 'TRIP_CLOSE' &&
         completionOdometerKm > 0 &&
         completionOdometerKm < completionVehicleCurrentOdometer;
-    const completionDropTargetOptions = useMemo(() => [
-        ...completionShipperReferences
-            .filter(reference => completionSjOptions.some(row =>
-                selectedCompletionSjSet.has(row.documentId) &&
-                (
-                    (row.referenceKey && reference._key === row.referenceKey) ||
-                    (row.referenceNumber && (reference.referenceNumber || '').trim().toUpperCase() === row.referenceNumber)
-                )
-            ))
-            .map(reference => ({
-            optionValue: `sj:${reference._key || reference.referenceNumber || ''}`,
-            referenceKey: reference._key || '',
-            referenceNumber: reference.referenceNumber || '',
-            deliveryOrderItemRef: '',
-            label: `${reference.referenceNumber || '-'} (semua barang)`,
-        })),
-        ...selectedCompletionCargoItems.map(item => ({
-            optionValue: `item:${item.deliveryOrderItemRef}`,
-            referenceKey: item.shipperReferenceKey || '',
-            referenceNumber: item.shipperReferenceNumber || completionOrder?.customerDoNumber || completionOrder?.doNumber || '',
-            deliveryOrderItemRef: item.deliveryOrderItemRef,
-            label: `${item.shipperReferenceNumber || completionOrder?.customerDoNumber || 'Tanpa SJ'} - ${item.description || 'Barang'}`,
-        })),
-    ].filter(option => option.optionValue !== 'sj:'), [
-        completionSjOptions,
-        completionOrder?.customerDoNumber,
-        completionOrder?.doNumber,
-        completionShipperReferences,
-        selectedCompletionCargoItems,
-        selectedCompletionSjSet,
-    ]);
-    const resolveCompletionDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
-        if (drop.deliveryOrderItemRef) {
-            return `item:${drop.deliveryOrderItemRef}`;
-        }
-        const matchedReference = completionShipperReferences.find(reference =>
-            (drop.shipperReferenceKey && reference._key === drop.shipperReferenceKey) ||
-            (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
-        );
-        const referenceValue = matchedReference?._key || matchedReference?.referenceNumber || '';
-        return referenceValue ? `sj:${referenceValue}` : '';
-    };
-    const getCompletionDropCargoSummary = (drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
-        summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, selectedCompletionCargoItems));
-
     const applyOrderUpdate = useCallback((updated: DriverAssignedDeliveryOrder) => {
         setOrders(prev => {
             const nextOrder = isDriverDashboardDeliveryOrderVisible(updated) ? updated : null;
@@ -3038,7 +2867,6 @@ export default function DriverPortalPage() {
             setActionLoadingId(null);
         }
     }, [
-        completionCargoItems,
         completionDetailState.effectiveActualDropPoints,
         completionInvoiceCustomerRef,
         completionInvoiceCustomerName,
@@ -3055,7 +2883,6 @@ export default function DriverPortalPage() {
         handleDriverAuthFailure,
         loadOrders,
         postDeliveryProgress,
-        selectedCompletionCargoItems,
         selectedCompletionDerivedActualCargoItems,
         selectedCompletionSjRefs,
         selectedCompletionWorkingDropPoints,
@@ -3112,7 +2939,6 @@ export default function DriverPortalPage() {
         completionPodReceiverName,
         completionTargetStatus,
         selectedCompletionBillableCargoItems,
-        selectedCompletionCargoItems.length,
         selectedCompletionCargoItems,
         selectedCompletionSjRefs.length,
         selectedCompletionWorkingDropPoints,
@@ -3559,38 +3385,6 @@ export default function DriverPortalPage() {
         }
     }, [handleDriverAuthFailure, loadOrders]);
 
-    const handleDeliveryProgress = useCallback(
-        async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
-            if (nextStatus === 'DELIVERED') {
-                const targetOrder = orders.find(item => item._id === deliveryOrderRef);
-                if (!targetOrder) {
-                    setFeedback({ type: 'error', message: 'Surat jalan tidak ditemukan untuk update batch SJ.' });
-                    return;
-                }
-                openDeliveredRequestModal(targetOrder);
-                return;
-            }
-            setActionLoadingId(deliveryOrderRef);
-            try {
-                await postDeliveryProgress(deliveryOrderRef, nextStatus);
-                setFeedback({ type: 'success', message: getDriverProgressSuccessMessage(nextStatus) });
-                await loadOrders();
-            } catch (error) {
-                if (isDriverUnauthorizedError(error)) {
-                    handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
-                    return;
-                }
-                setFeedback({
-                    type: 'error',
-                    message: error instanceof Error ? error.message : 'Gagal memperbarui progres perjalanan',
-                });
-            } finally {
-                setActionLoadingId(null);
-            }
-        },
-        [handleDriverAuthFailure, loadOrders, openDeliveredRequestModal, orders, postDeliveryProgress]
-    );
-
     if (loading) {
         return (
             <main className="driver-app-shell">
@@ -3808,11 +3602,6 @@ export default function DriverPortalPage() {
                         const canStart = canDriverStartTracking(item.status);
                         const sjRows = getDriverOrderSjRows(item);
                         const pendingRequests = getDriverPendingRequests(item);
-                        const batchStatusOptions = Array.from(new Set(
-                            sjRows
-                                .filter(row => row.referenceNumber && row.itemCount > 0 && row.tripStatus !== 'DELIVERED' && !row.pendingRequest && row.nextStatus)
-                                .map(row => row.nextStatus)
-                        ));
                         const canManageCargo =
                             item.status !== 'DELIVERED' &&
                             item.status !== 'CANCELLED';
@@ -3821,9 +3610,6 @@ export default function DriverPortalPage() {
                             cargoItemCount > 0 &&
                             item.status !== 'CANCELLED' &&
                             !item.tripClosedByAdminAt;
-                        const canSubmitBatchUpdate =
-                            batchStatusOptions.length > 0 &&
-                            cargoItemCount > 0;
                         const canRequestTripClose =
                             item.status === 'DELIVERED' &&
                             areAllDriverTripSuratJalanDelivered(sjRows) &&
