@@ -16,6 +16,9 @@ export type VehicleTireFormState = {
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
     tireBrand: string;
     tireSize: string;
+    originalCost: number;
+    totalUsedPercent: number;
+    usagePercentOnExit: number | null;
     installDate: string;
     notes: string;
 };
@@ -38,6 +41,9 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         tireType: 'Tubeless',
         tireBrand: '',
         tireSize: '',
+        originalCost: 0,
+        totalUsedPercent: 0,
+        usagePercentOnExit: null,
         installDate: getBusinessDateValue(),
         notes: '',
     };
@@ -58,6 +64,36 @@ export function normalizeVehicleTireRow(event: TireEvent): NormalizedVehicleTire
         slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
         placementLabel: resolveTirePlacementLabel(event),
     };
+}
+
+function getVehicleServiceCodeHint(vehicle: Vehicle) {
+    const identity = `${vehicle.serviceRef || ''} ${vehicle.serviceName || ''} ${vehicle.unitCode || ''} ${vehicle.vehicleType || ''}`.toLowerCase();
+    if (identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trailer') || identity.includes('trd')) return 'TR';
+    if (identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) return 'CDD';
+    if (identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) return 'ENG';
+    return '';
+}
+
+function isTireCompatibleWithVehicle(row: NormalizedVehicleTireRow, vehicle: Vehicle) {
+    const hasExplicitCompatibility = Boolean(row.compatibleServiceRef?.trim() || row.compatibleServiceName?.trim());
+    if (row.compatibleServiceRef?.trim()) {
+        return row.compatibleServiceRef.trim() === vehicle.serviceRef;
+    }
+    if (row.compatibleServiceName?.trim() && vehicle.serviceName?.trim()) {
+        return row.compatibleServiceName.trim().toLowerCase() === vehicle.serviceName.trim().toLowerCase();
+    }
+
+    const codeHint = getVehicleServiceCodeHint(vehicle);
+    const tireCode = row.tireCode?.trim().toUpperCase() || '';
+    if (codeHint && tireCode.startsWith(`NEW-${codeHint}-`)) {
+        return true;
+    }
+
+    if (!hasExplicitCompatibility) {
+        return true;
+    }
+
+    return false;
 }
 
 export function buildVehicleTireDetailState(params: {
@@ -92,16 +128,14 @@ export function buildVehicleTireDetailState(params: {
     const selectedRegisteredTire = normalizedAllTireRows.find(row => row._id === tireForm.registeredTireId);
     const tireSelectionLocked = Boolean(editingTire || selectedRegisteredTire);
     const availableRegisteredTires = normalizedAllTireRows.filter(row => {
-        if (editingTire) {
-            return row._id === editingTire._id;
-        }
+        if (editingTire && row._id === editingTire._id) return false;
         if (row.status === 'SCRAPPED') {
             return false;
         }
         if (row.holderType === 'INTERNAL_VEHICLE' && row.status === 'IN_USE') {
             return false;
         }
-        return true;
+        return isTireCompatibleWithVehicle(row, vehicle);
     });
 
     return {

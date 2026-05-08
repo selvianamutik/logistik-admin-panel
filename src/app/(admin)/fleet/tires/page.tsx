@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp, useToast } from '../../layout';
-import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink, History } from 'lucide-react';
+import { Plus, Search, Disc3, CheckCircle, Warehouse, History, Wrench } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildTiresQuery,
@@ -22,7 +23,7 @@ import {
     type TireFormState,
 } from '@/lib/fleet-asset-page-support';
 import { isTireTrackedWarehouseItem, WAREHOUSE_ITEM_TRACKING_MODE_LABELS } from '@/lib/inventory';
-import { formatDate, formatQuantity, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
+import { formatCurrency, formatDate, formatQuantity, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import {
     formatTireSlotLabel,
@@ -37,6 +38,91 @@ import { getTireHistoryActionColor, getTireHistoryActionLabel, getTireHistoryTra
 import type { TireEvent, TireHistoryLog, Vehicle, WarehouseItem } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { formatDateTime } from '@/lib/utils';
+
+type TireInstallFormState = {
+    tireEventRef: string;
+    vehicleCategory: string;
+    vehicleRef: string;
+    slotCode: string;
+    oldTireUsagePercent: number | null;
+    oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
+    maintenanceDate: string;
+    note: string;
+};
+
+type TireCompatibilityEvent = TireEvent & {
+    compatibleServiceRef?: string;
+    compatibleServiceName?: string;
+};
+
+const CATAT_BAN_HOLDER_TYPE_OPTIONS = TIRE_HOLDER_TYPE_OPTIONS.filter(option => option.value !== 'EXTERNAL_VEHICLE');
+const CATAT_BAN_STATUS_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.value !== 'LOANED_OUT');
+const BAN_LIST_STATUS_FILTER_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.value !== 'LOANED_OUT');
+
+function createDefaultInstallForm(): TireInstallFormState {
+    return {
+        tireEventRef: '',
+        vehicleCategory: '',
+        vehicleRef: '',
+        slotCode: '',
+        oldTireUsagePercent: null,
+        oldTireDestination: 'WAREHOUSE',
+        maintenanceDate: getBusinessDateValue(),
+        note: '',
+    };
+}
+
+function getVehicleServiceCodeHint(vehicle: Vehicle | null) {
+    const identity = `${vehicle?.serviceRef || ''} ${vehicle?.serviceName || ''} ${vehicle?.unitCode || ''} ${vehicle?.vehicleType || ''}`.toLowerCase();
+    if (!identity.trim()) return '';
+    if (identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trailer') || identity.includes('trd')) return 'TR';
+    if (identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) return 'CDD';
+    if (identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) return 'ENG';
+    return '';
+}
+
+function isInstallTireCompatibleWithVehicle(event: TireCompatibilityEvent, vehicle: Vehicle | null, sameVehicleTireSizes: Set<string>) {
+    if (!vehicle) return false;
+
+    const hasExplicitCompatibility = Boolean(event.compatibleServiceRef?.trim() || event.compatibleServiceName?.trim());
+    if (event.compatibleServiceRef?.trim()) {
+        return event.compatibleServiceRef.trim() === vehicle.serviceRef;
+    }
+    if (event.compatibleServiceName?.trim() && vehicle.serviceName?.trim()) {
+        return event.compatibleServiceName.trim().toLowerCase() === vehicle.serviceName.trim().toLowerCase();
+    }
+
+    const codeHint = getVehicleServiceCodeHint(vehicle);
+    const tireCode = event.tireCode?.trim().toUpperCase() || '';
+    if (codeHint && tireCode.startsWith(`NEW-${codeHint}-`)) {
+        return true;
+    }
+
+    if (!hasExplicitCompatibility) {
+        return true;
+    }
+
+    return sameVehicleTireSizes.has(event.tireSize?.trim().toLowerCase() || '');
+}
+
+function getTireCompatibilityCategoryValue(tire: Pick<TireEvent, 'compatibleServiceRef' | 'compatibleServiceName' | 'vehicleRef'>, vehicles: Vehicle[]) {
+    if (tire.vehicleRef) {
+        const vehicle = vehicles.find(item => item._id === tire.vehicleRef);
+        if (vehicle) return getTireVehicleCategoryValue(vehicle);
+    }
+    if (tire.compatibleServiceRef?.trim()) {
+        const vehicle = vehicles.find(item => item.serviceRef === tire.compatibleServiceRef);
+        if (vehicle) return getTireVehicleCategoryValue(vehicle);
+        return `service:${tire.compatibleServiceRef.trim()}`;
+    }
+    if (tire.compatibleServiceName?.trim()) {
+        const serviceName = tire.compatibleServiceName.trim().toLowerCase();
+        const vehicle = vehicles.find(item => item.serviceName?.trim().toLowerCase() === serviceName);
+        if (vehicle) return getTireVehicleCategoryValue(vehicle);
+        return `service-name:${serviceName}`;
+    }
+    return '';
+}
 
 export default function TiresPage() {
     const { user } = useApp();
@@ -55,11 +141,12 @@ export default function TiresPage() {
     const [mountedCount, setMountedCount] = useState(0);
     const [spareCount, setSpareCount] = useState(0);
     const [warehouseCount, setWarehouseCount] = useState(0);
-    const [loanedCount, setLoanedCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
+    const [showInstallModal, setShowInstallModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<TireFormState>(createDefaultTireForm());
+    const [installForm, setInstallForm] = useState<TireInstallFormState>(createDefaultInstallForm());
     const [historyTarget, setHistoryTarget] = useState<ResolvedFleetTireEvent | null>(null);
     const [historyRows, setHistoryRows] = useState<TireHistoryLog[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -143,12 +230,10 @@ export default function TiresPage() {
                         totals.mounted += 1;
                     } else if (resolvedTire?.status === 'IN_WAREHOUSE') {
                         totals.warehouse += 1;
-                    } else if (resolvedTire?.status === 'LOANED_OUT') {
-                        totals.loaned += 1;
                     }
                     return totals;
                 },
-                { mounted: 0, spare: 0, warehouse: 0, loaned: 0 }
+                { mounted: 0, spare: 0, warehouse: 0 }
             );
             setEvents(tirePayload.data || []);
             setAllTireEvents(allTireRows || []);
@@ -158,7 +243,6 @@ export default function TiresPage() {
             setMountedCount(nextCounts.mounted);
             setSpareCount(nextCounts.spare);
             setWarehouseCount(nextCounts.warehouse);
-            setLoanedCount(nextCounts.loaned);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data ban');
         } finally {
@@ -190,6 +274,10 @@ export default function TiresPage() {
     const selectedVehicle = useMemo(
         () => vehicles.find(vehicle => vehicle._id === form.vehicleRef) || null,
         [form.vehicleRef, vehicles]
+    );
+    const selectedCompatibilityVehicle = useMemo(
+        () => vehicles.find(vehicle => getTireVehicleCategoryValue(vehicle) === vehicleCategoryFilter) || null,
+        [vehicleCategoryFilter, vehicles]
     );
     const slotOptions = useMemo(
         () => getSelectableInternalTireSlotOptions({
@@ -232,8 +320,99 @@ export default function TiresPage() {
             spareFilled: layout.spareSlots.filter(slotCode => occupiedSlots.has(slotCode)).length,
         };
     }, [allTireEvents, editTarget?._id, selectedVehicle]);
+    const resolvedEditTarget = useMemo(
+        () => editTarget ? resolveFleetTireEvents([editTarget])[0] : null,
+        [editTarget]
+    );
+    const requiresUsagePercentOnExit = Boolean(
+        editTarget &&
+        resolvedEditTarget?.holderType === 'INTERNAL_VEHICLE' &&
+        editTarget.vehicleRef &&
+        Number(editTarget.maintenanceCostPostedPercent || 0) < 100 &&
+        (form.holderType !== 'INTERNAL_VEHICLE' || form.vehicleRef !== editTarget.vehicleRef)
+    );
+    const remainingPercentBeforeExit = Math.max(100 - Number(editTarget?.totalUsedPercent || 0), 0);
+    const usagePercentPreview = typeof form.usagePercentOnExit === 'number' ? form.usagePercentOnExit : 0;
+    const usageCostPreview = Math.round(Number(form.originalCost || 0) * usagePercentPreview / 100);
+    const remainingPercentAfterPreview = Math.max(remainingPercentBeforeExit - usagePercentPreview, 0);
+    const remainingValueAfterPreview = Math.round(Number(form.originalCost || 0) * remainingPercentAfterPreview / 100);
+    const installVehicleCategoryOptions = useMemo(
+        () => getSelectableTireVehicleCategories(vehicles, null),
+        [vehicles]
+    );
+    const installSelectableVehicles = useMemo(
+        () => getSelectableTireVehiclesByCategory(vehicles, null, installForm.vehicleCategory || undefined),
+        [installForm.vehicleCategory, vehicles]
+    );
+    const installSelectedVehicle = useMemo(
+        () => vehicles.find(vehicle => vehicle._id === installForm.vehicleRef) || null,
+        [installForm.vehicleRef, vehicles]
+    );
+    const installSlotOptions = useMemo(
+        () => getSelectableInternalTireSlotOptions({
+            vehicle: installSelectedVehicle,
+            tireEvents: allTireEvents,
+            editTargetId: installForm.tireEventRef,
+        }).map(option => ({ ...option, disabled: false })),
+        [allTireEvents, installForm.tireEventRef, installSelectedVehicle]
+    );
+    const sameVehicleTireSizes = useMemo(
+        () => new Set(
+            resolveFleetTireEvents(allTireEvents)
+                .filter(event =>
+                    event.vehicleRef === installForm.vehicleRef &&
+                    event.holderType === 'INTERNAL_VEHICLE' &&
+                    event.status === 'IN_USE' &&
+                    event.tireSize?.trim()
+                )
+                .map(event => event.tireSize.trim().toLowerCase())
+        ),
+        [allTireEvents, installForm.vehicleRef]
+    );
+    const availableInstallTires = useMemo(
+        () => resolveFleetTireEvents(allTireEvents)
+            .filter(event =>
+                event.status !== 'SCRAPPED' &&
+                !(event.holderType === 'INTERNAL_VEHICLE' && event.status === 'IN_USE') &&
+                isInstallTireCompatibleWithVehicle(event, installSelectedVehicle, sameVehicleTireSizes)
+            )
+            .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID')),
+        [allTireEvents, installSelectedVehicle, sameVehicleTireSizes]
+    );
+    const selectedInstallTire = useMemo(
+        () => availableInstallTires.find(event => event._id === installForm.tireEventRef) || null,
+        [availableInstallTires, installForm.tireEventRef]
+    );
+    const oldTireInInstallSlot = useMemo(
+        () => resolveFleetTireEvents(allTireEvents).find(event =>
+            event.vehicleRef === installForm.vehicleRef &&
+            event.holderType === 'INTERNAL_VEHICLE' &&
+            event.status === 'IN_USE' &&
+            event.slotCode === installForm.slotCode &&
+            event._id !== installForm.tireEventRef
+        ) || null,
+        [allTireEvents, installForm.slotCode, installForm.tireEventRef, installForm.vehicleRef]
+    );
+    const installPostedPercent = Math.max(100 - Number(selectedInstallTire?.maintenanceCostPostedPercent || 0), 0);
+    const selectedInstallOriginalCost = Number(selectedInstallTire?.originalCost ?? selectedInstallTire?.purchaseCost ?? 0);
+    const selectedInstallPostedBefore = Number(selectedInstallTire?.maintenanceCostPostedPercent || 0);
+    const selectedInstallPostedAfter = Math.min(100, selectedInstallPostedBefore + installPostedPercent);
+    const selectedInstallRemainingPercent = Math.max(100 - Number(selectedInstallTire?.totalUsedPercent || 0), 0);
+    const selectedInstallRemainingValue = Number(selectedInstallTire?.remainingValue ?? Math.round(selectedInstallOriginalCost * selectedInstallRemainingPercent / 100));
+    const installCostPreview = Math.round(selectedInstallOriginalCost * installPostedPercent / 100);
+    const oldRemainingPercent = Math.max(100 - Number(oldTireInInstallSlot?.totalUsedPercent || 0), 0);
+    const oldInstallOriginalCost = Number(oldTireInInstallSlot?.originalCost ?? oldTireInInstallSlot?.purchaseCost ?? 0);
+    const oldInstallUsedBefore = Number(oldTireInInstallSlot?.totalUsedPercent || 0);
+    const oldUsagePercentPreview = Number(installForm.oldTireUsagePercent || 0);
+    const oldInstallUsedAfter = Math.min(100, oldInstallUsedBefore + oldUsagePercentPreview);
+    const oldInstallRemainingAfter = Math.max(100 - oldInstallUsedAfter, 0);
+    const oldInstallRemainingValueBefore = Number(oldTireInInstallSlot?.remainingValue ?? Math.round(oldInstallOriginalCost * oldRemainingPercent / 100));
+    const oldInstallRemainingValueAfter = Math.round(oldInstallOriginalCost * oldInstallRemainingAfter / 100);
+    const oldUsageCostPreview = Math.round(oldInstallOriginalCost * oldUsagePercentPreview / 100);
+    const installTotalCostPreview = oldUsageCostPreview + installCostPreview;
 
     const resetForm = () => setForm(createDefaultTireForm());
+    const resetInstallForm = () => setInstallForm(createDefaultInstallForm());
 
     const openAdd = () => {
         if (!canCreateTires) return;
@@ -243,20 +422,19 @@ export default function TiresPage() {
         setShowModal(true);
     };
 
+    const openInstall = () => {
+        if (!canManageTires) return;
+        resetInstallForm();
+        setShowInstallModal(true);
+    };
+
     const openEdit = useCallback((event: TireEvent) => {
         if (!canManageTires) return;
         const resolvedEvent = resolvedEvents.find(item => item._id === event._id);
         const holderType = resolvedEvent?.holderType || 'INTERNAL_VEHICLE';
         const status = resolvedEvent?.status || 'IN_USE';
         const slotCode = resolvedEvent?.slotCode || resolveTireSlotCode(event) || '';
-        const nextVehicleCategory = event.vehicleRef
-            ? getTireVehicleCategoryValue(vehicles.find(vehicle => vehicle._id === event.vehicleRef) || {
-                _id: event.vehicleRef,
-                serviceRef: undefined,
-                serviceName: undefined,
-                vehicleType: '',
-            })
-            : '';
+        const nextVehicleCategory = getTireCompatibilityCategoryValue(event, vehicles);
         setEditTarget(event);
         setVehicleCategoryFilter(nextVehicleCategory);
         setForm({
@@ -270,6 +448,9 @@ export default function TiresPage() {
             tireBrand: event.tireBrand,
             tireSize: event.tireSize,
             installDate: event.installDate,
+            originalCost: event.originalCost ?? event.purchaseCost ?? 0,
+            totalUsedPercent: event.totalUsedPercent || 0,
+            usagePercentOnExit: null,
             accumulatedKm: event.accumulatedKm || 0,
             notes: event.notes || '',
             externalPartyName: event.externalPartyName || '',
@@ -312,6 +493,10 @@ export default function TiresPage() {
         setForm(prev => ({ ...prev, [key]: value }));
     };
 
+    const updateInstallForm = <K extends keyof TireInstallFormState>(key: K, value: TireInstallFormState[K]) => {
+        setInstallForm(prev => ({ ...prev, [key]: value }));
+    };
+
     useEffect(() => {
         if (form.holderType !== 'INTERNAL_VEHICLE') {
             return;
@@ -350,7 +535,8 @@ export default function TiresPage() {
             const nextBrand = prev.tireBrand || selectedLinkedWarehouseItem.tireBrandDefault || prev.tireBrand;
             const nextSize = prev.tireSize || selectedLinkedWarehouseItem.tireSizeDefault || prev.tireSize;
             const nextType = prev.tireType || selectedLinkedWarehouseItem.tireTypeDefault || prev.tireType;
-            if (nextBrand === prev.tireBrand && nextSize === prev.tireSize && nextType === prev.tireType) {
+            const nextOriginalCost = prev.originalCost || selectedLinkedWarehouseItem.defaultPurchasePrice || prev.originalCost;
+            if (nextBrand === prev.tireBrand && nextSize === prev.tireSize && nextType === prev.tireType && nextOriginalCost === prev.originalCost) {
                 return prev;
             }
             return {
@@ -358,9 +544,40 @@ export default function TiresPage() {
                 tireBrand: nextBrand,
                 tireSize: nextSize,
                 tireType: nextType,
+                originalCost: nextOriginalCost,
             };
         });
     }, [selectedLinkedWarehouseItem]);
+
+    useEffect(() => {
+        if (!showInstallModal) {
+            return;
+        }
+        const vehicleStillVisible = installSelectableVehicles.some(vehicle => vehicle._id === installForm.vehicleRef);
+        if (!vehicleStillVisible && installForm.vehicleRef) {
+            setInstallForm(prev => ({ ...prev, vehicleRef: '', slotCode: '' }));
+        }
+    }, [installForm.vehicleRef, installSelectableVehicles, showInstallModal]);
+
+    useEffect(() => {
+        if (!showInstallModal || !installSelectedVehicle) {
+            return;
+        }
+        const preferredSlot = installSlotOptions.find(option => option.value === installForm.slotCode)?.value || installSlotOptions[0]?.value || '';
+        if (preferredSlot !== installForm.slotCode) {
+            setInstallForm(prev => ({ ...prev, slotCode: preferredSlot }));
+        }
+    }, [installForm.slotCode, installSelectedVehicle, installSlotOptions, showInstallModal]);
+
+    useEffect(() => {
+        if (!showInstallModal || !installForm.tireEventRef) {
+            return;
+        }
+        const tireStillAvailable = availableInstallTires.some(event => event._id === installForm.tireEventRef);
+        if (!tireStillAvailable) {
+            setInstallForm(prev => ({ ...prev, tireEventRef: '' }));
+        }
+    }, [availableInstallTires, installForm.tireEventRef, showInstallModal]);
 
     const handleSave = async () => {
         if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
@@ -368,19 +585,36 @@ export default function TiresPage() {
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
-        if (form.holderType === 'EXTERNAL_VEHICLE' && !form.externalPartyName && !form.externalPlateNumber) {
-            addToast('error', 'Isi nama pihak luar atau plat luar');
+        if (form.totalUsedPercent < 0 || form.totalUsedPercent > 100) {
+            addToast('error', 'Total pemakaian ban harus 0-100%');
             return;
+        }
+        if (requiresUsagePercentOnExit) {
+            if (form.usagePercentOnExit === null || !Number.isFinite(form.usagePercentOnExit)) {
+                addToast('error', 'Isi persentase pemakaian ban di unit sebelumnya');
+                return;
+            }
+            if (form.usagePercentOnExit < 0 || form.usagePercentOnExit > remainingPercentBeforeExit) {
+                addToast('error', `Persentase pemakaian ban harus 0-${remainingPercentBeforeExit}%`);
+                return;
+            }
         }
 
         setSaving(true);
         try {
             const vehicle = vehicles.find(item => item._id === form.vehicleRef);
+            const compatibilityVehicle = form.holderType === 'INTERNAL_VEHICLE' ? vehicle : form.holderType === 'WAREHOUSE' ? selectedCompatibilityVehicle : null;
             const payload = {
                 ...form,
                 vehiclePlate: vehicle?.plateNumber,
+                compatibleServiceRef: compatibilityVehicle?.serviceRef,
+                compatibleServiceName: compatibilityVehicle?.serviceName,
                 slotLabel: form.slotCode ? formatTireSlotLabel(form.slotCode) : undefined,
                 linkedWarehouseItemRef: form.linkedWarehouseItemRef || undefined,
+                purchaseCost: form.originalCost,
+                originalCost: form.originalCost,
+                totalUsedPercent: form.totalUsedPercent,
+                usagePercentOnExit: requiresUsagePercentOnExit ? form.usagePercentOnExit : undefined,
             };
 
             if (editTarget) {
@@ -422,6 +656,61 @@ export default function TiresPage() {
         }
     };
 
+    const handleInstallSave = async () => {
+        if (!installForm.tireEventRef) { addToast('error', 'Pilih ban pengganti'); return; }
+        if (!installForm.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
+        if (!installForm.slotCode) { addToast('error', 'Pilih slot ban'); return; }
+        if (!selectedInstallTire) { addToast('error', 'Ban pengganti tidak ditemukan'); return; }
+        if ((selectedInstallTire.originalCost ?? selectedInstallTire.purchaseCost ?? 0) <= 0) {
+            addToast('error', 'Ban pengganti harus punya harga/original cost');
+            return;
+        }
+        if (oldTireInInstallSlot) {
+            if (installForm.oldTireUsagePercent === null || !Number.isFinite(installForm.oldTireUsagePercent)) {
+                addToast('error', 'Isi persentase pemakaian ban lama');
+                return;
+            }
+            if (installForm.oldTireUsagePercent < 0 || installForm.oldTireUsagePercent > oldRemainingPercent) {
+                addToast('error', `Persentase ban lama harus 0-${oldRemainingPercent}%`);
+                return;
+            }
+        }
+
+        setSaving(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'tire-events',
+                    action: 'install-to-slot',
+                    data: {
+                        tireEventRef: installForm.tireEventRef,
+                        vehicleRef: installForm.vehicleRef,
+                        slotCode: installForm.slotCode,
+                        oldTireUsagePercent: oldTireInInstallSlot ? installForm.oldTireUsagePercent : undefined,
+                        oldTireDestination: oldTireInInstallSlot ? installForm.oldTireDestination : undefined,
+                        maintenanceDate: installForm.maintenanceDate,
+                        note: installForm.note,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal memasang ban');
+                return;
+            }
+            addToast('success', `Ban berhasil dipasang. Biaya maintenance ${formatCurrency(result.summary?.totalMaintenanceCost ?? installTotalCostPreview)}`);
+            setShowInstallModal(false);
+            resetInstallForm();
+            await loadData();
+        } catch {
+            addToast('error', 'Gagal memasang ban');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <div>
             <div className="page-header">
@@ -429,6 +718,7 @@ export default function TiresPage() {
                     <h1 className="page-title">Audit Semua Ban</h1>
                 </div>
                 <div className="page-actions">
+                    {canManageTires && <button className="btn btn-secondary" onClick={openInstall}><Wrench size={16} /> Pasang Ban</button>}
                     {canCreateTires && <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Catat Ban</button>}
                 </div>
             </div>
@@ -436,7 +726,6 @@ export default function TiresPage() {
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon success"><CheckCircle size={20} /></div><div className="kpi-content"><div className="kpi-label">Terpasang</div><div className="kpi-value">{mountedCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon info"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep</div><div className="kpi-value">{spareCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-icon warning"><ExternalLink size={20} /></div><div className="kpi-content"><div className="kpi-label">Dipinjam Keluar</div><div className="kpi-value">{loanedCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Di Gudang</div><div className="kpi-value">{warehouseCount}</div></div></div>
             </div>
 
@@ -460,7 +749,7 @@ export default function TiresPage() {
                         </select>
                         <select className="form-select" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | TireAssetStatus)}>
                             <option value="all">Semua Status</option>
-                            {TIRE_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            {BAN_LIST_STATUS_FILTER_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
                     </div>
                 </div>
@@ -471,6 +760,7 @@ export default function TiresPage() {
                                 <th>Kode Ban</th>
                                 <th>Lokasi Saat Ini</th>
                                 <th>Status</th>
+                                <th>Nilai Ban</th>
                                 <th>Merk & Ukuran</th>
                                 <th>Sumber</th>
                                 <th><SortableTableHeader label="Tgl Catat" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
@@ -479,9 +769,9 @@ export default function TiresPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalTires === 0 ? (
-                                    <tr><td colSpan={8}>
+                                    <tr><td colSpan={9}>
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada ban tercatat</div>
@@ -501,6 +791,11 @@ export default function TiresPage() {
                                             <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray'}`}>
                                                 <span className="badge-dot" /> {TIRE_ASSET_STATUS_MAP[event.status]?.label || event.status}
                                             </span>
+                                        </td>
+                                        <td>
+                                            <div className="font-medium">{formatCurrency(event.originalCost ?? event.purchaseCost ?? 0)}</div>
+                                            <div className="text-muted text-sm">Sisa {formatQuantity(event.remainingPercent ?? Math.max(100 - Number(event.totalUsedPercent || 0), 0), 2)}%</div>
+                                            <div className="text-muted text-sm">{formatCurrency(event.remainingValue ?? 0)}</div>
                                         </td>
                                         <td>
                                             <div className="font-medium">{event.tireBrand}</div>
@@ -586,6 +881,12 @@ export default function TiresPage() {
                                         <span className="mobile-record-value">{formatQuantity(event.accumulatedKm || 0, 0)} km</span>
                                     </div>
                                     <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Nilai Ban</span>
+                                        <span className="mobile-record-value">
+                                            {formatCurrency(event.remainingValue ?? 0)} tersisa dari {formatCurrency(event.originalCost ?? event.purchaseCost ?? 0)}
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Sumber</span>
                                         <span className="mobile-record-value">
                                             {event.sourcePurchaseNumber || event.linkedWarehouseItemCode || '-'}
@@ -614,7 +915,7 @@ export default function TiresPage() {
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
-                                Menampilkan {startIndex}-{endIndex} dari {totalItems} ban | {mountedCount} terpasang | {spareCount} serep | {loanedCount} dipinjam | {warehouseCount} gudang
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} ban | {mountedCount} terpasang | {spareCount} serep | {warehouseCount} gudang
                             </>
                         )}
                     />
@@ -639,6 +940,27 @@ export default function TiresPage() {
                                     <select className="form-select" value={form.tireType} onChange={e => updateForm('tireType', e.target.value as TireFormState['tireType'])} disabled={saving}>
                                         {TIRE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                                     </select>
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Harga Ban / Original Cost</label>
+                                    <FormattedNumberInput allowDecimal={false} value={form.originalCost} onValueChange={value => updateForm('originalCost', value)} placeholder="Ketik harga ban" disabled={saving} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Total Pemakaian (%)</label>
+                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={form.totalUsedPercent} onValueChange={value => updateForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} placeholder="0 - 100" disabled={saving || requiresUsagePercentOnExit} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Sisa Nilai Saat Ini</label>
+                                    <input
+                                        className="form-input"
+                                        value={formatCurrency(Math.round(Number(form.originalCost || 0) * Math.max(100 - Number(form.totalUsedPercent || 0), 0) / 100))}
+                                        readOnly
+                                    />
                                 </div>
                             </div>
 
@@ -699,25 +1021,20 @@ export default function TiresPage() {
                                             const nextHolderType = e.target.value as TireHolderType;
                                             const nextStatus = nextHolderType === 'WAREHOUSE'
                                                 ? 'IN_WAREHOUSE'
-                                                : nextHolderType === 'EXTERNAL_VEHICLE'
-                                                    ? 'LOANED_OUT'
-                                                    : (form.status === 'IN_WAREHOUSE' || form.status === 'LOANED_OUT' ? 'IN_USE' : form.status);
+                                                : (form.status === 'IN_WAREHOUSE' || form.status === 'LOANED_OUT' ? 'IN_USE' : form.status);
                                             setForm(prev => ({
                                                 ...prev,
                                                 holderType: nextHolderType,
                                                 status: nextStatus,
                                                 vehicleRef: nextHolderType === 'INTERNAL_VEHICLE' ? prev.vehicleRef : '',
                                                 slotCode: nextHolderType === 'INTERNAL_VEHICLE' ? prev.slotCode : '',
-                                                externalPartyName: nextHolderType === 'EXTERNAL_VEHICLE' ? prev.externalPartyName : '',
-                                                externalPlateNumber: nextHolderType === 'EXTERNAL_VEHICLE' ? prev.externalPlateNumber : '',
+                                                externalPartyName: '',
+                                                externalPlateNumber: '',
                                             }));
-                                            if (nextHolderType !== 'INTERNAL_VEHICLE') {
-                                                setVehicleCategoryFilter('');
-                                            }
                                         }}
                                         disabled={saving}
                                     >
-                                        {TIRE_HOLDER_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        {CATAT_BAN_HOLDER_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                     </select>
                                 </div>
                                 <div className="form-group">
@@ -732,20 +1049,19 @@ export default function TiresPage() {
                                                 status: nextStatus,
                                                 holderType: nextStatus === 'IN_WAREHOUSE'
                                                     ? 'WAREHOUSE'
-                                                    : nextStatus === 'LOANED_OUT'
-                                                        ? 'EXTERNAL_VEHICLE'
+                                                    : nextStatus === 'SCRAPPED'
+                                                        ? 'WAREHOUSE'
                                                         : 'INTERNAL_VEHICLE',
                                                 slotCode: nextStatus === 'IN_USE'
                                                     ? (prev.slotCode || '1L')
                                                     : '',
+                                                externalPartyName: '',
+                                                externalPlateNumber: '',
                                             }));
-                                            if (nextStatus === 'IN_WAREHOUSE' || nextStatus === 'LOANED_OUT') {
-                                                setVehicleCategoryFilter('');
-                                            }
                                         }}
                                         disabled={saving}
                                     >
-                                        {TIRE_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        {CATAT_BAN_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -754,12 +1070,12 @@ export default function TiresPage() {
                                 <div className="info-banner" style={{ marginBottom: '1rem' }}>
                                     <div className="info-banner-title">Sinkron Stok Gudang Ban</div>
                                     <div className="info-banner-text">
-                                        Ban ini terhubung ke {selectedLinkedWarehouseItem.itemCode} - {selectedLinkedWarehouseItem.name}. Saat ban masuk gudang stok akan bertambah, dan saat ban keluar ke unit atau pihak luar stok akan berkurang otomatis.
+                                        Ban ini terhubung ke {selectedLinkedWarehouseItem.itemCode} - {selectedLinkedWarehouseItem.name}. Saat ban masuk gudang stok akan bertambah, dan saat ban keluar ke unit stok akan berkurang otomatis.
                                     </div>
                                 </div>
                             )}
 
-                            {form.holderType === 'INTERNAL_VEHICLE' && (
+                            {(form.holderType === 'INTERNAL_VEHICLE' || form.holderType === 'WAREHOUSE') && (
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Kategori Armada</label>
@@ -783,33 +1099,40 @@ export default function TiresPage() {
                                             }}
                                             disabled={saving}
                                         >
-                                            <option value="">Semua kategori</option>
+                                            <option value="">{form.holderType === 'WAREHOUSE' ? 'Pilih kategori armada' : 'Semua kategori'}</option>
                                             {vehicleCategoryOptions.map(option => (
                                                 <option key={option.value} value={option.value}>
                                                     {option.label} ({option.vehicleCount} unit)
                                                 </option>
                                             ))}
                                         </select>
+                                        {form.holderType === 'WAREHOUSE' && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                                Kategori ini dipakai agar ban gudang muncul di pilihan kendaraan yang sesuai.
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Kendaraan</label>
-                                        <select
-                                            className="form-select"
-                                            value={form.vehicleRef}
-                                            onChange={e => {
-                                                const nextVehicleRef = e.target.value;
-                                                const nextVehicle = selectableVehicles.find(vehicle => vehicle._id === nextVehicleRef) || null;
-                                                if (nextVehicle) {
-                                                    setVehicleCategoryFilter(getTireVehicleCategoryValue(nextVehicle));
-                                                }
-                                                setForm(prev => ({ ...prev, vehicleRef: nextVehicleRef, slotCode: '' }));
-                                            }}
-                                            disabled={saving}
-                                        >
-                                            <option value="">Pilih kendaraan</option>
-                                            {selectableVehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
-                                        </select>
-                                    </div>
+                                    {form.holderType === 'INTERNAL_VEHICLE' && (
+                                        <div className="form-group">
+                                            <label className="form-label">Kendaraan</label>
+                                            <select
+                                                className="form-select"
+                                                value={form.vehicleRef}
+                                                onChange={e => {
+                                                    const nextVehicleRef = e.target.value;
+                                                    const nextVehicle = selectableVehicles.find(vehicle => vehicle._id === nextVehicleRef) || null;
+                                                    if (nextVehicle) {
+                                                        setVehicleCategoryFilter(getTireVehicleCategoryValue(nextVehicle));
+                                                    }
+                                                    setForm(prev => ({ ...prev, vehicleRef: nextVehicleRef, slotCode: '' }));
+                                                }}
+                                                disabled={saving}
+                                            >
+                                                <option value="">Pilih kendaraan</option>
+                                                {selectableVehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -858,15 +1181,34 @@ export default function TiresPage() {
                                 </div>
                             )}
 
-                            {form.holderType === 'EXTERNAL_VEHICLE' && (
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Nama Pihak Luar</label>
-                                        <input className="form-input" value={form.externalPartyName} onChange={e => updateForm('externalPartyName', e.target.value)} disabled={saving} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Plat / Identitas Unit</label>
-                                        <input className="form-input" value={form.externalPlateNumber} onChange={e => updateForm('externalPlateNumber', e.target.value.toUpperCase())} disabled={saving} />
+                            {requiresUsagePercentOnExit && (
+                                <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                    <div className="info-banner-title">Alokasi Biaya Pemakaian Ban</div>
+                                    <div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}>
+                                        <div>
+                                            Ban keluar dari {resolvedEditTarget?.vehiclePlate || editTarget?.vehiclePlate || 'unit sebelumnya'}. Isi persen pemakaian selama ban berada di unit tersebut.
+                                        </div>
+                                        <div className="form-row" style={{ marginBottom: 0 }}>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Persentase Pemakaian di Unit Ini</label>
+                                                <FormattedNumberInput
+                                                    allowDecimal
+                                                    maxFractionDigits={2}
+                                                    value={form.usagePercentOnExit}
+                                                    onValueChange={value => updateForm('usagePercentOnExit', value)}
+                                                    placeholder={`Maks ${remainingPercentBeforeExit}%`}
+                                                    disabled={saving}
+                                                />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Preview Biaya</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={`${formatCurrency(usageCostPreview)} | sisa ${formatQuantity(remainingPercentAfterPreview, 2)}% (${formatCurrency(remainingValueAfterPreview)})`}
+                                                    readOnly
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -908,6 +1250,158 @@ export default function TiresPage() {
                 </div>
             )}
 
+            {showInstallModal && (
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowInstallModal(false); }}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Pasang Ban</h3>
+                            <button className="modal-close" onClick={() => setShowInstallModal(false)} disabled={saving}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kategori Armada</label>
+                                    <select
+                                        className="form-select"
+                                        value={installForm.vehicleCategory}
+                                        onChange={e => setInstallForm(prev => ({ ...prev, vehicleCategory: e.target.value, vehicleRef: '', slotCode: '' }))}
+                                        disabled={saving}
+                                    >
+                                        <option value="">Semua kategori</option>
+                                        {installVehicleCategoryOptions.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label} ({option.vehicleCount} unit)</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Kendaraan</label>
+                                    <select
+                                        className="form-select"
+                                        value={installForm.vehicleRef}
+                                        onChange={e => {
+                                            const nextVehicle = installSelectableVehicles.find(vehicle => vehicle._id === e.target.value) || null;
+                                            setInstallForm(prev => ({
+                                                ...prev,
+                                                vehicleRef: e.target.value,
+                                                vehicleCategory: nextVehicle ? getTireVehicleCategoryValue(nextVehicle) : prev.vehicleCategory,
+                                                slotCode: '',
+                                            }));
+                                        }}
+                                        disabled={saving}
+                                    >
+                                        <option value="">Pilih kendaraan</option>
+                                        {installSelectableVehicles.map(vehicle => (
+                                            <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Ban Pengganti</label>
+                                    <select className="form-select" value={installForm.tireEventRef} onChange={e => updateInstallForm('tireEventRef', e.target.value)} disabled={saving || !installSelectedVehicle}>
+                                        <option value="">{installSelectedVehicle ? 'Pilih ban sesuai kategori armada' : 'Pilih kendaraan dulu'}</option>
+                                        {availableInstallTires.map(event => (
+                                            <option key={event._id} value={event._id}>
+                                                {event.tireCodeLabel} - {event.tireBrand} {event.tireSize} | {formatCurrency(event.originalCost ?? event.purchaseCost ?? 0)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {installSelectedVehicle && availableInstallTires.length === 0 && (
+                                        <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
+                                            Tidak ada stok ban yang cocok untuk kategori armada ini.
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tanggal Pasang</label>
+                                    <input type="date" className="form-input" value={installForm.maintenanceDate} onChange={e => updateInstallForm('maintenanceDate', e.target.value)} disabled={saving} />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Slot Ban</label>
+                                    <select className="form-select" value={installForm.slotCode} onChange={e => updateInstallForm('slotCode', e.target.value)} disabled={saving || !installSelectedVehicle}>
+                                        {!installSelectedVehicle && <option value="">Pilih kendaraan dulu</option>}
+                                        {installSlotOptions.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan Ban Lama</label>
+                                    <select className="form-select" value={installForm.oldTireDestination} onChange={e => updateInstallForm('oldTireDestination', e.target.value as TireInstallFormState['oldTireDestination'])} disabled={saving || !oldTireInInstallSlot}>
+                                        <option value="WAREHOUSE">Gudang</option>
+                                        <option value="SCRAPPED">Afkir</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {oldTireInInstallSlot && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Pemakaian Ban Lama di Unit Ini</label>
+                                        <FormattedNumberInput
+                                            allowDecimal
+                                            maxFractionDigits={2}
+                                            value={installForm.oldTireUsagePercent}
+                                            onValueChange={value => updateInstallForm('oldTireUsagePercent', value)}
+                                            placeholder={`Maks ${formatQuantity(oldRemainingPercent, 2)}%`}
+                                            disabled={saving}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.55rem' }}>
+                                    {oldTireInInstallSlot ? (
+                                        <>
+                                            <div className="font-medium">{oldTireInInstallSlot.tireCodeLabel} - {oldTireInInstallSlot.tireBrand || '-'} {oldTireInInstallSlot.tireSize || ''}</div>
+                                            <div className="text-sm">Posisi terakhir: {oldTireInInstallSlot.placementLabel}</div>
+                                            <div className="text-sm">Terpakai {formatQuantity(oldInstallUsedBefore, 2)}% | Sisa {formatQuantity(oldRemainingPercent, 2)}% ({formatCurrency(oldInstallRemainingValueBefore)})</div>
+                                        </>
+                                    ) : (
+                                        <div className="text-muted text-sm">Tidak ada biaya ban lama karena slot belum berisi ban.</div>
+                                    )}
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.55rem' }}>
+                                    {selectedInstallTire ? (
+                                        <>
+                                            <div className="font-medium">{selectedInstallTire.tireCodeLabel} - {selectedInstallTire.tireBrand || '-'} {selectedInstallTire.tireSize || ''}</div>
+                                            <div className="text-sm">Posisi terakhir: {selectedInstallTire.placementLabel}</div>
+                                            <div className="text-sm">Terpakai {formatQuantity(selectedInstallTire.totalUsedPercent || 0, 2)}% | Sisa {formatQuantity(selectedInstallRemainingPercent, 2)}% ({formatCurrency(selectedInstallRemainingValue)})</div>
+                                        </>
+                                    ) : (
+                                        <div className="text-muted text-sm">Pilih ban untuk melihat persentase dan biaya yang akan masuk maintenance.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Total Biaya Maintenance</label>
+                                    <input className="form-input" value={formatCurrency(installTotalCostPreview)} readOnly />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Catatan</label>
+                                    <input className="form-input" value={installForm.note} onChange={e => updateInstallForm('note', e.target.value)} disabled={saving} />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowInstallModal(false)} disabled={saving}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleInstallSave} disabled={saving}>{saving ? 'Memasang...' : 'Pasang Ban'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {historyTarget && (
                 <div className="modal-overlay" onClick={() => { if (!loadingHistory) setHistoryTarget(null); }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
@@ -937,6 +1431,11 @@ export default function TiresPage() {
                                         </div>
                                         <div className="font-medium" style={{ marginBottom: '0.25rem' }}>{getTireHistoryTransitionLabel(log)}</div>
                                         <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{log.note || '-'}</div>
+                                        {typeof log.usageCost === 'number' && (
+                                            <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
+                                                Pemakaian {formatQuantity(log.usagePercent || 0, 2)}% oleh {log.costSourceVehiclePlate || '-'} = {formatCurrency(log.usageCost)}. Sisa {formatQuantity(log.remainingPercentAfter || 0, 2)}% ({formatCurrency(log.remainingValueAfter || 0)}).
+                                            </div>
+                                        )}
                                         <div className="text-muted text-sm">Oleh: {log.actorUserName || '-'}</div>
                                     </div>
                                 ))}

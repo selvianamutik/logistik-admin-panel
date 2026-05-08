@@ -166,6 +166,34 @@ export function getSelectableVehicleServiceOptions(services: Service[], currentS
     return services.filter(service => service.active !== false || service._id === currentServiceRef);
 }
 
+export function normalizeVehicleUnitCodePrefix(value: unknown) {
+    return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+export function updateVehicleUnitCodeForServiceChange(params: {
+    unitCode: string;
+    previousService?: Pick<Service, 'code'> | null;
+    nextService?: Pick<Service, 'code'> | null;
+}) {
+    const currentUnitCode = params.unitCode.trim().toUpperCase();
+    if (!currentUnitCode) return '';
+
+    const previousCode = normalizeVehicleUnitCodePrefix(params.previousService?.code);
+    const nextCode = normalizeVehicleUnitCodePrefix(params.nextService?.code);
+    if (!nextCode) return currentUnitCode;
+
+    if (previousCode && currentUnitCode.startsWith(`${previousCode}-`)) {
+        const suffix = currentUnitCode.slice(previousCode.length + 1);
+        return suffix ? `${nextCode}-${suffix}` : '';
+    }
+
+    return currentUnitCode;
+}
+
 function parseCapacityRangeValue(value: string) {
     if (!value.trim()) {
         return undefined;

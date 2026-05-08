@@ -27,7 +27,7 @@ import {
 import { getMaintenanceMaterialUsageRows, summarizeItemUsageRows } from '@/lib/inventory-material-usage';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Maintenance, Purchase, PurchaseItem, StockMovement, Supplier, TireEvent, WarehouseItem } from '@/lib/types';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 
 import { useApp, useToast } from '../../../layout';
 
@@ -38,6 +38,15 @@ function getStockBadge(item: WarehouseItem) {
   if (stock <= 0) return { label: 'Habis', className: 'badge-danger' };
   if (min > 0 && stock <= min) return { label: 'Menipis', className: 'badge-warning' };
   return { label: 'Aman', className: 'badge-success' };
+}
+
+function renderTireStatus(tire: TireEvent) {
+  const statusMeta = TIRE_ASSET_STATUS_MAP[tire.status];
+  return (
+    <span className={`badge badge-${statusMeta?.color || 'gray'}`}>
+      {statusMeta?.label || tire.status || '-'}
+    </span>
+  );
 }
 
 function PurchaseLifecycleBadges({ purchase }: { purchase?: Purchase }) {
@@ -652,7 +661,7 @@ export default function WarehouseItemDetailPage() {
                   {linkedTires.map((tire) => (
                     <tr key={tire._id}>
                       <td>{canOpenTires ? <Link href={`/fleet/tires?q=${encodeURIComponent(tire.tireCode || '')}`} style={{ color: 'var(--color-primary)' }}>{tire.tireCode || '-'}</Link> : (tire.tireCode || '-')}</td>
-                      <td>{tire.status || '-'}</td>
+                      <td>{renderTireStatus(tire)}</td>
                       <td>{tire.posisi || '-'}</td>
                       <td>{formatDate(tire.sourceReceiveDate || tire.installDate)}</td>
                     </tr>
@@ -670,7 +679,7 @@ export default function WarehouseItemDetailPage() {
                     </div>
                   </div>
                   <div className="mobile-record-grid">
-                    <div className="mobile-record-field"><span className="mobile-record-label">Status</span><span className="mobile-record-value">{tire.status || '-'}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Status</span><span className="mobile-record-value">{renderTireStatus(tire)}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Tanggal</span><span className="mobile-record-value">{formatDate(tire.sourceReceiveDate || tire.installDate)}</span></div>
                   </div>
                 </div>

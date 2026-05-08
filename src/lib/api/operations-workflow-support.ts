@@ -49,8 +49,18 @@ export type NormalizedTireEventPayload = {
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
     tireBrand: string;
     tireSize: string;
+    compatibleServiceRef?: string;
+    compatibleServiceName?: string;
     installDate: string;
     replaceDate?: string;
+    purchaseCost?: number;
+    originalCost?: number;
+    totalUsedPercent?: number;
+    remainingPercent?: number;
+    remainingValue?: number;
+    maintenanceCostPostedPercent?: number;
+    maintenanceCostPostedAmount?: number;
+    lastMaintenanceCostRef?: string;
     accumulatedKm?: number;
     notes?: string;
 };
@@ -874,9 +884,24 @@ export async function normalizeTireEventPayload(
     const tireSize = normalizeText(data.tireSize);
     const installDate = normalizeText(data.installDate);
     const replaceDate = normalizeOptionalText(data.replaceDate);
+    const parsedPurchaseCost = normalizeCurrencyNumber(data.purchaseCost ?? data.originalCost ?? 0, { maxFractionDigits: 0 });
+    const parsedOriginalCost = normalizeCurrencyNumber(data.originalCost ?? data.purchaseCost ?? 0, { maxFractionDigits: 0 });
+    const purchaseCost = Number.isFinite(parsedPurchaseCost) ? Math.max(parsedPurchaseCost, 0) : 0;
+    const originalCost = Number.isFinite(parsedOriginalCost) ? Math.max(parsedOriginalCost, 0) : purchaseCost;
+    const parsedTotalUsedPercent = normalizeNumber(data.totalUsedPercent ?? 0, { maxFractionDigits: 2 });
+    const totalUsedPercent = Math.max(0, Math.min(Number.isFinite(parsedTotalUsedPercent) ? parsedTotalUsedPercent : 0, 100));
+    const remainingPercent = Math.max(100 - totalUsedPercent, 0);
+    const remainingValue = Math.round(originalCost * remainingPercent) / 100;
+    const parsedPostedPercent = normalizeNumber(data.maintenanceCostPostedPercent ?? 0, { maxFractionDigits: 2 });
+    const maintenanceCostPostedPercent = Math.max(0, Math.min(Number.isFinite(parsedPostedPercent) ? parsedPostedPercent : 0, 100));
+    const parsedPostedAmount = normalizeCurrencyNumber(data.maintenanceCostPostedAmount ?? 0, { maxFractionDigits: 0 });
+    const maintenanceCostPostedAmount = Number.isFinite(parsedPostedAmount) ? Math.max(parsedPostedAmount, 0) : 0;
+    const lastMaintenanceCostRef = normalizeOptionalText(data.lastMaintenanceCostRef);
     const parsedAccumulatedKm = normalizeNumber(data.accumulatedKm, { maxFractionDigits: 0 });
     const accumulatedKm = Number.isFinite(parsedAccumulatedKm) ? Math.max(parsedAccumulatedKm, 0) : 0;
     const notes = normalizeOptionalText(data.notes);
+    const compatibleServiceRef = normalizeOptionalText(data.compatibleServiceRef);
+    const compatibleServiceName = normalizeOptionalText(data.compatibleServiceName);
     const externalPartyName = normalizeOptionalText(data.externalPartyName);
     const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
     const tireType =
@@ -992,8 +1017,18 @@ export async function normalizeTireEventPayload(
         tireType,
         tireBrand,
         tireSize,
+        compatibleServiceRef,
+        compatibleServiceName,
         installDate,
         replaceDate,
+        purchaseCost,
+        originalCost,
+        totalUsedPercent,
+        remainingPercent,
+        remainingValue,
+        maintenanceCostPostedPercent,
+        maintenanceCostPostedAmount,
+        lastMaintenanceCostRef,
         accumulatedKm,
         notes,
     };
