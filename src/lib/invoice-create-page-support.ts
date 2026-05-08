@@ -421,6 +421,54 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             volumeM3: billableCargo.volumeM3,
         };
     };
+    const aggregateDuplicateBillableRows = (inputRows: NotaItemRow[]) => {
+        const aggregated = new Map<string, NotaItemRow>();
+        const getItemCoverageKey = (row: NotaItemRow) => {
+            const itemRefs = Array.from(new Set([
+                ...(row.deliveryOrderItemRefs || []),
+                row.deliveryOrderItemRef || '',
+            ].map(value => value.trim()).filter(Boolean))).sort();
+            return itemRefs.length > 0 ? itemRefs.join('|') : '-';
+        };
+
+        for (const row of inputRows) {
+            const key = [
+                row.doRef,
+                row.noSJ,
+                row.customerRef || '',
+                row.customerName || '',
+                row.tujuan || '',
+                row.barang || '',
+                row.dari || '',
+                getItemCoverageKey(row),
+            ].join('::');
+            const existing = aggregated.get(key);
+            if (!existing) {
+                aggregated.set(key, { ...row });
+                continue;
+            }
+
+            const deliveryOrderItemRefs = Array.from(new Set([
+                ...(existing.deliveryOrderItemRefs || []),
+                ...(row.deliveryOrderItemRefs || []),
+                existing.deliveryOrderItemRef || '',
+                row.deliveryOrderItemRef || '',
+            ].map(value => value.trim()).filter(Boolean)));
+
+            aggregated.set(key, {
+                ...existing,
+                id: existing.id || row.id,
+                deliveryOrderItemRef: existing.deliveryOrderItemRef || row.deliveryOrderItemRef,
+                deliveryOrderItemRefs,
+                collie: (existing.collie || 0) + (row.collie || 0),
+                beratKg: (existing.beratKg || 0) + (row.beratKg || 0),
+                volumeM3: (existing.volumeM3 || 0) + (row.volumeM3 || 0),
+                ket: [existing.ket, row.ket].map(value => value?.trim()).filter(Boolean).join('; '),
+            });
+        }
+
+        return [...aggregated.values()];
+    };
 
     if (relatedItems.length === 0) {
         if (shipperReferences.length > 0) {
@@ -554,9 +602,9 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         return rows;
     }
 
-    return rows.filter(row =>
+    return aggregateDuplicateBillableRows(rows.filter(row =>
         (row.collie || 0) > 0 ||
         (row.beratKg || 0) > 0 ||
         hasDeliveryOrderBillableCargo(deliveryOrder, getDropReferenceScope(row.noSJ))
-    );
+    ));
 }
