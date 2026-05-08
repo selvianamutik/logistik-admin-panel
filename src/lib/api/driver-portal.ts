@@ -5,6 +5,7 @@ import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { isDeliveryOrderResourceLocked } from '@/lib/trip-resource-lock-support';
+import { mapDeliveryOrderToSuratJalanRecords } from '@/lib/trip-document-mappers';
 import type { SuratJalanRecord } from '@/lib/trip-document-types';
 import type {
     CompanyProfile,
@@ -258,12 +259,91 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
                 receiverAddress: item.receiverAddress,
                 pickupAddress: item.pickupAddress || (typeof relatedOrder?.pickupAddress === 'string' ? relatedOrder.pickupAddress : undefined),
                 driverCargoItems: cargoByDeliveryOrderRef.get(item._id) || [],
-                driverSuratJalanRecords: suratJalanByTripRef.get(item._id) || [],
+                driverSuratJalanRecords: mergeDriverSuratJalanRecordsWithLiveCargo(
+                    suratJalanByTripRef.get(item._id) || [],
+                    mapDeliveryOrderToSuratJalanRecords(item, cargoByDeliveryOrderRef.get(item._id) || [])
+                ),
                 allowsDirectCargoInput: typeof item.orderRef === 'string' ? (directCargoCapabilities.get(item.orderRef) ?? false) : false,
                 vehicleLastOdometer: vehicle?.lastOdometer,
                 vehicleLastOdometerAt: vehicle?.lastOdometerAt,
             };
         });
+}
+
+function hasDriverSuratJalanCargo(summary?: SuratJalanRecord['holdCargo']) {
+    return Boolean(
+        (summary?.qtyKoli || 0) > 0 ||
+        (summary?.weightKg || 0) > 0 ||
+        (summary?.volumeM3 || 0) > 0
+    );
+}
+
+function getDriverSuratJalanRecordKey(record: Pick<SuratJalanRecord, '_id' | 'referenceKey' | 'suratJalanNumber'>) {
+    return [
+        record._id,
+        record.referenceKey ? `key:${record.referenceKey}` : '',
+        record.suratJalanNumber ? `number:${record.suratJalanNumber.trim().toUpperCase()}` : '',
+    ].filter(Boolean);
+}
+
+function mergeDriverSuratJalanRecordWithLiveCargo(
+    record: SuratJalanRecord,
+    liveRecord?: SuratJalanRecord
+): SuratJalanRecord {
+    if (!liveRecord) {
+        return record;
+    }
+    const isDraftRecordWithoutActualCargo =
+        record.tripStatus === 'CREATED' &&
+        liveRecord.itemCount === 0 &&
+        ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveRecord.tripStatus || '') &&
+        !hasDriverSuratJalanCargo(record.billableCargo) &&
+        !hasDriverSuratJalanCargo(record.holdCargo) &&
+        !hasDriverSuratJalanCargo(record.returnCargo) &&
+        !hasDriverSuratJalanCargo(liveRecord.billableCargo) &&
+        !hasDriverSuratJalanCargo(liveRecord.holdCargo) &&
+        !hasDriverSuratJalanCargo(liveRecord.returnCargo);
+    const liveHasHoldCargo = hasDriverSuratJalanCargo(liveRecord.holdCargo);
+    return {
+        ...record,
+        pickupAddress: liveHasHoldCargo
+            ? liveRecord.pickupAddress || record.pickupAddress
+            : record.pickupAddress || liveRecord.pickupAddress,
+        tripStatus: isDraftRecordWithoutActualCargo ? record.tripStatus : liveRecord.tripStatus,
+        itemCount: liveRecord.itemCount,
+        cargoSummary: liveRecord.cargoSummary,
+        billableCargo: liveRecord.billableCargo,
+        holdCargo: liveRecord.holdCargo,
+        returnCargo: liveRecord.returnCargo,
+    };
+}
+
+function mergeDriverSuratJalanRecordsWithLiveCargo(
+    records: SuratJalanRecord[],
+    liveRecords: SuratJalanRecord[]
+) {
+    const liveByIdentity = new Map<string, SuratJalanRecord>();
+    for (const liveRecord of liveRecords) {
+        for (const key of getDriverSuratJalanRecordKey(liveRecord)) {
+            liveByIdentity.set(key, liveRecord);
+        }
+    }
+
+    const merged = records.map(record => {
+        const liveRecord = getDriverSuratJalanRecordKey(record)
+            .map(key => liveByIdentity.get(key))
+            .find(Boolean);
+        return mergeDriverSuratJalanRecordWithLiveCargo(record, liveRecord);
+    });
+
+    const existingKeys = new Set(merged.flatMap(getDriverSuratJalanRecordKey));
+    for (const liveRecord of liveRecords) {
+        if (getDriverSuratJalanRecordKey(liveRecord).some(key => existingKeys.has(key))) {
+            continue;
+        }
+        merged.push(liveRecord);
+    }
+    return merged;
 }
 
 export async function getDriverOrderCargoCapabilities(orderRefs: string[]) {

@@ -477,9 +477,11 @@ function getDriverOrderSjRows(order: DriverAssignedDeliveryOrder) {
             : plannedSummary;
         const holdSummary = suratJalanRecord?.holdCargo;
         const billableSummary = suratJalanRecord?.billableCargo;
+        const effectivePickupAddress = suratJalanRecord?.pickupAddress || reference.pickupAddress || '';
 
         return {
             ...reference,
+            pickupAddress: effectivePickupAddress,
             documentId,
             tripStatus,
             hasHoldCargo,

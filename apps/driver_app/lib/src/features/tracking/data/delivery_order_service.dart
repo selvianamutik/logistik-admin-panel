@@ -416,6 +416,7 @@ class DeliveryOrderService {
       pickupStops: pickupStops,
       shipperReferences: _mapShipperReferences(
         json['shipperReferences'],
+        suratJalanRecords: json['driverSuratJalanRecords'],
         fallbackCustomerDoNumber: (json['customerDoNumber'] as String?)?.trim(),
         fallbackPickupStopKey: pickupStops.isNotEmpty
             ? pickupStops.first.key
@@ -611,19 +612,33 @@ class DeliveryOrderService {
 
   List<DeliveryShipperReference> _mapShipperReferences(
     dynamic raw, {
+    dynamic suratJalanRecords,
     String? fallbackCustomerDoNumber,
     String? fallbackPickupStopKey,
   }) {
+    final suratJalanPickupByKey = _mapSuratJalanPickupAddresses(
+      suratJalanRecords,
+    );
     final references = <DeliveryShipperReference>[];
     if (raw is List) {
       for (final item in raw.whereType<Map<String, dynamic>>()) {
         final referenceNumber = (item['referenceNumber'] as String?)?.trim();
         if (referenceNumber == null || referenceNumber.isEmpty) continue;
+        final referenceKey = (item['_key'] as String?)?.trim();
+        final pickupAddress =
+            (referenceKey != null && referenceKey.isNotEmpty
+                ? suratJalanPickupByKey['key:$referenceKey']
+                : null) ??
+            suratJalanPickupByKey['number:${referenceNumber.toUpperCase()}'] ??
+            (item['pickupAddress'] as String?)?.trim();
         references.add(
           DeliveryShipperReference(
             referenceNumber: referenceNumber,
-            key: (item['_key'] as String?)?.trim(),
+            key: referenceKey,
             pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
+            pickupAddress: pickupAddress?.isNotEmpty == true
+                ? pickupAddress
+                : null,
             receiverName: (item['receiverName'] as String?)?.trim(),
             receiverCompany: (item['receiverCompany'] as String?)?.trim(),
             receiverAddress: (item['receiverAddress'] as String?)?.trim(),
@@ -643,6 +658,24 @@ class DeliveryOrderService {
       );
     }
     return references;
+  }
+
+  Map<String, String> _mapSuratJalanPickupAddresses(dynamic raw) {
+    final result = <String, String>{};
+    if (raw is! List) return result;
+    for (final item in raw.whereType<Map<String, dynamic>>()) {
+      final pickupAddress = (item['pickupAddress'] as String?)?.trim();
+      if (pickupAddress == null || pickupAddress.isEmpty) continue;
+      final referenceKey = (item['referenceKey'] as String?)?.trim();
+      if (referenceKey != null && referenceKey.isNotEmpty) {
+        result['key:$referenceKey'] = pickupAddress;
+      }
+      final referenceNumber = (item['suratJalanNumber'] as String?)?.trim();
+      if (referenceNumber != null && referenceNumber.isNotEmpty) {
+        result['number:${referenceNumber.toUpperCase()}'] = pickupAddress;
+      }
+    }
+    return result;
   }
 
   List<DeliveryCargoItem> _mapCargoItems(dynamic raw) {

@@ -3032,12 +3032,32 @@ class _ManifestSummaryCard extends StatelessWidget {
                             color: scheme.outline.withValues(alpha: 0.32),
                           ),
                         ),
-                        child: Text(
-                          shipperRef.referenceNumber,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              shipperRef.referenceNumber,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (shipperRef.pickupAddress?.trim().isNotEmpty ==
+                                true) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                shipperRef.pickupAddress!.trim(),
+                                style: TextStyle(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.58,
+                                  ),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     )

@@ -29,6 +29,7 @@ class DeliveryShipperReference {
     required this.referenceNumber,
     this.key,
     this.pickupStopKey,
+    this.pickupAddress,
     this.receiverName,
     this.receiverCompany,
     this.receiverAddress,
@@ -37,6 +38,7 @@ class DeliveryShipperReference {
   final String referenceNumber;
   final String? key;
   final String? pickupStopKey;
+  final String? pickupAddress;
   final String? receiverName;
   final String? receiverCompany;
   final String? receiverAddress;
