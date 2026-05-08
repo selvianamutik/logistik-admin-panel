@@ -80,6 +80,16 @@ type RelationalListResult<T> = {
     total: number;
 };
 
+type RelationalMutationOptions = {
+    skipReadCacheClear?: boolean;
+};
+
+function clearRelationalReadCacheUnlessSkipped(options?: RelationalMutationOptions) {
+    if (!options?.skipReadCacheClear) {
+        clearRelationalReadCache();
+    }
+}
+
 type RelationalConfig = {
     table: string;
     fieldMap: Record<string, string>;
@@ -2137,7 +2147,8 @@ export async function relationalMaxNumericSuffixByPrefix(
 }
 
 export async function relationalUpsertDocument<T = Record<string, unknown>>(
-    doc: { _id?: string; _type: string; [key: string]: unknown }
+    doc: { _id?: string; _type: string; [key: string]: unknown },
+    options?: RelationalMutationOptions,
 ): Promise<T | null> {
     if (!supportsRelationalDocType(doc._type)) {
         return null;
@@ -2154,7 +2165,7 @@ export async function relationalUpsertDocument<T = Record<string, unknown>>(
             body: JSON.stringify(mapDocumentToRow(doc._type, doc)),
         });
         const rows = await response.json() as RelationalRow[];
-        clearRelationalReadCache();
+        clearRelationalReadCacheUnlessSkipped(options);
         return rows[0] ? mapRowToDocument(doc._type, rows[0]) as T : null;
     } catch (error) {
         if (isMissingRelationalTableError(error)) {
@@ -2168,6 +2179,7 @@ export async function relationalPatchDocument<T = Record<string, unknown>>(
     docType: SupportedDocType,
     id: string,
     updates: Record<string, unknown>,
+    options?: RelationalMutationOptions,
 ): Promise<T | null> {
     const config = RELATIONAL_CONFIG[docType];
     const patch: Record<string, unknown> = {};
@@ -2246,7 +2258,7 @@ export async function relationalPatchDocument<T = Record<string, unknown>>(
             }
         );
         const rows = await response.json() as RelationalRow[];
-        clearRelationalReadCache();
+        clearRelationalReadCacheUnlessSkipped(options);
         return rows[0] ? mapRowToDocument(docType, rows[0]) as T : null;
     } catch (error) {
         if (isMissingRelationalTableError(error)) {

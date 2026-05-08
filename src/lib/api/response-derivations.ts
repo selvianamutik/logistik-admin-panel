@@ -5,6 +5,7 @@ import {
     hasDeliveryOrderBillableCargo,
 } from '@/lib/delivery-order-completion';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
+import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
 import { listDocumentsByFilter } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order, TrackingLog, TripRouteRate } from '@/lib/types';
 
@@ -74,6 +75,87 @@ type OrderItemStatusSource = OrderItemStatusSummary & {
     orderRef?: string;
 };
 
+type ResponseDerivationCacheEntry = {
+    expiresAt: number;
+    value: unknown;
+};
+
+const RESPONSE_DERIVATION_CACHE_TTL_MS = Math.max(
+    0,
+    Number.parseInt(process.env.RESPONSE_DERIVATION_CACHE_TTL_MS || '10000', 10) || 10000
+);
+const RESPONSE_DERIVATION_CACHE_MAX_ENTRIES = 100;
+const responseDerivationCache = new Map<string, ResponseDerivationCacheEntry>();
+
+export function clearResponseDerivationCache() {
+    responseDerivationCache.clear();
+}
+
+registerApiReadCacheInvalidator(clearResponseDerivationCache);
+
+function cloneResponseDerivationValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function getResponseDerivationCache<T>(key: string): T | null {
+    if (!key || RESPONSE_DERIVATION_CACHE_TTL_MS <= 0) {
+        return null;
+    }
+
+    const cached = responseDerivationCache.get(key);
+    if (!cached) {
+        return null;
+    }
+
+    if (cached.expiresAt <= Date.now()) {
+        responseDerivationCache.delete(key);
+        return null;
+    }
+
+    return cloneResponseDerivationValue(cached.value as T);
+}
+
+function setResponseDerivationCache<T>(key: string, value: T) {
+    if (key && RESPONSE_DERIVATION_CACHE_TTL_MS > 0) {
+        responseDerivationCache.set(key, {
+            expiresAt: Date.now() + RESPONSE_DERIVATION_CACHE_TTL_MS,
+            value: cloneResponseDerivationValue(value),
+        });
+
+        while (responseDerivationCache.size > RESPONSE_DERIVATION_CACHE_MAX_ENTRIES) {
+            const oldestKey = responseDerivationCache.keys().next().value as string | undefined;
+            if (!oldestKey) break;
+            responseDerivationCache.delete(oldestKey);
+        }
+    }
+
+    return value;
+}
+
+function buildDocumentSignature<T extends { _id?: string; _updatedAt?: string; status?: string }>(
+    documents: T[],
+    extra?: Record<string, unknown>,
+) {
+    return JSON.stringify({
+        documents: documents.map(item => ({
+            _id: normalizeOptionalText(item._id),
+            _updatedAt: normalizeOptionalText(item._updatedAt),
+            status: normalizeOptionalText(item.status),
+        })),
+        extra: extra || {},
+    });
+}
+
+function hasDeliveryOrderDerivationOptions(options: DeliveryOrderResponseDerivationOptions) {
+    return Boolean(
+        options.deliveryOrderItems ||
+        options.trackingLogs ||
+        options.services ||
+        options.vehicles ||
+        options.tripRouteRates
+    );
+}
+
 function roundQuantity(value: number, maxFractionDigits = 3) {
     if (!Number.isFinite(value)) return 0;
     const multiplier = 10 ** maxFractionDigits;
@@ -96,6 +178,12 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
         return orders;
     }
 
+    const cacheKey = `orders:${buildDocumentSignature(orders)}`;
+    const cached = getResponseDerivationCache<OrderResponseSource[]>(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
     const orderIds = orders.map(item => item._id).filter(Boolean);
     const orderItems = orderIds.length > 0
         ? await listDocumentsByFilter<OrderItemStatusSource>('orderItem', { orderRef: orderIds })
@@ -110,7 +198,7 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
         itemsByOrderRef.set(orderRef, current);
     }
 
-    return orders.map(order => {
+    const derivedOrders = orders.map(order => {
         if (order.status === 'CANCELLED') {
             return order;
         }
@@ -130,6 +218,8 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
             status: derivedStatus,
         };
     });
+
+    return setResponseDerivationCache(cacheKey, derivedOrders);
 }
 
 function buildFallbackActualDropPoint(deliveryOrder: DeliveryOrderResponseSource, totals: ActualCargoSummary) {
@@ -229,6 +319,17 @@ export async function deriveDeliveryOrdersForResponse(
         return deliveryOrders;
     }
 
+    const canUseCache = !hasDeliveryOrderDerivationOptions(options);
+    const cacheKey = canUseCache
+        ? `delivery-orders:${buildDocumentSignature(deliveryOrders, { count: deliveryOrders.length })}`
+        : '';
+    const cached = canUseCache
+        ? getResponseDerivationCache<DeliveryOrderResponseSource[]>(cacheKey)
+        : null;
+    if (cached) {
+        return cached;
+    }
+
     const deliveryOrderIds = deliveryOrders.map(item => item._id).filter(Boolean);
     const serviceRefs = [
         ...new Set(
@@ -318,7 +419,7 @@ export async function deriveDeliveryOrdersForResponse(
     const vehicleMap = new Map(vehicles.map(item => [item._id, item]));
     const tripRouteRateMap = new Map(tripRouteRates.map(item => [item._id, item]));
 
-    return deliveryOrders.map(deliveryOrder => {
+    const derivedDeliveryOrders = deliveryOrders.map(deliveryOrder => {
         const linkedItems = itemsByDeliveryOrderRef.get(deliveryOrder._id) || [];
         const linkedTrackingLogs = trackingLogsByDeliveryOrderRef.get(deliveryOrder._id) || [];
         const deliveredTrackingLog = resolveDeliveredTrackingLog(linkedTrackingLogs);
@@ -407,6 +508,10 @@ export async function deriveDeliveryOrdersForResponse(
                 derivedOvertonage?.vehicleCapacityExceededKg,
         };
     });
+
+    return canUseCache
+        ? setResponseDerivationCache(cacheKey, derivedDeliveryOrders)
+        : derivedDeliveryOrders;
 }
 
 export async function deriveFreightNotaItemsForResponse(items: FreightNotaItem[]) {

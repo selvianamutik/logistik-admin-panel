@@ -38,6 +38,17 @@ const NUMBERING_CONFIG = {
 const DOCUMENT_TYPE_HINT_LIMIT = 10000;
 const documentTypeHints = new Map<string, string>();
 
+type DocumentMutationOptions = {
+    skipApiReadCacheClear?: boolean;
+    skipRelationalReadCacheClear?: boolean;
+};
+
+function clearApiReadCachesUnlessSkipped(options?: DocumentMutationOptions) {
+    if (!options?.skipApiReadCacheClear) {
+        clearApiReadCaches();
+    }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -245,15 +256,18 @@ export async function listDocuments<T = Record<string, unknown>>(
 }
 
 export async function createDocument<T = Record<string, unknown>>(
-    doc: { _type: string; [key: string]: unknown }
+    doc: { _type: string; [key: string]: unknown },
+    options?: DocumentMutationOptions,
 ) {
     if (supportsRelationalDocType(doc._type)) {
-        const created = await relationalUpsertDocument<T>(doc);
+        const created = await relationalUpsertDocument<T>(doc, {
+            skipReadCacheClear: options?.skipRelationalReadCacheClear,
+        });
         if (!created) {
             throw new Error(`Failed to create relational document for type: ${doc._type}`);
         }
         rememberDocumentType(created);
-        clearApiReadCaches();
+        clearApiReadCachesUnlessSkipped(options);
         return created;
     }
     throw new Error(`Unsupported relational document type: ${doc._type}`);
@@ -262,24 +276,29 @@ export async function createDocument<T = Record<string, unknown>>(
 export async function updateDocument<T = Record<string, unknown>>(
     id: string,
     updates: Record<string, unknown>,
-    docType?: string
+    docType?: string,
+    options?: DocumentMutationOptions,
 ) {
     if (docType && supportsRelationalDocType(docType)) {
-        const updated = await relationalPatchDocument<T>(docType, id, updates);
+        const updated = await relationalPatchDocument<T>(docType, id, updates, {
+            skipReadCacheClear: options?.skipRelationalReadCacheClear,
+        });
         if (!updated) {
             throw new Error(`Document not found: ${id}`);
         }
         rememberDocumentType(updated);
-        clearApiReadCaches();
+        clearApiReadCachesUnlessSkipped(options);
         return updated;
     }
 
     const hintedDocType = documentTypeHints.get(id);
     if (hintedDocType && supportsRelationalDocType(hintedDocType)) {
-        const updated = await relationalPatchDocument<T>(hintedDocType, id, updates);
+        const updated = await relationalPatchDocument<T>(hintedDocType, id, updates, {
+            skipReadCacheClear: options?.skipRelationalReadCacheClear,
+        });
         if (updated) {
             rememberDocumentType(updated);
-            clearApiReadCaches();
+            clearApiReadCachesUnlessSkipped(options);
             return updated;
         }
         forgetDocumentType(id);
@@ -291,12 +310,14 @@ export async function updateDocument<T = Record<string, unknown>>(
     }
 
     if (supportsRelationalDocType(existing._type)) {
-        const updated = await relationalPatchDocument<T>(existing._type, id, updates);
+        const updated = await relationalPatchDocument<T>(existing._type, id, updates, {
+            skipReadCacheClear: options?.skipRelationalReadCacheClear,
+        });
         if (!updated) {
             throw new Error(`Failed to update relational document for type: ${existing._type}`);
         }
         rememberDocumentType(updated);
-        clearApiReadCaches();
+        clearApiReadCachesUnlessSkipped(options);
         return updated;
     }
 

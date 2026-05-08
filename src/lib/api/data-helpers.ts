@@ -299,7 +299,7 @@ export async function writeAuditLog(
             entityRef,
             changesSummary: summary,
             timestamp: new Date().toISOString(),
-        });
+        }, { skipApiReadCacheClear: true, skipRelationalReadCacheClear: true });
     } catch (error) {
         console.warn('Audit log write failed', error);
     }
