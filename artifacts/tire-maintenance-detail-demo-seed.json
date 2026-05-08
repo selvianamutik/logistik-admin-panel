@@ -1,0 +1,48 @@
+[
+  {
+    "_id": "maintenance-demo-tire-replace-001",
+    "_type": "maintenance",
+    "_createdAt": "2026-05-06T09:00:00.000+07:00",
+    "_updatedAt": "2026-05-06T09:00:00.000+07:00",
+    "vehicleRef": "veh-demo-cdd-01",
+    "vehiclePlate": "L 2161 CD",
+    "type": "Ganti / Pasang Ban",
+    "scheduleType": "DATE",
+    "plannedDate": "2026-05-06",
+    "status": "DONE",
+    "completedDate": "2026-05-06",
+    "notes": "Contoh biaya ban: 30% ban lama + 100% ban pengganti.",
+    "completionNotes": "Ban lama DEMO-CASE-OLD-A: 30% = Rp300.000\nBan baru DEMO-CDD-01-1L: 100% = Rp1.000.000",
+    "attachmentUrls": [],
+    "materialUsages": [
+      {
+        "warehouseItemRef": "tire:tire-demo-example-old-a",
+        "itemCode": "DEMO-CASE-OLD-A",
+        "itemName": "Pemakaian ban lama DEMO-CASE-OLD-A",
+        "category": "Ban",
+        "unit": "PCS",
+        "quantity": 1,
+        "unitCostSnapshot": 300000,
+        "subtotalCost": 300000,
+        "note": "30% pemakaian di L 2161 CD"
+      },
+      {
+        "warehouseItemRef": "tire:tire-demo-cdd-01-1l",
+        "itemCode": "DEMO-CDD-01-1L",
+        "itemName": "Pasang ban pengganti DEMO-CDD-01-1L",
+        "category": "Ban",
+        "unit": "PCS",
+        "quantity": 1,
+        "unitCostSnapshot": 1000000,
+        "subtotalCost": 1000000,
+        "note": "100% biaya ban diposting saat pasang"
+      }
+    ],
+    "materialUsageCount": 2,
+    "materialCostTotal": 1300000,
+    "laborCost": 0,
+    "totalCost": 1300000,
+    "cost": 1300000,
+    "source": "TIRE_REPLACEMENT"
+  }
+]

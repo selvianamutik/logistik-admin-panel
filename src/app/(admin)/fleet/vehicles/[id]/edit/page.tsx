@@ -18,6 +18,7 @@ import {
     isValidVehicleYear,
     mapVehicleToForm,
     normalizeVehicleYearInput,
+    updateVehicleUnitCodeForServiceChange,
     VEHICLE_OWNERSHIP_LABELS,
     type VehicleForm,
 } from '@/lib/fleet-vehicle-page-support';
@@ -175,10 +176,16 @@ export default function VehicleEditPage() {
                                 <div className="form-group">
                                     <label className="form-label">Kategori Truk / Armada</label>
                                     <select className="form-select" value={form.serviceRef} onChange={e => {
+                                        const previousService = services.find(item => item._id === form.serviceRef) || null;
                                         const service = services.find(item => item._id === e.target.value);
                                         const interval = service?.oilMaintenanceKm || 0;
                                         setForm({
                                             ...form,
+                                            unitCode: updateVehicleUnitCodeForServiceChange({
+                                                unitCode: form.unitCode,
+                                                previousService,
+                                                nextService: service,
+                                            }),
                                             serviceRef: e.target.value,
                                             oilMaintenanceIntervalKm: interval,
                                             oilNextServiceOdometer: interval > 0 && form.oilLastServiceOdometer > 0 ? form.oilLastServiceOdometer + interval : form.oilNextServiceOdometer,

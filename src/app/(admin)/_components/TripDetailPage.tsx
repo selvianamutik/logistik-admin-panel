@@ -100,6 +100,7 @@ type ShipperReferenceDraft = {
     referenceKey: string;
     referenceNumber: string;
     pickupStopKey: string;
+    pickupAddress: string;
     selectedRecipientId: string;
     billingCustomerRef: string;
     billingCustomerName: string;
@@ -620,6 +621,7 @@ export default function TripDetailPage() {
         referenceKey: '',
         referenceNumber: '',
         pickupStopKey: '',
+        pickupAddress: '',
         selectedRecipientId: '',
         billingCustomerRef: '',
         billingCustomerName: '',
@@ -1106,6 +1108,7 @@ export default function TripDetailPage() {
                 referenceKey: reference.referenceKey,
                 referenceNumber: reference.referenceNumber,
                 pickupStopKey: reference.pickupStopKey,
+                pickupAddress: reference.pickupAddress,
                 selectedRecipientId: resolveMatchingRecipientId(reference.billingCustomerRef || doData?.customerRef, {
                     receiverName: reference.receiverName,
                     receiverPhone: reference.receiverPhone,
@@ -1128,6 +1131,7 @@ export default function TripDetailPage() {
                 referenceKey: '',
                 referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                 pickupStopKey: '',
+                pickupAddress: doData?.pickupAddress || '',
                 selectedRecipientId: '',
                 billingCustomerRef: doData?.customerRef || '',
                 billingCustomerName: doData?.customerName || '',
@@ -1143,7 +1147,8 @@ export default function TripDetailPage() {
                     draftKey: crypto.randomUUID(),
                     referenceKey: '',
                     referenceNumber: '',
-                    pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                    pickupStopKey: defaultShipperReferencePickupOption?.key || '',
+                    pickupAddress: defaultShipperReferencePickupOption?.address || '',
                     selectedRecipientId: '',
                     billingCustomerRef: doData?.customerRef || '',
                     billingCustomerName: doData?.customerName || '',
@@ -1217,7 +1222,8 @@ export default function TripDetailPage() {
                 draftKey: crypto.randomUUID(),
                 referenceKey: '',
                 referenceNumber: '',
-                pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                pickupStopKey: defaultShipperReferencePickupOption?.key || '',
+                pickupAddress: defaultShipperReferencePickupOption?.address || '',
                 selectedRecipientId: '',
                 billingCustomerRef: doData?.customerRef || '',
                 billingCustomerName: doData?.customerName || '',
@@ -2659,7 +2665,8 @@ export default function TripDetailPage() {
     const buildActualDropAllocationEntriesForItems = (
         drop: ActualDropDraft,
         cargoItems: ActualCargoDraft[],
-        valueMap: Record<string, ActualDropItemValueDraft> = actualDropItemValueMap
+        valueMap: Record<string, ActualDropItemValueDraft> = actualDropItemValueMap,
+        sourceDropPoints: ActualDropDraft[] = actualDropPoints
     ) =>
         cargoItems
             .map(cargoItem => {
@@ -2669,7 +2676,7 @@ export default function TripDetailPage() {
                     ? existingValues
                     : drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef && hasActualDropItemValues(pickActualDropItemValues(drop))
                         ? pickActualDropItemValues(drop)
-                        : getRemainingActualDropValuesForCargoItem(cargoItem, drop, drop.draftKey);
+                        : getRemainingActualDropValuesForCargoItem(cargoItem, drop, drop.draftKey, sourceDropPoints, valueMap);
                 return {
                     itemRef: cargoItem.deliveryOrderItemRef,
                     valueKey,
@@ -2703,6 +2710,34 @@ export default function TripDetailPage() {
         }));
     };
 
+    const materializeImplicitActualDropAllocations = (
+        drops: ActualDropDraft[],
+        cargoItems: ActualCargoDraft[]
+    ) => {
+        const nextValueMap = { ...actualDropItemValueMap };
+        const nextDrops = drops.map(drop => {
+            const allocationEntries = buildActualDropAllocationEntriesForItems(drop, cargoItems, nextValueMap, drops);
+            const firstAllocatedItemRef = allocationEntries[0]?.itemRef || '';
+            const firstAllocation = firstAllocatedItemRef
+                ? allocationEntries.find(entry => entry.itemRef === firstAllocatedItemRef)?.values
+                : undefined;
+
+            allocationEntries.forEach(entry => {
+                nextValueMap[entry.valueKey] = entry.values;
+            });
+
+            return firstAllocatedItemRef && firstAllocation
+                ? {
+                    ...drop,
+                    deliveryOrderItemRef: firstAllocatedItemRef,
+                    ...firstAllocation,
+                }
+                : drop;
+        });
+
+        return { drops: nextDrops, valueMap: nextValueMap };
+    };
+
     const getDefaultFinalizationCargoItemRef = (
         drop: ActualDropDraft,
         cargoItems: ActualCargoDraft[]
@@ -2715,7 +2750,9 @@ export default function TripDetailPage() {
     const getRemainingActualDropValuesForCargoItem = (
         cargoItem: ActualCargoDraft,
         fallback: Pick<ActualDropDraft, 'weightInputUnit' | 'volumeInputUnit'>,
-        excludeDraftKey = ''
+        excludeDraftKey = '',
+        sourceDropPoints: ActualDropDraft[] = actualDropPoints,
+        sourceValueMap: Record<string, ActualDropItemValueDraft> = actualDropItemValueMap
     ) => {
         const weightInputUnit = cargoItem.actualWeightInputUnit || fallback.weightInputUnit;
         const volumeInputUnit = cargoItem.actualVolumeInputUnit || fallback.volumeInputUnit;
@@ -2733,7 +2770,7 @@ export default function TripDetailPage() {
             cargoItem.actualVolumeInputUnit
         );
         const usedAllocationByKey = new Map<string, ActualDropItemValueDraft>();
-        actualDropPoints.forEach(drop => {
+        sourceDropPoints.forEach(drop => {
             if (drop.draftKey === excludeDraftKey || drop.deliveryOrderItemRef !== cargoItem.deliveryOrderItemRef) {
                 return;
             }
@@ -2742,7 +2779,7 @@ export default function TripDetailPage() {
                 usedAllocationByKey.set(buildActualDropItemValueKey(drop.draftKey, drop.deliveryOrderItemRef), values);
             }
         });
-        Object.entries(actualDropItemValueMap).forEach(([valueKey, cachedValues]) => {
+        Object.entries(sourceValueMap).forEach(([valueKey, cachedValues]) => {
             const parsedKey = parseActualDropItemValueKey(valueKey);
             if (
                 !parsedKey ||
@@ -2799,9 +2836,16 @@ export default function TripDetailPage() {
         const candidateCargoItems = selectedActualCargoItems.length > 0
             ? selectedActualCargoItems
             : actualCargoItems;
+        const materialized = materializeImplicitActualDropAllocations(actualDropPoints, candidateCargoItems);
         const firstCargoItem =
             candidateCargoItems.find(cargoItem =>
-                hasActualDropItemValues(getRemainingActualDropValuesForCargoItem(cargoItem, nextDraft))
+                hasActualDropItemValues(getRemainingActualDropValuesForCargoItem(
+                    cargoItem,
+                    nextDraft,
+                    nextDraft.draftKey,
+                    materialized.drops,
+                    materialized.valueMap
+                ))
             ) || candidateCargoItems[0];
         const selectedReference = firstCargoItem
             ? selectedActualDropShipperReferenceOptions.find(reference =>
@@ -2820,7 +2864,12 @@ export default function TripDetailPage() {
                 locationAddress: selectedReference.receiverAddress || nextDraft.locationAddress,
             }
             : nextDraft;
-        const allocationEntries = buildActualDropAllocationEntriesForItems(baseDraft, candidateCargoItems);
+        const allocationEntries = buildActualDropAllocationEntriesForItems(
+            baseDraft,
+            candidateCargoItems,
+            materialized.valueMap,
+            materialized.drops
+        );
         const firstAllocatedItemRef = allocationEntries[0]?.itemRef || '';
         const firstAllocation = allocationEntries.find(entry => entry.itemRef === firstAllocatedItemRef)?.values;
         const nextVisibleDraft = firstAllocatedItemRef && firstAllocation
@@ -2830,19 +2879,17 @@ export default function TripDetailPage() {
                 ...firstAllocation,
             }
             : baseDraft;
-        setActualDropPoints(previous => [
-            ...previous,
+        setActualDropPoints([
+            ...materialized.drops,
             nextVisibleDraft,
         ]);
-        if (allocationEntries.length > 0) {
-            setActualDropItemValueMap(previous => {
-                const next = { ...previous };
-                allocationEntries.forEach(entry => {
-                    next[entry.valueKey] = entry.values;
-                });
-                return next;
+        setActualDropItemValueMap(() => {
+            const next = { ...materialized.valueMap };
+            allocationEntries.forEach(entry => {
+                next[entry.valueKey] = entry.values;
             });
-        }
+            return next;
+        });
     };
 
     const removeActualDropDraft = (draftKey: string) => {
@@ -3461,6 +3508,7 @@ export default function TripDetailPage() {
                 referenceKey: entry.referenceKey.trim(),
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
                 pickupStopKey: entry.pickupStopKey.trim(),
+                pickupAddress: entry.pickupAddress.trim(),
                 billingCustomerRef: '',
                 billingCustomerName: '',
                 receiverName: '',
@@ -3473,8 +3521,8 @@ export default function TripDetailPage() {
             addToast('error', 'Minimal 1 SJ pengirim wajib diisi');
             return;
         }
-        if (pickupStopList.length > 1) {
-            const invalidPickupIndex = normalizedReferences.findIndex(entry => !entry.pickupStopKey);
+        if (shipperReferencePickupOptions.length > 1) {
+            const invalidPickupIndex = normalizedReferences.findIndex(entry => !entry.pickupStopKey && !entry.pickupAddress);
             if (invalidPickupIndex >= 0) {
                 addToast('error', `Titik pickup wajib dipilih pada SJ pengirim baris ${invalidPickupIndex + 1}`);
                 return;
@@ -3581,7 +3629,8 @@ export default function TripDetailPage() {
                         shipperReferences: normalizedReferences.map(reference => ({
                             _key: reference.referenceKey || undefined,
                             referenceNumber: reference.referenceNumber,
-                            pickupStopKey: reference.pickupStopKey || undefined,
+                            pickupStopKey: pickupStopMap.has(reference.pickupStopKey) ? reference.pickupStopKey : undefined,
+                            pickupAddress: reference.pickupAddress || undefined,
                             billingCustomerRef: reference.billingCustomerRef || undefined,
                             billingCustomerName: reference.billingCustomerName || undefined,
                             receiverName: reference.receiverName || undefined,
@@ -3737,6 +3786,16 @@ export default function TripDetailPage() {
     const pickupStopMap = new Map(pickupStopList.map(stop => [stop._key, stop]));
     const formatPickupStopDisplayName = (stop: { sequence: number; pickupLabel?: string; pickupAddress?: string }) =>
         stop.pickupLabel?.trim() || stop.pickupAddress?.trim() || `Pickup ${stop.sequence}`;
+    const normalPickupOptions = pickupStopList.map(stop => ({
+        key: stop._key,
+        name: `Pickup ${stop.sequence}${stop.pickupLabel ? ` - ${stop.pickupLabel}` : ''}`,
+        address: stop.pickupAddress,
+        source: 'pickup-stop' as const,
+    }));
+    const shipperReferencePickupOptions = normalPickupOptions;
+    const shipperReferencePickupOptionMap = new Map(shipperReferencePickupOptions.map(option => [option.key, option]));
+    const defaultShipperReferencePickupOption =
+        shipperReferencePickupOptions.length === 1 ? shipperReferencePickupOptions[0] : null;
     const pickupTripDisplayList = pickupStopList.length > 0
         ? pickupStopList.map(stop => ({
             key: stop._key,
@@ -5348,11 +5407,21 @@ export default function TripDetailPage() {
                                                         </>
                                                     );
                                                 })()}
-                                                {reference.pickupLabel && (
-                                                    <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
-                                                        {reference.pickupLabel}{reference.pickupAddress ? ` | ${reference.pickupAddress}` : ''}
-                                                </div>
-                                            )}
+                                                {(() => {
+                                                    const document = suratJalanDocumentByReferenceKey.get(reference.referenceKey || 'primary') || null;
+                                                    const shouldUseHoldPickup = hasSuratJalanHoldIndicator(document) && Boolean(document?.pickupAddress);
+                                                    const pickupLabel = shouldUseHoldPickup
+                                                        ? document?.pickupAddress || ''
+                                                        : reference.pickupLabel;
+                                                    const pickupAddress = shouldUseHoldPickup
+                                                        ? ''
+                                                        : reference.pickupAddress;
+                                                    return pickupLabel ? (
+                                                        <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                            {pickupLabel}{pickupAddress ? ` | ${pickupAddress}` : ''}
+                                                        </div>
+                                                    ) : null;
+                                                })()}
                                             {reference.billingCustomerName && (
                                                 <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
                                                     Invoice: {reference.billingCustomerName}
@@ -5538,7 +5607,7 @@ export default function TripDetailPage() {
             </CollapsibleCard>
 
             <div id="delivery-order-trip-fee-card">
-            <CollapsibleCard title="Upah Trip Driver" defaultOpen={shouldOpenTripFeeCard}>
+            <CollapsibleCard title="Trip Overtonase & Upah Driver" defaultOpen={shouldOpenTripFeeCard}>
                     {!editingTarip ? (
                         <div>
                             <div className="detail-row">
@@ -5549,7 +5618,7 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Tambahan Overtonase</div>
+                                    <div className="detail-label">Tambahan Driver Overtonase</div>
                                     <div className="detail-value font-semibold" style={{ color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
                                         {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : '-'}
                                     </div>
@@ -5576,13 +5645,13 @@ export default function TripDetailPage() {
                             </div>
                             <div className="detail-row" style={{ marginTop: '0.75rem' }}>
                                 <div className="detail-item">
-                                    <div className="detail-label">Berat Aktual Final</div>
+                                    <div className="detail-label">Berat Aktual Trip</div>
                                     <div className="detail-value">
                                         {doData.actualTotalWeightKg ? `${doData.actualTotalWeightKg} kg` : 'Belum difinalkan'}
                                     </div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Acuan Batas Overtonase</div>
+                                    <div className="detail-label">Batas Payload Service</div>
                                     <div className="detail-value">
                                         {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
                                     </div>
@@ -5603,7 +5672,7 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Rate Tambahan / ton</div>
+                                    <div className="detail-label">Rate Overtonase / ton</div>
                                     <div className="detail-value">
                                         {overtonaseDriverRatePerTon ? formatCurrency(overtonaseDriverRatePerTon) : '-'}
                                     </div>
@@ -7471,32 +7540,38 @@ export default function TripDetailPage() {
                                             </button>
                                         )}
                                     </div>
-                                    {pickupStopList.length > 1 && (
+                                    {shipperReferencePickupOptions.length > 1 && (
                                         <div>
                                             <label className="form-label">Titik Pickup</label>
                                             <select
                                                 className="form-select"
                                                 value={selectedShipperReferenceDraft.pickupStopKey}
-                                                onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { pickupStopKey: event.target.value })}
+                                                onChange={event => {
+                                                    const selectedPickupOption = shipperReferencePickupOptionMap.get(event.target.value);
+                                                    updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, {
+                                                        pickupStopKey: event.target.value,
+                                                        pickupAddress: selectedPickupOption?.address || '',
+                                                    });
+                                                }}
                                                 disabled={savingShipperReference}
                                             >
                                                 <option value="">Pilih pickup untuk SJ ini</option>
-                                                {pickupStopList.map(stop => (
-                                                    <option key={stop._key} value={stop._key}>
-                                                        {`Pickup ${stop.sequence}${stop.pickupLabel ? ` - ${stop.pickupLabel}` : ''}`}
+                                                {shipperReferencePickupOptions.map(option => (
+                                                    <option key={option.key} value={option.key}>
+                                                        {option.name}
                                                     </option>
                                                 ))}
                                             </select>
                                         </div>
                                     )}
-                                    {pickupStopList.length === 1 && (
+                                    {shipperReferencePickupOptions.length === 1 && (
                                         <div className="text-muted text-sm">
-                                            Pickup: {`Pickup ${pickupStopList[0].sequence}${pickupStopList[0].pickupLabel ? ` - ${pickupStopList[0].pickupLabel}` : ''}`}
+                                            Pickup: {shipperReferencePickupOptions[0].name}
                                         </div>
                                     )}
-                                    {selectedShipperReferenceDraft.pickupStopKey && pickupStopMap.get(selectedShipperReferenceDraft.pickupStopKey)?.pickupAddress && (
+                                    {(shipperReferencePickupOptionMap.get(selectedShipperReferenceDraft.pickupStopKey)?.address || selectedShipperReferenceDraft.pickupAddress || pickupStopMap.get(selectedShipperReferenceDraft.pickupStopKey)?.pickupAddress) && (
                                         <div className="text-muted text-sm">
-                                            {pickupStopMap.get(selectedShipperReferenceDraft.pickupStopKey)?.pickupAddress}
+                                            {shipperReferencePickupOptionMap.get(selectedShipperReferenceDraft.pickupStopKey)?.address || selectedShipperReferenceDraft.pickupAddress || pickupStopMap.get(selectedShipperReferenceDraft.pickupStopKey)?.pickupAddress}
                                         </div>
                                     )}
                                     <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.35rem' }}>

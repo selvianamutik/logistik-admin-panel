@@ -31,6 +31,7 @@ import {
 } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, DeliveryOrderItem, TireEvent, TireHistoryLog, Expense, IncidentSettlementLine } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
@@ -121,6 +122,7 @@ export default function VehicleDetailPage() {
     const [doItemsByDeliveryOrderRef, setDoItemsByDeliveryOrderRef] = useState<Record<string, DeliveryOrderItem[]>>({});
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
+    const [tireUsageCostRows, setTireUsageCostRows] = useState<TireHistoryLog[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState('profil');
@@ -147,7 +149,8 @@ export default function VehicleDetailPage() {
         try {
             const vehicleFilter = encodeURIComponent(JSON.stringify({ vehicleRef: vehicleId }));
             const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
-            const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, allTireRows, expenseRows] = await Promise.all([
+            const tireUsageCostFilter = encodeURIComponent(JSON.stringify({ costSourceVehicleRef: vehicleId }));
+            const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, allTireRows, tireUsageCostLogs, expenseRows] = await Promise.all([
                 fetch(`/api/data?entity=vehicles&id=${vehicleId}`).then(async res => {
                     const payload = await res.json();
                     if (!res.ok) throw new Error(payload.error || 'Gagal memuat kendaraan');
@@ -158,6 +161,7 @@ export default function VehicleDetailPage() {
                 fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat trip'),
                 fetchAllAdminCollectionData<TireEvent>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
                 fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat master ban'),
+                fetchAllAdminCollectionData<TireHistoryLog>(`/api/data?entity=tire-history-logs&filter=${tireUsageCostFilter}`, 'Gagal memuat biaya pemakaian ban'),
                 canViewVehicleExpenses
                     ? fetchAllAdminCollectionData<Expense>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya maintenance unit')
                     : Promise.resolve([] as Expense[]),
@@ -191,6 +195,7 @@ export default function VehicleDetailPage() {
             setDoItemsByDeliveryOrderRef(nextDoItemsByRef);
             setTireEvents(tireRows || []);
             setAllTireEvents(allTireRows || []);
+            setTireUsageCostRows([...(tireUsageCostLogs || [])].sort((a, b) => `${b.timestamp || ''}-${b._id}`.localeCompare(`${a.timestamp || ''}-${a._id}`)));
             setExpenses([...(expenseRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail kendaraan');
@@ -253,18 +258,24 @@ export default function VehicleDetailPage() {
             <div style={{ display: 'grid', gap: '0.2rem' }}>
                 {materialPreview.map((usage) => {
                     const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
-                    return canOpenWarehouseItems ? (
+                    const usageContent = (
+                        <span>
+                            {usageLabel}
+                            {typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0 ? ` - ${formatCurrency(usage.subtotalCost)}` : ''}
+                        </span>
+                    );
+                    return canOpenWarehouseItems && !usage.warehouseItemRef.startsWith('tire:') ? (
                         <Link
                             key={`${item._id}-${usage.warehouseItemRef}`}
                             href={`/inventory/items/${usage.warehouseItemRef}`}
                             className="text-sm font-medium"
                             style={{ color: 'var(--color-primary)', wordBreak: 'break-word' }}
                         >
-                            {usageLabel}
+                            {usageContent}
                         </Link>
                     ) : (
                         <span key={`${item._id}-${usage.warehouseItemRef}`} className="text-sm" style={{ wordBreak: 'break-word' }}>
-                            {usageLabel}
+                            {usageContent}
                         </span>
                     );
                 })}
@@ -295,44 +306,43 @@ export default function VehicleDetailPage() {
 
     const maintenanceCostRows = maints
         .filter((maintenance) => maintenance.status === 'DONE' && getMaintenanceRecordedCost(maintenance) > 0)
-        .map((maintenance) => ({
-            id: `maintenance-${maintenance._id}`,
-            date: maintenance.completedDate || maintenance.plannedDate || '',
-            source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance</Link>,
-            description: renderMaintenanceCostDescription(maintenance),
-            amount: getMaintenanceRecordedCost(maintenance),
-        }));
-    const vehicleCostRows = [
-        ...vehicleMaintenanceExpenses.map((expense) => {
-            const source = expense.relatedMaintenanceRef ? (
-                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
-                    Maintenance
-                </Link>
-            ) : (
-                expense.categoryName || 'Maintenance'
+        .flatMap((maintenance) => {
+            const allTireLines = (maintenance.materialUsages || []).filter(usage =>
+                typeof usage.warehouseItemRef === 'string' &&
+                usage.warehouseItemRef.startsWith('tire:')
             );
-            const documentLink = expense.relatedMaintenanceRef ? (
-                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
-                    Lihat maintenance
-                </Link>
-            ) : null;
+            const tireLines = allTireLines.filter(usage =>
+                /pemakaian ban lama|ban lama/i.test(`${usage.itemName || ''} ${usage.note || ''}`) &&
+                typeof usage.subtotalCost === 'number' &&
+                usage.subtotalCost > 0
+            );
+            if (tireLines.length > 0) {
+                return tireLines.map((usage, index) => ({
+                    id: `maintenance-${maintenance._id}-tire-${index}`,
+                    date: maintenance.completedDate || maintenance.plannedDate || '',
+                    source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance Ban</Link>,
+                    description: (
+                        <div style={{ display: 'grid', gap: '0.2rem' }}>
+                            <div>{usage.itemName || usage.itemCode || maintenance.type}</div>
+                            <div className="text-muted text-sm">{maintenance.type}</div>
+                            {usage.note && <div className="text-muted text-sm">{usage.note}</div>}
+                        </div>
+                    ),
+                    amount: usage.subtotalCost || 0,
+                }));
+            }
+            if (allTireLines.length > 0) {
+                return [];
+            }
 
-            return {
-                id: expense._id,
-                date: expense.date || '',
-                source,
-                description: (
-                    <div style={{ display: 'grid', gap: '0.2rem' }}>
-                        <div>{expense.note || expense.description || '-'}</div>
-                        {documentLink && <div className="text-muted text-sm">{documentLink}</div>}
-                    </div>
-                ),
-                amount: expense.amount,
-            };
-        }),
-        ...maintenanceCostRows,
-    ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
-    const totalMaintenanceExpense = vehicleCostRows.reduce((sum, row) => sum + row.amount, 0);
+            return [{
+                id: `maintenance-${maintenance._id}`,
+                date: maintenance.completedDate || maintenance.plannedDate || '',
+                source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance</Link>,
+                description: renderMaintenanceCostDescription(maintenance),
+                amount: getMaintenanceRecordedCost(maintenance),
+            }];
+        });
     const renderIncidentCostSummary = (incident: Incident) => {
         const summary = summarizeIncidentFinancials(
             incidentSettlementLinesByRef.get(incident._id) || [],
@@ -373,6 +383,7 @@ export default function VehicleDetailPage() {
         );
     };
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
+    const totalTireUsageCost = tireUsageCostRows.reduce((sum, row) => sum + Number(row.usageCost || 0), 0);
     const {
         normalizedAllTireRows,
         layout,
@@ -391,6 +402,80 @@ export default function VehicleDetailPage() {
         tireForm,
         editingTire,
     });
+    const selectedTireForPlacement = editingTire || selectedRegisteredTire;
+    const registeredTireDetailLocked = Boolean(selectedRegisteredTire);
+    const currentVehicleTireCostRows = [...mountedSlots, ...spareSlots]
+        .filter((slot): slot is { slotCode: string; event: NormalizedVehicleTireRow } => Boolean(slot.event))
+        .map(slot => {
+            const tire = slot.event;
+            const originalCost = Number(tire.originalCost ?? tire.purchaseCost ?? 0);
+            const totalUsedPercent = Number(tire.totalUsedPercent || 0);
+            const remainingPercent = Math.max(100 - totalUsedPercent, 0);
+            const remainingValue = Number(tire.remainingValue ?? Math.round(originalCost * remainingPercent / 100));
+
+            return {
+                id: `current-tire-${tire._id}`,
+                date: tire.installDate || '',
+                source: 'Ban Terpasang',
+                description: (
+                    <div style={{ display: 'grid', gap: '0.2rem' }}>
+                        <div>{tire.tireCodeLabel} - {slot.slotCode} ({formatTireSlotLabel(slot.slotCode)})</div>
+                        <div className="text-muted text-sm">
+                            Original {formatCurrency(originalCost)} | Terpakai {formatQuantity(totalUsedPercent, 2)}% | Sisa {formatQuantity(remainingPercent, 2)}% ({formatCurrency(remainingValue)})
+                        </div>
+                        <div className="text-muted text-sm">
+                            Nilai ban terpasang dihitung dari sisa persentase ban saat ini.
+                        </div>
+                    </div>
+                ),
+                amount: remainingValue,
+            };
+        });
+    const vehicleCostRows = [
+        ...vehicleMaintenanceExpenses.map((expense) => {
+            const source = expense.relatedMaintenanceRef ? (
+                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                    Maintenance
+                </Link>
+            ) : (
+                expense.categoryName || 'Maintenance'
+            );
+            const documentLink = expense.relatedMaintenanceRef ? (
+                <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>
+                    Lihat maintenance
+                </Link>
+            ) : null;
+
+            return {
+                id: expense._id,
+                date: expense.date || '',
+                source,
+                description: (
+                    <div style={{ display: 'grid', gap: '0.2rem' }}>
+                        <div>{expense.note || expense.description || '-'}</div>
+                        {documentLink && <div className="text-muted text-sm">{documentLink}</div>}
+                    </div>
+                ),
+                amount: expense.amount,
+            };
+        }),
+        ...maintenanceCostRows,
+        ...currentVehicleTireCostRows,
+    ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
+    const totalMaintenanceExpense = vehicleCostRows.reduce((sum, row) => sum + row.amount, 0);
+    const requiresTireUsagePercentOnExit = Boolean(
+        editingTire ||
+        (
+            selectedTireForPlacement?.holderType === 'INTERNAL_VEHICLE' &&
+            selectedTireForPlacement.vehicleRef &&
+            selectedTireForPlacement.vehicleRef !== vehicle._id
+        )
+    );
+    const tireRemainingPercentBeforeExit = Math.max(100 - Number(selectedTireForPlacement?.totalUsedPercent || 0), 0);
+    const tireUsagePercentPreview = typeof tireForm.usagePercentOnExit === 'number' ? tireForm.usagePercentOnExit : 0;
+    const tireUsageCostPreview = Math.round(Number(tireForm.originalCost || 0) * tireUsagePercentPreview / 100);
+    const tireRemainingPercentAfterPreview = Math.max(tireRemainingPercentBeforeExit - tireUsagePercentPreview, 0);
+    const tireRemainingValueAfterPreview = Math.round(Number(tireForm.originalCost || 0) * tireRemainingPercentAfterPreview / 100);
     const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
         setTireForm(prev => ({ ...prev, [key]: value }));
     };
@@ -424,14 +509,11 @@ export default function VehicleDetailPage() {
         const resolvedSlot = resolveTireSlotCode(event) || layout.allSlots[0] || '1L';
         setEditingTire(event);
         setTireForm({
-            registeredTireId: event._id,
-            tireCode: event.tireCode || '',
+            ...createDefaultVehicleTireForm(resolvedSlot),
+            registeredTireId: '',
+            tireCode: '',
             slotCode: resolvedSlot,
-            tireType: event.tireType,
-            tireBrand: event.tireBrand,
-            tireSize: event.tireSize,
-            installDate: event.installDate,
-            notes: event.notes || '',
+            usagePercentOnExit: null,
         });
         setShowTireModal(true);
     };
@@ -482,6 +564,10 @@ export default function VehicleDetailPage() {
             tireType: pickedTire.tireType,
             tireBrand: pickedTire.tireBrand,
             tireSize: pickedTire.tireSize,
+            originalCost: pickedTire.originalCost ?? pickedTire.purchaseCost ?? 0,
+            totalUsedPercent: pickedTire.totalUsedPercent || 0,
+            usagePercentOnExit: null,
+            notes: pickedTire.notes || prev.notes,
         }));
     };
 
@@ -498,10 +584,25 @@ export default function VehicleDetailPage() {
     };
 
     const handleSaveTire = async () => {
+        if (editingTire && !tireForm.registeredTireId) { addToast('error', 'Pilih ban pengganti'); return; }
         if (!tireForm.tireCode.trim()) { addToast('error', 'Isi kode ban'); return; }
         if (!tireForm.tireBrand.trim()) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!tireForm.tireSize.trim()) { addToast('error', 'Isi ukuran ban'); return; }
         if (!tireForm.slotCode.trim()) { addToast('error', 'Pilih slot ban'); return; }
+        if (tireForm.totalUsedPercent < 0 || tireForm.totalUsedPercent > 100) {
+            addToast('error', 'Total pemakaian ban harus 0-100%');
+            return;
+        }
+        if (requiresTireUsagePercentOnExit) {
+            if (tireForm.usagePercentOnExit === null || !Number.isFinite(tireForm.usagePercentOnExit)) {
+                addToast('error', 'Isi persentase pemakaian ban di unit sebelumnya');
+                return;
+            }
+            if (tireForm.usagePercentOnExit < 0 || tireForm.usagePercentOnExit > tireRemainingPercentBeforeExit) {
+                addToast('error', `Persentase pemakaian ban harus 0-${tireRemainingPercentBeforeExit}%`);
+                return;
+            }
+        }
 
         const normalizedSlotCode = tireForm.slotCode.trim().toUpperCase();
         const payload = {
@@ -513,13 +614,48 @@ export default function VehicleDetailPage() {
             tireType: tireForm.tireType,
             tireBrand: tireForm.tireBrand.trim(),
             tireSize: tireForm.tireSize.trim(),
+            compatibleServiceRef: vehicle.serviceRef,
+            compatibleServiceName: vehicle.serviceName,
             installDate: tireForm.installDate,
+            purchaseCost: tireForm.originalCost,
+            originalCost: tireForm.originalCost,
+            totalUsedPercent: tireForm.totalUsedPercent,
+            usagePercentOnExit: requiresTireUsagePercentOnExit ? tireForm.usagePercentOnExit : undefined,
             notes: tireForm.notes.trim() || undefined,
         };
 
         setSavingTire(true);
         try {
             const targetTireId = editingTire?._id || tireForm.registeredTireId;
+            const shouldUseTireInstallWorkflow = Boolean(tireForm.registeredTireId);
+            if (shouldUseTireInstallWorkflow) {
+                const res = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'tire-events',
+                        action: 'install-to-slot',
+                        data: {
+                            tireEventRef: tireForm.registeredTireId,
+                            vehicleRef: vehicle._id,
+                            slotCode: normalizedSlotCode,
+                            oldTireUsagePercent: editingTire || requiresTireUsagePercentOnExit ? tireForm.usagePercentOnExit : undefined,
+                            oldTireDestination: editingTire ? 'WAREHOUSE' : undefined,
+                            maintenanceDate: tireForm.installDate,
+                            note: tireForm.notes.trim() || undefined,
+                        },
+                    }),
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    addToast('error', result.error || 'Gagal memasang ban');
+                    return;
+                }
+                addToast('success', editingTire ? 'Ban berhasil diganti dan maintenance ban dicatat' : 'Ban berhasil dipasang dan maintenance ban dicatat');
+                closeTireModal();
+                await loadVehicleDetail();
+                return;
+            }
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -572,6 +708,7 @@ export default function VehicleDetailPage() {
                         <Link href={`/fleet/tires/${event._id}`} className="font-medium" style={{ color: 'var(--color-primary)' }}>{event.tireCodeLabel}</Link>
                         <div className="text-muted text-sm">{event.tireBrand} • {event.tireSize}</div>
                         <div className="text-muted text-sm">{event.tireType} • dicatat {formatDate(event.installDate)}</div>
+                        <div className="text-muted text-sm">Sisa nilai {formatCurrency(event.remainingValue ?? 0)} dari {formatCurrency(event.originalCost ?? event.purchaseCost ?? 0)}</div>
                     </div>
                     <div className="text-muted text-sm">{event.notes || 'Belum ada catatan tambahan.'}</div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -579,7 +716,7 @@ export default function VehicleDetailPage() {
                             <History size={14} /> Riwayat
                         </button>
                         {canManageTires && <button className="btn btn-secondary" type="button" onClick={() => openEditTire(event)}>
-                            <Edit size={14} /> Edit Ban
+                            <Edit size={14} /> Ganti Ban
                         </button>}
                     </div>
                 </>
@@ -819,6 +956,7 @@ export default function VehicleDetailPage() {
                         <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Belum Diisi</div><div className="kpi-value">{emptySlotCount}</div></div></div>
                         <div className="kpi-card"><div className="kpi-icon info"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep Unit</div><div className="kpi-value">{spareSlots.filter(slot => Boolean(slot.event)).length}</div></div></div>
                         <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Catatan Audit Lain</div><div className="kpi-value">{externalAuditTires.length}</div></div></div>
+                        <div className="kpi-card"><div className="kpi-icon danger"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Biaya Pakai Ban</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalTireUsageCost)}</div></div></div>
                     </div>
 
                     <div className="card">
@@ -836,6 +974,36 @@ export default function VehicleDetailPage() {
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
                                 {spareSlots.map(slot => renderSlotCard(slot.slotCode, slot.event))}
                             </div>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-header"><span className="card-header-title">Biaya Pemakaian Ban Unit</span></div>
+                        <div className="card-body">
+                            {tireUsageCostRows.length === 0 ? (
+                                <div className="empty-state" style={{ padding: '1rem 0' }}>
+                                    <div className="empty-state-title">Belum ada biaya pemakaian ban</div>
+                                    <div className="empty-state-text">Biaya muncul saat ban keluar dari unit ini dan persentase pemakaian dicatat.</div>
+                                </div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead><tr><th>Tanggal</th><th>Ban</th><th>Perpindahan</th><th>Pemakaian</th><th>Biaya</th><th>Sisa Setelah Pindah</th></tr></thead>
+                                        <tbody>
+                                            {tireUsageCostRows.map(row => (
+                                                <tr key={row._id}>
+                                                    <td>{formatDateTime(row.timestamp)}</td>
+                                                    <td><Link href={`/fleet/tires/${row.tireEventRef}`} style={{ color: 'var(--color-primary)' }}>{row.tireCode}</Link></td>
+                                                    <td>{row.fromPlacementLabel || '-'} -&gt; {row.toPlacementLabel || '-'}</td>
+                                                    <td>{formatQuantity(row.usagePercent || 0, 2)}%</td>
+                                                    <td className="font-medium">{formatCurrency(row.usageCost || 0)}</td>
+                                                    <td>{formatQuantity(row.remainingPercentAfter || 0, 2)}% | {formatCurrency(row.remainingValueAfter || 0)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -947,7 +1115,7 @@ export default function VehicleDetailPage() {
                 <div className="modal-overlay" onClick={closeTireModal}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editingTire ? `Edit Ban ${tireForm.slotCode}` : `Isi Slot ${tireForm.slotCode}`}</h3>
+                            <h3 className="modal-title">{editingTire ? `Ganti Ban ${tireForm.slotCode}` : `Isi Slot ${tireForm.slotCode}`}</h3>
                             <button className="modal-close" onClick={closeTireModal} disabled={savingTire}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -972,17 +1140,32 @@ export default function VehicleDetailPage() {
                                             className="form-select"
                                             value={tireForm.registeredTireId}
                                             onChange={e => handleRegisteredTireChange(e.target.value)}
-                                            disabled={savingTire || Boolean(editingTire)}
+                                            disabled={savingTire}
                                         >
-                                            <option value="">Input ban baru</option>
+                                            <option value="">{editingTire ? 'Pilih ban pengganti' : 'Input ban baru'}</option>
                                             {availableRegisteredTires.map(registeredTire => (
                                                 <option key={registeredTire._id} value={registeredTire._id}>
                                                     {registeredTire.tireCodeLabel} - {registeredTire.tireBrand} {registeredTire.tireSize} ({registeredTire.placementLabel})
                                                 </option>
                                             ))}
                                         </select>
+                                        {availableRegisteredTires.length === 0 && (
+                                            <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
+                                                Tidak ada ban terdaftar yang cocok dengan kategori armada unit ini.
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
+
+                                {editingTire && (
+                                    <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
+                                        <div className="text-muted text-sm">Ban Lama di Slot Ini</div>
+                                        <div className="font-medium">{editingTire.tireCode || '-'} - {editingTire.tireBrand} {editingTire.tireSize}</div>
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                            Terpakai {formatQuantity(editingTire.totalUsedPercent || 0, 2)}% | Sisa {formatQuantity(tireRemainingPercentBeforeExit, 2)}% ({formatCurrency(editingTire.remainingValue ?? Math.round(Number(editingTire.originalCost ?? editingTire.purchaseCost ?? 0) * tireRemainingPercentBeforeExit / 100))})
+                                        </div>
+                                    </div>
+                                )}
 
                                 {selectedRegisteredTire && (
                                     <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
@@ -991,20 +1174,61 @@ export default function VehicleDetailPage() {
                                         <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                             Posisi terakhir: {selectedRegisteredTire.placementLabel}
                                         </div>
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                            Terpakai {formatQuantity(selectedRegisteredTire.totalUsedPercent || 0, 2)}% | Sisa {formatQuantity(selectedRegisteredTire.remainingPercent ?? Math.max(100 - Number(selectedRegisteredTire.totalUsedPercent || 0), 0), 2)}% ({formatCurrency(selectedRegisteredTire.remainingValue ?? Math.round(Number(selectedRegisteredTire.originalCost ?? selectedRegisteredTire.purchaseCost ?? 0) * Math.max(100 - Number(selectedRegisteredTire.totalUsedPercent || 0), 0) / 100))})
+                                        </div>
                                     </div>
                                 )}
 
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Kode Ban</label>
-                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire || tireSelectionLocked} />
+                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire || registeredTireDetailLocked} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Harga Ban / Original Cost</label>
+                                        <FormattedNumberInput allowDecimal={false} value={tireForm.originalCost} onValueChange={value => updateTireForm('originalCost', value)} disabled={savingTire || registeredTireDetailLocked} />
                                     </div>
                                 </div>
+
+                                {!editingTire && (
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Total Pemakaian (%)</label>
+                                            <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.totalUsedPercent} onValueChange={value => updateTireForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} disabled={savingTire || requiresTireUsagePercentOnExit || registeredTireDetailLocked} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Sisa Nilai Saat Ini</label>
+                                            <input className="form-input" value={formatCurrency(Math.round(Number(tireForm.originalCost || 0) * Math.max(100 - Number(tireForm.totalUsedPercent || 0), 0) / 100))} readOnly />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {requiresTireUsagePercentOnExit && (
+                                    <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                        <div className="info-banner-title">Alokasi Biaya Pemakaian Ban</div>
+                                        <div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}>
+                                            <div>
+                                                Ban keluar dari {selectedTireForPlacement?.vehiclePlate || 'unit sebelumnya'} menuju {vehicle.plateNumber}. Isi persen pemakaian selama di unit sebelumnya.
+                                            </div>
+                                            <div className="form-row" style={{ marginBottom: 0 }}>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Persentase Pemakaian di Unit Sebelumnya</label>
+                                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.usagePercentOnExit} onValueChange={value => updateTireForm('usagePercentOnExit', value)} placeholder={`Maks ${tireRemainingPercentBeforeExit}%`} disabled={savingTire} />
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Preview Biaya</label>
+                                                    <input className="form-input" value={`${formatCurrency(tireUsageCostPreview)} | sisa ${formatQuantity(tireRemainingPercentAfterPreview, 2)}% (${formatCurrency(tireRemainingValueAfterPreview)})`} readOnly />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Jenis Ban</label>
-                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || tireSelectionLocked}>
+                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || registeredTireDetailLocked}>
                                             {VEHICLE_TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </div>
@@ -1017,11 +1241,11 @@ export default function VehicleDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Merk / Model Ban</label>
-                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire || tireSelectionLocked} />
+                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire || registeredTireDetailLocked} />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Ukuran</label>
-                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire || tireSelectionLocked} />
+                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire || registeredTireDetailLocked} />
                                     </div>
                                 </div>
 
@@ -1035,7 +1259,7 @@ export default function VehicleDetailPage() {
                             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                                 <button type="button" className="btn btn-secondary" onClick={closeTireModal} disabled={savingTire}>Batal</button>
                                 <button type="button" className="btn btn-primary" onClick={handleSaveTire} disabled={savingTire}>
-                                    <Save size={16} /> {savingTire ? 'Menyimpan...' : editingTire ? 'Simpan Perubahan' : 'Pasang Ban'}
+                                    <Save size={16} /> {savingTire ? 'Menyimpan...' : editingTire ? 'Ganti Ban' : 'Pasang Ban'}
                                 </button>
                             </div>
                         </div>
@@ -1053,47 +1277,67 @@ export default function VehicleDetailPage() {
                             <div style={{ marginBottom: '1rem', color: 'var(--color-gray-600)' }}>
                                 Menampilkan histori khusus untuk slot {slotHistoryCode} pada kendaraan ini, jadi tiap slot punya riwayatnya sendiri.
                             </div>
-                            <div style={{ display: 'grid', gap: '0.85rem' }}>
-                                {loadingSlotHistory ? (
-                                    [1, 2, 3].map(item => <div key={item} className="skeleton skeleton-card" style={{ height: 72 }} />)
-                                ) : slotHistoryRows.length === 0 ? (
-                                    <div className="empty-state">
-                                        <div className="empty-state-title">Belum ada histori untuk slot ini</div>
-                                        <div className="empty-state-text">Histori akan muncul setelah ada ban yang pernah masuk atau keluar dari slot {slotHistoryCode}.</div>
-                                    </div>
-                                ) : slotHistoryRows.map(log => {
-                                    const enteredSlot = log.toVehicleRef === vehicle._id && log.toSlotCode === slotHistoryCode;
-                                    const leftSlot = log.fromVehicleRef === vehicle._id && log.fromSlotCode === slotHistoryCode;
-                                    const movementLabel =
-                                        enteredSlot && leftSlot
-                                            ? `Update di slot ${slotHistoryCode}`
-                                            : enteredSlot
-                                                ? `Masuk ke slot ${slotHistoryCode}`
-                                                : `Keluar dari slot ${slotHistoryCode}`;
+                            {loadingSlotHistory ? (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <tbody>
+                                            {[1, 2, 3].map(item => <tr key={item}><td><div className="skeleton skeleton-text" /></td></tr>)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : slotHistoryRows.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Belum ada histori untuk slot ini</div>
+                                    <div className="empty-state-text">Histori akan muncul setelah ada ban yang pernah masuk atau keluar dari slot {slotHistoryCode}.</div>
+                                </div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Waktu</th>
+                                                <th>Ban</th>
+                                                <th>Aksi</th>
+                                                <th>Perpindahan</th>
+                                                <th>Dari</th>
+                                                <th>Ke</th>
+                                                <th>Catatan</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {slotHistoryRows.map(log => {
+                                                const enteredSlot = log.toVehicleRef === vehicle._id && log.toSlotCode === slotHistoryCode;
+                                                const leftSlot = log.fromVehicleRef === vehicle._id && log.fromSlotCode === slotHistoryCode;
+                                                const movementLabel =
+                                                    enteredSlot && leftSlot
+                                                        ? `Update di slot ${slotHistoryCode}`
+                                                        : enteredSlot
+                                                            ? `Masuk ke slot ${slotHistoryCode}`
+                                                            : `Keluar dari slot ${slotHistoryCode}`;
 
-                                    return (
-                                    <div key={log._id} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.85rem', padding: '0.95rem 1rem', background: 'var(--color-gray-50)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                                            <div>
-                                                <div className="font-medium">{log.tireCode || '-'}</div>
-                                                <div className="text-muted text-sm">{log.tireBrand || '-'} | {log.tireSize || '-'}</div>
-                                            </div>
-                                            <span className={`badge badge-${getTireHistoryActionColor(log.actionType)}`}>
-                                                <span className="badge-dot" /> {getTireHistoryActionLabel(log.actionType)}
-                                            </span>
-                                        </div>
-                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{movementLabel}</div>
-                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{formatDateTime(log.timestamp)}</div>
-                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
-                                            Dari: {log.fromPlacementLabel || '-'}
-                                        </div>
-                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
-                                            Ke: {log.toPlacementLabel || '-'}
-                                        </div>
-                                        <div className="text-muted text-sm">{log.note || '-'}</div>
-                                    </div>
-                                )})}
-                            </div>
+                                                return (
+                                                    <tr key={log._id}>
+                                                        <td>{formatDateTime(log.timestamp)}</td>
+                                                        <td>
+                                                            <div className="font-medium">{log.tireCode || '-'}</div>
+                                                            <div className="text-muted text-sm">{log.tireBrand || '-'} | {log.tireSize || '-'}</div>
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge badge-${getTireHistoryActionColor(log.actionType)}`}>
+                                                                <span className="badge-dot" /> {getTireHistoryActionLabel(log.actionType)}
+                                                            </span>
+                                                        </td>
+                                                        <td>{movementLabel}</td>
+                                                        <td>{log.fromPlacementLabel || '-'}</td>
+                                                        <td>{log.toPlacementLabel || '-'}</td>
+                                                        <td>{log.note || '-'}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setSlotHistoryCode(null)}>Tutup</button>

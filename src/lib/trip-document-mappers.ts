@@ -41,6 +41,14 @@ function hasCargo(summary: CargoSummary) {
     return summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
 }
 
+function getActualDropPointCargo(point: NonNullable<DeliveryOrder['actualDropPoints']>[number]): CargoSummary {
+    return {
+        qtyKoli: parseFormattedNumberish(point.qtyKoli || 0),
+        weightKg: parseFormattedNumberish(point.weightKg || point.weightInputValue || 0),
+        volumeM3: parseFormattedNumberish(point.volumeM3 || point.volumeInputValue || 0, { maxFractionDigits: 3 }),
+    };
+}
+
 function summarizeActualDropCargoByItems(
     deliveryOrder: DeliveryOrder,
     deliveryOrderItemRefs: Set<string>,
@@ -56,10 +64,47 @@ function summarizeActualDropCargoByItems(
             return pointItemRefs.length > 0 && pointItemRefs.some(itemRef => deliveryOrderItemRefs.has(itemRef));
         })
         .reduce<CargoSummary>((sum, point) => ({
-            qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0),
-            weightKg: sum.weightKg + parseFormattedNumberish(point.weightKg || 0),
-            volumeM3: sum.volumeM3 + parseFormattedNumberish(point.volumeM3 || 0, { maxFractionDigits: 3 }),
+            qtyKoli: sum.qtyKoli + getActualDropPointCargo(point).qtyKoli,
+            weightKg: sum.weightKg + getActualDropPointCargo(point).weightKg,
+            volumeM3: sum.volumeM3 + getActualDropPointCargo(point).volumeM3,
         }), createCargoSummary());
+}
+
+function findHoldPickupAddressForItems(
+    deliveryOrder: DeliveryOrder,
+    deliveryOrderItemRefs: Set<string>,
+    referenceKey?: string,
+    suratJalanNumber?: string
+) {
+    const normalizedReferenceKey = (referenceKey || '').trim();
+    const normalizedSuratJalanNumber = (suratJalanNumber || '').trim().toUpperCase();
+    const holdPoint = (Array.isArray(deliveryOrder.actualDropPoints) ? deliveryOrder.actualDropPoints : [])
+        .find(point => {
+            const stopType = (point.stopType || '').trim().toUpperCase();
+            if (stopType !== 'HOLD' && stopType !== 'TRANSIT') {
+                return false;
+            }
+            if (!hasCargo(getActualDropPointCargo(point))) {
+                return false;
+            }
+            const pointItemRefs = [
+                point.deliveryOrderItemRef,
+                ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+            ].filter((value): value is string => Boolean(value));
+            if (pointItemRefs.length > 0 && pointItemRefs.some(itemRef => deliveryOrderItemRefs.has(itemRef))) {
+                return true;
+            }
+            const pointReferenceKey = (point.shipperReferenceKey || '').trim();
+            const pointReferenceNumber = (point.shipperReferenceNumber || '').trim().toUpperCase();
+            return Boolean(
+                (normalizedReferenceKey && pointReferenceKey === normalizedReferenceKey) ||
+                (normalizedSuratJalanNumber && pointReferenceNumber === normalizedSuratJalanNumber)
+            );
+        });
+
+    return holdPoint
+        ? (holdPoint.locationName || holdPoint.locationAddress || '').trim()
+        : '';
 }
 
 export function deriveTripOperationalStatusFromSuratJalanStatuses(
@@ -309,6 +354,7 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
     const resolvedBillableCargo = hasCargo(billableCargo) ? billableCargo : fallbackBillableCargo;
     const resolvedHoldCargo = hasCargo(holdCargo) ? holdCargo : fallbackHoldCargo;
     const resolvedReturnCargo = hasCargo(returnCargo) ? returnCargo : fallbackReturnCargo;
+    const holdPickupAddress = findHoldPickupAddressForItems(deliveryOrder, matchedItemRefs, referenceKey, suratJalanNumber);
 
     return {
         _id: `${deliveryOrder._id}:${referenceKey || 'primary'}`,
@@ -322,7 +368,7 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
         customerName: deliveryOrder.customerName,
         referenceKey,
         suratJalanNumber,
-        pickupAddress: reference?.pickupAddress || deliveryOrder.pickupAddress,
+        pickupAddress: holdPickupAddress || reference?.pickupAddress || deliveryOrder.pickupAddress,
         receiverName: reference?.receiverName || deliveryOrder.receiverName,
         receiverCompany: reference?.receiverCompany || deliveryOrder.receiverCompany,
         receiverAddress: reference?.receiverAddress || deliveryOrder.receiverAddress,

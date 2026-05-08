@@ -1272,7 +1272,7 @@ export interface Maintenance {
   totalCost?: number;
   relatedExpenseRef?: string;
   cost?: number;
-  source?: 'MANUAL' | 'ODOMETER_AUTO';
+  source?: 'MANUAL' | 'ODOMETER_AUTO' | 'TIRE_REPLACEMENT';
   relatedDeliveryOrderRef?: string;
   triggerOdometer?: number;
 }
@@ -1304,6 +1304,8 @@ export interface TireEvent {
   linkedWarehouseItemRef?: string;
   linkedWarehouseItemCode?: string;
   linkedWarehouseItemName?: string;
+  compatibleServiceRef?: string;
+  compatibleServiceName?: string;
   sourcePurchaseRef?: string;
   sourcePurchaseNumber?: string;
   sourcePurchaseItemRef?: string;
@@ -1311,6 +1313,14 @@ export interface TireEvent {
   installDate: string;
   replaceDate?: string;
   notes?: string;
+  purchaseCost?: number;
+  originalCost?: number;
+  totalUsedPercent?: number;
+  remainingPercent?: number;
+  remainingValue?: number;
+  maintenanceCostPostedPercent?: number;
+  maintenanceCostPostedAmount?: number;
+  lastMaintenanceCostRef?: string;
   accumulatedKm?: number;
   lastOdometerKm?: number;
   lastKmUpdateAt?: string;
@@ -1351,6 +1361,14 @@ export interface TireHistoryLog {
   odometerBeforeKm?: number;
   odometerAfterKm?: number;
   distanceKm?: number;
+  usagePercent?: number;
+  usageCost?: number;
+  costAllocationType?: 'USAGE_ON_EXIT' | 'INSTALL_FULL';
+  relatedMaintenanceRef?: string;
+  costSourceVehicleRef?: string;
+  costSourceVehiclePlate?: string;
+  remainingPercentAfter?: number;
+  remainingValueAfter?: number;
 }
 
 // ── Incident ──

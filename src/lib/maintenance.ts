@@ -79,7 +79,10 @@ export function getMaintenanceMaterialPreview(item: Maintenance, limit = 2): Mai
 }
 
 export function formatMaintenanceMaterialPreview(usage: MaintenanceMaterialPreview) {
-  return `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
+  const cost = typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0
+    ? ` - Rp${usage.subtotalCost.toLocaleString('id-ID')}`
+    : '';
+  return `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${cost}`;
 }
 
 export function getMaintenanceMaterialSummary(item: Maintenance) {

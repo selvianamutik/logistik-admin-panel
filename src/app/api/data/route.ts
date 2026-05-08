@@ -69,6 +69,7 @@ import {
     handleGenericCreate,
     handleGenericDelete,
     handleGenericUpdate,
+    handleTireInstallToSlot,
 } from '@/lib/api/generic-workflows';
 import {
     handleIncidentCreate,
@@ -278,6 +279,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'void' ||
         action === 'end-early' ||
         action === 'complete-with-materials'
+        || action === 'install-to-slot'
     ) {
         return 'update';
     }
@@ -1706,6 +1708,10 @@ export async function POST(request: Request) {
 
         if (entity === 'maintenances' && action === 'complete-with-materials') {
             return await handleMaintenanceComplete(session, data, addAuditLog);
+        }
+
+        if (entity === 'tire-events' && action === 'install-to-slot') {
+            return await handleTireInstallToSlot(session, data, addAuditLog);
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {

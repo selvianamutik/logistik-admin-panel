@@ -493,6 +493,11 @@ export async function handlePurchaseReceive(
                         sourcePurchaseItemRef: item._id,
                         sourceReceiveDate: receiveDate,
                         installDate: receiveDate,
+                        purchaseCost: Number(item.unitPrice || 0),
+                        originalCost: Number(item.unitPrice || 0),
+                        totalUsedPercent: 0,
+                        remainingPercent: 100,
+                        remainingValue: Number(item.unitPrice || 0),
                         notes: `Terdaftar otomatis dari pembelian ${bundle.purchase.purchaseNumber}`,
                     };
                     const historyLogDoc = buildTireHistoryLogDoc({

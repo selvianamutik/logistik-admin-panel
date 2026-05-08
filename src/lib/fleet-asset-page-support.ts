@@ -27,6 +27,9 @@ export type TireFormState = {
     tireBrand: string;
     tireSize: string;
     installDate: string;
+    originalCost: number;
+    totalUsedPercent: number;
+    usagePercentOnExit: number | null;
     accumulatedKm: number;
     notes: string;
     externalPartyName: string;
@@ -70,6 +73,9 @@ export function createDefaultTireForm(): TireFormState {
         tireBrand: '',
         tireSize: '',
         installDate: getBusinessDateValue(),
+        originalCost: 0,
+        totalUsedPercent: 0,
+        usagePercentOnExit: null,
         accumulatedKm: 0,
         notes: '',
         externalPartyName: '',
@@ -136,7 +142,7 @@ export function buildTiresQuery(params: {
 
     if (params.search?.trim()) {
         query.set('q', params.search.trim());
-        query.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,externalPartyName,externalPlateNumber,slotCode,slotLabel,posisi,linkedWarehouseItemCode,linkedWarehouseItemName,sourcePurchaseNumber');
+        query.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,slotCode,slotLabel,posisi,linkedWarehouseItemCode,linkedWarehouseItemName,sourcePurchaseNumber');
     }
 
     const filterObj: Record<string, string> = {};

@@ -239,8 +239,16 @@ function mergeSuratJalanDocumentWithLiveCargo(
         !hasAnyCargo(liveDocument.holdCargo) &&
         !hasAnyCargo(liveDocument.returnCargo);
 
+    const liveHasHoldCargo =
+        (liveDocument.holdCargo?.qtyKoli || 0) > 0 ||
+        (liveDocument.holdCargo?.weightKg || 0) > 0 ||
+        (liveDocument.holdCargo?.volumeM3 || 0) > 0;
+
     return {
         ...document,
+        pickupAddress: liveHasHoldCargo
+            ? liveDocument.pickupAddress || document.pickupAddress
+            : document.pickupAddress || liveDocument.pickupAddress,
         tripStatus: isDraftDocumentWithoutActualCargo ? document.tripStatus : liveDocument.tripStatus,
         itemCount: liveDocument.itemCount,
         cargoSummary: liveDocument.cargoSummary,

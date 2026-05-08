@@ -14,8 +14,12 @@ import {
     updateDocument,
 } from '@/lib/repositories/document-store';
 import {
+    buildTirePlacementLabel,
     buildDefaultTireLayoutConfig,
+    formatTireSlotLabel,
+    isKnownInternalTireSlotCode,
     normalizeTireLayoutConfig,
+    normalizeTireSlotCode,
 } from '@/lib/tire-slots';
 import {
     buildTireHistoryLogDoc,
@@ -29,7 +33,7 @@ import {
 } from '@/lib/tire-inventory';
 import { isTireTrackedWarehouseItem } from '@/lib/inventory';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
-import type { BankTransaction, CompanyProfile, User, WarehouseItem } from '@/lib/types';
+import type { BankTransaction, CompanyProfile, Maintenance, TireHistoryLog, User, WarehouseItem } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -696,27 +700,441 @@ function buildTireEventResponseError(error: unknown, fallbackMessage: string) {
     return NextResponse.json({ error: message }, { status });
 }
 
-function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
-    const normalizedValue = value.trim().toLowerCase();
-    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
-    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+function roundTireMoney(value: number) {
+    return Math.round(value);
 }
 
-function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
-    const timestamp = new Date().toISOString();
-    const normalizedCode = tireCode.trim().toUpperCase();
+function roundTirePercent(value: number) {
+    return Math.round(value * 100) / 100;
+}
+
+function normalizeTireOriginalCost(input: Record<string, unknown>) {
+    const parsed = normalizeCurrencyNumber(input.originalCost ?? input.purchaseCost ?? 0);
+    return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+}
+
+function normalizeTireMaintenancePostedPercent(input: Record<string, unknown>) {
+    const parsed = normalizeNumber(input.maintenanceCostPostedPercent ?? 0, { maxFractionDigits: 2 });
+    return Math.max(0, Math.min(Number.isFinite(parsed) ? parsed : 0, 100));
+}
+
+function isInternalVehicleExit(previous: Record<string, unknown>, next: Record<string, unknown>) {
+    const previousHolderType = normalizeOptionalText(previous.holderType);
+    const previousVehicleRef = normalizeOptionalText(previous.vehicleRef);
+    if (previousHolderType !== 'INTERNAL_VEHICLE' || !previousVehicleRef) {
+        return false;
+    }
+    const nextHolderType = normalizeOptionalText(next.holderType);
+    const nextVehicleRef = normalizeOptionalText(next.vehicleRef);
+    return nextHolderType !== 'INTERNAL_VEHICLE' || nextVehicleRef !== previousVehicleRef;
+}
+
+function buildTireUsageAllocation(params: {
+    previous: Record<string, unknown>;
+    next: Record<string, unknown>;
+    updates: Record<string, unknown>;
+}) {
+    const isVehicleExit = isInternalVehicleExit(params.previous, params.next);
+    const previousTotalUsedPercent = Math.max(normalizeNumber(params.previous.totalUsedPercent ?? 0, { maxFractionDigits: 2 }), 0);
+    const requestedTotalUsedPercent = Math.max(normalizeNumber(params.next.totalUsedPercent ?? params.previous.totalUsedPercent ?? 0, { maxFractionDigits: 2 }), 0);
+    const currentTotalUsedPercent = isVehicleExit ? previousTotalUsedPercent : requestedTotalUsedPercent;
+    if (!isVehicleExit) {
+        return {
+            tireUpdates: {
+                totalUsedPercent: roundTirePercent(Math.min(currentTotalUsedPercent, 100)),
+                remainingPercent: roundTirePercent(Math.max(100 - Math.min(currentTotalUsedPercent, 100), 0)),
+                remainingValue: roundTireMoney(
+                    normalizeTireOriginalCost(params.next)
+                    * Math.max(100 - Math.min(currentTotalUsedPercent, 100), 0)
+                    / 100
+                ),
+            },
+            historyFields: {},
+        };
+    }
+
+    const hasUsageInput = Object.prototype.hasOwnProperty.call(params.updates, 'usagePercentOnExit');
+    const usagePercent = hasUsageInput
+        ? normalizeNumber(params.updates.usagePercentOnExit, { maxFractionDigits: 2 })
+        : Number.NaN;
+    if (!Number.isFinite(usagePercent)) {
+        throw new Error('Persentase pemakaian ban wajib diisi saat ban keluar dari kendaraan');
+    }
+
+    const remainingBefore = roundTirePercent(Math.max(100 - currentTotalUsedPercent, 0));
+    if (usagePercent < 0) {
+        throw new Error('Persentase pemakaian ban tidak boleh negatif');
+    }
+    if (usagePercent > remainingBefore) {
+        throw new Error(`Persentase pemakaian ban melebihi sisa ${remainingBefore}%`);
+    }
+
+    const originalCost = normalizeTireOriginalCost(params.next);
+    const nextTotalUsedPercent = roundTirePercent(Math.min(currentTotalUsedPercent + usagePercent, 100));
+    const remainingPercentAfter = roundTirePercent(Math.max(100 - nextTotalUsedPercent, 0));
+    const remainingValueAfter = roundTireMoney(originalCost * remainingPercentAfter / 100);
+    const usageCost = roundTireMoney(originalCost * usagePercent / 100);
+
     return {
-        _id: buildUniqueConstraintId('tireEvent', 'tireCode', normalizedCode),
-        _type: 'uniqueConstraint',
-        entityType: 'tireEvent',
-        fieldName: 'tireCode',
-        value: normalizedCode,
-        valueLower: normalizedCode.toLowerCase(),
-        ownerRef: tireId,
-        ownerType: 'tireEvent',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-    } as const;
+        tireUpdates: {
+            totalUsedPercent: nextTotalUsedPercent,
+            remainingPercent: remainingPercentAfter,
+            remainingValue: remainingValueAfter,
+        },
+        historyFields: {
+            usagePercent,
+            usageCost,
+            costAllocationType: 'USAGE_ON_EXIT',
+            costSourceVehicleRef: normalizeOptionalText(params.previous.vehicleRef),
+            costSourceVehiclePlate: normalizeOptionalText(params.previous.vehiclePlate),
+            remainingPercentAfter,
+            remainingValueAfter,
+        } satisfies Partial<TireHistoryLog>,
+    };
+}
+
+function buildWarehouseTirePlacement(status: string) {
+    return buildTirePlacementLabel({
+        holderType: 'WAREHOUSE',
+        status,
+    });
+}
+
+export async function handleTireInstallToSlot(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const installingTireRef = normalizeOptionalText(data.tireEventRef || data.installingTireRef || data.id);
+    const vehicleRef = normalizeOptionalText(data.vehicleRef);
+    const slotCode = normalizeTireSlotCode(normalizeOptionalText(data.slotCode) || '');
+    const maintenanceDate = normalizeOptionalText(data.maintenanceDate) || getBusinessDateValue();
+    const oldTireDestination = normalizeOptionalText(data.oldTireDestination) === 'SCRAPPED' ? 'SCRAPPED' : 'WAREHOUSE';
+    const oldUsagePercent = Object.prototype.hasOwnProperty.call(data, 'oldTireUsagePercent')
+        ? normalizeNumber(data.oldTireUsagePercent, { maxFractionDigits: 2 })
+        : Number.NaN;
+    const existingMaintenanceRef = normalizeOptionalText(data.maintenanceRef);
+    const note = normalizeOptionalText(data.note);
+
+    if (!installingTireRef || !vehicleRef || !slotCode) {
+        return NextResponse.json({ error: 'Ban, kendaraan, dan slot wajib dipilih' }, { status: 400 });
+    }
+    if (!isKnownInternalTireSlotCode(slotCode)) {
+        return NextResponse.json({ error: 'Kode slot ban tidak valid' }, { status: 400 });
+    }
+    assertIsoDate(maintenanceDate, 'Tanggal pasang ban');
+
+    const [vehicle, installingTire, activeTires, existingMaintenance] = await Promise.all([
+        getDocumentById<Record<string, unknown>>(vehicleRef, 'vehicle'),
+        getDocumentById<Record<string, unknown>>(installingTireRef, 'tireEvent'),
+        listDocumentsByFilter<Record<string, unknown>>('tireEvent', {
+            vehicleRef,
+            holderType: 'INTERNAL_VEHICLE',
+            status: 'IN_USE',
+        }),
+        existingMaintenanceRef ? getDocumentById<Maintenance>(existingMaintenanceRef, 'maintenance') : Promise.resolve(null),
+    ]);
+
+    if (!vehicle) {
+        return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
+    }
+    if (normalizeOptionalText(vehicle.status) === 'SOLD') {
+        return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dipasang ban' }, { status: 409 });
+    }
+    if (existingMaintenanceRef) {
+        if (!existingMaintenance) {
+            return NextResponse.json({ error: 'Maintenance ban tidak ditemukan' }, { status: 404 });
+        }
+        if (existingMaintenance.vehicleRef !== vehicleRef) {
+            return NextResponse.json({ error: 'Maintenance ban tidak sesuai kendaraan yang dipilih' }, { status: 409 });
+        }
+        if (existingMaintenance.status !== 'SCHEDULED') {
+            return NextResponse.json({ error: 'Maintenance ban sudah selesai atau dilewati' }, { status: 409 });
+        }
+    }
+    if (!installingTire) {
+        return NextResponse.json({ error: 'Ban pengganti tidak ditemukan' }, { status: 404 });
+    }
+    if (normalizeOptionalText(installingTire.holderType) === 'INTERNAL_VEHICLE' && normalizeOptionalText(installingTire.status) === 'IN_USE') {
+        return NextResponse.json({ error: 'Ban pengganti masih terpasang di unit lain. Pindahkan ke gudang dulu sebelum dipasang sebagai pengganti.' }, { status: 409 });
+    }
+    const compatibleServiceRef = normalizeOptionalText(installingTire.compatibleServiceRef);
+    const compatibleServiceName = normalizeOptionalText(installingTire.compatibleServiceName);
+    const vehicleServiceRef = normalizeOptionalText(vehicle.serviceRef);
+    const vehicleServiceName = normalizeOptionalText(vehicle.serviceName);
+    if (compatibleServiceRef && vehicleServiceRef && compatibleServiceRef !== vehicleServiceRef) {
+        return NextResponse.json({ error: 'Ban pengganti tidak sesuai kategori armada kendaraan' }, { status: 409 });
+    }
+    if (
+        !compatibleServiceRef &&
+        compatibleServiceName &&
+        vehicleServiceName &&
+        compatibleServiceName.toLowerCase() !== vehicleServiceName.toLowerCase()
+    ) {
+        return NextResponse.json({ error: 'Ban pengganti tidak sesuai kategori armada kendaraan' }, { status: 409 });
+    }
+
+    const oldTire = activeTires.find(item =>
+        normalizeOptionalText(item._id) !== installingTireRef &&
+        normalizeTireSlotCode(normalizeOptionalText(item.slotCode) || '') === slotCode
+    ) || null;
+    if (oldTire && !Number.isFinite(oldUsagePercent)) {
+        return NextResponse.json({ error: 'Persentase pemakaian ban lama wajib diisi saat slot terisi' }, { status: 400 });
+    }
+
+    const vehiclePlate = normalizeOptionalText(vehicle.plateNumber);
+    const slotLabel = formatTireSlotLabel(slotCode);
+    const installOriginalCost = normalizeTireOriginalCost(installingTire);
+    if (installOriginalCost <= 0) {
+        return NextResponse.json({ error: 'Harga/original cost ban pengganti wajib lebih dari 0' }, { status: 400 });
+    }
+    const installPostedBefore = normalizeTireMaintenancePostedPercent(installingTire);
+    const installPostedPercent = roundTirePercent(Math.max(100 - installPostedBefore, 0));
+    const installCost = roundTireMoney(installOriginalCost * installPostedPercent / 100);
+
+    let oldUsageAllocation: ReturnType<typeof buildTireUsageAllocation> | null = null;
+    let oldNextDoc: Record<string, unknown> | null = null;
+    if (oldTire) {
+        oldNextDoc = {
+            ...oldTire,
+            holderType: 'WAREHOUSE',
+            status: oldTireDestination === 'SCRAPPED' ? 'SCRAPPED' : 'IN_WAREHOUSE',
+            vehicleRef: undefined,
+            vehiclePlate: undefined,
+            slotCode: undefined,
+            slotLabel: undefined,
+            posisi: buildWarehouseTirePlacement(oldTireDestination === 'SCRAPPED' ? 'SCRAPPED' : 'IN_WAREHOUSE'),
+            positionKey: 'gudang ban',
+            replaceDate: maintenanceDate,
+        };
+        try {
+            oldUsageAllocation = buildTireUsageAllocation({
+                previous: oldTire,
+                next: oldNextDoc,
+                updates: { usagePercentOnExit: oldUsagePercent },
+            });
+            Object.assign(oldNextDoc, oldUsageAllocation.tireUpdates);
+        } catch (error) {
+            return buildTireEventResponseError(error, 'Pemakaian ban lama tidak valid');
+        }
+    }
+
+    const oldUsageCost = roundTireMoney(Number(oldUsageAllocation?.historyFields?.usageCost || 0));
+    const shouldPostOldUsageMaintenance = Boolean(oldTire && roundTirePercent(oldUsagePercent) > 1 && oldUsageCost > 0);
+    const postedOldUsageCost = shouldPostOldUsageMaintenance ? oldUsageCost : 0;
+    const totalMaintenanceCost = postedOldUsageCost + installCost;
+    const maintenanceRef = existingMaintenance?._id || `maintenance-${crypto.randomUUID()}`;
+    const oldLine = oldTire
+        ? `Ban lama ${normalizeOptionalText(oldTire.tireCode) || oldTire._id}: ${oldUsagePercent}% = Rp${oldUsageCost.toLocaleString('id-ID')}`
+        : 'Slot kosong';
+    const newLine = `Ban baru ${normalizeOptionalText(installingTire.tireCode) || installingTireRef}: ${installPostedPercent}% = Rp${installCost.toLocaleString('id-ID')}`;
+    const materialUsages = [
+        ...(shouldPostOldUsageMaintenance && oldTire ? [{
+            warehouseItemRef: `tire:${normalizeOptionalText(oldTire._id) || ''}`,
+            itemCode: normalizeOptionalText(oldTire.tireCode),
+            itemName: `Pemakaian ban lama ${normalizeOptionalText(oldTire.tireCode) || ''}`.trim(),
+            category: 'Ban',
+            unit: 'PCS' as const,
+            quantity: 1,
+            unitCostSnapshot: oldUsageCost,
+            subtotalCost: oldUsageCost,
+            note: `${roundTirePercent(oldUsagePercent)}% pemakaian di ${vehiclePlate || vehicleRef}`,
+        }] : []),
+        ...(installCost > 0 ? [{
+            warehouseItemRef: `tire:${installingTireRef}`,
+            itemCode: normalizeOptionalText(installingTire.tireCode),
+            itemName: `Pasang ban pengganti ${normalizeOptionalText(installingTire.tireCode) || ''}`.trim(),
+            category: 'Ban',
+            unit: 'PCS' as const,
+            quantity: 1,
+            unitCostSnapshot: installCost,
+            subtotalCost: installCost,
+            note: `${roundTirePercent(installPostedPercent)}% biaya ban diposting saat pasang`,
+        }] : []),
+    ];
+    const maintenanceDoc: Maintenance = {
+        ...(existingMaintenance || {
+            _id: maintenanceRef,
+            _type: 'maintenance',
+            vehicleRef,
+            vehiclePlate,
+            type: 'Ganti / Pasang Ban',
+            scheduleType: 'DATE',
+            plannedDate: maintenanceDate,
+            status: 'DONE',
+            attachmentUrls: [],
+        }),
+        vehicleRef,
+        vehiclePlate,
+        type: existingMaintenance?.type || 'Ganti / Pasang Ban',
+        status: 'DONE',
+        completedDate: maintenanceDate,
+        notes: note || existingMaintenance?.notes,
+        completionNotes: [oldLine, newLine, note || existingMaintenance?.completionNotes].filter(Boolean).join('\n'),
+        materialUsages,
+        materialUsageCount: materialUsages.length,
+        materialCostTotal: totalMaintenanceCost,
+        laborCost: 0,
+        totalCost: totalMaintenanceCost,
+        cost: totalMaintenanceCost,
+        source: 'TIRE_REPLACEMENT',
+    };
+
+    const installingNextDoc: Record<string, unknown> = {
+        ...installingTire,
+        holderType: 'INTERNAL_VEHICLE',
+        status: 'IN_USE',
+        vehicleRef,
+        vehiclePlate,
+        compatibleServiceRef: vehicleServiceRef,
+        compatibleServiceName: vehicleServiceName,
+        slotCode,
+        slotLabel,
+        posisi: buildTirePlacementLabel({
+            holderType: 'INTERNAL_VEHICLE',
+            status: 'IN_USE',
+            vehiclePlate,
+            slotCode,
+        }),
+        positionKey: slotCode.toLowerCase(),
+        installDate: maintenanceDate,
+        maintenanceCostPostedPercent: roundTirePercent(Math.min(100, installPostedBefore + installPostedPercent)),
+        maintenanceCostPostedAmount: roundTireMoney(normalizeCurrencyNumber(installingTire.maintenanceCostPostedAmount ?? 0) + installCost),
+        lastMaintenanceCostRef: maintenanceRef,
+        externalPartyName: undefined,
+        externalPlateNumber: undefined,
+    };
+
+    const oldHistory = oldTire && oldNextDoc
+        ? buildTireHistoryLogDoc({
+            tireEventRef: normalizeOptionalText(oldTire._id) || '',
+            tireCode: normalizeOptionalText(oldTire.tireCode) || normalizeOptionalText(oldTire._id) || '',
+            tireBrand: normalizeOptionalText(oldTire.tireBrand),
+            tireSize: normalizeOptionalText(oldTire.tireSize),
+            previous: buildTireHistorySnapshot(oldTire),
+            next: buildTireHistorySnapshot(oldNextDoc),
+            session,
+            note: `Diganti dari ${vehiclePlate || '-'} slot ${slotCode}`,
+        })
+        : null;
+    if (oldHistory && oldUsageAllocation) {
+        Object.assign(oldHistory, oldUsageAllocation.historyFields, { relatedMaintenanceRef: maintenanceRef });
+    }
+
+    const installHistory = buildTireHistoryLogDoc({
+        tireEventRef: installingTireRef,
+        tireCode: normalizeOptionalText(installingTire.tireCode) || installingTireRef,
+        tireBrand: normalizeOptionalText(installingTire.tireBrand),
+        tireSize: normalizeOptionalText(installingTire.tireSize),
+        previous: buildTireHistorySnapshot(installingTire),
+        next: buildTireHistorySnapshot(installingNextDoc),
+        session,
+        note: `Pasang ban ke ${vehiclePlate || '-'} slot ${slotCode}`,
+    });
+    Object.assign(installHistory, {
+        usagePercent: installPostedPercent,
+        usageCost: installCost,
+        costAllocationType: 'INSTALL_FULL',
+        relatedMaintenanceRef: maintenanceRef,
+        costSourceVehicleRef: vehicleRef,
+        costSourceVehiclePlate: vehiclePlate,
+        remainingPercentAfter: normalizeNumber(installingNextDoc.remainingPercent ?? Math.max(100 - Number(installingNextDoc.totalUsedPercent || 0), 0), { maxFractionDigits: 2 }),
+        remainingValueAfter: normalizeCurrencyNumber(installingNextDoc.remainingValue ?? 0),
+    } satisfies Partial<TireHistoryLog>);
+
+    try {
+        if (existingMaintenance) {
+            await updateDocument(maintenanceRef, {
+                status: 'DONE',
+                completedDate: maintenanceDate,
+                notes: maintenanceDoc.notes,
+                completionNotes: maintenanceDoc.completionNotes,
+                materialUsages,
+                materialUsageCount: materialUsages.length,
+                materialCostTotal: totalMaintenanceCost,
+                laborCost: 0,
+                totalCost: totalMaintenanceCost,
+                cost: totalMaintenanceCost,
+                source: 'TIRE_REPLACEMENT',
+            }, 'maintenance');
+        } else {
+            await createDocument(maintenanceDoc as unknown as { _type: string; [key: string]: unknown });
+        }
+        if (oldTire && oldNextDoc) {
+            await updateDocument(normalizeOptionalText(oldTire._id) || '', {
+                holderType: oldNextDoc.holderType,
+                status: oldNextDoc.status,
+                vehicleRef: null,
+                vehiclePlate: null,
+                slotCode: null,
+                slotLabel: null,
+                posisi: oldNextDoc.posisi,
+                positionKey: oldNextDoc.positionKey,
+                replaceDate: oldNextDoc.replaceDate,
+                ...oldUsageAllocation?.tireUpdates,
+            }, 'tireEvent');
+            if (oldHistory) {
+                await createDocument(oldHistory);
+            }
+            await appendTrackedTireWarehouseSync({
+                previousDoc: oldTire,
+                nextDoc: { ...oldNextDoc, _id: oldTire._id },
+                session,
+            });
+        }
+        await updateDocument(installingTireRef, {
+            holderType: installingNextDoc.holderType,
+            status: installingNextDoc.status,
+            vehicleRef,
+            vehiclePlate,
+            slotCode,
+            slotLabel,
+            posisi: installingNextDoc.posisi,
+            positionKey: installingNextDoc.positionKey,
+            installDate: installingNextDoc.installDate,
+            compatibleServiceRef: vehicleServiceRef,
+            compatibleServiceName: vehicleServiceName,
+            maintenanceCostPostedPercent: installingNextDoc.maintenanceCostPostedPercent,
+            maintenanceCostPostedAmount: installingNextDoc.maintenanceCostPostedAmount,
+            lastMaintenanceCostRef: maintenanceRef,
+            externalPartyName: null,
+            externalPlateNumber: null,
+        }, 'tireEvent');
+        await createDocument(installHistory);
+        await appendTrackedTireWarehouseSync({
+            previousDoc: installingTire,
+            nextDoc: { ...installingNextDoc, _id: installingTireRef },
+            session,
+        });
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data ban berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        return buildTireEventResponseError(error, 'Gagal memasang ban');
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'tire-events',
+        installingTireRef,
+        `Pasang ban ${normalizeOptionalText(installingTire.tireCode) || installingTireRef} ke ${vehiclePlate || vehicleRef} slot ${slotCode}`
+    );
+
+    const updatedTire = await getDocumentById<Record<string, unknown>>(installingTireRef, 'tireEvent');
+    return NextResponse.json({
+        data: updatedTire,
+        maintenance: maintenanceDoc,
+        summary: {
+            oldTireUsageCost: oldUsageCost,
+            installCost,
+            totalMaintenanceCost,
+            maintenanceRef,
+        },
+    });
 }
 
 function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
@@ -1231,11 +1649,18 @@ export async function handleGenericUpdate(
             nextTireDoc.linkedWarehouseItemCode = undefined;
             nextTireDoc.linkedWarehouseItemName = undefined;
         }
+        const usageAllocation = buildTireUsageAllocation({
+            previous: existingTire,
+            next: nextTireDoc,
+            updates,
+        });
+        Object.assign(nextTireDoc, usageAllocation.tireUpdates);
         const tirePatchPayload = {
             ...normalizedTireUpdates,
             linkedWarehouseItemRef: nextTireDoc.linkedWarehouseItemRef,
             linkedWarehouseItemCode: nextTireDoc.linkedWarehouseItemCode,
             linkedWarehouseItemName: nextTireDoc.linkedWarehouseItemName,
+            ...usageAllocation.tireUpdates,
         };
         const tireSetPayload = Object.fromEntries(
             Object.entries(tirePatchPayload).filter(([, value]) => value !== undefined)
@@ -1253,28 +1678,22 @@ export async function handleGenericUpdate(
             session,
             note: normalizeOptionalText(normalizedTireUpdates.notes),
         });
+        Object.assign(historyLogDoc, usageAllocation.historyFields);
         const currentTireCode = normalizeOptionalText(existingTire.tireCode)?.toUpperCase();
         const nextTireCode = normalizeOptionalText(nextTireDoc.tireCode)?.toUpperCase();
-        const nextTireCodeConstraint =
-            nextTireCode && nextTireCode !== currentTireCode
-                ? buildTireCodeUniqueConstraintDoc(id, nextTireCode)
-                : null;
         try {
             await updateDocument(id, {
                 ...tireSetPayload,
                 ...Object.fromEntries(tireUnsetFields.map(field => [field, null])),
             }, 'tireEvent');
             await createDocument(historyLogDoc);
-            if (nextTireCodeConstraint) {
-                await createDocument(nextTireCodeConstraint);
-            }
             await appendTrackedTireWarehouseSync({
                 previousDoc: existingTire,
                 nextDoc: { ...nextTireDoc, _id: id },
                 session,
             });
         } catch (error) {
-            if (isDocumentAlreadyExistsError(error, nextTireCodeConstraint?._id)) {
+            if (nextTireCode && nextTireCode !== currentTireCode && isDocumentAlreadyExistsError(error)) {
                 return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
             }
             if (isMutationConflictError(error)) {
@@ -2318,12 +2737,7 @@ export async function handleGenericCreate(
             session,
             note: normalizeOptionalText(createdTireDoc.notes),
         });
-        const tireCodeConstraint = buildTireCodeUniqueConstraintDoc(
-            newId,
-            normalizeOptionalText(createdTireDoc.tireCode) || newId
-        );
         try {
-            await createDocument(tireCodeConstraint);
             await createDocument(createdTireDoc);
             await createDocument(historyLogDoc);
             await appendTrackedTireWarehouseSync({
@@ -2332,7 +2746,7 @@ export async function handleGenericCreate(
                 session,
             });
         } catch (error) {
-            if (isDocumentAlreadyExistsError(error, tireCodeConstraint._id)) {
+            if (isDocumentAlreadyExistsError(error)) {
                 return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
             }
             if (isMutationConflictError(error)) {
