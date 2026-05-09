@@ -878,22 +878,21 @@ class _ManifestItemCard extends StatelessWidget {
             onChanged: (value) => onChanged(description: value),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _SyncedTextFormField(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              Widget qtyField() {
+                return _SyncedTextFormField(
                   value: item.qtyKoli,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: const InputDecoration(labelText: 'Koli'),
                   onChanged: (value) => onChanged(qtyKoli: value),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: _SyncedTextFormField(
+                );
+              }
+
+              Widget weightField() {
+                return _SyncedTextFormField(
                   value: item.weightInputValue,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -901,12 +900,11 @@ class _ManifestItemCard extends StatelessWidget {
                   decoration: const InputDecoration(labelText: 'Berat'),
                   enabled: !item.isWeightLocked,
                   onChanged: (value) => onChanged(weightInputValue: value),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 90,
-                child: DropdownButtonFormField<String>(
+                );
+              }
+
+              Widget weightUnitField() {
+                return DropdownButtonFormField<String>(
                   key: ValueKey(
                     'weight-unit-${item.id}-${item.weightInputUnit}',
                   ),
@@ -919,28 +917,48 @@ class _ManifestItemCard extends StatelessWidget {
                   ],
                   onChanged: (value) =>
                       onChanged(weightInputUnit: value ?? item.weightInputUnit),
-                ),
-              ),
-            ],
+                );
+              }
+
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  children: [
+                    qtyField(),
+                    const SizedBox(height: 12),
+                    weightField(),
+                    const SizedBox(height: 12),
+                    weightUnitField(),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: qtyField()),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 2, child: weightField()),
+                  const SizedBox(width: 10),
+                  SizedBox(width: 90, child: weightUnitField()),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: _SyncedTextFormField(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              Widget volumeField() {
+                return _SyncedTextFormField(
                   value: item.volumeInputValue,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: const InputDecoration(labelText: 'Volume'),
                   onChanged: (value) => onChanged(volumeInputValue: value),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 100,
-                child: DropdownButtonFormField<String>(
+                );
+              }
+
+              Widget volumeUnitField() {
+                return DropdownButtonFormField<String>(
                   key: ValueKey(
                     'volume-unit-${item.id}-${item.volumeInputUnit}',
                   ),
@@ -954,9 +972,27 @@ class _ManifestItemCard extends StatelessWidget {
                   ],
                   onChanged: (value) =>
                       onChanged(volumeInputUnit: value ?? item.volumeInputUnit),
-                ),
-              ),
-            ],
+                );
+              }
+
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  children: [
+                    volumeField(),
+                    const SizedBox(height: 12),
+                    volumeUnitField(),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(flex: 2, child: volumeField()),
+                  const SizedBox(width: 10),
+                  SizedBox(width: 100, child: volumeUnitField()),
+                ],
+              );
+            },
           ),
         ],
       ),

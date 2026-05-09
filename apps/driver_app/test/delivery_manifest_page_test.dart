@@ -128,5 +128,43 @@ void main() {
       expect(capturedResult!.cargoItems.first.weightInputValue, 850);
       expect(capturedResult!.cargoItems.first.shipperReferenceNumber, 'SJ-002');
     });
+
+    testWidgets('keeps cargo input usable on compact mobile width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryManifestPage(
+            title: 'Kelola SJ & Barang',
+            submitLabel: 'Simpan SJ & Barang',
+            pickupStops: pickupStops,
+            customerProducts: [
+              CustomerProductOption(
+                id: 'product-1',
+                customerRef: 'customer-1',
+                code: 'KRM-PREMIUM-LONG',
+                name: 'Keramik granit premium ukuran panjang',
+                description: 'Keramik granit premium ukuran panjang',
+                defaultQtyKoli: 1,
+                defaultWeightInputValue: 12,
+                defaultWeightInputUnit: 'KG',
+              ),
+            ],
+            allowsDirectCargoInput: true,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Kelola SJ & Barang'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

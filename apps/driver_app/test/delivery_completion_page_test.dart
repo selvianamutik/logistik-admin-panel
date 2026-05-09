@@ -142,5 +142,39 @@ void main() {
 
       expect(find.textContaining('beberapa target SJ'), findsOneWidget);
     });
+
+    testWidgets('keeps actual cargo and drop fields usable on compact width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: multiTargetTrip,
+            customerRecipients: [
+              CustomerRecipientOption(
+                id: 'recipient-1',
+                customerRef: 'customer-1',
+                label: 'Gudang Transit Pelanggan Dengan Nama Panjang',
+                receiverName: 'PT Penerima Dengan Nama Sangat Panjang',
+                receiverAddress:
+                    'Jl. Industri Barat Nomor 123, Kawasan Pergudangan',
+                receiverCompany: 'PT Penerima Dengan Nama Sangat Panjang',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

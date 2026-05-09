@@ -895,27 +895,39 @@ class _TotalsCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: _MetricItem(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final metrics = [
+              _MetricItem(
                 label: title,
                 value: qtyLabel.isEmpty ? '-' : qtyLabel,
               ),
-            ),
-            Expanded(
-              child: _MetricItem(
+              _MetricItem(
                 label: 'Berat',
                 value: weightLabel.isEmpty ? '-' : weightLabel,
               ),
-            ),
-            Expanded(
-              child: _MetricItem(
+              _MetricItem(
                 label: 'Volume',
                 value: volumeLabel.isEmpty ? '-' : volumeLabel,
               ),
-            ),
-          ],
+            ];
+
+            if (constraints.maxWidth < 360) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final entry in metrics.indexed) ...[
+                    if (entry.$1 > 0) const SizedBox(height: 12),
+                    entry.$2,
+                  ],
+                ],
+              );
+            }
+
+            return Row(
+              children: [for (final metric in metrics) Expanded(child: metric)],
+            );
+          },
         ),
       ),
     );
@@ -993,10 +1005,10 @@ class _ActualCargoCard extends StatelessWidget {
               onChanged: (value) => onChanged(draft.itemId, qtyKoli: value),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _SyncedTextFormField(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                Widget weightField() {
+                  return _SyncedTextFormField(
                     value: draft.weightInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
@@ -1008,12 +1020,11 @@ class _ActualCargoCard extends StatelessWidget {
                     ),
                     onChanged: (value) =>
                         onChanged(draft.itemId, weightInputValue: value),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 110,
-                  child: DropdownButtonFormField<String>(
+                  );
+                }
+
+                Widget weightUnitField() {
+                  return DropdownButtonFormField<String>(
                     initialValue: draft.weightInputUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
@@ -1023,15 +1034,33 @@ class _ActualCargoCard extends StatelessWidget {
                     ],
                     onChanged: (value) =>
                         onChanged(draft.itemId, weightInputUnit: value ?? 'KG'),
-                  ),
-                ),
-              ],
+                  );
+                }
+
+                if (constraints.maxWidth < 340) {
+                  return Column(
+                    children: [
+                      weightField(),
+                      const SizedBox(height: 12),
+                      weightUnitField(),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: weightField()),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 110, child: weightUnitField()),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _SyncedTextFormField(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                Widget volumeField() {
+                  return _SyncedTextFormField(
                     value: draft.volumeInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
@@ -1043,12 +1072,11 @@ class _ActualCargoCard extends StatelessWidget {
                     ),
                     onChanged: (value) =>
                         onChanged(draft.itemId, volumeInputValue: value),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 110,
-                  child: DropdownButtonFormField<String>(
+                  );
+                }
+
+                Widget volumeUnitField() {
+                  return DropdownButtonFormField<String>(
                     initialValue: draft.volumeInputUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
@@ -1059,9 +1087,27 @@ class _ActualCargoCard extends StatelessWidget {
                     ],
                     onChanged: (value) =>
                         onChanged(draft.itemId, volumeInputUnit: value ?? 'M3'),
-                  ),
-                ),
-              ],
+                  );
+                }
+
+                if (constraints.maxWidth < 340) {
+                  return Column(
+                    children: [
+                      volumeField(),
+                      const SizedBox(height: 12),
+                      volumeUnitField(),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: volumeField()),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 110, child: volumeUnitField()),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -1261,10 +1307,10 @@ class _ActualDropCard extends StatelessWidget {
               onChanged: (value) => onChanged(draft.id, qtyKoli: value),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _SyncedTextFormField(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                Widget weightField() {
+                  return _SyncedTextFormField(
                     value: draft.weightInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
@@ -1272,12 +1318,11 @@ class _ActualDropCard extends StatelessWidget {
                     decoration: const InputDecoration(labelText: 'Berat Drop'),
                     onChanged: (value) =>
                         onChanged(draft.id, weightInputValue: value),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 110,
-                  child: DropdownButtonFormField<String>(
+                  );
+                }
+
+                Widget weightUnitField() {
+                  return DropdownButtonFormField<String>(
                     initialValue: draft.weightInputUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
@@ -1287,15 +1332,33 @@ class _ActualDropCard extends StatelessWidget {
                     ],
                     onChanged: (value) =>
                         onChanged(draft.id, weightInputUnit: value ?? 'KG'),
-                  ),
-                ),
-              ],
+                  );
+                }
+
+                if (constraints.maxWidth < 340) {
+                  return Column(
+                    children: [
+                      weightField(),
+                      const SizedBox(height: 12),
+                      weightUnitField(),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: weightField()),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 110, child: weightUnitField()),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _SyncedTextFormField(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                Widget volumeField() {
+                  return _SyncedTextFormField(
                     value: draft.volumeInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
@@ -1303,12 +1366,11 @@ class _ActualDropCard extends StatelessWidget {
                     decoration: const InputDecoration(labelText: 'Volume Drop'),
                     onChanged: (value) =>
                         onChanged(draft.id, volumeInputValue: value),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 110,
-                  child: DropdownButtonFormField<String>(
+                  );
+                }
+
+                Widget volumeUnitField() {
+                  return DropdownButtonFormField<String>(
                     initialValue: draft.volumeInputUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
@@ -1319,9 +1381,27 @@ class _ActualDropCard extends StatelessWidget {
                     ],
                     onChanged: (value) =>
                         onChanged(draft.id, volumeInputUnit: value ?? 'M3'),
-                  ),
-                ),
-              ],
+                  );
+                }
+
+                if (constraints.maxWidth < 340) {
+                  return Column(
+                    children: [
+                      volumeField(),
+                      const SizedBox(height: 12),
+                      volumeUnitField(),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: volumeField()),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 110, child: volumeUnitField()),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
             _SyncedTextFormField(
