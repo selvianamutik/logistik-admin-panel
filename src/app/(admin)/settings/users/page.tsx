@@ -12,7 +12,7 @@ import { INTERNAL_USER_ROLE_OPTIONS, type InternalUserRole } from '@/lib/rbac';
 type InternalUser = User & { role: InternalUserRole };
 
 const getUserNextAction = (user: InternalUser) => {
-    if (user.active === false) return 'Aktifkan bila user dipakai lagi';
+    if (user.active === false) return 'Aktifkan bila pengguna dipakai lagi';
     if (user.role === 'OWNER') return 'Pastikan akun owner tetap aman';
     if (user.role === 'FINANCE') return 'Siap dipakai tim finance';
     if (user.role === 'ARMADA') return 'Siap dipakai tim armada';
@@ -50,7 +50,7 @@ export default function UsersPage() {
         setLoading(true);
         try {
             const [listPayload, summaryPayload] = await Promise.all([
-                fetchAdminListPayload<User>(`/api/data?entity=users&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&filter=${encodeURIComponent(internalRoleFilter)}`, 'Gagal memuat data user'),
+                fetchAdminListPayload<User>(`/api/data?entity=users&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&filter=${encodeURIComponent(internalRoleFilter)}`, 'Gagal memuat data pengguna'),
                 fetchAdminData<{
                     total?: number;
                     inactive?: number;
@@ -58,7 +58,7 @@ export default function UsersPage() {
                     operational?: number;
                     finance?: number;
                     armada?: number;
-                }>('/api/data?entity=users-summary', 'Gagal memuat ringkasan user'),
+                }>('/api/data?entity=users-summary', 'Gagal memuat ringkasan pengguna'),
             ]);
 
             setUsers((listPayload.data || []).filter((item: User): item is InternalUser => item.role !== 'DRIVER'));
@@ -69,7 +69,7 @@ export default function UsersPage() {
             setFinanceUsers(summaryPayload.finance || 0);
             setArmadaUsers(summaryPayload.armada || 0);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data pengguna');
         } finally {
             setLoading(false);
         }
@@ -84,7 +84,7 @@ export default function UsersPage() {
 
     const handleSave = async () => {
         if (!form.name || !form.email) { addToast('error', 'Nama dan email wajib'); return; }
-        if (!editUser && !form.password) { addToast('error', 'Password wajib untuk user baru'); return; }
+        if (!editUser && !form.password) { addToast('error', 'Password wajib untuk pengguna baru'); return; }
         if (form.password && form.password.length < 8) { addToast('error', 'Password minimal 8 karakter'); return; }
         setSaving(true);
         try {
@@ -98,11 +98,11 @@ export default function UsersPage() {
                 });
                 const payload = await res.json();
                 if (!res.ok) {
-                    addToast('error', payload.error || 'Gagal memperbarui user');
+                    addToast('error', payload.error || 'Gagal memperbarui pengguna');
                     return;
                 }
                 await loadUsers();
-                addToast('success', 'User diperbarui');
+                addToast('success', 'Pengguna diperbarui');
             } else {
                 const res = await fetch('/api/data', {
                     method: 'POST',
@@ -111,7 +111,7 @@ export default function UsersPage() {
                 });
                 const payload = await res.json();
                 if (!res.ok) {
-                    addToast('error', payload.error || 'Gagal menambah user');
+                    addToast('error', payload.error || 'Gagal menambah pengguna');
                     return;
                 }
                 if (page !== 1) {
@@ -119,11 +119,11 @@ export default function UsersPage() {
                 } else {
                     await loadUsers();
                 }
-                addToast('success', 'User ditambahkan');
+                addToast('success', 'Pengguna ditambahkan');
             }
             setShowModal(false);
         } catch {
-            addToast('error', editUser ? 'Gagal memperbarui user' : 'Gagal menambah user');
+            addToast('error', editUser ? 'Gagal memperbarui pengguna' : 'Gagal menambah pengguna');
         } finally {
             setSaving(false);
         }
@@ -140,13 +140,13 @@ export default function UsersPage() {
             });
             const payload = await res.json();
             if (!res.ok) {
-                addToast('error', payload.error || 'Gagal memperbarui status user');
+                addToast('error', payload.error || 'Gagal memperbarui status pengguna');
                 return;
             }
             await loadUsers();
-            addToast('success', `User ${currentlyActive ? 'dinonaktifkan' : 'diaktifkan'}`);
+            addToast('success', `Pengguna ${currentlyActive ? 'dinonaktifkan' : 'diaktifkan'}`);
         } catch {
-            addToast('error', 'Gagal memperbarui status user');
+            addToast('error', 'Gagal memperbarui status pengguna');
         } finally {
             setTogglingUserId(current => current === u._id ? null : current);
         }
@@ -154,12 +154,12 @@ export default function UsersPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">User Management</h1></div>
-                <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah User</button></div></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengguna Internal</h1></div>
+                <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Pengguna</button></div></div>
 
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Aktif</div><div className="kpi-value">{activeUsers}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Nonaktif</div><div className="kpi-value">{inactiveUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pengguna Aktif</div><div className="kpi-value">{activeUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pengguna Nonaktif</div><div className="kpi-value">{inactiveUsers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Owner</div><div className="kpi-value">{ownerUsers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Operasional</div><div className="kpi-value">{operationalUsers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Finance</div><div className="kpi-value">{financeUsers}</div></div></div>
@@ -173,7 +173,7 @@ export default function UsersPage() {
                         <tbody suppressHydrationWarning>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalUsers === 0 ? (
-                                    <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Belum ada user internal</div></div></td></tr>
+                                    <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Belum ada pengguna internal</div></div></td></tr>
                                 ) : users.map(u => (
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
@@ -193,8 +193,8 @@ export default function UsersPage() {
                     <div className="mobile-record-list">
                         {totalUsers === 0 ? (
                             <div className="mobile-record-card">
-                                <div className="mobile-record-title">Belum ada user internal</div>
-                                <div className="mobile-record-subtitle">Tambahkan user admin atau owner baru untuk akses internal sistem.</div>
+                                <div className="mobile-record-title">Belum ada pengguna internal</div>
+                                <div className="mobile-record-subtitle">Tambahkan pengguna admin atau owner baru untuk akses internal sistem.</div>
                             </div>
                         ) : users.map(u => (
                             <div key={u._id} className="mobile-record-card">
@@ -234,7 +234,7 @@ export default function UsersPage() {
                         totalItems={totalUsers}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
-                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} user</>
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} pengguna</>
                         )}
                     />
                 )}
@@ -243,7 +243,7 @@ export default function UsersPage() {
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">{editUser ? 'Edit User' : 'Tambah User'}</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editUser ? 'Edit Pengguna' : 'Tambah Pengguna'}</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" /></div>
                             <div className="form-group"><label className="form-label">Email <span className="required">*</span></label><input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="username" /></div>

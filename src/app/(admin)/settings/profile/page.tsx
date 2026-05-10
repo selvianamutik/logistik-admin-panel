@@ -101,7 +101,7 @@ export default function ProfilePage() {
                         <form onSubmit={handleProfileSubmit}>
                             <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Profil</h2>
                             <div className="form-group"><label className="form-label">Nama</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} required /></div>
-                            <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={user?.email || ''} disabled /><div className="form-hint">Dikelola dari User Management</div></div>
+                            <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={user?.email || ''} disabled /><div className="form-hint">Dikelola dari Pengguna Internal</div></div>
                             <div className="form-group"><label className="form-label">Role</label><input className="form-input" value={user?.role || ''} disabled /></div>
                             <button type="submit" className="btn btn-primary" disabled={profileLoading}><Save size={16} /> {profileLoading ? 'Menyimpan...' : 'Simpan Profil'}</button>
                         </form>

@@ -342,8 +342,8 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Pengaturan',
             items: [
                 { label: 'Akun Saya', href: '/settings/profile', icon: 'User', module: 'profile' },
-                { label: 'Perusahaan', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
-                { label: 'Pengguna', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
+                { label: 'Perusahaan & Dokumen', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
+                { label: 'Pengguna Internal', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
                 { label: 'Audit Aktivitas', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
             ],
         },
