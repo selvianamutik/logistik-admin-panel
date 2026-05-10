@@ -1,5 +1,5 @@
 import type { OrderItemStatus } from '@/lib/types';
-import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
+import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/components/FormattedNumberInput.helpers';
 
 type OrderItemProgressSource = {
   qtyKoli?: number;

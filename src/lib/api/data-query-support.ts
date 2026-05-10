@@ -12,7 +12,7 @@ import {
 } from '@/lib/employee-attendance';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     applyDerivedCustomerReceiptOverpaymentState,
     applyDerivedFreightNotaReceivableState,

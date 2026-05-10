@@ -151,7 +151,7 @@ import {
 import { getProjectedDocumentRead } from '@/lib/api/projected-document-reads';
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
 import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { getDataServiceErrorInfo } from '@/lib/service-errors';
 import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, OrderTripPlan, User, Vehicle } from '@/lib/types';
 

@@ -8,7 +8,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import { buildTripResourceLocks } from '@/lib/trip-resource-lock-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, OrderItem, Vehicle } from '@/lib/types';

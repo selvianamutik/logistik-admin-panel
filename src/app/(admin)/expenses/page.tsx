@@ -9,7 +9,7 @@ import SortableTableHeader, { type SortDirection } from '@/components/SortableTa
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     buildInventoryReportPeriodLabel,
     getDefaultInventoryReportPeriod,

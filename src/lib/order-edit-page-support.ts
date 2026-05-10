@@ -1,5 +1,5 @@
 import type { Customer, Order, OrderItem, OrderPickupStop } from './types';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     convertKgToWeightInputValue,
     convertWeightToKg,

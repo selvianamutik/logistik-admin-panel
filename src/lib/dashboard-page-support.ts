@@ -1,5 +1,5 @@
 import { getReceivableNetAmount } from './utils';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 
 export interface DashboardData {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };

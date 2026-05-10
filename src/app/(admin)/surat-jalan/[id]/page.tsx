@@ -32,7 +32,7 @@ import {
 } from '@/lib/delivery-order-detail-support';
 import { deriveSuratJalanDocumentStatus } from '@/lib/trip-document-mappers';
 import { convertKgToWeightInputValue, convertM3ToVolumeInputValue, convertVolumeToM3, convertWeightToKg, formatCargoSummary, getWeightInputFractionDigits, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS } from '@/lib/measurement';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     applyCustomerProductToOrderItem,
     applyOrderItemAutoWeightFromQty,

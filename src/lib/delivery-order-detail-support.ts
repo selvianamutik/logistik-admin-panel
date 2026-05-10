@@ -7,7 +7,7 @@ import type {
     TrackingLog,
     Vehicle,
 } from '@/lib/types';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     calculateWeightPortion,
     roundQuantity,

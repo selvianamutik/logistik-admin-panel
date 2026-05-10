@@ -8,7 +8,7 @@ import {
     hasDeliveryOrderItemSpecificDropMapping,
 } from './delivery-order-completion';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 
 export interface NotaItemRow {
     id: string;

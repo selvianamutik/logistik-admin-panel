@@ -1,4 +1,4 @@
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { Customer, FreightNota } from '@/lib/types';
 import { getReceivableNetAmount } from '@/lib/utils';
 

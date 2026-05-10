@@ -3,7 +3,7 @@ import {
     getDeliveryOrderHoldCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from './delivery-order-completion';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, TrackingLog } from './types';
 import type { CargoSummary, SuratJalanDocument, SuratJalanDocumentItem, SuratJalanItemRecord, SuratJalanRecord, Trip, TripRecord, TripTrackingEvent } from './trip-document-types';
 import {

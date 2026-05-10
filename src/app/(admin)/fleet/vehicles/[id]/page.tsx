@@ -23,7 +23,7 @@ import {
     getDeliveryOrderBillableCargoSummary,
     getDeliveryOrderHoldCargoSummary,
 } from '@/lib/delivery-order-completion';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { formatCargoSummary } from '@/lib/measurement';
 import {
     formatTireSlotLabel,

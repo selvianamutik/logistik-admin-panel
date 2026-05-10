@@ -1,7 +1,7 @@
 export type WeightInputUnit = 'KG' | 'TON';
 export type VolumeInputUnit = 'M3' | 'LITER' | 'KL';
 
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 
 export const WEIGHT_INPUT_UNIT_OPTIONS: Array<{ value: WeightInputUnit; label: string }> = [
   { value: 'KG', label: 'Kg' },

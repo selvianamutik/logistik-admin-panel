@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, Edit2, Plus, Save, Search, Trash2, UserCircle, X } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { useApp, useToast } from '../../../layout';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
@@ -468,7 +469,7 @@ export default function DriverSkorsPage() {
                                 {form.scoreType === 'DAYS' && (
                                     <div className="form-group">
                                         <label className="form-label">Durasi Skors (hari) <span className="required">*</span></label>
-                                        <input className="form-input" inputMode="numeric" value={form.durationDays || ''} onChange={event => setForm(current => ({ ...current, durationDays: event.target.value.replace(/[^\d]/g, '') }))} placeholder="1" />
+                                        <FormattedNumberInput allowDecimal={false} value={Number(form.durationDays || 0)} onValueChange={value => setForm(current => ({ ...current, durationDays: value > 0 ? String(value) : '' }))} placeholder="1" />
                                     </div>
                                 )}
                             </div>

@@ -1,5 +1,5 @@
 import { createDocument, getCompanyProfile, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
-import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
+import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/components/FormattedNumberInput.helpers';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { CompanyProfile, PaymentMethod, User } from '@/lib/types';
 

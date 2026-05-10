@@ -1,4 +1,4 @@
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { deriveReceivableStatus, getReceivableNetAmount } from './utils';
 import type {
     CustomerOverpayment,

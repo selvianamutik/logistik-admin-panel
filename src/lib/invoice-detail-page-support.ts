@@ -1,4 +1,4 @@
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { getReceivableNetAmount } from './utils';
 import { calculatePph23Summary } from './pph23';
 import type { BankAccount, FreightNota, InvoiceAdjustment, Payment } from './types';

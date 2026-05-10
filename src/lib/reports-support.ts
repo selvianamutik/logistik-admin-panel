@@ -8,7 +8,7 @@ import type {
     Payment,
 } from './types';
 import { getBusinessCalendarDateParts, parseBusinessDateValue } from './business-date';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     getDriverVoucherFinancialSummary,
     getReceivableRemainingAmount,

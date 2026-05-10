@@ -38,7 +38,7 @@ import {
   getDriverVoucherFinancialSummary,
 } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
-import { parseFormattedNumberish } from "@/lib/formatted-number";
+import { parseFormattedNumberish } from "@/components/FormattedNumberInput.helpers";
 import type {
   BankAccount,
   BankTransaction,

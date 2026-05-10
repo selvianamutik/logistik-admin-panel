@@ -7,7 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency, formatQuantity } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { normalizeUserRole } from '@/lib/rbac';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { DriverBorongan } from '@/lib/types';
 import { useApp, useToast } from '../layout';
 

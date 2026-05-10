@@ -1,6 +1,6 @@
 import { DEFAULT_PAGE_SIZE } from './pagination';
 import { getBusinessDateValue } from './business-date';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { BankAccount } from './types';
 
 export type BankAccountFormState = {

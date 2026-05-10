@@ -46,7 +46,7 @@ import {
     type DeliveryOrderCargoDraftGroup,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,

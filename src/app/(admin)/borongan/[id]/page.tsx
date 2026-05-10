@@ -7,7 +7,7 @@ import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';

@@ -9,7 +9,7 @@ import SortableTableHeader, { type SortDirection } from '@/components/SortableTa
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAdminListPayload, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';

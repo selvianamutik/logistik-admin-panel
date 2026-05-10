@@ -11,7 +11,7 @@ import {
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
 } from '@/lib/print';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { formatDate, formatCurrency, terbilang } from '@/lib/utils';
 
 // ── Simple table drawing helper ──

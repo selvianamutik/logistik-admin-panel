@@ -5,7 +5,7 @@
 import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { formatBusinessDate, formatBusinessDateTime } from './business-date';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { calculatePph23Summary } from './pph23';
 
 const JAKARTA_TIME_ZONE = 'Asia/Jakarta';

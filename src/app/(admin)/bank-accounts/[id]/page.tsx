@@ -17,7 +17,7 @@ import {
     resolveBankTransactionSourceLink,
 } from '@/lib/bank-transaction-links';
 import { exportToExcel } from '@/lib/export';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';

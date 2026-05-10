@@ -3,6 +3,13 @@ export type FormattedNumberParseOptions = {
   maxFractionDigits?: number;
 };
 
+export function buildFormattedNumberFormatter(maxFractionDigits: number) {
+  return new Intl.NumberFormat("id-ID", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxFractionDigits,
+  });
+}
+
 export function formatFormattedNumberValue(
   value: number | null | undefined,
   allowDecimal: boolean,
@@ -12,10 +19,7 @@ export function formatFormattedNumberValue(
   if (value === null || value === undefined || Number.isNaN(value)) return "";
   if (zeroAsEmpty && value === 0) return "";
 
-  return new Intl.NumberFormat("id-ID", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: allowDecimal ? maxFractionDigits : 0,
-  }).format(value);
+  return buildFormattedNumberFormatter(allowDecimal ? 20 : maxFractionDigits).format(value);
 }
 
 function parseGroupedDigits(parts: string[]) {
@@ -75,15 +79,9 @@ function parseIntegerLikeInput(cleaned: string) {
   return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
 }
 
-function parseDecimalParts(
-  integerPartRaw: string,
-  fractionPartRaw: string,
-  maxFractionDigits: number,
-) {
+function parseDecimalParts(integerPartRaw: string, fractionPartRaw: string) {
   const integerPart = integerPartRaw.replace(/\D/g, "");
-  const fractionPart = fractionPartRaw
-    .replace(/\D/g, "")
-    .slice(0, maxFractionDigits);
+  const fractionPart = fractionPartRaw.replace(/\D/g, "");
 
   if (!integerPart && !fractionPart) return 0;
   if (!fractionPart) {
@@ -118,7 +116,6 @@ export function parseFormattedNumberInput(
     const parsed = parseDecimalParts(
       cleaned.slice(0, decimalIndex),
       cleaned.slice(decimalIndex + 1),
-      maxFractionDigits,
     );
     return isNegative && parsed !== 0 ? -parsed : parsed;
   }
@@ -129,26 +126,24 @@ export function parseFormattedNumberInput(
 
     if (parts.length === 2) {
       const [left = "", right = ""] = parts;
+      const integerPart = left.replace(/\D/g, "");
       const fractionPart = right.replace(/\D/g, "");
 
-      if (
-        fractionPart.length > 0 &&
-        fractionPart.length <= maxFractionDigits
-      ) {
-        const parsed = parseDecimalParts(left, right, maxFractionDigits);
+      if (fractionPart.length === 3 && integerPart.length > 0) {
+        const grouped = parseGroupedDigits(parts);
+        if (grouped !== null) {
+          return isNegative && grouped !== 0 ? -grouped : grouped;
+        }
+      }
+
+      if (fractionPart.length > 0) {
+        const parsed = parseDecimalParts(left, right);
         return isNegative && parsed !== 0 ? -parsed : parsed;
       }
 
-      if (fractionPart.length === 0) {
-        const digits = left.replace(/\D/g, "");
-        const parsed = digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
-        return isNegative && parsed !== 0 ? -parsed : parsed;
-      }
-
-      const grouped = parseGroupedDigits(parts);
-      if (grouped !== null) {
-        return isNegative && grouped !== 0 ? -grouped : grouped;
-      }
+      const digits = integerPart;
+      const parsed = digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+      return isNegative && parsed !== 0 ? -parsed : parsed;
     } else if (parts.length > 2) {
       const grouped = parseGroupedDigits(parts);
       if (grouped !== null) {
@@ -158,11 +153,8 @@ export function parseFormattedNumberInput(
       const left = parts.slice(0, -1).join(activeSeparator);
       const right = parts.at(-1) || "";
       const fractionPart = right.replace(/\D/g, "");
-      if (
-        fractionPart.length > 0 &&
-        fractionPart.length <= maxFractionDigits
-      ) {
-        const parsed = parseDecimalParts(left, right, maxFractionDigits);
+      if (fractionPart.length > 0) {
+        const parsed = parseDecimalParts(left, right);
         return isNegative && parsed !== 0 ? -parsed : parsed;
       }
     }

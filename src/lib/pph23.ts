@@ -1,5 +1,5 @@
 import type { Pph23BaseMode } from './types';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 
 export const DEFAULT_PPH23_RATE_PERCENT = 2;
 export const DEFAULT_PPH23_BASE_MODE: Pph23BaseMode = 'BEFORE_CLAIM';

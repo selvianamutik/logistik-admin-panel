@@ -1,7 +1,7 @@
 import { escapePrintHtml } from './print';
 import type { DeliveryOrder, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
 import { getBusinessDateValue } from './business-date';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
 import { formatDriverVoucherRouteForDisplay } from './driver-voucher-route';
 

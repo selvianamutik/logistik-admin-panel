@@ -27,7 +27,7 @@ import {
     type InvoiceInstructionAccount,
 } from './print';
 import type { CompanyProfile, Employee, EmployeeAttendanceRecord, FreightNota, FreightNotaItem } from './types';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { getReceivableNetAmount } from './utils';
 
 type ExportValue = string | number | boolean | Date | null | undefined;

@@ -13,7 +13,7 @@ import {
 import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
 import { buildPph23Label, calculatePph23Summary } from './pph23';
 import { resolveCompanyLogoUrl } from './branding';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem, Payment } from './types';
 import { getReceivableNetAmount, PAYMENT_METHOD_MAP, terbilang } from './utils';
 

@@ -7,7 +7,7 @@ import {
     inferExpenseCategoryScope,
     resolveExpenseCategoryAccountKey,
 } from '@/lib/expense-category-scope';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     createDocument,
     deleteDocument,

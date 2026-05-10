@@ -8,7 +8,7 @@ import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edi
 import CollapsibleCard from '@/components/CollapsibleCard';
 import AuditTrailCard from './AuditTrailCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';

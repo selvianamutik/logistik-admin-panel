@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye, Plus, Trash2, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {

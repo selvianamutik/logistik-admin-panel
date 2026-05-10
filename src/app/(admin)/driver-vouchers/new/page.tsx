@@ -9,7 +9,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { buildDriverVoucherRouteLabel } from '@/lib/driver-voucher-route';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 import { formatCurrency, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 

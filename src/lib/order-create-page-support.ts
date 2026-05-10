@@ -1,5 +1,5 @@
 import type { CustomerPickupLocation, CustomerProduct, CustomerRecipient } from './types';
-import { parseFormattedNumberish } from './formatted-number';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
