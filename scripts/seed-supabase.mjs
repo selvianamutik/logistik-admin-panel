@@ -112,15 +112,20 @@ async function main() {
         : parsedSeedDocuments;
 
     const skipDocTypes = new Set(getCsvArgValues('--skip-doc-types'));
+    const skipDocIds = new Set(getCsvArgValues('--skip-doc-ids'));
     if (skipWorkflowTransactions) {
         WORKFLOW_TRANSACTION_DOC_TYPES.forEach(type => skipDocTypes.add(type));
     }
-    const seedDocumentsToImport = skipDocTypes.size > 0
-        ? seedDocuments.filter(doc => !skipDocTypes.has(doc?._type))
-        : seedDocuments;
+    const seedDocumentsToImport = seedDocuments.filter(doc =>
+        !skipDocTypes.has(doc?._type) &&
+        !skipDocIds.has(doc?._id)
+    );
 
     if (skipDocTypes.size > 0) {
         console.log(`Skipping seed document types: ${Array.from(skipDocTypes).sort().join(', ')}`);
+    }
+    if (skipDocIds.size > 0) {
+        console.log(`Skipping seed document ids: ${Array.from(skipDocIds).sort().join(', ')}`);
     }
 
     logSkippedTypes(seedDocumentsToImport);
