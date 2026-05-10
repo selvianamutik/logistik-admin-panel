@@ -90,7 +90,10 @@ export function buildDeliveryOrderResourceLockSources(
     options: { excludeDeliveryOrderRef?: string } = {}
 ): TripResourceLockSource[] {
     return deliveryOrders
-        .filter(order => order._id !== options.excludeDeliveryOrderRef && order.sourceDeliveryOrderRef !== options.excludeDeliveryOrderRef)
+        .filter(order =>
+            order._id !== options.excludeDeliveryOrderRef &&
+            (!options.excludeDeliveryOrderRef || order.sourceDeliveryOrderRef !== options.excludeDeliveryOrderRef)
+        )
         .filter(isDeliveryOrderResourceLocked)
         .map(order => ({
             source: 'deliveryOrder' as const,

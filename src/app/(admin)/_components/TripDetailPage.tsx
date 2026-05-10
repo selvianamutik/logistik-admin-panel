@@ -91,7 +91,7 @@ import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -538,6 +538,7 @@ export default function TripDetailPage() {
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [activeTrips, setActiveTrips] = useState<Trip[]>([]);
+    const [activeOrders, setActiveOrders] = useState<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showPODModal, setShowPODModal] = useState(false);
@@ -936,7 +937,7 @@ export default function TripDetailPage() {
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
         try {
-            const [driverRows, vehicleRows, deliveryOrders, currentDriver, currentVehicle] = await Promise.all([
+            const [driverRows, vehicleRows, deliveryOrders, activeOrderRows, currentDriver, currentVehicle] = await Promise.all([
                 fetchAdminCollectionData<Driver[]>(
                     `/api/data?entity=drivers&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`,
                     'Gagal memuat opsi armada trip'
@@ -947,6 +948,10 @@ export default function TripDetailPage() {
                 ),
                 fetchAdminCollectionData<Trip[]>(
                     `/api/data?entity=trips&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
+                    'Gagal memuat opsi armada trip'
+                ),
+                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(
+                    `/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`,
                     'Gagal memuat opsi armada trip'
                 ),
                 doData?.driverRef
@@ -970,6 +975,7 @@ export default function TripDetailPage() {
             setDrivers(nextDrivers);
             setVehicles(nextVehicles);
             setActiveTrips(deliveryOrders || []);
+            setActiveOrders(activeOrderRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat opsi armada trip');
         } finally {
@@ -3726,7 +3732,11 @@ export default function TripDetailPage() {
     const hasTripResourcesAssigned = Boolean(doData.vehicleRef && doData.driverRef);
     const displayTripStatus = tripData?.status || doData.status;
     const tripResourceActionLabel = getTripResourceActionLabel(doData);
-    const tripResourceBusyIds = buildTripResourceBusyIds(activeTrips, doData._id);
+    const tripResourceBusyIds = buildTripResourceBusyIds({
+        activeDeliveryOrders: activeTrips,
+        activeOrders,
+        currentDeliveryOrderId: doData._id,
+    });
     const assignableVehicles = getAssignableTripVehicles({
         vehicles,
         busyVehicleIds: tripResourceBusyIds.busyVehicleIds,

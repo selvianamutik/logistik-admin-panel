@@ -23,6 +23,7 @@
     "audit:order-to-nota-e2e": "npx tsx scripts/audit-order-to-nota-e2e.ts",
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
     "audit:overtonase-driver-trip": "npx tsx scripts/audit-overtonase-driver-trip.ts",
+    "audit:trip-resource-locks": "npx tsx scripts/audit-trip-resource-locks.ts",
     "audit:supabase": "node scripts/audit-supabase-migration.mjs",
     "backfill:accounting": "npx tsx --conditions react-server scripts/backfill-accounting-journals.ts",
     "backfill:trip-surat-jalan": "node scripts/backfill-trip-surat-jalan.mjs",

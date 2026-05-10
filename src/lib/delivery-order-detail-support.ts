@@ -713,13 +713,15 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
     return transitions[current] || [];
 }
 
-export function buildTripResourceBusyIds(
-    activeDeliveryOrders: DeliveryOrderResourceLock[],
-    currentDeliveryOrderId: string
-) {
+export function buildTripResourceBusyIds(params: {
+    activeDeliveryOrders: DeliveryOrderResourceLock[];
+    activeOrders?: Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>;
+    currentDeliveryOrderId: string;
+}) {
     const { busyVehicleIds, busyDriverIds } = buildTripResourceLocks({
-        deliveryOrders: activeDeliveryOrders,
-        excludeDeliveryOrderRef: currentDeliveryOrderId,
+        deliveryOrders: params.activeDeliveryOrders,
+        orders: params.activeOrders || [],
+        excludeDeliveryOrderRef: params.currentDeliveryOrderId,
     });
 
     return {

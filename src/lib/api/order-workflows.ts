@@ -5737,6 +5737,27 @@ export async function handleDeliveryOrderCreate(
         driverName = driver.name || driverName;
     }
 
+    try {
+        await assertTripResourcesAssignable([
+            {
+                vehicleRef,
+                vehiclePlate,
+                driverRef,
+                driverName,
+                _key: selectedTripPlan?._key,
+                sequence: selectedTripPlan?.sequence || 1,
+            },
+        ], {
+            excludeOrderRef: selectedTripPlan ? order._id : undefined,
+            excludeOrderTripPlanKey: selectedTripPlan?._key,
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Kendaraan atau supir masih terkunci di trip aktif' },
+            { status: 409 }
+        );
+    }
+
     const doDate =
         typeof data.date === 'string' && data.date
             ? data.date
@@ -7625,6 +7646,25 @@ export async function handleDeliveryOrderTripResourceAssign(
         }
         nextDriverRef = driverRef;
         nextDriverName = driver.name || nextDriverName;
+    }
+
+    try {
+        await assertTripResourcesAssignable([
+            {
+                vehicleRef: nextVehicleRef,
+                vehiclePlate: nextVehiclePlate,
+                driverRef: nextDriverRef,
+                driverName: nextDriverName,
+                sequence: 1,
+            },
+        ], {
+            excludeDeliveryOrderRef: id,
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Kendaraan atau supir masih terkunci di trip aktif' },
+            { status: 409 }
+        );
     }
 
     const vehicleChanged =
