@@ -393,7 +393,6 @@ export default function VehicleDetailPage() {
         emptySlotCount,
         externalAuditTires,
         selectedRegisteredTire,
-        tireSelectionLocked,
         availableRegisteredTires,
     } = buildVehicleTireDetailState({
         vehicle,

@@ -395,8 +395,6 @@ export default function TiresPage() {
     );
     const installPostedPercent = Math.max(100 - Number(selectedInstallTire?.maintenanceCostPostedPercent || 0), 0);
     const selectedInstallOriginalCost = Number(selectedInstallTire?.originalCost ?? selectedInstallTire?.purchaseCost ?? 0);
-    const selectedInstallPostedBefore = Number(selectedInstallTire?.maintenanceCostPostedPercent || 0);
-    const selectedInstallPostedAfter = Math.min(100, selectedInstallPostedBefore + installPostedPercent);
     const selectedInstallRemainingPercent = Math.max(100 - Number(selectedInstallTire?.totalUsedPercent || 0), 0);
     const selectedInstallRemainingValue = Number(selectedInstallTire?.remainingValue ?? Math.round(selectedInstallOriginalCost * selectedInstallRemainingPercent / 100));
     const installCostPreview = Math.round(selectedInstallOriginalCost * installPostedPercent / 100);
@@ -404,10 +402,7 @@ export default function TiresPage() {
     const oldInstallOriginalCost = Number(oldTireInInstallSlot?.originalCost ?? oldTireInInstallSlot?.purchaseCost ?? 0);
     const oldInstallUsedBefore = Number(oldTireInInstallSlot?.totalUsedPercent || 0);
     const oldUsagePercentPreview = Number(installForm.oldTireUsagePercent || 0);
-    const oldInstallUsedAfter = Math.min(100, oldInstallUsedBefore + oldUsagePercentPreview);
-    const oldInstallRemainingAfter = Math.max(100 - oldInstallUsedAfter, 0);
     const oldInstallRemainingValueBefore = Number(oldTireInInstallSlot?.remainingValue ?? Math.round(oldInstallOriginalCost * oldRemainingPercent / 100));
-    const oldInstallRemainingValueAfter = Math.round(oldInstallOriginalCost * oldInstallRemainingAfter / 100);
     const oldUsageCostPreview = Math.round(oldInstallOriginalCost * oldUsagePercentPreview / 100);
     const installTotalCostPreview = oldUsageCostPreview + installCostPreview;
 
