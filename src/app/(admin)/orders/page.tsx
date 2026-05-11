@@ -12,9 +12,50 @@ import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData, fetchAdminListPayload } from '@/lib/api/admin-client';
-import type { Order, Service } from '@/lib/types';
+import type { DeliveryOrder, DriverVoucher, Order, Service } from '@/lib/types';
 
-const getNextActionLabel = (order: Order) => {
+type TripCashStatusCode = 'NO_DO' | 'NEEDS_BON' | 'BON_DRAFT' | 'BON_ISSUED' | 'BON_SETTLED' | 'NOT_REQUIRED';
+type TripCashStatusMeta = { code: TripCashStatusCode; label: string; color: string };
+
+const getTripCashStatusMeta = (order: Order, deliveryOrders: DeliveryOrder[], voucherByDeliveryOrderRef: Map<string, DriverVoucher>): TripCashStatusMeta => {
+    if (order.status === 'CANCELLED') {
+        return { code: 'NOT_REQUIRED', label: 'Tidak perlu bon', color: 'gray' };
+    }
+
+    const activeDeliveryOrders = deliveryOrders.filter(item => item.status !== 'CANCELLED');
+    if (activeDeliveryOrders.length === 0) {
+        return { code: 'NO_DO', label: 'Belum ada SJ/Trip', color: 'gray' };
+    }
+
+    const hasUnissuedBon = activeDeliveryOrders.some(item => !voucherByDeliveryOrderRef.has(item._id));
+    if (hasUnissuedBon) {
+        return { code: 'NEEDS_BON', label: 'Bon belum diterbitkan', color: 'warning' };
+    }
+
+    const vouchers = activeDeliveryOrders
+        .map(item => voucherByDeliveryOrderRef.get(item._id))
+        .filter(Boolean) as DriverVoucher[];
+
+    if (vouchers.some(item => item.status === 'DRAFT')) {
+        return { code: 'BON_DRAFT', label: 'Bon draft', color: 'gray' };
+    }
+
+    if (vouchers.some(item => item.status === 'ISSUED')) {
+        return { code: 'BON_ISSUED', label: 'Bon berjalan', color: 'info' };
+    }
+
+    return { code: 'BON_SETTLED', label: 'Bon selesai', color: 'success' };
+};
+
+const getNextActionLabel = (order: Order, tripCashStatus?: TripCashStatusMeta) => {
+    if (tripCashStatus?.code === 'NEEDS_BON') {
+        return 'Terbitkan bon trip';
+    }
+
+    if (tripCashStatus?.code === 'BON_DRAFT' || tripCashStatus?.code === 'BON_ISSUED') {
+        return 'Selesaikan uang jalan';
+    }
+
     switch (order.status) {
         case 'OPEN':
             return 'Buat trip pertama';
@@ -43,6 +84,7 @@ export default function OrdersPage() {
     const [page, setPage] = useState(1);
     const [totalOrders, setTotalOrders] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ needDispatch: 0, inProgress: 0, onHold: 0 });
+    const [tripCashStatusByOrderId, setTripCashStatusByOrderId] = useState<Record<string, TripCashStatusMeta>>({});
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
@@ -106,6 +148,43 @@ export default function OrdersPage() {
                 fetchAllMatchingOrders(),
             ]);
 
+            const pageOrders = ordersPayload.data || [];
+            const pageOrderIds = pageOrders.map(item => item._id).filter(Boolean);
+            let nextTripCashStatusByOrderId: Record<string, TripCashStatusMeta> = {};
+
+            if (pageOrderIds.length > 0) {
+                const deliveryOrders = await fetchAdminCollectionData<DeliveryOrder[]>(
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: pageOrderIds }))}`,
+                    'Gagal memuat status trip order'
+                );
+                const deliveryOrderIds = (deliveryOrders || []).map(item => item._id).filter(Boolean);
+                const vouchers = deliveryOrderIds.length > 0
+                    ? await fetchAdminCollectionData<DriverVoucher[]>(
+                        `/api/data?entity=driver-vouchers&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`,
+                        'Gagal memuat status bon order'
+                    )
+                    : [];
+                const deliveryOrdersByOrderRef = new Map<string, DeliveryOrder[]>();
+                (deliveryOrders || []).forEach(item => {
+                    const existing = deliveryOrdersByOrderRef.get(item.orderRef) || [];
+                    existing.push(item);
+                    deliveryOrdersByOrderRef.set(item.orderRef, existing);
+                });
+                const voucherByDeliveryOrderRef = new Map<string, DriverVoucher>();
+                (vouchers || []).forEach(item => {
+                    if (item.deliveryOrderRef) {
+                        voucherByDeliveryOrderRef.set(item.deliveryOrderRef, item);
+                    }
+                });
+
+                nextTripCashStatusByOrderId = Object.fromEntries(
+                    pageOrders.map(order => [
+                        order._id,
+                        getTripCashStatusMeta(order, deliveryOrdersByOrderRef.get(order._id) || [], voucherByDeliveryOrderRef),
+                    ])
+                );
+            }
+
             const nextQueueCounts = matchingOrders.reduce(
                 (totals, order) => {
                     if (order.status === 'OPEN') {
@@ -120,10 +199,11 @@ export default function OrdersPage() {
                 { needDispatch: 0, inProgress: 0, onHold: 0 }
             );
 
-            setOrders(ordersPayload.data || []);
+            setOrders(pageOrders);
             setTotalOrders(ordersPayload.meta?.total || 0);
             setServices(serviceRows || []);
             setQueueCounts(nextQueueCounts);
+            setTripCashStatusByOrderId(nextTripCashStatusByOrderId);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
         } finally {
@@ -295,6 +375,7 @@ export default function OrdersPage() {
                                 <th>Pickup</th>
                                 <th>Kategori Armada</th>
                                 <th>Status</th>
+                                <th>Status Bon</th>
                                 <th>Tindak Lanjut</th>
                                 <th>
                                     <SortableTableHeader
@@ -310,14 +391,14 @@ export default function OrdersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(j => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalOrders === 0 ? (
                                 <tr>
-                                    <td colSpan={8}>
+                                    <td colSpan={9}>
                                         <div className="empty-state">
                                             <Package size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada order</div>
@@ -329,41 +410,50 @@ export default function OrdersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                orders.map(order => (
-                                    <tr key={order._id}>
-                                        <td>
-                                            <Link href={`/orders/${order._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
-                                                {order.masterResi}
-                                            </Link>
-                                        </td>
-                                        <td>{order.customerName}</td>
-                                        <td>{order.pickupAddress || '-'}</td>
-                                        <td>{getServiceLabel(order)}</td>
-                                        <td>
-                                            <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
-                                                <span className="badge-dot" />
-                                                {ORDER_STATUS_MAP[order.status]?.label || order.status}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span style={{ fontWeight: 500 }}>{getNextActionLabel(order)}</span>
-                                        </td>
-                                        <td className="text-muted">{formatDate(order.createdAt)}</td>
-                                        <td>
-                                            <div className="table-actions">
-                                                <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}`)}>
-                                                    <Eye size={14} /> Buka
-                                                </button>
-                                                <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}/edit`)}>
-                                                    <Edit size={14} /> Edit
-                                                </button>
-                                                <button className="table-action-btn danger" onClick={() => setDeleteId(order._id)}>
-                                                    <Trash2 size={14} /> Hapus
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                orders.map(order => {
+                                    const tripCashStatus = tripCashStatusByOrderId[order._id];
+                                    return (
+                                        <tr key={order._id}>
+                                            <td>
+                                                <Link href={`/orders/${order._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                    {order.masterResi}
+                                                </Link>
+                                            </td>
+                                            <td>{order.customerName}</td>
+                                            <td>{order.pickupAddress || '-'}</td>
+                                            <td>{getServiceLabel(order)}</td>
+                                            <td>
+                                                <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
+                                                    <span className="badge-dot" />
+                                                    {ORDER_STATUS_MAP[order.status]?.label || order.status}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span className={`badge badge-${tripCashStatus?.color || 'gray'}`}>
+                                                    <span className="badge-dot" />
+                                                    {tripCashStatus?.label || 'Belum dicek'}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span style={{ fontWeight: 500 }}>{getNextActionLabel(order, tripCashStatus)}</span>
+                                            </td>
+                                            <td className="text-muted">{formatDate(order.createdAt)}</td>
+                                            <td>
+                                                <div className="table-actions">
+                                                    <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}`)}>
+                                                        <Eye size={14} /> Buka
+                                                    </button>
+                                                    <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}/edit`)}>
+                                                        <Edit size={14} /> Edit
+                                                    </button>
+                                                    <button className="table-action-btn danger" onClick={() => setDeleteId(order._id)}>
+                                                        <Trash2 size={14} /> Hapus
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -380,7 +470,9 @@ export default function OrdersPage() {
                                     </Link>
                                 </div>
                             </div>
-                        ) : orders.map(order => (
+                        ) : orders.map(order => {
+                            const tripCashStatus = tripCashStatusByOrderId[order._id];
+                            return (
                             <div key={order._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -401,8 +493,16 @@ export default function OrdersPage() {
                                         <span className="mobile-record-value">{getServiceLabel(order)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Status Bon</span>
+                                        <span className="mobile-record-value">
+                                            <span className={`badge badge-${tripCashStatus?.color || 'gray'}`}>
+                                                <span className="badge-dot" /> {tripCashStatus?.label || 'Belum dicek'}
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
-                                        <span className="mobile-record-value">{getNextActionLabel(order)}</span>
+                                        <span className="mobile-record-value">{getNextActionLabel(order, tripCashStatus)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">
@@ -417,7 +517,8 @@ export default function OrdersPage() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
 

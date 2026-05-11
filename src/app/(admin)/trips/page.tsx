@@ -9,8 +9,31 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
 import type { Trip } from '@/lib/trip-document-types';
+import type { DriverVoucher } from '@/lib/types';
 import { hasPageAccess } from '@/lib/rbac';
 import { useApp, useToast } from '../layout';
+
+type TripBonStatusMeta = { label: string; color: string };
+
+function getTripBonStatusMeta(trip: Trip, voucher?: DriverVoucher): TripBonStatusMeta {
+    if (trip.status === 'CANCELLED') {
+        return { label: 'Tidak perlu bon', color: 'gray' };
+    }
+
+    if (!voucher) {
+        return { label: 'Bon belum diterbitkan', color: 'warning' };
+    }
+
+    if (voucher.status === 'DRAFT') {
+        return { label: 'Bon draft', color: 'gray' };
+    }
+
+    if (voucher.status === 'SETTLED') {
+        return { label: 'Bon selesai', color: 'success' };
+    }
+
+    return { label: 'Bon berjalan', color: 'info' };
+}
 
 function matchesTripSearch(trip: Trip, search: string) {
     const needle = search.trim().toLowerCase();
@@ -37,7 +60,9 @@ export default function TripsPage() {
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
+    const [voucherByDeliveryOrderRef, setVoucherByDeliveryOrderRef] = useState<Record<string, DriverVoucher>>({});
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
+    const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
 
     const loadTrips = useCallback(async () => {
         setLoading(true);
@@ -53,7 +78,21 @@ export default function TripsPage() {
                 `/api/data?${params.toString()}`,
                 'Gagal memuat trip'
             );
+            const deliveryOrderRefs = Array.from(new Set(
+                (rows || []).map(item => item.sourceDeliveryOrderRef || item._id).filter(Boolean)
+            ));
+            const vouchers = deliveryOrderRefs.length > 0
+                ? await fetchAllAdminCollectionData<DriverVoucher>(
+                    `/api/data?entity=driver-vouchers&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderRefs }))}`,
+                    'Gagal memuat status bon trip'
+                )
+                : [];
             setItems(rows || []);
+            setVoucherByDeliveryOrderRef(Object.fromEntries(
+                (vouchers || [])
+                    .filter(item => item.deliveryOrderRef)
+                    .map(item => [item.deliveryOrderRef as string, item])
+            ));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat trip');
         } finally {
@@ -142,15 +181,16 @@ export default function TripsPage() {
                                 </th>
                                 <th>SJ</th>
                                 <th>Status</th>
+                                <th>Status Bon</th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(row => (
-                                <tr key={row}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>
+                                <tr key={row}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>
                             )) : pageItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10}>
+                                    <td colSpan={11}>
                                         <div className="empty-state">
                                             <Truck size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada trip</div>
@@ -160,6 +200,8 @@ export default function TripsPage() {
                                 </tr>
                             ) : pageItems.map(item => {
                                 const statusMeta = DO_STATUS_MAP[item.status];
+                                const voucher = voucherByDeliveryOrderRef[item.sourceDeliveryOrderRef || item._id];
+                                const bonStatusMeta = getTripBonStatusMeta(item, voucher);
                                 return (
                                     <tr key={item._id}>
                                         <td><Link className="font-semibold" style={{ color: 'var(--color-primary)' }} href={`/trips/${item._id}`}>{item.tripNumber}</Link></td>
@@ -171,6 +213,18 @@ export default function TripsPage() {
                                         <td>{formatDate(item.date)}</td>
                                         <td>{item.shipperReferenceCount} SJ</td>
                                         <td><span className={`badge badge-${statusMeta?.color || 'gray'}`}><span className="badge-dot" /> {statusMeta?.label || item.status}</span></td>
+                                        <td>
+                                            <span className={`badge badge-${bonStatusMeta.color}`}>
+                                                <span className="badge-dot" /> {bonStatusMeta.label}
+                                            </span>
+                                            {voucher?.bonNumber && (
+                                                <div className="text-muted text-sm" style={{ marginTop: 4 }}>
+                                                    {canOpenDriverVoucherPage ? (
+                                                        <Link href={`/driver-vouchers/${voucher._id}`}>{voucher.bonNumber}</Link>
+                                                    ) : voucher.bonNumber}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td><Link className="table-action-btn" href={`/trips/${item._id}`}>Lihat</Link></td>
                                     </tr>
                                 );
@@ -181,6 +235,8 @@ export default function TripsPage() {
                 <div className="mobile-card-list">
                     {pageItems.map(item => {
                         const statusMeta = DO_STATUS_MAP[item.status];
+                        const voucher = voucherByDeliveryOrderRef[item.sourceDeliveryOrderRef || item._id];
+                        const bonStatusMeta = getTripBonStatusMeta(item, voucher);
                         return (
                             <div className="mobile-data-card" key={item._id}>
                                 <div className="mobile-card-header">
@@ -191,6 +247,9 @@ export default function TripsPage() {
                                     <div><strong>{item.masterResi || '-'}</strong> | {item.customerName || '-'}</div>
                                     <div>{item.vehiclePlate || '-'} | {item.driverName || '-'}</div>
                                     <div>{formatDate(item.date)} | {item.shipperReferenceCount} SJ</div>
+                                    <div>
+                                        Bon: <span className={`badge badge-${bonStatusMeta.color}`}><span className="badge-dot" /> {bonStatusMeta.label}</span>
+                                    </div>
                                 </div>
                             </div>
                         );
