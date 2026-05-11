@@ -421,7 +421,11 @@ class DriverIncident {
   final String? dateTime;
   final List<DriverIncidentSettlementLine> settlementLines;
 
-  bool get canSubmitResolution => status != 'RESOLVED' && status != 'CLOSED';
+  bool get hasSubmittedResolution =>
+      settlementLines.any((line) => line.status != 'VOID');
+
+  bool get canSubmitResolution =>
+      status != 'RESOLVED' && status != 'CLOSED' && !hasSubmittedResolution;
 
   int get draftCostCount =>
       settlementLines.where((line) => line.status == 'DRAFT').length;

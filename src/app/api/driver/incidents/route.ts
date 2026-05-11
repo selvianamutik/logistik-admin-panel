@@ -3,7 +3,7 @@ import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/
 import { extractRefId } from '@/lib/api/data-helpers';
 import { handleIncidentCreate } from '@/lib/api/operations-workflows';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
-import type { DeliveryOrder, Incident, IncidentSettlementCategory, IncidentSettlementLine } from '@/lib/types';
+import type { DeliveryOrder, Incident, IncidentActionLog, IncidentSettlementCategory, IncidentSettlementLine } from '@/lib/types';
 
 const DRIVER_ALLOWED_COST_CATEGORIES = new Set<IncidentSettlementCategory>([
     'TOWING',
@@ -242,6 +242,24 @@ export async function PATCH(request: Request) {
         const incident = access.incident;
         if (incident.status === 'CLOSED' || incident.status === 'RESOLVED') {
             return jsonNoStore({ error: 'Insiden ini sudah masuk tahap final admin.' }, { status: 409 });
+        }
+
+        const existingDriverLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
+            incidentRef: incident._id,
+        })).filter(line => line.status !== 'VOID' && line.createdBy === auth.session._id);
+        if (existingDriverLines.length > 0) {
+            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tunggu review admin.' }, { status: 409 });
+        }
+
+        const existingActionLogs = await listDocumentsByFilter<IncidentActionLog>('incidentActionLog', {
+            incidentRef: incident._id,
+        });
+        const hasDriverResolutionLog = existingActionLogs.some(log =>
+            log.userRef === auth.session._id &&
+            (log.note || '').includes('Driver mengajukan penyelesaian insiden')
+        );
+        if (hasDriverResolutionLog) {
+            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tunggu review admin.' }, { status: 409 });
         }
 
         const resolutionNote = typeof parsedBody.data.resolutionNote === 'string'

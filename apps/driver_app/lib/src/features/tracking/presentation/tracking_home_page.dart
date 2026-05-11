@@ -34,6 +34,8 @@ class TrackingHomePage extends StatefulWidget {
 
 class _TrackingHomePageState extends State<TrackingHomePage>
     with WidgetsBindingObserver {
+  static const Duration _autoTrackingInterval = Duration(minutes: 15);
+
   final DeliveryOrderService _deliveryOrderService = DeliveryOrderService();
   final DriverAccessService _driverAccessService = DriverAccessService();
   late final DriverTrackingService _trackingService;
@@ -62,9 +64,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   int _pingCount = 0;
   DriverAccessNotice? _accessNotice;
 
-  Duration _trackingInterval = const Duration(seconds: 30);
   Timer? _pingCounterTimer;
   Timer? _noticePollTimer;
+  String? _trackingDeliveryOrderId;
 
   @override
   void initState() {
@@ -254,27 +256,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       }
       final trips = portalData.trips;
       if (!mounted) return;
-      final activeId = _activeTrip?.deliveryOrderId;
+      final activeId = _trackingDeliveryOrderId ?? _activeTrip?.deliveryOrderId;
       final selectedId = _selectedTrip?.deliveryOrderId;
-      final lockedTrip = trips.firstWhereOrNull(
-        (t) => t.trackingState == 'ACTIVE' || t.trackingState == 'PAUSED',
-      );
-      final fallbackActiveTrip =
-          lockedTrip ??
-          trips.firstWhereOrNull((t) => t.status == TripStatus.onDelivery);
-      final retainedActiveTrip = activeId != null
-          ? trips.firstWhereOrNull((t) => t.deliveryOrderId == activeId)
-          : null;
-      final nextActiveTrip = retainedActiveTrip ?? fallbackActiveTrip;
-      final shouldStopLocalTracking =
-          _trackingService.isRunning &&
-          (nextActiveTrip == null ||
-              nextActiveTrip.trackingState != 'ACTIVE' ||
-              (activeId != null && retainedActiveTrip == null));
-      if (shouldStopLocalTracking) {
-        _pingCounterTimer?.cancel();
-        _trackingService.stop();
-      }
+      final nextActiveTrip = _selectAutoTrackingTrip(trips, activeId);
       setState(() {
         _trips = trips;
         _plannedTrips = portalData.plannedTrips;
@@ -292,12 +276,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 : null) ??
             _activeTrip ??
             (trips.isNotEmpty ? trips.first : null);
-        _trackingEnabled = _activeTrip?.trackingState == 'ACTIVE';
-        if (shouldStopLocalTracking) {
-          _pingCount = 0;
-        }
         _loadingTrips = false;
       });
+      unawaited(_syncAutoTracking(nextActiveTrip));
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
       setState(() {
@@ -503,12 +484,34 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
     setState(() => _submittingManifest = true);
     try {
-      await _deliveryOrderService.appendCargoToDeliveryOrder(
+      for (final itemId in result.deletedCargoItemIds) {
+        await _deliveryOrderService.deleteDeliveryOrderCargoItem(
+          sessionToken: sessionToken,
+          deliveryOrderId: trip.deliveryOrderId,
+          deliveryOrderItemId: itemId,
+        );
+      }
+      await _deliveryOrderService.syncDeliveryOrderShipperReferences(
         sessionToken: sessionToken,
         deliveryOrderId: trip.deliveryOrderId,
         shipperReferences: result.shipperReferences,
-        cargoItems: result.cargoItems,
       );
+      for (final item in result.updatedCargoItems) {
+        await _deliveryOrderService.updateDeliveryOrderCargoItem(
+          sessionToken: sessionToken,
+          deliveryOrderId: trip.deliveryOrderId,
+          deliveryOrderItemId: item.deliveryOrderItemId,
+          cargoItem: item.cargoItem,
+        );
+      }
+      if (result.cargoItems.isNotEmpty) {
+        await _deliveryOrderService.appendCargoToDeliveryOrder(
+          sessionToken: sessionToken,
+          deliveryOrderId: trip.deliveryOrderId,
+          shipperReferences: result.shipperReferences,
+          cargoItems: result.cargoItems,
+        );
+      }
       await _loadTrips();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -550,62 +553,107 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return null;
   }
 
-  Future<void> _setTrackingEnabled(bool value) async {
-    final trip = _activeTrip ?? _selectedTrip;
-    if (trip == null) return;
+  bool _shouldAutoTrack(DeliveryTrip trip) {
+    if (trip.isAwaitingAdminApproval) {
+      return false;
+    }
+    return switch (trip.status) {
+      TripStatus.assigned ||
+      TripStatus.headingToPickup ||
+      TripStatus.onDelivery ||
+      TripStatus.arrived => true,
+      TripStatus.delivered => false,
+    };
+  }
 
-    if (!value) {
-      final serverTrackingState = trip.trackingState;
-      final isActiveOnServer =
-          serverTrackingState == 'ACTIVE' || serverTrackingState == 'PAUSED';
-      final isClosedTrip = trip.status == TripStatus.delivered;
-
-      if (isActiveOnServer && !isClosedTrip) {
-        if (!mounted) return;
-        setState(() => _trackingEnabled = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Tracking harus tetap aktif sampai DO selesai. Driver tidak bisa mematikannya sendiri.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
+  DeliveryTrip? _selectAutoTrackingTrip(
+    List<DeliveryTrip> trips,
+    String? preferredDeliveryOrderId,
+  ) {
+    if (preferredDeliveryOrderId != null) {
+      final retained = trips.firstWhereOrNull(
+        (trip) =>
+            trip.deliveryOrderId == preferredDeliveryOrderId &&
+            _shouldAutoTrack(trip),
+      );
+      if (retained != null) return retained;
     }
 
-    if (value) {
-      final err = await _checkPermission();
-      if (err != null) {
-        if (mounted) setState(() => _locationError = err);
-        return;
-      }
-    }
+    final serverLocked = trips.firstWhereOrNull(
+      (trip) =>
+          (trip.trackingState == 'ACTIVE' || trip.trackingState == 'PAUSED') &&
+          _shouldAutoTrack(trip),
+    );
+    if (serverLocked != null) return serverLocked;
+
+    return trips.firstWhereOrNull(_shouldAutoTrack);
+  }
+
+  Future<void> _syncAutoTracking(DeliveryTrip? trip) async {
     if (!mounted) return;
-    setState(() {
-      _trackingEnabled = value;
-      _locationError = null;
-      _pingError = null;
-      if (!value) _pingCount = 0;
-    });
-    if (value) {
-      _startTracking(initialAction: _trackingStartAction(trip));
-    } else {
+
+    if (trip == null || !_shouldAutoTrack(trip)) {
+      if (_trackingService.isRunning || _trackingEnabled) {
+        _pingCounterTimer?.cancel();
+        _trackingService.stop();
+        setState(() {
+          _trackingEnabled = false;
+          _activeTrip = null;
+          _trackingDeliveryOrderId = null;
+          _pingCount = 0;
+        });
+      }
+      return;
+    }
+
+    if (_trackingService.isRunning &&
+        _trackingDeliveryOrderId == trip.deliveryOrderId) {
+      if (!_trackingEnabled ||
+          _activeTrip?.deliveryOrderId != trip.deliveryOrderId) {
+        setState(() {
+          _activeTrip = trip;
+          _trackingEnabled = true;
+        });
+      }
+      return;
+    }
+
+    final err = await _checkPermission();
+    if (err != null) {
+      if (!mounted) return;
       _pingCounterTimer?.cancel();
       _trackingService.stop();
+      setState(() {
+        _locationError = err;
+        _trackingEnabled = false;
+        _trackingDeliveryOrderId = null;
+        _pingCount = 0;
+      });
+      return;
     }
+
+    if (!mounted) return;
+    setState(() {
+      _activeTrip = trip;
+      _selectedTrip ??= trip;
+      _trackingEnabled = true;
+      _trackingDeliveryOrderId = trip.deliveryOrderId;
+      _locationError = null;
+      _pingError = null;
+      _pingCount = 0;
+    });
+    _startTracking(initialAction: _trackingStartAction(trip));
   }
 
   void _startTracking({String initialAction = 'start'}) {
-    final trip = _activeTrip ?? _selectedTrip;
-    if (trip == null) return;
+    final trip = _activeTrip;
+    if (trip == null || !_shouldAutoTrack(trip)) return;
 
     _pingCounterTimer?.cancel();
 
     _trackingService.start(
       deliveryOrderId: trip.deliveryOrderId,
-      interval: _trackingInterval,
+      interval: _autoTrackingInterval,
       onLocation: (snapshot) {
         if (!mounted) return;
         setState(() {
@@ -629,6 +677,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         setState(() {
           _trackingEnabled = false;
           _activeTrip = null;
+          _trackingDeliveryOrderId = null;
           _pingCount = 0;
           _pingError = message;
         });
@@ -636,53 +685,13 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       },
     );
 
-    _pingCounterTimer = Timer.periodic(_trackingInterval, (_) {
+    _pingCounterTimer = Timer.periodic(_autoTrackingInterval, (_) {
       if (!mounted || !_trackingEnabled) return;
       setState(() => _pingCount++);
     });
   }
 
-  void _changeInterval(Duration value) {
-    setState(() => _trackingInterval = value);
-    if (_trackingEnabled) {
-      _startTracking(
-        initialAction: _trackingStartAction(_activeTrip ?? _selectedTrip),
-      );
-    }
-  }
-
   // ── Trip actions ───────────────────────────────────────────
-
-  Future<void> _beginDelivery(DeliveryTrip trip) async {
-    if (_activeTrip != null &&
-        _activeTrip!.deliveryOrderId != trip.deliveryOrderId) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Selesaikan "${_activeTrip!.doNumber}" terlebih dahulu.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
-    final err = await _checkPermission();
-    if (err != null) {
-      if (mounted) setState(() => _locationError = err);
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _activeTrip = _trips.firstWhere(
-        (t) => t.deliveryOrderId == trip.deliveryOrderId,
-      );
-      _selectedTrip = _activeTrip;
-      _pingCount = 0;
-    });
-    await _setTrackingEnabled(true);
-  }
 
   Future<void> _advanceStatus() async {
     final trip = _selectedTrip;
@@ -1476,7 +1485,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   String _trackingStartAction(DeliveryTrip? trip) {
     final trackingState = trip?.trackingState;
-    if (trackingState == 'ACTIVE' || trackingState == 'PAUSED') {
+    if (trackingState == 'ACTIVE') {
+      return 'heartbeat';
+    }
+    if (trackingState == 'PAUSED') {
       return 'resume';
     }
     return 'start';
@@ -1703,7 +1715,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       _ErrorBanner(
                         icon: Icons.location_off_rounded,
                         message: _locationError!,
-                        onRetry: () => unawaited(_setTrackingEnabled(true)),
+                        onRetry: () =>
+                            unawaited(_syncAutoTracking(_selectedTrip)),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -1725,28 +1738,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     ],
                     _TrackingCard(
                       trackingEnabled: _trackingEnabled,
-                      selectedInterval: _trackingInterval,
                       location: _latestLocation,
                       pingCount: _pingCount,
-                      onTrackingChanged: (v) => (_setTrackingEnabled(v)),
-                      onIntervalChanged: _changeInterval,
                     ),
-                    const SizedBox(height: 12),
                     if (_activeTrip == null ||
                         _activeTrip!.deliveryOrderId ==
-                            _selectedTrip!.deliveryOrderId)
-                      _StartDeliveryButton(
-                        trip: _selectedTrip!,
-                        onPressed:
-                            (_selectedTrip!.status == TripStatus.onDelivery ||
-                                _selectedTrip!.status == TripStatus.arrived ||
-                                _selectedTrip!.status == TripStatus.delivered ||
-                                _selectedTrip!.isAwaitingAdminApproval)
-                            ? null
-                            : () => unawaited(_beginDelivery(_selectedTrip!)),
-                      ),
-                    if (_activeTrip?.deliveryOrderId ==
-                        _selectedTrip!.deliveryOrderId) ...[
+                            _selectedTrip!.deliveryOrderId) ...[
                       const SizedBox(height: 12),
                       _AdvanceButton(
                         status: _selectedTrip!.status,
@@ -2156,13 +2153,18 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
               children: [
                 pw.Text(
                   'PT Gading Mas Surya',
-                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
                 ),
                 pw.SizedBox(height: 4),
                 pw.Text('Uang Jalan Trip ${voucher.bonNumber}'),
               ],
             ),
-            pw.Text('Dicetak: ${_formatDateText(DateTime.now().toIso8601String())}'),
+            pw.Text(
+              'Dicetak: ${_formatDateText(DateTime.now().toIso8601String())}',
+            ),
           ],
         ),
         pw.SizedBox(height: 14),
@@ -2189,10 +2191,22 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  _pdfKeyValue('Total Uang', _formatRupiah(voucher.totalIssuedAmount)),
-                  _pdfKeyValue('Biaya Lain-lain', _formatRupiah(voucher.operationalSpent)),
-                  _pdfKeyValue('Sisa Bon', _formatRupiah(voucher.operationalBalance)),
-                  _pdfKeyValue('Upah Borongan', _formatRupiah(voucher.driverFeeAmount)),
+                  _pdfKeyValue(
+                    'Total Uang',
+                    _formatRupiah(voucher.totalIssuedAmount),
+                  ),
+                  _pdfKeyValue(
+                    'Biaya Lain-lain',
+                    _formatRupiah(voucher.operationalSpent),
+                  ),
+                  _pdfKeyValue(
+                    'Sisa Bon',
+                    _formatRupiah(voucher.operationalBalance),
+                  ),
+                  _pdfKeyValue(
+                    'Upah Borongan',
+                    _formatRupiah(voucher.driverFeeAmount),
+                  ),
                   _pdfKeyValue(
                     'Net Settlement',
                     '${voucher.netSettlementAmount < 0 ? '-' : ''}${_formatRupiah(voucher.netSettlementAmount.abs())}',
@@ -2219,7 +2233,14 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
             5: pw.FixedColumnWidth(78),
           },
           children: [
-            _pdfTableHeader(['No', 'Tanggal', 'Jenis', 'Sumber Dana', 'Catatan', 'Jumlah']),
+            _pdfTableHeader([
+              'No',
+              'Tanggal',
+              'Jenis',
+              'Sumber Dana',
+              'Catatan',
+              'Jumlah',
+            ]),
             if (disbursements.isEmpty)
               _pdfTableRow(['-', '-', 'Belum ada riwayat bon', '-', '-', '-'])
             else
@@ -2253,7 +2274,13 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
             4: pw.FixedColumnWidth(78),
           },
           children: [
-            _pdfTableHeader(['No', 'Tanggal', 'Kategori', 'Deskripsi', 'Jumlah']),
+            _pdfTableHeader([
+              'No',
+              'Tanggal',
+              'Kategori',
+              'Deskripsi',
+              'Jumlah',
+            ]),
             if (expenses.isEmpty)
               _pdfTableRow(['-', '-', 'Tidak ada biaya lain-lain', '-', '-'])
             else
@@ -2683,12 +2710,15 @@ class _DriverVoucherPreviewDialog extends StatelessWidget {
   Future<void> _downloadPdf(BuildContext context) async {
     try {
       final bytes = await _buildDriverVoucherPdf(voucher);
-      await Printing.sharePdf(bytes: bytes, filename: _voucherPdfFileName(voucher));
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: _voucherPdfFileName(voucher),
+      );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuat PDF: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal membuat PDF: $error')));
     }
   }
 
@@ -3433,6 +3463,18 @@ class _DriverIncidentCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (!incident.canSubmitResolution &&
+                        incident.hasSubmittedResolution) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Penyelesaian sudah diajukan. Menunggu review admin.',
+                        style: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.62),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
@@ -3745,19 +3787,13 @@ class _DetailNote extends StatelessWidget {
 class _TrackingCard extends StatelessWidget {
   const _TrackingCard({
     required this.trackingEnabled,
-    required this.selectedInterval,
     required this.location,
     required this.pingCount,
-    required this.onTrackingChanged,
-    required this.onIntervalChanged,
   });
 
   final bool trackingEnabled;
-  final Duration selectedInterval;
   final LocationSnapshot? location;
   final int pingCount;
-  final Future<void> Function(bool) onTrackingChanged;
-  final ValueChanged<Duration> onIntervalChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -3808,7 +3844,7 @@ class _TrackingCard extends StatelessWidget {
                       Text(
                         trackingEnabled
                             ? '$pingCount ping terkirim'
-                            : 'Aktifkan untuk kirim lokasi',
+                            : 'Aktif otomatis saat ada trip aktif',
                         style: TextStyle(
                           color: scheme.onSurface.withValues(alpha: 0.5),
                           fontSize: 12,
@@ -3817,50 +3853,7 @@ class _TrackingCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Switch(
-                  value: trackingEnabled,
-                  onChanged: (v) => unawaited(onTrackingChanged(v)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surface,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: scheme.outline.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Text(
-                    'Interval',
-                    style: TextStyle(
-                      color: scheme.onSurface.withValues(alpha: 0.58),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                _Chip(
-                  label: '30s',
-                  selected: selectedInterval == const Duration(seconds: 30),
-                  onTap: () => onIntervalChanged(const Duration(seconds: 30)),
-                ),
-                const SizedBox(width: 8),
-                _Chip(
-                  label: '1 min',
-                  selected: selectedInterval == const Duration(minutes: 1),
-                  onTap: () => onIntervalChanged(const Duration(minutes: 1)),
-                ),
+                _AutoBadge(active: trackingEnabled),
               ],
             ),
             if (location != null) ...[
@@ -3981,42 +3974,33 @@ class _ErrorBanner extends StatelessWidget {
 }
 
 // ── Chip / stat ────────────────────────────────────────────
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+class _AutoBadge extends StatelessWidget {
+  const _AutoBadge({required this.active});
+
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? scheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? scheme.primary.withValues(alpha: 0.4)
-                : const Color(0xFFD4DDDA),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: active ? scheme.primaryContainer : scheme.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: active
+              ? scheme.primary.withValues(alpha: 0.36)
+              : scheme.outline.withValues(alpha: 0.36),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected
-                ? scheme.primary
-                : scheme.onSurface.withValues(alpha: 0.5),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
+      ),
+      child: Text(
+        active ? 'Otomatis' : 'Standby',
+        style: TextStyle(
+          color: active
+              ? scheme.primary
+              : scheme.onSurface.withValues(alpha: 0.55),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -4056,37 +4040,6 @@ class _StatMini extends StatelessWidget {
 }
 
 // ── Buttons ────────────────────────────────────────────────
-class _StartDeliveryButton extends StatelessWidget {
-  const _StartDeliveryButton({required this.trip, required this.onPressed});
-  final DeliveryTrip trip;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final alreadyStarted =
-        trip.status == TripStatus.onDelivery ||
-        trip.status == TripStatus.arrived;
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: onPressed,
-        icon: Icon(
-          alreadyStarted ? Icons.sensors_rounded : Icons.play_arrow_rounded,
-          size: 18,
-        ),
-        label: Text(alreadyStarted ? 'Sedang jalan' : 'Mulai trip'),
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-        ),
-      ),
-    );
-  }
-}
-
 class _AdvanceButton extends StatelessWidget {
   const _AdvanceButton({
     required this.status,

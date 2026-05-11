@@ -42,18 +42,94 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
     final defaultPickupStopKey = widget.pickupStops.isNotEmpty
         ? widget.pickupStops.first.key
         : '';
-    if (widget.initialShipperReferences.isEmpty) {
+    final groups = <_ManifestGroupDraft>[];
+
+    int findGroupIndex({
+      String? referenceKey,
+      String? referenceNumber,
+      String? pickupStopKey,
+    }) {
+      final normalizedKey = (referenceKey ?? '').trim();
+      final normalizedNumber = (referenceNumber ?? '').trim().toUpperCase();
+      final normalizedPickup = (pickupStopKey ?? '').trim();
+      return groups.indexWhere((group) {
+        if (normalizedKey.isNotEmpty && group.referenceKey == normalizedKey) {
+          return true;
+        }
+        if (normalizedNumber.isNotEmpty &&
+            group.shipperReferenceNumber.trim().toUpperCase() ==
+                normalizedNumber) {
+          return true;
+        }
+        return normalizedKey.isEmpty &&
+            normalizedNumber.isEmpty &&
+            normalizedPickup.isNotEmpty &&
+            group.pickupStopKey == normalizedPickup;
+      });
+    }
+
+    void upsertGroup({
+      String? referenceKey,
+      String? referenceNumber,
+      String? pickupStopKey,
+      _ManifestItemDraft? item,
+    }) {
+      final resolvedPickup = (pickupStopKey ?? '').trim().isNotEmpty == true
+          ? pickupStopKey!.trim()
+          : defaultPickupStopKey;
+      final index = findGroupIndex(
+        referenceKey: referenceKey,
+        referenceNumber: referenceNumber,
+        pickupStopKey: resolvedPickup,
+      );
+      if (index < 0) {
+        groups.add(
+          _ManifestGroupDraft.create(
+            resolvedPickup,
+            initialReferenceKey: (referenceKey ?? '').trim(),
+            initialReferenceNumber: (referenceNumber ?? '').trim(),
+            initialItems: item != null ? [item] : const [],
+            createBlankItem: item == null ? false : true,
+          ),
+        );
+        return;
+      }
+      final group = groups[index];
+      groups[index] = group.copyWith(
+        referenceKey: (referenceKey ?? group.referenceKey).trim(),
+        shipperReferenceNumber:
+            (referenceNumber ?? group.shipperReferenceNumber).trim(),
+        pickupStopKey: resolvedPickup,
+        items: item != null ? [...group.items, item] : group.items,
+      );
+    }
+
+    for (final reference in widget.initialShipperReferences) {
+      upsertGroup(
+        referenceKey: reference.key,
+        referenceNumber: reference.referenceNumber,
+        pickupStopKey: reference.pickupStopKey,
+      );
+    }
+
+    for (final item in widget.existingCargoItems) {
+      upsertGroup(
+        referenceKey: item.shipperReferenceKey,
+        referenceNumber: item.shipperReferenceNumber,
+        pickupStopKey: item.pickupStopKey,
+        item: _ManifestItemDraft.fromCargoItem(item),
+      );
+    }
+
+    if (groups.isEmpty) {
       return [_ManifestGroupDraft.create(defaultPickupStopKey)];
     }
 
-    return widget.initialShipperReferences
+    return groups
         .map(
-          (reference) => _ManifestGroupDraft.create(
-            reference.pickupStopKey?.trim().isNotEmpty == true
-                ? reference.pickupStopKey!
-                : defaultPickupStopKey,
-            initialReferenceNumber: reference.referenceNumber,
-          ),
+          (group) => group.items.isEmpty
+              ? group.copyWith(items: [_ManifestItemDraft.create()])
+              : group,
         )
         .toList(growable: true);
   }
@@ -332,6 +408,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
       shipperReferences.add(
         DriverManifestShipperReferenceInput(
           referenceNumber: referenceNumber,
+          key: group.referenceKey.trim().isNotEmpty
+              ? group.referenceKey.trim()
+              : null,
           pickupStopKey: group.pickupStopKey.trim().isNotEmpty
               ? group.pickupStopKey.trim()
               : null,
@@ -351,23 +430,25 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
           return;
         }
 
-        cargoItems.add(
-          DriverManifestCargoItemInput(
-            customerProductRef: item.customerProductRef.trim().isNotEmpty
-                ? item.customerProductRef.trim()
-                : null,
-            description: description,
-            qtyKoli: item.qtyKoliValue,
-            weightInputValue: item.weightInputValueNumber,
-            weightInputUnit: item.weightInputUnit,
-            volumeInputValue: item.volumeInputValueNumber,
-            volumeInputUnit: item.volumeInputUnit,
-            shipperReferenceNumber: referenceNumber,
-            pickupStopKey: group.pickupStopKey.trim().isNotEmpty
-                ? group.pickupStopKey.trim()
-                : null,
-          ),
+        final cargoInput = DriverManifestCargoItemInput(
+          customerProductRef: item.customerProductRef.trim().isNotEmpty
+              ? item.customerProductRef.trim()
+              : null,
+          description: description,
+          qtyKoli: item.qtyKoliValue,
+          weightInputValue: item.weightInputValueNumber,
+          weightInputUnit: item.weightInputUnit,
+          volumeInputValue: item.volumeInputValueNumber,
+          volumeInputUnit: item.volumeInputUnit,
+          shipperReferenceNumber: referenceNumber,
+          pickupStopKey: group.pickupStopKey.trim().isNotEmpty
+              ? group.pickupStopKey.trim()
+              : null,
         );
+        if (item.sourceCargoItemId.trim().isNotEmpty) {
+          continue;
+        }
+        cargoItems.add(cargoInput);
       }
     }
 
@@ -381,8 +462,58 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
       DeliveryManifestSubmitResult(
         shipperReferences: shipperReferences,
         cargoItems: cargoItems,
+        updatedCargoItems: _buildUpdatedCargoItems(),
+        deletedCargoItemIds: _buildDeletedCargoItemIds(),
       ),
     );
+  }
+
+  List<DeliveryManifestCargoItemUpdate> _buildUpdatedCargoItems() {
+    if (!widget.allowsDirectCargoInput) return const [];
+    final updates = <DeliveryManifestCargoItemUpdate>[];
+    for (final group in _groups) {
+      final referenceNumber = group.shipperReferenceNumber.trim().toUpperCase();
+      for (final item in group.items.where((entry) => entry.isFilled)) {
+        final sourceId = item.sourceCargoItemId.trim();
+        if (sourceId.isEmpty) continue;
+        updates.add(
+          DeliveryManifestCargoItemUpdate(
+            deliveryOrderItemId: sourceId,
+            cargoItem: DriverManifestCargoItemInput(
+              customerProductRef: item.customerProductRef.trim().isNotEmpty
+                  ? item.customerProductRef.trim()
+                  : null,
+              description: item.description.trim(),
+              qtyKoli: item.qtyKoliValue,
+              weightInputValue: item.weightInputValueNumber,
+              weightInputUnit: item.weightInputUnit,
+              volumeInputValue: item.volumeInputValueNumber,
+              volumeInputUnit: item.volumeInputUnit,
+              shipperReferenceNumber: referenceNumber,
+              pickupStopKey: group.pickupStopKey.trim().isNotEmpty
+                  ? group.pickupStopKey.trim()
+                  : null,
+            ),
+          ),
+        );
+      }
+    }
+    return updates;
+  }
+
+  List<String> _buildDeletedCargoItemIds() {
+    if (!widget.allowsDirectCargoInput) return const [];
+    final originalIds = widget.existingCargoItems
+        .map((item) => item.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final retainedIds = _groups
+        .expand((group) => group.items)
+        .where((item) => item.isFilled)
+        .map((item) => item.sourceCargoItemId.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    return originalIds.difference(retainedIds).toList(growable: false);
   }
 
   void _showError(String message) {
@@ -495,44 +626,68 @@ class DeliveryManifestSubmitResult {
   const DeliveryManifestSubmitResult({
     required this.shipperReferences,
     required this.cargoItems,
+    this.updatedCargoItems = const [],
+    this.deletedCargoItemIds = const [],
   });
 
   final List<DriverManifestShipperReferenceInput> shipperReferences;
   final List<DriverManifestCargoItemInput> cargoItems;
+  final List<DeliveryManifestCargoItemUpdate> updatedCargoItems;
+  final List<String> deletedCargoItemIds;
+}
+
+class DeliveryManifestCargoItemUpdate {
+  const DeliveryManifestCargoItemUpdate({
+    required this.deliveryOrderItemId,
+    required this.cargoItem,
+  });
+
+  final String deliveryOrderItemId;
+  final DriverManifestCargoItemInput cargoItem;
 }
 
 class _ManifestGroupDraft {
   const _ManifestGroupDraft({
     required this.id,
+    required this.referenceKey,
     required this.pickupStopKey,
     required this.shipperReferenceNumber,
     required this.items,
   });
 
   final String id;
+  final String referenceKey;
   final String pickupStopKey;
   final String shipperReferenceNumber;
   final List<_ManifestItemDraft> items;
 
   factory _ManifestGroupDraft.create(
     String pickupStopKey, {
+    String initialReferenceKey = '',
     String initialReferenceNumber = '',
+    List<_ManifestItemDraft> initialItems = const [],
+    bool createBlankItem = true,
   }) {
     return _ManifestGroupDraft(
       id: UniqueKey().toString(),
+      referenceKey: initialReferenceKey,
       pickupStopKey: pickupStopKey,
       shipperReferenceNumber: initialReferenceNumber,
-      items: [_ManifestItemDraft.create()],
+      items: initialItems.isNotEmpty
+          ? initialItems
+          : (createBlankItem ? [_ManifestItemDraft.create()] : const []),
     );
   }
 
   _ManifestGroupDraft copyWith({
+    String? referenceKey,
     String? pickupStopKey,
     String? shipperReferenceNumber,
     List<_ManifestItemDraft>? items,
   }) {
     return _ManifestGroupDraft(
       id: id,
+      referenceKey: referenceKey ?? this.referenceKey,
       pickupStopKey: pickupStopKey ?? this.pickupStopKey,
       shipperReferenceNumber:
           shipperReferenceNumber ?? this.shipperReferenceNumber,
@@ -544,6 +699,7 @@ class _ManifestGroupDraft {
 class _ManifestItemDraft {
   const _ManifestItemDraft({
     required this.id,
+    required this.sourceCargoItemId,
     required this.customerProductRef,
     required this.description,
     required this.qtyKoli,
@@ -554,6 +710,7 @@ class _ManifestItemDraft {
   });
 
   final String id;
+  final String sourceCargoItemId;
   final String customerProductRef;
   final String description;
   final String qtyKoli;
@@ -565,6 +722,7 @@ class _ManifestItemDraft {
   factory _ManifestItemDraft.create() {
     return const _ManifestItemDraft(
       id: '',
+      sourceCargoItemId: '',
       customerProductRef: '',
       description: '',
       qtyKoli: '',
@@ -575,9 +733,28 @@ class _ManifestItemDraft {
     )._withId();
   }
 
+  factory _ManifestItemDraft.fromCargoItem(DeliveryCargoItem item) {
+    return _ManifestItemDraft(
+      id: '',
+      sourceCargoItemId: item.id,
+      customerProductRef: '',
+      description: item.description,
+      qtyKoli: _formatDraftNumber(item.qtyKoli),
+      weightInputValue: _formatDraftNumber(
+        item.weightInputValue ?? item.weightKg,
+      ),
+      weightInputUnit: (item.weightInputUnit ?? 'KG').toUpperCase(),
+      volumeInputValue: _formatDraftNumber(
+        item.volumeInputValue ?? item.volumeM3,
+      ),
+      volumeInputUnit: (item.volumeInputUnit ?? 'M3').toUpperCase(),
+    )._withId();
+  }
+
   _ManifestItemDraft _withId() {
     return _ManifestItemDraft(
       id: id.isNotEmpty ? id : UniqueKey().toString(),
+      sourceCargoItemId: sourceCargoItemId,
       customerProductRef: customerProductRef,
       description: description,
       qtyKoli: qtyKoli,
@@ -617,6 +794,7 @@ class _ManifestItemDraft {
   }) {
     return _ManifestItemDraft(
       id: id,
+      sourceCargoItemId: sourceCargoItemId,
       customerProductRef: customerProductRef ?? this.customerProductRef,
       description: description ?? this.description,
       qtyKoli: qtyKoli ?? this.qtyKoli,
@@ -626,6 +804,17 @@ class _ManifestItemDraft {
       volumeInputUnit: volumeInputUnit ?? this.volumeInputUnit,
     );
   }
+}
+
+String _formatDraftNumber(double? value) {
+  if (value == null || value <= 0) return '';
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
+  return value
+      .toStringAsFixed(5)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }
 
 class _ManifestGroupCard extends StatelessWidget {

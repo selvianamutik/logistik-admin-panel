@@ -347,6 +347,104 @@ class DeliveryOrderService {
     }
   }
 
+  Future<void> syncDeliveryOrderShipperReferences({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required List<DriverManifestShipperReferenceInput> shipperReferences,
+  }) async {
+    final response = await http.post(
+      Uri.parse(
+        '${AppConfig.apiBaseUrl}/api/driver/delivery-orders/shipper-references',
+      ),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'shipperReferences': shipperReferences
+            .map((item) => item.toJson())
+            .toList(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal menyimpan daftar SJ driver';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
+  Future<void> updateDeliveryOrderCargoItem({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required String deliveryOrderItemId,
+    required DriverManifestCargoItemInput cargoItem,
+  }) async {
+    final response = await http.patch(
+      Uri.parse(
+        '${AppConfig.apiBaseUrl}/api/driver/delivery-orders/cargo-item',
+      ),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'deliveryOrderItemId': deliveryOrderItemId,
+        'cargoItem': cargoItem.toJson(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal mengubah barang SJ driver';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
+  Future<void> deleteDeliveryOrderCargoItem({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required String deliveryOrderItemId,
+  }) async {
+    final request =
+        http.Request(
+            'DELETE',
+            Uri.parse(
+              '${AppConfig.apiBaseUrl}/api/driver/delivery-orders/cargo-item',
+            ),
+          )
+          ..headers.addAll({
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'x-client-type': 'driver-app',
+            'Authorization': 'Bearer $sessionToken',
+          })
+          ..body = jsonEncode({
+            'id': deliveryOrderId,
+            'deliveryOrderItemId': deliveryOrderItemId,
+          });
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal menghapus barang SJ driver';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   DeliveryTrip _mapTrip(Map<String, dynamic> json) {
     final status = (json['status'] as String?) ?? 'CREATED';
     final mappedStatus = switch (status) {
@@ -830,13 +928,16 @@ class DeliveryOrderService {
 class DriverManifestShipperReferenceInput {
   const DriverManifestShipperReferenceInput({
     required this.referenceNumber,
+    this.key,
     this.pickupStopKey,
   });
 
   final String referenceNumber;
+  final String? key;
   final String? pickupStopKey;
 
   Map<String, dynamic> toJson() => {
+    if (key != null && key!.isNotEmpty) '_key': key,
     'referenceNumber': referenceNumber,
     if (pickupStopKey != null && pickupStopKey!.isNotEmpty)
       'pickupStopKey': pickupStopKey,
