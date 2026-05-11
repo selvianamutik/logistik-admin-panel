@@ -3,6 +3,7 @@ export type DeliveryOrderOvertonageResult = {
     serviceMaxPayloadKg?: number;
     vehicleCapacityKg?: number;
     overtonaseWeightKg?: number;
+    manualOvertonaseWeightKg?: number;
     overtonaseDriverRatePerKg?: number;
     overtonaseDriverAmount?: number;
     vehicleCapacityExceededKg?: number;
@@ -22,37 +23,48 @@ function roundQuantity(value: number, digits = 2) {
     return Math.round(value * factor) / factor;
 }
 
+function floorToWholeTonsKg(valueKg: number) {
+    return Math.floor(valueKg / 1000) * 1000;
+}
+
 export function computeDeliveryOrderOvertonage(params: {
     actualTotalWeightKg: unknown;
     serviceMaxPayloadKg?: unknown;
     vehicleCapacityKg?: unknown;
     baseTripFee?: unknown;
     overtonaseDriverRatePerKg?: unknown;
+    manualOvertonaseWeightKg?: unknown;
 }): DeliveryOrderOvertonageResult {
     const actualTotalWeightKg = roundQuantity(normalizeNonNegative(params.actualTotalWeightKg));
     const serviceMaxPayloadKg = roundQuantity(normalizeNonNegative(params.serviceMaxPayloadKg));
     const vehicleCapacityKg = roundQuantity(normalizeNonNegative(params.vehicleCapacityKg));
     const baseTripFee = Math.round(normalizeNonNegative(params.baseTripFee));
     const overtonaseDriverRatePerKg = Math.round(normalizeNonNegative(params.overtonaseDriverRatePerKg));
+    const manualOvertonaseWeightKg = roundQuantity(normalizeNonNegative(params.manualOvertonaseWeightKg));
     const effectivePayloadLimitKg = serviceMaxPayloadKg > 0 ? serviceMaxPayloadKg : 0;
 
-    const overtonaseWeightKg =
+    const automaticOvertonaseWeightKg =
         actualTotalWeightKg > 0 && effectivePayloadLimitKg > 0
             ? roundQuantity(Math.max(actualTotalWeightKg - effectivePayloadLimitKg, 0))
             : 0;
+    const overtonaseWeightKg = manualOvertonaseWeightKg > 0
+        ? manualOvertonaseWeightKg
+        : automaticOvertonaseWeightKg;
     const vehicleCapacityExceededKg =
         actualTotalWeightKg > 0 && vehicleCapacityKg > 0
             ? roundQuantity(Math.max(actualTotalWeightKg - vehicleCapacityKg, 0))
             : 0;
+    const payableOvertonaseWeightKg = floorToWholeTonsKg(overtonaseWeightKg);
     const overtonaseDriverAmount =
-        overtonaseWeightKg > 0 && overtonaseDriverRatePerKg > 0
-            ? Math.round(overtonaseWeightKg * overtonaseDriverRatePerKg)
+        payableOvertonaseWeightKg > 0 && overtonaseDriverRatePerKg > 0
+            ? Math.round(payableOvertonaseWeightKg * overtonaseDriverRatePerKg)
             : 0;
 
     return {
         actualTotalWeightKg,
         serviceMaxPayloadKg: serviceMaxPayloadKg > 0 ? serviceMaxPayloadKg : undefined,
         vehicleCapacityKg: vehicleCapacityKg > 0 ? vehicleCapacityKg : undefined,
+        manualOvertonaseWeightKg: manualOvertonaseWeightKg > 0 ? manualOvertonaseWeightKg : undefined,
         overtonaseWeightKg: overtonaseWeightKg > 0 ? overtonaseWeightKg : undefined,
         overtonaseDriverRatePerKg: overtonaseDriverRatePerKg > 0 ? overtonaseDriverRatePerKg : undefined,
         overtonaseDriverAmount: overtonaseDriverAmount > 0 ? overtonaseDriverAmount : undefined,

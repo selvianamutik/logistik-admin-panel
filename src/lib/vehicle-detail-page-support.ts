@@ -10,6 +10,8 @@ import {
 } from './tire-slots';
 
 export type VehicleTireFormState = {
+    tireSource: 'WAREHOUSE' | 'UNIT';
+    sourceVehicleRef: string;
     registeredTireId: string;
     tireCode: string;
     slotCode: string;
@@ -19,6 +21,9 @@ export type VehicleTireFormState = {
     originalCost: number;
     totalUsedPercent: number;
     usagePercentOnExit: number | null;
+    sourceTireUsagePercent: number | null;
+    oldTireUsagePercent: number | null;
+    oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
     installDate: string;
     notes: string;
 };
@@ -35,6 +40,8 @@ export const VEHICLE_TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['T
 
 export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormState {
     return {
+        tireSource: 'WAREHOUSE',
+        sourceVehicleRef: '',
         registeredTireId: '',
         tireCode: '',
         slotCode,
@@ -44,6 +51,9 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         originalCost: 0,
         totalUsedPercent: 0,
         usagePercentOnExit: null,
+        sourceTireUsagePercent: null,
+        oldTireUsagePercent: null,
+        oldTireDestination: 'WAREHOUSE',
         installDate: getBusinessDateValue(),
         notes: '',
     };
@@ -132,7 +142,18 @@ export function buildVehicleTireDetailState(params: {
         if (row.status === 'SCRAPPED') {
             return false;
         }
-        if (row.holderType === 'INTERNAL_VEHICLE' && row.status === 'IN_USE') {
+        if (tireForm.tireSource === 'WAREHOUSE') {
+            if (row.holderType !== 'WAREHOUSE' || row.status !== 'IN_WAREHOUSE') {
+                return false;
+            }
+        } else if (
+            row.holderType !== 'INTERNAL_VEHICLE' ||
+            row.status !== 'IN_USE' ||
+            !row.vehicleRef ||
+            row.vehicleRef === vehicle._id
+        ) {
+            return false;
+        } else if (tireForm.sourceVehicleRef && row.vehicleRef !== tireForm.sourceVehicleRef) {
             return false;
         }
         return isTireCompatibleWithVehicle(row, vehicle);

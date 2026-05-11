@@ -67,6 +67,7 @@ import {
     formatCargoSummary,
     getWeightInputFractionDigits,
     VOLUME_INPUT_UNIT_OPTIONS,
+    type WeightInputUnit,
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
 import {
@@ -166,6 +167,11 @@ const ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR = '::item::';
 
 function buildActualDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
     return `${draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${deliveryOrderItemRef}`;
+}
+
+function roundToPrecision(value: number, digits = 2) {
+    const factor = 10 ** digits;
+    return Math.round(value * factor) / factor;
 }
 
 function createDefaultTripCashIssueForm(): TripCashIssueFormState {
@@ -552,6 +558,12 @@ export default function TripDetailPage() {
     const [showTripCashSettleModal, setShowTripCashSettleModal] = useState(false);
     const [showCancelTripModal, setShowCancelTripModal] = useState(false);
     const [showActualCargoFinalizationModal, setShowActualCargoFinalizationModal] = useState(false);
+    const [showSuratJalanActualEditModal, setShowSuratJalanActualEditModal] = useState(false);
+    const [manualOvertonaseReviewMode, setManualOvertonaseReviewMode] = useState<'manual' | 'automatic' | null>(null);
+    const [selectedSuratJalanActualEditDocument, setSelectedSuratJalanActualEditDocument] = useState<SuratJalanDocument | null>(null);
+    const statusModalBodyRef = useRef<HTMLDivElement | null>(null);
+    const statusModalScrollTopRef = useRef(0);
+    const shouldRestoreStatusModalScrollRef = useRef(false);
     const [activeFinalizationCargoItemRef, setActiveFinalizationCargoItemRef] = useState('');
     const [activeFinalizationDropKey, setActiveFinalizationDropKey] = useState('');
     const [newStatus, setNewStatus] = useState('');
@@ -570,11 +582,14 @@ export default function TripDetailPage() {
     const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
     const [actualDropItemValueMap, setActualDropItemValueMap] = useState<Record<string, ActualDropItemValueDraft>>({});
     const [actualCargoSetupSnapshot, setActualCargoSetupSnapshot] = useState<ActualCargoDraft[]>([]);
+    const [suratJalanActualEditItems, setSuratJalanActualEditItems] = useState<ActualCargoDraft[]>([]);
     const [partialHoldContinuationItemRefs, setPartialHoldContinuationItemRefs] = useState<string[]>([]);
     const [showAdvancedDropEditor, setShowAdvancedDropEditor] = useState(false);
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
+    const [manualOvertonaseWeightInputValue, setManualOvertonaseWeightInputValue] = useState(0);
+    const [manualOvertonaseWeightInputUnit, setManualOvertonaseWeightInputUnit] = useState<WeightInputUnit>('KG');
     const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
     const [tripRouteRateRef, setTripRouteRateRef] = useState('');
     const [tripOriginArea, setTripOriginArea] = useState('');
@@ -588,6 +603,7 @@ export default function TripDetailPage() {
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
+    const [savingManualOvertonase, setSavingManualOvertonase] = useState(false);
     const [loadingTripCashOptions, setLoadingTripCashOptions] = useState(false);
     const [issuingTripCash, setIssuingTripCash] = useState(false);
     const [toppingUpTripCash, setToppingUpTripCash] = useState(false);
@@ -599,6 +615,7 @@ export default function TripDetailPage() {
     const [savingTripResources, setSavingTripResources] = useState(false);
     const [savingShipperReference, setSavingShipperReference] = useState(false);
     const [savingCargo, setSavingCargo] = useState(false);
+    const [savingSuratJalanActualEdit, setSavingSuratJalanActualEdit] = useState(false);
     const [togglingTripClosure, setTogglingTripClosure] = useState(false);
     const [pendingTripClosure, setPendingTripClosure] = useState<boolean | null>(null);
     const [tripClosureOdometer, setTripClosureOdometer] = useState(0);
@@ -689,6 +706,8 @@ export default function TripDetailPage() {
         showTripCashSettleModal ||
         showCancelTripModal ||
         showActualCargoFinalizationModal ||
+        showSuratJalanActualEditModal ||
+        manualOvertonaseReviewMode !== null ||
         pendingTripClosure !== null;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
         serviceRef: doData?.serviceRef,
@@ -893,6 +912,10 @@ export default function TripDetailPage() {
             setTripOriginArea(resolvedDeliveryOrder?.tripOriginArea || '');
             setTripDestinationArea(resolvedDeliveryOrder?.tripDestinationArea || '');
         }
+        if (!savingManualOvertonase) {
+            setManualOvertonaseWeightInputUnit('KG');
+            setManualOvertonaseWeightInputValue(resolvedDeliveryOrder?.manualOvertonaseWeightKg || 0);
+        }
         await hydrateDeliveryOrderItemsState(deliveryOrderItems);
         setTrackingLogs(sortTrackingLogs(trackingEvents));
 
@@ -901,7 +924,7 @@ export default function TripDetailPage() {
             deliveryOrderItems,
             resolvedDeliveryOrder,
         };
-    }, [hydrateDeliveryOrderItemsState]);
+    }, [hydrateDeliveryOrderItemsState, savingManualOvertonase]);
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -2464,6 +2487,172 @@ export default function TripDetailPage() {
         );
     };
 
+    const getDeliveryOrderItemsForSuratJalanDocument = (document: SuratJalanDocument) => {
+        const deliveryOrderId = doData?._id || '';
+        const customerDoNumber = doData?.customerDoNumber || '';
+        const documentReferenceKey = (document.referenceKey || '').trim();
+        const documentNumber = (document.suratJalanNumber || '').trim().toUpperCase();
+        const documentRefSuffix = deliveryOrderId && document._id.startsWith(`${deliveryOrderId}:`)
+            ? document._id.slice(`${deliveryOrderId}:`.length)
+            : '';
+
+        return doItems.filter(item => {
+            const itemReferenceKey = (item.shipperReferenceKey || '').trim();
+            const itemReferenceNumber = (item.shipperReferenceNumber || customerDoNumber).trim().toUpperCase();
+            return (
+                (documentReferenceKey && documentReferenceKey !== 'primary' && itemReferenceKey === documentReferenceKey) ||
+                (documentRefSuffix && documentRefSuffix !== 'primary' && itemReferenceKey === documentRefSuffix) ||
+                (documentNumber && itemReferenceNumber === documentNumber) ||
+                ((documentReferenceKey === 'primary' || documentRefSuffix === 'primary' || (!documentReferenceKey && !documentNumber)) && !itemReferenceKey && !itemReferenceNumber)
+            );
+        });
+    };
+
+    const openSuratJalanActualEditModal = (document: SuratJalanDocument) => {
+        if (!canManageDeliveryStatus || isTripClosedByAdmin || document.tripStatus !== 'DELIVERED') {
+            return;
+        }
+        const documentItems = getDeliveryOrderItemsForSuratJalanDocument(document);
+        if (documentItems.length === 0) {
+            addToast('error', 'Item SJ tidak ditemukan untuk diedit.');
+            return;
+        }
+        setSelectedSuratJalanActualEditDocument(document);
+        setSuratJalanActualEditItems(buildActualCargoDrafts(documentItems));
+        setShowSuratJalanActualEditModal(true);
+    };
+
+    const closeSuratJalanActualEditModal = () => {
+        if (savingSuratJalanActualEdit) {
+            return;
+        }
+        setShowSuratJalanActualEditModal(false);
+        setSelectedSuratJalanActualEditDocument(null);
+        setSuratJalanActualEditItems([]);
+    };
+
+    const updateSuratJalanActualEditItem = (
+        deliveryOrderItemRef: string,
+        field: keyof Pick<ActualCargoDraft, 'actualQtyKoli' | 'actualWeightInputValue' | 'actualWeightInputUnit' | 'actualVolumeInputValue' | 'actualVolumeInputUnit'>,
+        value: string
+    ) => {
+        setSuratJalanActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            if (field === 'actualQtyKoli') {
+                return applyActualCargoAutoWeightFromQty(item, value);
+            }
+            return { ...item, [field]: value };
+        }));
+    };
+
+    const updateSuratJalanActualEditWeightUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualWeightInputUnit']) => {
+        setSuratJalanActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            const currentWeightKg = convertWeightToKg(
+                parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                }),
+                item.actualWeightInputUnit
+            );
+            return {
+                ...item,
+                actualWeightInputUnit: nextUnit,
+                actualWeightInputValue: currentWeightKg > 0 ? String(convertKgToWeightInputValue(currentWeightKg, nextUnit)) : '',
+            };
+        }));
+    };
+
+    const updateSuratJalanActualEditVolumeUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualVolumeInputUnit']) => {
+        setSuratJalanActualEditItems(previous => previous.map(item => {
+            if (item.deliveryOrderItemRef !== deliveryOrderItemRef) {
+                return item;
+            }
+            const currentVolumeM3 = convertVolumeToM3(
+                parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                item.actualVolumeInputUnit
+            );
+            return {
+                ...item,
+                actualVolumeInputUnit: nextUnit,
+                actualVolumeInputValue: currentVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit)) : '',
+            };
+        }));
+    };
+
+    const saveSuratJalanActualEdit = async () => {
+        if (!doData || !selectedSuratJalanActualEditDocument || !canManageDeliveryStatus || isTripClosedByAdmin) {
+            return;
+        }
+        const invalidItemIndex = suratJalanActualEditItems.findIndex(item => {
+            const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
+            const weight = convertWeightToKg(
+                parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                }),
+                item.actualWeightInputUnit
+            );
+            const volume = convertVolumeToM3(
+                parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                item.actualVolumeInputUnit
+            );
+            return qty <= 0 && weight <= 0 && volume <= 0;
+        });
+        if (invalidItemIndex >= 0) {
+            addToast('error', `Aktual item baris ${invalidItemIndex + 1} perlu isi qty, berat, atau volume.`);
+            return;
+        }
+
+        setSavingSuratJalanActualEdit(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-surat-jalan-actual-cargo',
+                    data: {
+                        id: doData._id,
+                        suratJalanRef: selectedSuratJalanActualEditDocument._id,
+                        actualItems: suratJalanActualEditItems.map(item => ({
+                            deliveryOrderItemRef: item.deliveryOrderItemRef,
+                            actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+                            actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                            }),
+                            actualWeightInputUnit: item.actualWeightInputUnit,
+                            actualVolumeInputValue: parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                            }),
+                            actualVolumeInputUnit: item.actualVolumeInputUnit,
+                        })),
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan aktual item SJ');
+                return;
+            }
+            setShowSuratJalanActualEditModal(false);
+            setSelectedSuratJalanActualEditDocument(null);
+            setSuratJalanActualEditItems([]);
+            await refreshTripDetail();
+            addToast('success', 'Aktual item SJ berhasil diperbarui');
+        } catch {
+            addToast('error', 'Gagal menyimpan aktual item SJ');
+        } finally {
+            setSavingSuratJalanActualEdit(false);
+        }
+    };
+
     const updateActualDropDraft = (
         draftKey: string,
         field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'billingCustomerRef' | 'billingCustomerName' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
@@ -2915,6 +3104,30 @@ export default function TripDetailPage() {
         void loadDO('initial');
     }, [loadDO]);
 
+    const rememberStatusModalScrollPosition = useCallback(() => {
+        statusModalScrollTopRef.current = statusModalBodyRef.current?.scrollTop ?? statusModalScrollTopRef.current;
+    }, []);
+
+    const reopenStatusModalWithSavedScroll = useCallback(() => {
+        shouldRestoreStatusModalScrollRef.current = true;
+        setShowStatusModal(true);
+    }, []);
+
+    useEffect(() => {
+        if (!showStatusModal || !shouldRestoreStatusModalScrollRef.current) {
+            return;
+        }
+
+        const animationFrameId = window.requestAnimationFrame(() => {
+            if (statusModalBodyRef.current) {
+                statusModalBodyRef.current.scrollTop = statusModalScrollTopRef.current;
+            }
+            shouldRestoreStatusModalScrollRef.current = false;
+        });
+
+        return () => window.cancelAnimationFrame(animationFrameId);
+    }, [showStatusModal]);
+
     useEffect(() => {
         const intervalId = window.setInterval(() => {
             if (editingTaripRef.current || hasOpenModal || document.hidden) {
@@ -3190,6 +3403,110 @@ export default function TripDetailPage() {
             addToast('error', 'Gagal menyimpan upah trip');
         } finally {
             setSavingTarip(false);
+        }
+    };
+
+    const updateManualOvertonaseWeightUnit = (nextUnit: WeightInputUnit) => {
+        const currentWeightKg = convertWeightToKg(
+            parseFormattedNumberish(manualOvertonaseWeightInputValue || 0, {
+                maxFractionDigits: getWeightInputFractionDigits(manualOvertonaseWeightInputUnit),
+            }),
+            manualOvertonaseWeightInputUnit
+        );
+        setManualOvertonaseWeightInputUnit(nextUnit);
+        setManualOvertonaseWeightInputValue(currentWeightKg > 0 ? convertKgToWeightInputValue(currentWeightKg, nextUnit) : 0);
+    };
+
+    const getManualOvertonasePreview = (clearManualValue = false) => {
+        if (!doData) {
+            return null;
+        }
+        const inputWeight = parseFormattedNumberish(manualOvertonaseWeightInputValue || 0, {
+            maxFractionDigits: getWeightInputFractionDigits(manualOvertonaseWeightInputUnit),
+        });
+        const manualWeightKg = clearManualValue
+            ? 0
+            : roundToPrecision(convertWeightToKg(inputWeight, manualOvertonaseWeightInputUnit), 2);
+        const actualTotalWeightKg = doData.actualTotalWeightKg || 0;
+        const serviceMaxPayloadKg = doData.serviceMaxPayloadKg || 0;
+        const automaticOvertonaseWeightKg =
+            actualTotalWeightKg > 0 && serviceMaxPayloadKg > 0
+                ? Math.max(roundToPrecision(actualTotalWeightKg - serviceMaxPayloadKg, 2), 0)
+                : 0;
+        const nextOvertonaseWeightKg = manualWeightKg > 0 ? manualWeightKg : automaticOvertonaseWeightKg;
+        const nextPayableTon = Math.floor(nextOvertonaseWeightKg / 1000);
+        const currentPayableTon = Math.floor((doData.overtonaseWeightKg || 0) / 1000);
+        const ratePerKg = doData.overtonaseDriverRatePerKg || 0;
+        const ratePerTon = Math.round(ratePerKg * 1000);
+        const nextDriverAmount = nextPayableTon > 0 && ratePerKg > 0
+            ? Math.round(nextPayableTon * 1000 * ratePerKg)
+            : 0;
+        const baseFee = doData.baseTaripBorongan ?? doData.taripBorongan ?? 0;
+
+        return {
+            manualWeightKg,
+            automaticOvertonaseWeightKg,
+            nextOvertonaseWeightKg,
+            nextPayableTon,
+            currentPayableTon,
+            ratePerTon,
+            nextDriverAmount,
+            currentDriverAmount: doData.overtonaseDriverAmount || 0,
+            baseFee,
+            currentTripFee: doData.taripBorongan || 0,
+            nextTripFee: baseFee > 0 ? baseFee + nextDriverAmount : nextDriverAmount,
+            modeLabel: manualWeightKg > 0 ? 'Manual' : 'Otomatis',
+        };
+    };
+
+    const openManualOvertonaseReview = (clearManualValue = false) => {
+        if (!doData?._id || !canManageTripFee || isTripClosedByAdmin) return;
+        setManualOvertonaseWeightInputUnit('KG');
+        setManualOvertonaseWeightInputValue(clearManualValue ? 0 : doData.manualOvertonaseWeightKg || 0);
+        setManualOvertonaseReviewMode(clearManualValue ? 'automatic' : 'manual');
+    };
+
+    const saveManualOvertonase = async (clearManualValue = false) => {
+        if (!doData?._id || !canManageTripFee || isTripClosedByAdmin) return;
+        const preview = getManualOvertonasePreview(clearManualValue);
+        if (!clearManualValue && (!preview || preview.manualWeightKg <= 0)) {
+            addToast('error', 'Isi berat manual lebih dari 0, atau gunakan mode otomatis.');
+            return;
+        }
+        setSavingManualOvertonase(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-manual-overtonase',
+                    data: {
+                        id: doData._id,
+                        manualOvertonaseWeightInputValue: clearManualValue ? 0 : manualOvertonaseWeightInputValue,
+                        manualOvertonaseWeightInputUnit,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan overtonase manual');
+                return;
+            }
+            setManualOvertonaseReviewMode(null);
+            await refreshTripDetail();
+            const warning = result.data?.settledVoucherOvertonageWarning;
+            if (warning) {
+                addToast('warning', warning);
+            } else if (result.data?.linkedVoucherAdjustmentSummary) {
+                addToast('success', `Overtonase disimpan, ${result.data.linkedVoucherAdjustmentSummary}`);
+            } else {
+                addToast('success', clearManualValue ? 'Overtonase kembali ke hitungan otomatis' : 'Overtonase manual disimpan');
+            }
+        } catch {
+            addToast('error', 'Gagal menyimpan overtonase manual');
+        } finally {
+            setSavingManualOvertonase(false);
         }
     };
 
@@ -4109,12 +4426,17 @@ export default function TripDetailPage() {
     const overtonaseDriverAmount = doData.overtonaseDriverAmount || 0;
     const totalTripFee = doData.taripBorongan || 0;
     const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
+    const hasManualOvertonase = (doData.manualOvertonaseWeightKg || 0) > 0;
+    const payableOvertonaseTon = Math.floor((doData.overtonaseWeightKg || 0) / 1000);
+    const manualOvertonasePendingPreview = manualOvertonaseReviewMode
+        ? getManualOvertonasePreview(manualOvertonaseReviewMode === 'automatic')
+        : null;
     const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
     const effectiveOvertonaseLimitKg = doData.serviceMaxPayloadKg || 0;
     const overtonaseDriverRatePerTon = doData.overtonaseDriverRatePerKg
         ? Math.round(doData.overtonaseDriverRatePerKg * 1000)
         : 0;
-    const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || exceedsVehicleCapacity;
+    const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || hasManualOvertonase || exceedsVehicleCapacity;
     const settledVoucherNeedsManualAdjustment = Boolean(
         linkedVoucher?.status === 'SETTLED' &&
         totalTripFee > 0 &&
@@ -4855,6 +5177,46 @@ export default function TripDetailPage() {
         selectedHoldDropCount > 0 ? `${selectedHoldDropCount} hold` : null,
         selectedReturnDropCount > 0 ? `${selectedReturnDropCount} return` : null,
     ].filter(Boolean).join(' • ') || 'Semua muatan mengikuti tujuan default';
+    const getSuratJalanStatusRowCargoSummary = (document: SuratJalanDocument) => {
+        const holdCargo = document.holdCargo || { qtyKoli: 0, weightKg: 0, volumeM3: 0 };
+        const hasHoldCargo =
+            (holdCargo.qtyKoli || 0) > 0 ||
+            (holdCargo.weightKg || 0) > 0 ||
+            (holdCargo.volumeM3 || 0) > 0;
+
+        return hasHoldCargo
+            ? `Sisa hold ${formatCargoSummary(holdCargo)}`
+            : formatCargoSummary(document.cargoSummary);
+    };
+    const getItemHoldContinuationPickups = (item: DeliveryOrderItem) => {
+        const itemReferenceNumber = (item.shipperReferenceNumber || doData.customerDoNumber || '').trim().toUpperCase();
+        const itemReferenceKey = (item.shipperReferenceKey || '').trim();
+        return Array.from(new Set(
+            (doData.actualDropPoints || [])
+                .filter(point => {
+                    const pointItemRefs = [
+                        point.deliveryOrderItemRef,
+                        ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+                    ].map(value => (value || '').trim()).filter(Boolean);
+                    const pointReferenceNumber = (point.shipperReferenceNumber || '').trim().toUpperCase();
+                    const pointReferenceKey = (point.shipperReferenceKey || '').trim();
+                    return Boolean(
+                        (point.originLocationName || point.originLocationAddress) &&
+                        (
+                            pointItemRefs.includes(item._id) ||
+                            (itemReferenceKey && pointReferenceKey === itemReferenceKey) ||
+                            (itemReferenceNumber && pointReferenceNumber === itemReferenceNumber)
+                        )
+                    );
+                })
+                .map(point => {
+                    const origin = point.originLocationName || point.originLocationAddress || '';
+                    const destination = point.locationName || point.locationAddress || '';
+                    return destination ? `${origin} -> ${destination}` : origin;
+                })
+                .filter(Boolean)
+        ));
+    };
     const isPartialSuratJalanBatchFinalize =
         newStatus === 'DELIVERED' &&
         eligibleStatusSuratJalanDocuments.length > 1 &&
@@ -5397,6 +5759,17 @@ export default function TripDetailPage() {
                                                                     <span className={`badge badge-${documentStatusMeta.color}`}>
                                                                         <span className="badge-dot" /> {documentStatusMeta.label}
                                                                     </span>
+                                                                    {document?.tripStatus === 'DELIVERED' && canManageDeliveryStatus && !isTripClosedByAdmin && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="btn btn-secondary btn-sm"
+                                                                            onClick={() => openSuratJalanActualEditModal(document)}
+                                                                            disabled={savingSuratJalanActualEdit}
+                                                                            title="Edit aktual barang SJ"
+                                                                        >
+                                                                            <Edit size={14} /> Edit Aktual
+                                                                        </button>
+                                                                    )}
                                                                     {canEditShipperReference && !isTripClosedByAdmin && (
                                                                         <button
                                                                             type="button"
@@ -5680,11 +6053,17 @@ export default function TripDetailPage() {
                                     <div className="detail-value">
                                         {hasOvertonase ? `${doData.overtonaseWeightKg} kg` : '-'}
                                     </div>
+                                    <div className="text-muted text-sm">
+                                        {hasManualOvertonase ? `Manual: ${doData.manualOvertonaseWeightKg} kg` : 'Otomatis dari muatan aktual'}
+                                    </div>
                                 </div>
                                 <div className="detail-item">
                                     <div className="detail-label">Rate Overtonase / ton</div>
                                     <div className="detail-value">
                                         {overtonaseDriverRatePerTon ? formatCurrency(overtonaseDriverRatePerTon) : '-'}
+                                    </div>
+                                    <div className="text-muted text-sm">
+                                        Dibayar {payableOvertonaseTon} ton penuh
                                     </div>
                                 </div>
                                 <div className="detail-item">
@@ -5706,6 +6085,26 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                             </div>
+                            {canManageTripFee && !isTripClosedByAdmin && (
+                                <div style={{ marginTop: '0.85rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <div style={{ minWidth: 220 }}>
+                                        <div className="font-semibold">Manual Overtonase</div>
+                                        <div className="text-muted text-sm">
+                                            {hasManualOvertonase
+                                                ? `Aktif: ${doData.manualOvertonaseWeightKg} kg`
+                                                : 'Mengikuti hitungan otomatis dari muatan aktual'}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        onClick={() => openManualOvertonaseReview(false)}
+                                        disabled={savingManualOvertonase}
+                                    >
+                                        <Edit size={14} /> Atur Overtonase
+                                    </button>
+                                </div>
+                            )}
                             {exceedsVehicleCapacity && (
                                 <div className="text-danger text-sm" style={{ marginTop: '0.75rem' }}>
                                     Berat aktual final melebihi kapasitas kendaraan sebesar {doData.vehicleCapacityExceededKg} kg. Ini bukan sekadar overtonase tarif, tapi sudah melewati batas armada dan perlu evaluasi operasional.
@@ -5876,7 +6275,9 @@ export default function TripDetailPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {doItems.map(item => (
+                                {doItems.map(item => {
+                                    const holdContinuationPickups = getItemHoldContinuationPickups(item);
+                                    return (
                                     <tr key={item._id}>
                                         <td>
                                             <div className="font-mono">{item.shipperReferenceNumber || doData.customerDoNumber || '-'}</div>
@@ -5888,6 +6289,11 @@ export default function TripDetailPage() {
                                                     : item.pickupAddress || '-'}
                                             </div>
                                             <div className="text-muted text-xs">{item.pickupAddress || pickupStopMap.get(item.pickupStopKey || '')?.pickupAddress || '-'}</div>
+                                            {holdContinuationPickups.length > 0 && (
+                                                <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
+                                                    Pickup tambahan hold: {holdContinuationPickups.join(', ')}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="font-medium">{item.orderItemDescription}</td>
                                         <td>
@@ -5959,7 +6365,8 @@ export default function TripDetailPage() {
                                             </td>
                                         )}
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -5992,6 +6399,158 @@ export default function TripDetailPage() {
                 entityRefs={auditTrailEntityRefs}
             />
             </div>
+
+            {manualOvertonaseReviewMode && manualOvertonasePendingPreview && (
+                <div className="modal-overlay" onClick={() => { if (!savingManualOvertonase) setManualOvertonaseReviewMode(null); }}>
+                    <div className="modal" style={{ maxWidth: 760 }} onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Review Perubahan Overtonase</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                    {manualOvertonaseReviewMode === 'automatic'
+                                        ? 'Kembali ke hitungan otomatis dari muatan aktual'
+                                        : 'Simpan koreksi berat overtonase manual'}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={() => setManualOvertonaseReviewMode(null)} disabled={savingManualOvertonase}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                                <div>
+                                    <div className="font-semibold">Input Overtonase</div>
+                                    <div className="text-muted text-sm">
+                                        Isi berat manual jika perlu koreksi. Gunakan otomatis untuk kembali ke hitungan dari muatan aktual. Pembayaran tetap dibulatkan turun per ton.
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'end', flexWrap: 'wrap' }}>
+                                    <div style={{ flex: '1 1 220px' }}>
+                                        <label className="form-label">Berat Manual</label>
+                                        <FormattedNumberInput
+                                            min={0}
+                                            maxFractionDigits={getWeightInputFractionDigits(manualOvertonaseWeightInputUnit)}
+                                            value={manualOvertonaseWeightInputValue}
+                                            onValueChange={value => {
+                                                setManualOvertonaseWeightInputValue(value);
+                                                setManualOvertonaseReviewMode('manual');
+                                            }}
+                                            disabled={savingManualOvertonase || manualOvertonaseReviewMode === 'automatic'}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                    <div style={{ flex: '0 0 110px' }}>
+                                        <label className="form-label">Unit</label>
+                                        <select
+                                            className="form-select"
+                                            value={manualOvertonaseWeightInputUnit}
+                                            onChange={event => {
+                                                updateManualOvertonaseWeightUnit(event.target.value as WeightInputUnit);
+                                                setManualOvertonaseReviewMode('manual');
+                                            }}
+                                            disabled={savingManualOvertonase || manualOvertonaseReviewMode === 'automatic'}
+                                        >
+                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className={manualOvertonaseReviewMode === 'manual' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                                        onClick={() => setManualOvertonaseReviewMode('manual')}
+                                        disabled={savingManualOvertonase}
+                                    >
+                                        Manual
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={manualOvertonaseReviewMode === 'automatic' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                                        onClick={() => setManualOvertonaseReviewMode('automatic')}
+                                        disabled={savingManualOvertonase}
+                                    >
+                                        Otomatis
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="detail-row">
+                                <div className="detail-item">
+                                    <div className="detail-label">Mode Sekarang</div>
+                                    <div className="detail-value">{hasManualOvertonase ? 'Manual' : 'Otomatis'}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Mode Baru</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.modeLabel}</div>
+                                </div>
+                            </div>
+
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Berat Overtonase Sekarang</div>
+                                    <div className="detail-value">{doData.overtonaseWeightKg ? `${doData.overtonaseWeightKg} kg` : '-'}</div>
+                                    <div className="text-muted text-sm">Dibayar {manualOvertonasePendingPreview.currentPayableTon} ton penuh</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Berat Overtonase Baru</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.nextOvertonaseWeightKg ? `${manualOvertonasePendingPreview.nextOvertonaseWeightKg} kg` : '-'}</div>
+                                    <div className="text-muted text-sm">Dibayar {manualOvertonasePendingPreview.nextPayableTon} ton penuh</div>
+                                </div>
+                            </div>
+
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Tambahan Driver Sekarang</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.currentDriverAmount ? formatCurrency(manualOvertonasePendingPreview.currentDriverAmount) : '-'}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Tambahan Driver Baru</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.nextDriverAmount ? formatCurrency(manualOvertonasePendingPreview.nextDriverAmount) : '-'}</div>
+                                </div>
+                            </div>
+
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Total Upah Sekarang</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.currentTripFee ? formatCurrency(manualOvertonasePendingPreview.currentTripFee) : '-'}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Total Upah Baru</div>
+                                    <div className="detail-value">{manualOvertonasePendingPreview.nextTripFee ? formatCurrency(manualOvertonasePendingPreview.nextTripFee) : '-'}</div>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '0.85rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.35rem' }}>
+                                <div className="text-sm">
+                                    Dasar upah: <strong>{manualOvertonasePendingPreview.baseFee ? formatCurrency(manualOvertonasePendingPreview.baseFee) : '-'}</strong>
+                                </div>
+                                <div className="text-sm">
+                                    Rate overtonase: <strong>{manualOvertonasePendingPreview.ratePerTon ? formatCurrency(manualOvertonasePendingPreview.ratePerTon) : '-'}</strong> / ton
+                                </div>
+                                <div className="text-sm">
+                                    Hitungan otomatis dari muatan aktual saat ini: <strong>{manualOvertonasePendingPreview.automaticOvertonaseWeightKg} kg</strong>
+                                </div>
+                            </div>
+
+                            {linkedVoucher?.status === 'SETTLED' ? (
+                                <div className="alert alert-warning" style={{ marginTop: '0.85rem' }}>
+                                    Uang Jalan Trip sudah selesai. Perubahan ini menyimpan overtonase di trip, tapi settlement lama tidak otomatis berubah.
+                                </div>
+                            ) : linkedVoucher ? (
+                                <div className="alert alert-info" style={{ marginTop: '0.85rem' }}>
+                                    Uang Jalan Trip yang belum selesai akan disinkronkan ke total upah baru.
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setManualOvertonaseReviewMode(null)} disabled={savingManualOvertonase}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => void saveManualOvertonase(manualOvertonaseReviewMode === 'automatic')}
+                                disabled={savingManualOvertonase}
+                            >
+                                <Save size={16} /> {savingManualOvertonase ? 'Menyimpan...' : 'Konfirmasi Simpan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showTripCashIssueModal && (
                 <div className="modal-overlay" onClick={() => { if (!issuingTripCash) setShowTripCashIssueModal(false); }}>
@@ -6613,7 +7172,11 @@ export default function TripDetailPage() {
                             <h3 className="modal-title">{isCompletingDelivery ? (reviewingDriverRequest ? 'Review Finalisasi Batch SJ' : 'Finalisasi Batch SJ') : 'Update Status Batch SJ'}</h3>
                             <button className="modal-close" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); setReviewingDriverRequestId(''); }} disabled={updatingStatus}>&times;</button>
                         </div>
-                        <div className="modal-body">
+                        <div
+                            className="modal-body"
+                            ref={statusModalBodyRef}
+                            onScroll={rememberStatusModalScrollPosition}
+                        >
                             {newStatus && eligibleStatusSuratJalanDocuments.length > 0 && (
                                 <div className="form-group">
                                     <label className="form-label">Pilih Batch Surat Jalan yang Memenuhi Syarat</label>
@@ -6647,7 +7210,7 @@ export default function TripDetailPage() {
                                                 <div style={{ display: 'grid', gap: '0.15rem' }}>
                                                     <div className="font-semibold">{formatSuratJalanDisplayNumber(document.suratJalanNumber, document)}</div>
                                                     <div className="text-muted text-sm">
-                                                        Status sekarang {DO_STATUS_MAP[document.tripStatus || displayTripStatus]?.label || document.tripStatus || displayTripStatus} | {document.itemCount} item | {formatCargoSummary(document.cargoSummary)}
+                                                        Status sekarang {DO_STATUS_MAP[document.tripStatus || displayTripStatus]?.label || document.tripStatus || displayTripStatus} | {document.itemCount} item | {getSuratJalanStatusRowCargoSummary(document)}
                                                     </div>
                                                 </div>
                                             </label>
@@ -6913,6 +7476,7 @@ export default function TripDetailPage() {
                                                                             type="button"
                                                                             className="btn btn-primary btn-sm"
                                                                             onClick={() => {
+                                                                                rememberStatusModalScrollPosition();
                                                                                 ensureActualDropAllocationsForItems(item, selectedActualCargoTabItems);
                                                                                 setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(item, selectedActualCargoTabItems));
                                                                                 setActiveFinalizationDropKey(item.draftKey);
@@ -7081,6 +7645,7 @@ export default function TripDetailPage() {
                                 <button
                                     className="btn btn-primary"
                                     onClick={() => {
+                                        rememberStatusModalScrollPosition();
                                         setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(selectedAutoActualDropDraft, selectedDerivedActualCargoTabItems));
                                         setActiveFinalizationDropKey('');
                                         setShowStatusModal(false);
@@ -7414,7 +7979,7 @@ export default function TripDetailPage() {
                                         setActualCargoItemValueMap({});
                                     }
                                     setShowActualCargoFinalizationModal(false);
-                                    setShowStatusModal(true);
+                                    reopenStatusModalWithSavedScroll();
                                 }}
                                 disabled={updatingStatus}
                             >
@@ -7431,7 +7996,7 @@ export default function TripDetailPage() {
                                             );
                                         }
                                         setShowActualCargoFinalizationModal(false);
-                                        setShowStatusModal(true);
+                                        reopenStatusModalWithSavedScroll();
                                     }}
                                     disabled={updatingStatus}
                                 >
@@ -7475,6 +8040,104 @@ export default function TripDetailPage() {
                             <button className="btn btn-secondary" onClick={() => { setShowRejectRequestModal(false); setReviewingDriverRequestId(''); }} disabled={rejectingRequest}>Batal</button>
                             <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
                                 <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showSuratJalanActualEditModal && (
+                <div className="modal-overlay" onClick={closeSuratJalanActualEditModal}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Edit Aktual Barang SJ</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                    {selectedSuratJalanActualEditDocument
+                                        ? formatSuratJalanDisplayNumber(selectedSuratJalanActualEditDocument.suratJalanNumber, selectedSuratJalanActualEditDocument)
+                                        : 'Surat Jalan'}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeSuratJalanActualEditModal} disabled={savingSuratJalanActualEdit}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            {suratJalanActualEditItems.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Belum ada item barang dalam SJ ini</div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                    {suratJalanActualEditItems.map((item, index) => (
+                                        <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
+                                            <div>
+                                                <div className="font-semibold">Item {index + 1}</div>
+                                                <div className="text-muted text-sm">{item.description || '-'}</div>
+                                            </div>
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label className="form-label">Qty Aktual</label>
+                                                    <FormattedNumberInput
+                                                        min={0}
+                                                        maxFractionDigits={2}
+                                                        value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
+                                                        onValueChange={value => updateSuratJalanActualEditItem(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
+                                                        disabled={savingSuratJalanActualEdit}
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Berat Aktual</label>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
+                                                            value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                                maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                                                            })}
+                                                            onValueChange={value => updateSuratJalanActualEditItem(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
+                                                            disabled={savingSuratJalanActualEdit}
+                                                        />
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.actualWeightInputUnit}
+                                                            onChange={event => updateSuratJalanActualEditWeightUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualWeightInputUnit'])}
+                                                            disabled={savingSuratJalanActualEdit}
+                                                        >
+                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Volume Aktual</label>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
+                                                            value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                                                maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                            })}
+                                                            onValueChange={value => updateSuratJalanActualEditItem(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
+                                                            disabled={savingSuratJalanActualEdit}
+                                                        />
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.actualVolumeInputUnit}
+                                                            onChange={event => updateSuratJalanActualEditVolumeUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualVolumeInputUnit'])}
+                                                            disabled={savingSuratJalanActualEdit}
+                                                        >
+                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeSuratJalanActualEditModal} disabled={savingSuratJalanActualEdit}>Batal</button>
+                            <button className="btn btn-primary" onClick={() => void saveSuratJalanActualEdit()} disabled={savingSuratJalanActualEdit || suratJalanActualEditItems.length === 0}>
+                                <Save size={16} /> {savingSuratJalanActualEdit ? 'Menyimpan...' : 'Simpan Aktual'}
                             </button>
                         </div>
                     </div>

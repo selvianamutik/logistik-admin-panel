@@ -293,9 +293,8 @@ function mergeDriverSuratJalanRecordWithLiveCargo(
     if (!liveRecord) {
         return record;
     }
-    const isDraftRecordWithoutActualCargo =
+    const shouldPreserveDraftStatus =
         record.tripStatus === 'CREATED' &&
-        liveRecord.itemCount === 0 &&
         ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveRecord.tripStatus || '') &&
         !hasDriverSuratJalanCargo(record.billableCargo) &&
         !hasDriverSuratJalanCargo(record.holdCargo) &&
@@ -309,7 +308,7 @@ function mergeDriverSuratJalanRecordWithLiveCargo(
         pickupAddress: liveHasHoldCargo
             ? liveRecord.pickupAddress || record.pickupAddress
             : record.pickupAddress || liveRecord.pickupAddress,
-        tripStatus: isDraftRecordWithoutActualCargo ? record.tripStatus : liveRecord.tripStatus,
+        tripStatus: shouldPreserveDraftStatus ? record.tripStatus : liveRecord.tripStatus,
         itemCount: liveRecord.itemCount,
         cargoSummary: liveRecord.cargoSummary,
         billableCargo: liveRecord.billableCargo,

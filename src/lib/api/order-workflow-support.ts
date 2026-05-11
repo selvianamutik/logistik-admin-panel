@@ -845,6 +845,8 @@ export function normalizeDeliveryActualDropPoints(
         const requestedShipperReferenceKey = normalizeOptionalText(rawPoint.shipperReferenceKey);
         const billingCustomerRef = normalizeOptionalText(rawPoint.billingCustomerRef);
         const billingCustomerName = normalizeOptionalText(rawPoint.billingCustomerName);
+        const originLocationName = normalizeOptionalText(rawPoint.originLocationName);
+        const originLocationAddress = normalizeOptionalText(rawPoint.originLocationAddress);
         const matchedShipperReference =
             shipperReferences.find(reference =>
                 requestedShipperReferenceNumber &&
@@ -942,6 +944,8 @@ export function normalizeDeliveryActualDropPoints(
             shipperReferenceNumber: normalizeOptionalText(matchedShipperReference?.referenceNumber) || requestedShipperReferenceNumber,
             billingCustomerRef,
             billingCustomerName,
+            originLocationName: originLocationName || undefined,
+            originLocationAddress: originLocationAddress || undefined,
             locationName: locationName || locationAddress || `Titik drop ${index + 1}`,
             locationAddress,
             qtyKoli: qtyKoli > 0 ? qtyKoli : undefined,

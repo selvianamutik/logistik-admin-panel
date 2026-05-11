@@ -88,7 +88,7 @@ export default function NewNotaPage() {
     const [dueDate, setDueDate] = useState('');
     const [dueDateTouched, setDueDateTouched] = useState(false);
     const [notes, setNotes] = useState('');
-    const [rows, setRows] = useState<NotaItemRow[]>([createEmptyNotaRow()]);
+    const [rows, setRows] = useState<NotaItemRow[]>([]);
     const [billingMode, setBillingMode] = useState<FreightNotaBillingMode>('PER_KG');
     const [pph23Enabled, setPph23Enabled] = useState(false);
     const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
@@ -512,10 +512,7 @@ export default function NewNotaPage() {
     };
 
     const removeRow = (id: string) => {
-        setRows(previous => {
-            const next = previous.filter(row => row.id !== id);
-            return next.length > 0 ? next : [createEmptyNotaRow()];
-        });
+        setRows(previous => previous.filter(row => row.id !== id));
     };
 
     const pendingSjGroups = useMemo(() => {

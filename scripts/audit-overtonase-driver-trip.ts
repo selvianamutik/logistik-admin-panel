@@ -41,8 +41,46 @@ function main() {
     });
 
     assert(overtonage.overtonaseWeightKg === 700, `Berat overtonase harus 700 kg, sekarang ${overtonage.overtonaseWeightKg}.`);
-    assert(overtonage.overtonaseDriverAmount === 11200, `Tambahan driver harus Rp 11.200, sekarang ${overtonage.overtonaseDriverAmount}.`);
-    assert(overtonage.effectiveTripFee === 536200, `Upah borongan final harus Rp 536.200, sekarang ${overtonage.effectiveTripFee}.`);
+    assert(!overtonage.overtonaseDriverAmount, `Tambahan driver harus Rp 0 karena belum 1 ton, sekarang ${overtonage.overtonaseDriverAmount}.`);
+    assert(overtonage.effectiveTripFee === 525000, `Upah borongan final harus tetap Rp 525.000, sekarang ${overtonage.effectiveTripFee}.`);
+
+    const flooredOvertonage = computeDeliveryOrderOvertonage({
+        actualTotalWeightKg: 5800,
+        serviceMaxPayloadKg: 4500,
+        vehicleCapacityKg: 9000,
+        baseTripFee: tripRate.rate,
+        overtonaseDriverRatePerKg: getTripRouteOvertonaseRatePerKg(tripRate),
+    });
+
+    assert(flooredOvertonage.overtonaseWeightKg === 1300, `Berat overtonase harus 1300 kg, sekarang ${flooredOvertonage.overtonaseWeightKg}.`);
+    assert(flooredOvertonage.overtonaseDriverAmount === 16000, `Tambahan driver harus dihitung 1 ton/Rp 16.000, sekarang ${flooredOvertonage.overtonaseDriverAmount}.`);
+    assert(flooredOvertonage.effectiveTripFee === 541000, `Upah borongan final harus Rp 541.000, sekarang ${flooredOvertonage.effectiveTripFee}.`);
+
+    const manualUnderOneTonOvertonage = computeDeliveryOrderOvertonage({
+        actualTotalWeightKg: 5200,
+        serviceMaxPayloadKg: 4500,
+        vehicleCapacityKg: 9000,
+        baseTripFee: tripRate.rate,
+        overtonaseDriverRatePerKg: getTripRouteOvertonaseRatePerKg(tripRate),
+        manualOvertonaseWeightKg: 900,
+    });
+
+    assert(manualUnderOneTonOvertonage.manualOvertonaseWeightKg === 900, `Manual overtonase harus tersimpan 900 kg, sekarang ${manualUnderOneTonOvertonage.manualOvertonaseWeightKg}.`);
+    assert(manualUnderOneTonOvertonage.overtonaseWeightKg === 900, `Berat overtonase manual harus 900 kg, sekarang ${manualUnderOneTonOvertonage.overtonaseWeightKg}.`);
+    assert(!manualUnderOneTonOvertonage.overtonaseDriverAmount, `Manual 0,9 ton harus menghasilkan Rp 0, sekarang ${manualUnderOneTonOvertonage.overtonaseDriverAmount}.`);
+
+    const manualFlooredOvertonage = computeDeliveryOrderOvertonage({
+        actualTotalWeightKg: 5200,
+        serviceMaxPayloadKg: 4500,
+        vehicleCapacityKg: 9000,
+        baseTripFee: tripRate.rate,
+        overtonaseDriverRatePerKg: getTripRouteOvertonaseRatePerKg(tripRate),
+        manualOvertonaseWeightKg: 1300,
+    });
+
+    assert(manualFlooredOvertonage.manualOvertonaseWeightKg === 1300, `Manual overtonase harus tersimpan 1300 kg, sekarang ${manualFlooredOvertonage.manualOvertonaseWeightKg}.`);
+    assert(manualFlooredOvertonage.overtonaseDriverAmount === 16000, `Manual 1,3 ton harus dibayar 1 ton/Rp 16.000, sekarang ${manualFlooredOvertonage.overtonaseDriverAmount}.`);
+    assert(manualFlooredOvertonage.effectiveTripFee === 541000, `Upah manual 1,3 ton harus Rp 541.000, sekarang ${manualFlooredOvertonage.effectiveTripFee}.`);
 
     const order: Order = {
         _id: 'audit-order',

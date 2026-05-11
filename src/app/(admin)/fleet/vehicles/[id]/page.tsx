@@ -401,7 +401,27 @@ export default function VehicleDetailPage() {
         tireForm,
         editingTire,
     });
-    const selectedTireForPlacement = editingTire || selectedRegisteredTire;
+    const sourceUnitOptions = normalizedAllTireRows
+        .filter(row =>
+            row.holderType === 'INTERNAL_VEHICLE' &&
+            row.status === 'IN_USE' &&
+            row.vehicleRef &&
+            row.vehicleRef !== vehicle._id
+        )
+        .reduce<Array<{ value: string; label: string; tireCount: number }>>((options, row) => {
+            const existing = options.find(option => option.value === row.vehicleRef);
+            if (existing) {
+                existing.tireCount += 1;
+                return options;
+            }
+            options.push({
+                value: row.vehicleRef || '',
+                label: row.vehiclePlate || row.vehicleRef || 'Unit tanpa plat',
+                tireCount: 1,
+            });
+            return options;
+        }, [])
+        .sort((left, right) => left.label.localeCompare(right.label, 'id-ID'));
     const registeredTireDetailLocked = Boolean(selectedRegisteredTire);
     const currentVehicleTireCostRows = [...mountedSlots, ...spareSlots]
         .filter((slot): slot is { slotCode: string; event: NormalizedVehicleTireRow } => Boolean(slot.event))
@@ -462,19 +482,23 @@ export default function VehicleDetailPage() {
         ...currentVehicleTireCostRows,
     ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
     const totalMaintenanceExpense = vehicleCostRows.reduce((sum, row) => sum + row.amount, 0);
-    const requiresTireUsagePercentOnExit = Boolean(
-        editingTire ||
-        (
-            selectedTireForPlacement?.holderType === 'INTERNAL_VEHICLE' &&
-            selectedTireForPlacement.vehicleRef &&
-            selectedTireForPlacement.vehicleRef !== vehicle._id
-        )
+    const requiresSourceTireUsagePercent = Boolean(
+        selectedRegisteredTire?.holderType === 'INTERNAL_VEHICLE' &&
+        selectedRegisteredTire.vehicleRef &&
+        selectedRegisteredTire.vehicleRef !== vehicle._id
     );
-    const tireRemainingPercentBeforeExit = Math.max(100 - Number(selectedTireForPlacement?.totalUsedPercent || 0), 0);
-    const tireUsagePercentPreview = typeof tireForm.usagePercentOnExit === 'number' ? tireForm.usagePercentOnExit : 0;
-    const tireUsageCostPreview = Math.round(Number(tireForm.originalCost || 0) * tireUsagePercentPreview / 100);
-    const tireRemainingPercentAfterPreview = Math.max(tireRemainingPercentBeforeExit - tireUsagePercentPreview, 0);
-    const tireRemainingValueAfterPreview = Math.round(Number(tireForm.originalCost || 0) * tireRemainingPercentAfterPreview / 100);
+    const sourceTireRemainingPercentBeforeExit = Math.max(100 - Number(selectedRegisteredTire?.totalUsedPercent || 0), 0);
+    const sourceTireUsagePercentPreview = typeof tireForm.sourceTireUsagePercent === 'number' ? tireForm.sourceTireUsagePercent : 0;
+    const sourceTireUsageCostPreview = Math.round(Number(tireForm.originalCost || 0) * sourceTireUsagePercentPreview / 100);
+    const sourceTireRemainingPercentAfterPreview = Math.max(sourceTireRemainingPercentBeforeExit - sourceTireUsagePercentPreview, 0);
+    const sourceTireRemainingValueAfterPreview = Math.round(Number(tireForm.originalCost || 0) * sourceTireRemainingPercentAfterPreview / 100);
+    const requiresOldTireUsagePercent = Boolean(editingTire);
+    const oldTireRemainingPercentBeforeExit = Math.max(100 - Number(editingTire?.totalUsedPercent || 0), 0);
+    const oldTireOriginalCost = Number(editingTire?.originalCost ?? editingTire?.purchaseCost ?? 0);
+    const oldTireUsagePercentPreview = typeof tireForm.oldTireUsagePercent === 'number' ? tireForm.oldTireUsagePercent : 0;
+    const oldTireUsageCostPreview = Math.round(oldTireOriginalCost * oldTireUsagePercentPreview / 100);
+    const oldTireRemainingPercentAfterPreview = Math.max(oldTireRemainingPercentBeforeExit - oldTireUsagePercentPreview, 0);
+    const oldTireRemainingValueAfterPreview = Math.round(oldTireOriginalCost * oldTireRemainingPercentAfterPreview / 100);
     const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
         setTireForm(prev => ({ ...prev, [key]: value }));
     };
@@ -513,6 +537,9 @@ export default function VehicleDetailPage() {
             tireCode: '',
             slotCode: resolvedSlot,
             usagePercentOnExit: null,
+            sourceTireUsagePercent: null,
+            oldTireUsagePercent: null,
+            oldTireDestination: 'WAREHOUSE',
         });
         setShowTireModal(true);
     };
@@ -546,6 +573,8 @@ export default function VehicleDetailPage() {
             setTireForm(prev => ({
                 ...createDefaultVehicleTireForm(prev.slotCode),
                 slotCode: prev.slotCode,
+                tireSource: prev.tireSource,
+                sourceVehicleRef: prev.sourceVehicleRef,
                 installDate: prev.installDate,
             }));
             return;
@@ -566,6 +595,8 @@ export default function VehicleDetailPage() {
             originalCost: pickedTire.originalCost ?? pickedTire.purchaseCost ?? 0,
             totalUsedPercent: pickedTire.totalUsedPercent || 0,
             usagePercentOnExit: null,
+            sourceTireUsagePercent: null,
+            oldTireUsagePercent: null,
             notes: pickedTire.notes || prev.notes,
         }));
     };
@@ -583,7 +614,8 @@ export default function VehicleDetailPage() {
     };
 
     const handleSaveTire = async () => {
-        if (editingTire && !tireForm.registeredTireId) { addToast('error', 'Pilih ban pengganti'); return; }
+        if (editingTire && !tireForm.registeredTireId) { addToast('error', 'Pilih ban sumber untuk mengganti ban lama'); return; }
+        if (tireForm.tireSource === 'UNIT' && !tireForm.registeredTireId) { addToast('error', 'Pilih ban dari unit lain'); return; }
         if (!tireForm.tireCode.trim()) { addToast('error', 'Isi kode ban'); return; }
         if (!tireForm.tireBrand.trim()) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!tireForm.tireSize.trim()) { addToast('error', 'Isi ukuran ban'); return; }
@@ -592,13 +624,23 @@ export default function VehicleDetailPage() {
             addToast('error', 'Total pemakaian ban harus 0-100%');
             return;
         }
-        if (requiresTireUsagePercentOnExit) {
-            if (tireForm.usagePercentOnExit === null || !Number.isFinite(tireForm.usagePercentOnExit)) {
-                addToast('error', 'Isi persentase pemakaian ban di unit sebelumnya');
+        if (requiresSourceTireUsagePercent) {
+            if (tireForm.sourceTireUsagePercent === null || !Number.isFinite(tireForm.sourceTireUsagePercent)) {
+                addToast('error', 'Isi persentase pemakaian ban di unit sumber');
                 return;
             }
-            if (tireForm.usagePercentOnExit < 0 || tireForm.usagePercentOnExit > tireRemainingPercentBeforeExit) {
-                addToast('error', `Persentase pemakaian ban harus 0-${tireRemainingPercentBeforeExit}%`);
+            if (tireForm.sourceTireUsagePercent < 0 || tireForm.sourceTireUsagePercent > sourceTireRemainingPercentBeforeExit) {
+                addToast('error', `Persentase pemakaian ban sumber harus 0-${sourceTireRemainingPercentBeforeExit}%`);
+                return;
+            }
+        }
+        if (requiresOldTireUsagePercent) {
+            if (tireForm.oldTireUsagePercent === null || !Number.isFinite(tireForm.oldTireUsagePercent)) {
+                addToast('error', 'Isi persentase pemakaian ban lama di slot tujuan');
+                return;
+            }
+            if (tireForm.oldTireUsagePercent < 0 || tireForm.oldTireUsagePercent > oldTireRemainingPercentBeforeExit) {
+                addToast('error', `Persentase ban lama harus 0-${oldTireRemainingPercentBeforeExit}%`);
                 return;
             }
         }
@@ -619,7 +661,6 @@ export default function VehicleDetailPage() {
             purchaseCost: tireForm.originalCost,
             originalCost: tireForm.originalCost,
             totalUsedPercent: tireForm.totalUsedPercent,
-            usagePercentOnExit: requiresTireUsagePercentOnExit ? tireForm.usagePercentOnExit : undefined,
             notes: tireForm.notes.trim() || undefined,
         };
 
@@ -638,8 +679,9 @@ export default function VehicleDetailPage() {
                             tireEventRef: tireForm.registeredTireId,
                             vehicleRef: vehicle._id,
                             slotCode: normalizedSlotCode,
-                            oldTireUsagePercent: editingTire || requiresTireUsagePercentOnExit ? tireForm.usagePercentOnExit : undefined,
-                            oldTireDestination: editingTire ? 'WAREHOUSE' : undefined,
+                            sourceTireUsagePercent: requiresSourceTireUsagePercent ? tireForm.sourceTireUsagePercent : undefined,
+                            oldTireUsagePercent: editingTire ? tireForm.oldTireUsagePercent : undefined,
+                            oldTireDestination: editingTire ? tireForm.oldTireDestination : undefined,
                             maintenanceDate: tireForm.installDate,
                             note: tireForm.notes.trim() || undefined,
                         },
@@ -723,7 +765,7 @@ export default function VehicleDetailPage() {
                 <>
                     {canManageTires && <div>
                         <button className="btn btn-primary" type="button" onClick={() => openNewTire(slotCode)}>
-                            <Plus size={14} /> Isi Slot
+                            <Plus size={14} /> Pasang Ban
                         </button>
                     </div>}
                 </>
@@ -1114,7 +1156,7 @@ export default function VehicleDetailPage() {
                 <div className="modal-overlay" onClick={closeTireModal}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editingTire ? `Ganti Ban ${tireForm.slotCode}` : `Isi Slot ${tireForm.slotCode}`}</h3>
+                            <h3 className="modal-title">{editingTire ? `Ganti Ban ${tireForm.slotCode}` : `Pasang Ban ${tireForm.slotCode}`}</h3>
                             <button className="modal-close" onClick={closeTireModal} disabled={savingTire}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -1134,26 +1176,92 @@ export default function VehicleDetailPage() {
                                         </select>
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Ban Terdaftar</label>
+                                        <label className="form-label">Sumber Ban</label>
+                                        <select
+                                            className="form-select"
+                                            value={tireForm.tireSource}
+                                            onChange={e => setTireForm(prev => ({
+                                                ...createDefaultVehicleTireForm(prev.slotCode),
+                                                tireSource: e.target.value as VehicleTireFormState['tireSource'],
+                                                sourceVehicleRef: '',
+                                                slotCode: prev.slotCode,
+                                                installDate: prev.installDate,
+                                                oldTireDestination: prev.oldTireDestination,
+                                            }))}
+                                            disabled={savingTire}
+                                        >
+                                            <option value="WAREHOUSE">Gudang Ban</option>
+                                            <option value="UNIT">Unit Lain</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {tireForm.tireSource === 'UNIT' && (
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Unit Sumber</label>
+                                            <select
+                                                className="form-select"
+                                                value={tireForm.sourceVehicleRef}
+                                                onChange={e => setTireForm(prev => ({
+                                                    ...prev,
+                                                    sourceVehicleRef: e.target.value,
+                                                    registeredTireId: '',
+                                                    tireCode: '',
+                                                    tireBrand: '',
+                                                    tireSize: '',
+                                                    originalCost: 0,
+                                                    totalUsedPercent: 0,
+                                                    sourceTireUsagePercent: null,
+                                                }))}
+                                                disabled={savingTire}
+                                            >
+                                                <option value="">Pilih unit sumber</option>
+                                                {sourceUnitOptions.map(option => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label} ({option.tireCount} ban)
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">{tireForm.tireSource === 'WAREHOUSE' ? 'Ban dari Gudang' : 'Ban dari Unit'}</label>
                                         <select
                                             className="form-select"
                                             value={tireForm.registeredTireId}
                                             onChange={e => handleRegisteredTireChange(e.target.value)}
-                                            disabled={savingTire}
+                                            disabled={savingTire || (tireForm.tireSource === 'UNIT' && !tireForm.sourceVehicleRef)}
                                         >
-                                            <option value="">{editingTire ? 'Pilih ban pengganti' : 'Input ban baru'}</option>
+                                            <option value="">{tireForm.tireSource === 'WAREHOUSE' ? 'Pilih ban dari gudang' : tireForm.sourceVehicleRef ? 'Pilih ban dari unit' : 'Pilih unit sumber dulu'}</option>
                                             {availableRegisteredTires.map(registeredTire => (
                                                 <option key={registeredTire._id} value={registeredTire._id}>
                                                     {registeredTire.tireCodeLabel} - {registeredTire.tireBrand} {registeredTire.tireSize} ({registeredTire.placementLabel})
                                                 </option>
-                                            ))}
+                                        ))}
                                         </select>
                                         {availableRegisteredTires.length === 0 && (
                                             <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
-                                                Tidak ada ban terdaftar yang cocok dengan kategori armada unit ini.
+                                                {tireForm.tireSource === 'WAREHOUSE'
+                                                    ? 'Tidak ada ban gudang yang cocok dengan kategori armada unit ini.'
+                                                    : tireForm.sourceVehicleRef
+                                                        ? 'Tidak ada ban di unit sumber yang cocok dengan kategori armada unit ini.'
+                                                        : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
                                             </div>
                                         )}
                                     </div>
+                                    {!editingTire && tireForm.tireSource === 'WAREHOUSE' && !selectedRegisteredTire && (
+                                        <div className="form-group">
+                                            <label className="form-label">Catat Ban Baru</label>
+                                            <input className="form-input" value="Isi detail ban baru di bawah" readOnly />
+                                            <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
+                                                Gunakan ini jika ban belum pernah dicatat sebagai aset ban.
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {editingTire && (
@@ -1161,7 +1269,7 @@ export default function VehicleDetailPage() {
                                         <div className="text-muted text-sm">Ban Lama di Slot Ini</div>
                                         <div className="font-medium">{editingTire.tireCode || '-'} - {editingTire.tireBrand} {editingTire.tireSize}</div>
                                         <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                            Terpakai {formatQuantity(editingTire.totalUsedPercent || 0, 2)}% | Sisa {formatQuantity(tireRemainingPercentBeforeExit, 2)}% ({formatCurrency(editingTire.remainingValue ?? Math.round(Number(editingTire.originalCost ?? editingTire.purchaseCost ?? 0) * tireRemainingPercentBeforeExit / 100))})
+                                            Terpakai {formatQuantity(editingTire.totalUsedPercent || 0, 2)}% | Sisa {formatQuantity(oldTireRemainingPercentBeforeExit, 2)}% ({formatCurrency(editingTire.remainingValue ?? Math.round(Number(editingTire.originalCost ?? editingTire.purchaseCost ?? 0) * oldTireRemainingPercentBeforeExit / 100))})
                                         </div>
                                     </div>
                                 )}
@@ -1194,7 +1302,7 @@ export default function VehicleDetailPage() {
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Total Pemakaian (%)</label>
-                                            <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.totalUsedPercent} onValueChange={value => updateTireForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} disabled={savingTire || requiresTireUsagePercentOnExit || registeredTireDetailLocked} />
+                                            <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.totalUsedPercent} onValueChange={value => updateTireForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} disabled={savingTire || requiresSourceTireUsagePercent || registeredTireDetailLocked} />
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Sisa Nilai Saat Ini</label>
@@ -1203,21 +1311,51 @@ export default function VehicleDetailPage() {
                                     </div>
                                 )}
 
-                                {requiresTireUsagePercentOnExit && (
+                                {requiresSourceTireUsagePercent && (
                                     <div className="info-banner" style={{ marginBottom: '1rem' }}>
-                                        <div className="info-banner-title">Alokasi Biaya Pemakaian Ban</div>
+                                        <div className="info-banner-title">Pemakaian Ban di Unit Sumber</div>
                                         <div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}>
                                             <div>
-                                                Ban keluar dari {selectedTireForPlacement?.vehiclePlate || 'unit sebelumnya'} menuju {vehicle.plateNumber}. Isi persen pemakaian selama di unit sebelumnya.
+                                                Ban keluar dari {selectedRegisteredTire?.vehiclePlate || 'unit sumber'} menuju {vehicle.plateNumber}. Isi persen pemakaian selama di unit sumber.
                                             </div>
                                             <div className="form-row" style={{ marginBottom: 0 }}>
                                                 <div className="form-group" style={{ marginBottom: 0 }}>
-                                                    <label className="form-label">Persentase Pemakaian di Unit Sebelumnya</label>
-                                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.usagePercentOnExit} onValueChange={value => updateTireForm('usagePercentOnExit', value)} placeholder={`Maks ${tireRemainingPercentBeforeExit}%`} disabled={savingTire} />
+                                                    <label className="form-label">Persentase Pemakaian di Unit Sumber</label>
+                                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.sourceTireUsagePercent} onValueChange={value => updateTireForm('sourceTireUsagePercent', value)} placeholder={`Maks ${sourceTireRemainingPercentBeforeExit}%`} disabled={savingTire} />
                                                 </div>
                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                     <label className="form-label">Preview Biaya</label>
-                                                    <input className="form-input" value={`${formatCurrency(tireUsageCostPreview)} | sisa ${formatQuantity(tireRemainingPercentAfterPreview, 2)}% (${formatCurrency(tireRemainingValueAfterPreview)})`} readOnly />
+                                                    <input className="form-input" value={`${formatCurrency(sourceTireUsageCostPreview)} | sisa ${formatQuantity(sourceTireRemainingPercentAfterPreview, 2)}% (${formatCurrency(sourceTireRemainingValueAfterPreview)})`} readOnly />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {requiresOldTireUsagePercent && (
+                                    <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                        <div className="info-banner-title">Ban Lama di Slot Tujuan</div>
+                                        <div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}>
+                                            <div>
+                                                Slot {tireForm.slotCode} sudah berisi ban lama. Pilih tujuan ban lama dan isi pemakaian selama di {vehicle.plateNumber}.
+                                            </div>
+                                            <div className="form-row" style={{ marginBottom: 0 }}>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Ban Lama Dipindahkan Ke</label>
+                                                    <select className="form-select" value={tireForm.oldTireDestination} onChange={e => updateTireForm('oldTireDestination', e.target.value as VehicleTireFormState['oldTireDestination'])} disabled={savingTire}>
+                                                        <option value="WAREHOUSE">Gudang Ban</option>
+                                                        <option value="SCRAPPED">Afkir</option>
+                                                    </select>
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Persentase Pemakaian Ban Lama</label>
+                                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.oldTireUsagePercent} onValueChange={value => updateTireForm('oldTireUsagePercent', value)} placeholder={`Maks ${oldTireRemainingPercentBeforeExit}%`} disabled={savingTire} />
+                                                </div>
+                                            </div>
+                                            <div className="form-row" style={{ marginBottom: 0 }}>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Preview Biaya Ban Lama</label>
+                                                    <input className="form-input" value={`${formatCurrency(oldTireUsageCostPreview)} | sisa ${formatQuantity(oldTireRemainingPercentAfterPreview, 2)}% (${formatCurrency(oldTireRemainingValueAfterPreview)})`} readOnly />
                                                 </div>
                                             </div>
                                         </div>

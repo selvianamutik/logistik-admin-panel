@@ -247,6 +247,63 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         }).join(', ');
     const getActualDropDestination = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) =>
         point.locationAddress?.trim() || point.locationName?.trim() || '';
+    const getActualDropPointItemRefs = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => [
+        point.deliveryOrderItemRef,
+        ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+    ].map(value => (value || '').trim()).filter(Boolean);
+    const getActualDropPointSequence = (
+        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
+        pointIndex: number
+    ) => Number.isFinite(point.sequence) ? point.sequence : pointIndex + 1;
+    const actualDropPointMatchesCargo = (
+        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
+        shipperReferenceNumber: string,
+        deliveryOrderItemRef?: string
+    ) => {
+        const normalizedReference = (getDropReferenceScope(shipperReferenceNumber) || '').trim();
+        if (normalizedReference && (point.shipperReferenceNumber || '').trim() !== normalizedReference) {
+            return false;
+        }
+        const normalizedItemRef = (deliveryOrderItemRef || '').trim();
+        if (!normalizedItemRef) {
+            return true;
+        }
+        const pointItemRefs = getActualDropPointItemRefs(point);
+        return pointItemRefs.length === 0 || pointItemRefs.includes(normalizedItemRef);
+    };
+    const getActualDropOrigin = (
+        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
+        _pointIndex: number,
+        shipperReferenceNumber: string,
+        deliveryOrderItemRef?: string
+    ) => {
+        const explicitOrigin = point.originLocationName?.trim() || point.originLocationAddress?.trim() || '';
+        if (explicitOrigin) {
+            return explicitOrigin;
+        }
+
+        const actualPointIndex = Math.max(actualDropPoints.indexOf(point), 0);
+        const pointSequence = getActualDropPointSequence(point, actualPointIndex);
+        const holdPoint = actualDropPoints
+            .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+            .filter(({ candidate }) => ['HOLD', 'TRANSIT'].includes(candidate.stopType || ''))
+            .filter(({ candidate }) => actualDropPointMatchesCargo(candidate, shipperReferenceNumber, deliveryOrderItemRef))
+            .filter(({ candidate, candidateIndex }) => {
+                const candidateSequence = getActualDropPointSequence(candidate, candidateIndex);
+                return candidateSequence < pointSequence || (candidateSequence === pointSequence && candidateIndex < actualPointIndex);
+            })
+            .sort((left, right) => {
+                const leftSequence = getActualDropPointSequence(left.candidate, left.candidateIndex);
+                const rightSequence = getActualDropPointSequence(right.candidate, right.candidateIndex);
+                return rightSequence - leftSequence;
+            })[0]?.candidate;
+
+        if (holdPoint) {
+            return holdPoint.locationName?.trim() || holdPoint.locationAddress?.trim() || '';
+        }
+
+        return '';
+    };
     const getActualDropCargoSummary = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => ({
         qtyKoli: parseFormattedNumberish(point.qtyKoli || 0),
         weightKg: parseFormattedNumberish(point.weightKg ?? point.weightInputValue ?? 0),
@@ -255,19 +312,24 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const getBillableActualDropPointsForItem = (shipperReferenceNumber: string, item: DeliveryOrderItem) => {
         const scopedReference = getDropReferenceScope(shipperReferenceNumber);
         const normalizedReference = (scopedReference || '').trim();
-        return actualDropPoints.filter(point => {
-            if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
-                return false;
-            }
-            if (normalizedReference && (point.shipperReferenceNumber || '').trim() !== normalizedReference) {
-                return false;
-            }
-            const pointItemRefs = [
-                point.deliveryOrderItemRef,
-                ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
-            ].map(value => (value || '').trim()).filter(Boolean);
-            return pointItemRefs.includes(item._id);
-        });
+        return actualDropPoints
+            .filter(point => {
+                if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
+                    return false;
+                }
+                if (normalizedReference && (point.shipperReferenceNumber || '').trim() !== normalizedReference) {
+                    return false;
+                }
+                const pointItemRefs = getActualDropPointItemRefs(point);
+                return pointItemRefs.includes(item._id);
+            })
+            .sort((left, right) => {
+                const leftIndex = Math.max(actualDropPoints.indexOf(left), 0);
+                const rightIndex = Math.max(actualDropPoints.indexOf(right), 0);
+                const leftSequence = getActualDropPointSequence(left, leftIndex);
+                const rightSequence = getActualDropPointSequence(right, rightIndex);
+                return leftSequence - rightSequence || leftIndex - rightIndex;
+            });
     };
     const getActualDropBillingContext = (shipperReferenceNumber: string, deliveryOrderItemRef?: string) => {
         const scopedReference = getDropReferenceScope(shipperReferenceNumber);
@@ -402,7 +464,6 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         if (!hasCargo(billableCargo)) {
             return null;
         }
-
         return {
             id: `${deliveryOrder._id}-${item._id}-${point._key || point.sequence || pointIndex}`,
             ...baseRow,
@@ -412,7 +473,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             customerRef: point.billingCustomerRef || matchedReference?.billingCustomerRef || baseRow.customerRef,
             customerName: point.billingCustomerName || matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
-            dari: matchedReference?.pickupAddress || baseRow.dari,
+            dari: getActualDropOrigin(point, pointIndex, shipperReferenceNumber, item._id) || matchedReference?.pickupAddress || baseRow.dari,
             tujuan:
                 getActualDropDestination(point) ||
                 matchedReference?.receiverAddress ||

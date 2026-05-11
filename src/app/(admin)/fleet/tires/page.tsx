@@ -40,10 +40,13 @@ import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { formatDateTime } from '@/lib/utils';
 
 type TireInstallFormState = {
+    tireSource: 'WAREHOUSE' | 'UNIT';
+    sourceVehicleRef: string;
     tireEventRef: string;
     vehicleCategory: string;
     vehicleRef: string;
     slotCode: string;
+    sourceTireUsagePercent: number | null;
     oldTireUsagePercent: number | null;
     oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
     maintenanceDate: string;
@@ -61,10 +64,13 @@ const BAN_LIST_STATUS_FILTER_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => opti
 
 function createDefaultInstallForm(): TireInstallFormState {
     return {
+        tireSource: 'WAREHOUSE',
+        sourceVehicleRef: '',
         tireEventRef: '',
         vehicleCategory: '',
         vehicleRef: '',
         slotCode: '',
+        sourceTireUsagePercent: null,
         oldTireUsagePercent: null,
         oldTireDestination: 'WAREHOUSE',
         maintenanceDate: getBusinessDateValue(),
@@ -371,13 +377,49 @@ export default function TiresPage() {
     );
     const availableInstallTires = useMemo(
         () => resolveFleetTireEvents(allTireEvents)
+            .filter(event => {
+                if (event.status === 'SCRAPPED') return false;
+                if (installForm.tireSource === 'WAREHOUSE') {
+                    if (event.holderType !== 'WAREHOUSE' || event.status !== 'IN_WAREHOUSE') return false;
+                } else if (
+                    event.holderType !== 'INTERNAL_VEHICLE' ||
+                    event.status !== 'IN_USE' ||
+                    !event.vehicleRef ||
+                    event.vehicleRef === installForm.vehicleRef
+                ) {
+                    return false;
+                } else if (installForm.sourceVehicleRef && event.vehicleRef !== installForm.sourceVehicleRef) {
+                    return false;
+                }
+                return isInstallTireCompatibleWithVehicle(event, installSelectedVehicle, sameVehicleTireSizes);
+            })
+            .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID')),
+        [allTireEvents, installForm.sourceVehicleRef, installForm.tireSource, installForm.vehicleRef, installSelectedVehicle, sameVehicleTireSizes]
+    );
+    const installSourceUnitOptions = useMemo(
+        () => resolveFleetTireEvents(allTireEvents)
             .filter(event =>
-                event.status !== 'SCRAPPED' &&
-                !(event.holderType === 'INTERNAL_VEHICLE' && event.status === 'IN_USE') &&
+                event.holderType === 'INTERNAL_VEHICLE' &&
+                event.status === 'IN_USE' &&
+                event.vehicleRef &&
+                event.vehicleRef !== installForm.vehicleRef &&
                 isInstallTireCompatibleWithVehicle(event, installSelectedVehicle, sameVehicleTireSizes)
             )
-            .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID')),
-        [allTireEvents, installSelectedVehicle, sameVehicleTireSizes]
+            .reduce<Array<{ value: string; label: string; tireCount: number }>>((options, event) => {
+                const existing = options.find(option => option.value === event.vehicleRef);
+                if (existing) {
+                    existing.tireCount += 1;
+                    return options;
+                }
+                options.push({
+                    value: event.vehicleRef || '',
+                    label: event.vehiclePlate || event.vehicleRef || 'Unit tanpa plat',
+                    tireCount: 1,
+                });
+                return options;
+            }, [])
+            .sort((left, right) => left.label.localeCompare(right.label, 'id-ID')),
+        [allTireEvents, installForm.vehicleRef, installSelectedVehicle, sameVehicleTireSizes]
     );
     const selectedInstallTire = useMemo(
         () => availableInstallTires.find(event => event._id === installForm.tireEventRef) || null,
@@ -398,6 +440,11 @@ export default function TiresPage() {
     const selectedInstallRemainingPercent = Math.max(100 - Number(selectedInstallTire?.totalUsedPercent || 0), 0);
     const selectedInstallRemainingValue = Number(selectedInstallTire?.remainingValue ?? Math.round(selectedInstallOriginalCost * selectedInstallRemainingPercent / 100));
     const installCostPreview = Math.round(selectedInstallOriginalCost * installPostedPercent / 100);
+    const requiresInstallSourceUsagePercent = Boolean(selectedInstallTire?.holderType === 'INTERNAL_VEHICLE' && selectedInstallTire.vehicleRef && selectedInstallTire.vehicleRef !== installForm.vehicleRef);
+    const sourceInstallUsagePercentPreview = Number(installForm.sourceTireUsagePercent || 0);
+    const sourceInstallUsageCostPreview = Math.round(selectedInstallOriginalCost * sourceInstallUsagePercentPreview / 100);
+    const sourceInstallRemainingPercentAfter = Math.max(selectedInstallRemainingPercent - sourceInstallUsagePercentPreview, 0);
+    const sourceInstallRemainingValueAfter = Math.round(selectedInstallOriginalCost * sourceInstallRemainingPercentAfter / 100);
     const oldRemainingPercent = Math.max(100 - Number(oldTireInInstallSlot?.totalUsedPercent || 0), 0);
     const oldInstallOriginalCost = Number(oldTireInInstallSlot?.originalCost ?? oldTireInInstallSlot?.purchaseCost ?? 0);
     const oldInstallUsedBefore = Number(oldTireInInstallSlot?.totalUsedPercent || 0);
@@ -652,13 +699,23 @@ export default function TiresPage() {
     };
 
     const handleInstallSave = async () => {
-        if (!installForm.tireEventRef) { addToast('error', 'Pilih ban pengganti'); return; }
+        if (!installForm.tireEventRef) { addToast('error', 'Pilih ban sumber'); return; }
         if (!installForm.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
         if (!installForm.slotCode) { addToast('error', 'Pilih slot ban'); return; }
         if (!selectedInstallTire) { addToast('error', 'Ban pengganti tidak ditemukan'); return; }
         if ((selectedInstallTire.originalCost ?? selectedInstallTire.purchaseCost ?? 0) <= 0) {
             addToast('error', 'Ban pengganti harus punya harga/original cost');
             return;
+        }
+        if (requiresInstallSourceUsagePercent) {
+            if (installForm.sourceTireUsagePercent === null || !Number.isFinite(installForm.sourceTireUsagePercent)) {
+                addToast('error', 'Isi persentase pemakaian ban di unit sumber');
+                return;
+            }
+            if (installForm.sourceTireUsagePercent < 0 || installForm.sourceTireUsagePercent > selectedInstallRemainingPercent) {
+                addToast('error', `Persentase ban sumber harus 0-${selectedInstallRemainingPercent}%`);
+                return;
+            }
         }
         if (oldTireInInstallSlot) {
             if (installForm.oldTireUsagePercent === null || !Number.isFinite(installForm.oldTireUsagePercent)) {
@@ -683,6 +740,7 @@ export default function TiresPage() {
                         tireEventRef: installForm.tireEventRef,
                         vehicleRef: installForm.vehicleRef,
                         slotCode: installForm.slotCode,
+                        sourceTireUsagePercent: requiresInstallSourceUsagePercent ? installForm.sourceTireUsagePercent : undefined,
                         oldTireUsagePercent: oldTireInInstallSlot ? installForm.oldTireUsagePercent : undefined,
                         oldTireDestination: oldTireInInstallSlot ? installForm.oldTireDestination : undefined,
                         maintenanceDate: installForm.maintenanceDate,
@@ -1008,7 +1066,7 @@ export default function TiresPage() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Lokasi Holder</label>
+                                    <label className="form-label">Lokasi Saat Ini</label>
                                     <select
                                         className="form-select"
                                         value={form.holderType}
@@ -1029,7 +1087,11 @@ export default function TiresPage() {
                                         }}
                                         disabled={saving}
                                     >
-                                        {CATAT_BAN_HOLDER_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        {CATAT_BAN_HOLDER_TYPE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.value === 'WAREHOUSE' ? 'Gudang Ban' : 'Unit'}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="form-group">
@@ -1280,6 +1342,9 @@ export default function TiresPage() {
                                                 vehicleRef: e.target.value,
                                                 vehicleCategory: nextVehicle ? getTireVehicleCategoryValue(nextVehicle) : prev.vehicleCategory,
                                                 slotCode: '',
+                                                sourceVehicleRef: '',
+                                                tireEventRef: '',
+                                                sourceTireUsagePercent: null,
                                             }));
                                         }}
                                         disabled={saving}
@@ -1294,24 +1359,68 @@ export default function TiresPage() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Ban Pengganti</label>
-                                    <select className="form-select" value={installForm.tireEventRef} onChange={e => updateInstallForm('tireEventRef', e.target.value)} disabled={saving || !installSelectedVehicle}>
-                                        <option value="">{installSelectedVehicle ? 'Pilih ban sesuai kategori armada' : 'Pilih kendaraan dulu'}</option>
+                                    <label className="form-label">Sumber Ban</label>
+                                    <select
+                                        className="form-select"
+                                        value={installForm.tireSource}
+                                        onChange={e => setInstallForm(prev => ({
+                                            ...prev,
+                                            tireSource: e.target.value as TireInstallFormState['tireSource'],
+                                            sourceVehicleRef: '',
+                                            tireEventRef: '',
+                                            sourceTireUsagePercent: null,
+                                        }))}
+                                        disabled={saving || !installSelectedVehicle}
+                                    >
+                                        <option value="WAREHOUSE">Gudang Ban</option>
+                                        <option value="UNIT">Unit Lain</option>
+                                    </select>
+                                </div>
+                                {installForm.tireSource === 'UNIT' && (
+                                    <div className="form-group">
+                                        <label className="form-label">Unit Sumber</label>
+                                        <select
+                                            className="form-select"
+                                            value={installForm.sourceVehicleRef}
+                                            onChange={e => setInstallForm(prev => ({
+                                                ...prev,
+                                                sourceVehicleRef: e.target.value,
+                                                tireEventRef: '',
+                                                sourceTireUsagePercent: null,
+                                            }))}
+                                            disabled={saving || !installSelectedVehicle}
+                                        >
+                                            <option value="">{installSelectedVehicle ? 'Pilih unit sumber' : 'Pilih kendaraan tujuan dulu'}</option>
+                                            {installSourceUnitOptions.map(option => (
+                                                <option key={option.value} value={option.value}>
+                                                    {option.label} ({option.tireCount} ban)
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">{installForm.tireSource === 'WAREHOUSE' ? 'Ban dari Gudang' : 'Ban dari Unit'}</label>
+                                    <select className="form-select" value={installForm.tireEventRef} onChange={e => updateInstallForm('tireEventRef', e.target.value)} disabled={saving || !installSelectedVehicle || (installForm.tireSource === 'UNIT' && !installForm.sourceVehicleRef)}>
+                                        <option value="">{installSelectedVehicle ? (installForm.tireSource === 'WAREHOUSE' ? 'Pilih ban dari gudang' : installForm.sourceVehicleRef ? 'Pilih ban dari unit' : 'Pilih unit sumber dulu') : 'Pilih kendaraan dulu'}</option>
                                         {availableInstallTires.map(event => (
                                             <option key={event._id} value={event._id}>
-                                                {event.tireCodeLabel} - {event.tireBrand} {event.tireSize} | {formatCurrency(event.originalCost ?? event.purchaseCost ?? 0)}
+                                                {event.tireCodeLabel} - {event.tireBrand} {event.tireSize} ({event.placementLabel})
                                             </option>
                                         ))}
                                     </select>
                                     {installSelectedVehicle && availableInstallTires.length === 0 && (
                                         <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
-                                            Tidak ada stok ban yang cocok untuk kategori armada ini.
+                                            {installForm.tireSource === 'WAREHOUSE'
+                                                ? 'Tidak ada ban gudang yang cocok untuk kategori armada ini.'
+                                                : installForm.sourceVehicleRef
+                                                    ? 'Tidak ada ban di unit sumber yang cocok untuk kategori armada ini.'
+                                                    : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
                                         </div>
                                     )}
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Tanggal Pasang</label>
-                                    <input type="date" className="form-input" value={installForm.maintenanceDate} onChange={e => updateInstallForm('maintenanceDate', e.target.value)} disabled={saving} />
                                 </div>
                             </div>
 
@@ -1326,13 +1435,40 @@ export default function TiresPage() {
                                     </select>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Tujuan Ban Lama</label>
+                                    <label className="form-label">Tanggal Pasang</label>
+                                    <input type="date" className="form-input" value={installForm.maintenanceDate} onChange={e => updateInstallForm('maintenanceDate', e.target.value)} disabled={saving} />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Ban Lama Dipindahkan Ke</label>
                                     <select className="form-select" value={installForm.oldTireDestination} onChange={e => updateInstallForm('oldTireDestination', e.target.value as TireInstallFormState['oldTireDestination'])} disabled={saving || !oldTireInInstallSlot}>
-                                        <option value="WAREHOUSE">Gudang</option>
+                                        <option value="WAREHOUSE">Gudang Ban</option>
                                         <option value="SCRAPPED">Afkir</option>
                                     </select>
                                 </div>
                             </div>
+
+                            {requiresInstallSourceUsagePercent && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Pemakaian Ban di Unit Sumber</label>
+                                        <FormattedNumberInput
+                                            allowDecimal
+                                            maxFractionDigits={2}
+                                            value={installForm.sourceTireUsagePercent}
+                                            onValueChange={value => updateInstallForm('sourceTireUsagePercent', value)}
+                                            placeholder={`Maks ${formatQuantity(selectedInstallRemainingPercent, 2)}%`}
+                                            disabled={saving}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Preview Biaya Unit Sumber</label>
+                                        <input className="form-input" value={`${formatCurrency(sourceInstallUsageCostPreview)} | sisa ${formatQuantity(sourceInstallRemainingPercentAfter, 2)}% (${formatCurrency(sourceInstallRemainingValueAfter)})`} readOnly />
+                                    </div>
+                                </div>
+                            )}
 
                             {oldTireInInstallSlot && (
                                 <div className="form-row">

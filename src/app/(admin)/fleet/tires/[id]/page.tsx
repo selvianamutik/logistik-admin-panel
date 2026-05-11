@@ -443,7 +443,7 @@ export default function TireDetailPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Lokasi Holder</label>
+                                    <label className="form-label">Lokasi Saat Ini</label>
                                     <select
                                         className="form-select"
                                         value={editForm.holderType}
@@ -462,7 +462,11 @@ export default function TireDetailPage() {
                                         }}
                                         disabled={savingEdit}
                                     >
-                                        {BAN_DETAIL_HOLDER_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        {BAN_DETAIL_HOLDER_TYPE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.value === 'WAREHOUSE' ? 'Gudang Ban' : option.value === 'INTERNAL_VEHICLE' ? 'Unit' : option.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="form-group">

@@ -473,6 +473,7 @@ export async function deriveDeliveryOrdersForResponse(
                     vehicleCapacityKg,
                     baseTripFee: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0),
                     overtonaseDriverRatePerKg: effectiveOvertonaseRatePerKg,
+                    manualOvertonaseWeightKg: deliveryOrder.manualOvertonaseWeightKg,
                 })
                 : null;
 
@@ -498,6 +499,8 @@ export async function deriveDeliveryOrdersForResponse(
                     : derivedOvertonage?.vehicleCapacityKg,
             overtonaseWeightKg:
                 derivedOvertonage?.overtonaseWeightKg,
+            manualOvertonaseWeightKg:
+                derivedOvertonage?.manualOvertonaseWeightKg ?? deliveryOrder.manualOvertonaseWeightKg,
             overtonaseDriverRatePerKg:
                 deliveryOrderOvertonaseRatePerKg > 0
                     ? deliveryOrderOvertonaseRatePerKg

@@ -756,6 +756,7 @@ async function computeTripOvertonageAdjustment(params: {
             normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0) > 0
                 ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0)
                 : getTripRouteOvertonaseRatePerKg(tripRouteRate),
+        manualOvertonaseWeightKg: deliveryOrder.manualOvertonaseWeightKg,
     });
 
     let linkedVoucherPatch:
@@ -4393,6 +4394,44 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
 
         return shouldTreatUntargetedGenericPointsAsSelected && !pointReferenceKey && !pointReferenceNumber && dropItemRefs.length === 0;
     };
+    const getPointItemRefs = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => [
+        normalizeOptionalText(point.deliveryOrderItemRef),
+        ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+            .map(ref => normalizeOptionalText(ref))
+            .filter((ref): ref is string => Boolean(ref))),
+    ].filter((ref): ref is string => Boolean(ref));
+    const pointMatchesSameCargo = (
+        left: NonNullable<DeliveryOrder['actualDropPoints']>[number],
+        right: NonNullable<DeliveryOrder['actualDropPoints']>[number]
+    ) => {
+        const leftRefs = getPointItemRefs(left);
+        const rightRefs = getPointItemRefs(right);
+        if (leftRefs.length > 0 && rightRefs.length > 0 && leftRefs.some(ref => rightRefs.includes(ref))) {
+            return true;
+        }
+
+        const leftReferenceKey = normalizeOptionalText(left.shipperReferenceKey);
+        const rightReferenceKey = normalizeOptionalText(right.shipperReferenceKey);
+        const leftReferenceNumber = normalizeOptionalText(left.shipperReferenceNumber)?.toUpperCase();
+        const rightReferenceNumber = normalizeOptionalText(right.shipperReferenceNumber)?.toUpperCase();
+        return Boolean(
+            (leftReferenceKey && rightReferenceKey && leftReferenceKey === rightReferenceKey) ||
+            (leftReferenceNumber && rightReferenceNumber && leftReferenceNumber === rightReferenceNumber)
+        );
+    };
+    const getHoldOriginForContinuationDrop = (dropPoint: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => {
+        const matchingHoldPoint = currentDropPoints
+            .filter(point => point.stopType === 'HOLD' || point.stopType === 'TRANSIT')
+            .filter(point => matchesTargetedDropPoint(point))
+            .find(point => pointMatchesSameCargo(point, dropPoint));
+        if (!matchingHoldPoint) {
+            return {};
+        }
+        return {
+            originLocationName: matchingHoldPoint.locationName || matchingHoldPoint.locationAddress || undefined,
+            originLocationAddress: matchingHoldPoint.locationAddress || undefined,
+        };
+    };
 
     let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
     let scopedActualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
@@ -4508,7 +4547,19 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             !matchesTargetedDropPoint(point) ||
             (isHoldContinuationFinalize && isBillableActualDropPoint(point))
         );
-        mergedActualDropPoints = [...preservedActualDropPoints, ...(scopedActualDropPoints || [])];
+        const nextScopedActualDropPoints =
+            isHoldContinuationFinalize
+                ? (scopedActualDropPoints || []).map(point =>
+                    isBillableActualDropPoint(point)
+                        ? {
+                            ...point,
+                            ...getHoldOriginForContinuationDrop(point),
+                        }
+                        : point
+                )
+                : scopedActualDropPoints || [];
+        scopedActualDropPoints = nextScopedActualDropPoints;
+        mergedActualDropPoints = [...preservedActualDropPoints, ...nextScopedActualDropPoints];
         const tripActualCargoTotals = summarizeActualDropPointCargo(mergedActualDropPoints);
         const tripOvertonage = await computeTripOvertonageAdjustment({
             deliveryOrder: deliveryOrder as DeliveryOrder,
@@ -7303,6 +7354,15 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
         ...currentDropPoints.filter(point => !isTargetedBillablePoint(point)),
         nextDropPoint,
     ].map((point, index) => ({ ...point, sequence: index + 1 }));
+    const nextActualDropPointTotals = summarizeActualDropPointCargo(mergedActualDropPoints);
+    const tripOvertonage = await computeTripOvertonageAdjustment({
+        deliveryOrder: {
+            ...(deliveryOrder as DeliveryOrder),
+            actualDropPoints: mergedActualDropPoints,
+        },
+        actualTotalTripWeightKg: nextActualDropPointTotals.weightKg,
+    });
+    const overtonageResult = tripOvertonage.overtonageResult;
 
     const orderItemProgressUpdates: Array<{
         orderItemRef: string;
@@ -7405,10 +7465,25 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
         };
         await updateDocument(id, {
             actualDropPoints: mergedActualDropPoints,
+            baseTaripBorongan: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0) || undefined,
+            taripBorongan: overtonageResult.effectiveTripFee || normalizeCurrencyNumber(deliveryOrder.taripBorongan ?? 0) || undefined,
+            actualTotalWeightKg: overtonageResult.actualTotalWeightKg || undefined,
+            serviceMaxPayloadKg: overtonageResult.serviceMaxPayloadKg,
+            vehicleCapacityKg: overtonageResult.vehicleCapacityKg,
+            overtonaseWeightKg: overtonageResult.overtonaseWeightKg,
+            overtonaseDriverRatePerKg: overtonageResult.overtonaseDriverRatePerKg,
+            overtonaseDriverAmount: overtonageResult.overtonaseDriverAmount,
+            vehicleCapacityExceededKg: overtonageResult.vehicleCapacityExceededKg,
             cargoFinalizedAt: timestamp,
             cargoFinalizedBy: session._id,
             cargoFinalizedByName: session.name,
         }, 'deliveryOrder');
+        if (tripOvertonage.linkedVoucherPatch) {
+            await updateDocument(tripOvertonage.linkedVoucherPatch._id, {
+                driverFeeAmount: tripOvertonage.linkedVoucherPatch.driverFeeAmount,
+                totalClaimAmount: tripOvertonage.linkedVoucherPatch.totalClaimAmount,
+            }, 'driverVoucher');
+        }
         await updateDocument(suratJalanRef, {
             billableCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, suratJalanRecord, getDeliveryOrderBillableCargoSummary),
             holdCargo: summarizeSuratJalanActualCargo(summaryDeliveryOrder, doItems, suratJalanRecord, getDeliveryOrderHoldCargoSummary),
@@ -7443,6 +7518,108 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
     );
 
     return NextResponse.json({ data: { _id: id, suratJalanRef, updatedItemCount: targetItems.length } });
+}
+
+export async function handleDeliveryOrderManualOvertonaseUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    if (!id) {
+        return NextResponse.json({ error: 'Trip tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await getDocumentById<DeliveryOrder & { _rev?: string }>(id, 'deliveryOrder');
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Trip tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.status === 'CANCELLED') {
+        return NextResponse.json({ error: 'Overtonase tidak bisa diubah untuk trip yang sudah dibatalkan.' }, { status: 409 });
+    }
+    if (deliveryOrder.tripClosedByAdminAt) {
+        return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga overtonase tidak bisa diubah lagi.' }, { status: 409 });
+    }
+
+    const manualInputUnit = data.manualOvertonaseWeightInputUnit === 'TON' ? 'TON' : 'KG';
+    const manualInputValue = normalizeNumber(
+        data.manualOvertonaseWeightInputValue ?? data.manualOvertonaseWeightKg ?? 0,
+        { maxFractionDigits: manualInputUnit === 'TON' ? 5 : 2 }
+    );
+    if (!Number.isFinite(manualInputValue) || manualInputValue < 0) {
+        return NextResponse.json({ error: 'Berat manual overtonase tidak valid' }, { status: 400 });
+    }
+    const manualOvertonaseWeightKg =
+        manualInputValue > 0
+            ? roundQuantity(convertWeightToKg(manualInputValue, manualInputUnit), 2)
+            : 0;
+
+    const actualDropTotals = summarizeActualDropPointCargo(deliveryOrder.actualDropPoints || []);
+    const persistedActualWeight = normalizeNumber(deliveryOrder.actualTotalWeightKg ?? 0, { maxFractionDigits: 2 });
+    const actualTotalTripWeightKg = persistedActualWeight > 0 ? persistedActualWeight : actualDropTotals.weightKg;
+    const deliveryOrderForCalculation = {
+        ...deliveryOrder,
+        manualOvertonaseWeightKg: manualOvertonaseWeightKg > 0 ? manualOvertonaseWeightKg : undefined,
+    };
+    const tripOvertonage = await computeTripOvertonageAdjustment({
+        deliveryOrder: deliveryOrderForCalculation,
+        actualTotalTripWeightKg,
+    });
+    const overtonageResult = tripOvertonage.overtonageResult;
+    const baseTripFee = normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0);
+    const timestamp = new Date().toISOString();
+
+    try {
+        await updateDocument(id, {
+            manualOvertonaseWeightKg: manualOvertonaseWeightKg > 0 ? manualOvertonaseWeightKg : null,
+            baseTaripBorongan: baseTripFee > 0 ? baseTripFee : undefined,
+            taripBorongan: overtonageResult.effectiveTripFee || normalizeCurrencyNumber(deliveryOrder.taripBorongan ?? 0) || undefined,
+            actualTotalWeightKg: overtonageResult.actualTotalWeightKg || undefined,
+            serviceMaxPayloadKg: overtonageResult.serviceMaxPayloadKg,
+            vehicleCapacityKg: overtonageResult.vehicleCapacityKg,
+            overtonaseWeightKg: overtonageResult.overtonaseWeightKg,
+            overtonaseDriverRatePerKg: overtonageResult.overtonaseDriverRatePerKg,
+            overtonaseDriverAmount: overtonageResult.overtonaseDriverAmount,
+            vehicleCapacityExceededKg: overtonageResult.vehicleCapacityExceededKg,
+            overtonaseUpdatedAt: timestamp,
+            overtonaseUpdatedBy: session._id,
+            overtonaseUpdatedByName: session.name,
+        }, 'deliveryOrder');
+
+        if (tripOvertonage.linkedVoucherPatch) {
+            await updateDocument(tripOvertonage.linkedVoucherPatch._id, {
+                driverFeeAmount: tripOvertonage.linkedVoucherPatch.driverFeeAmount,
+                totalClaimAmount: tripOvertonage.linkedVoucherPatch.totalClaimAmount,
+            }, 'driverVoucher');
+        }
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json({ error: 'Overtonase berubah karena update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        manualOvertonaseWeightKg > 0
+            ? `Ubah manual overtonase trip menjadi ${manualOvertonaseWeightKg} kg`
+            : 'Hapus manual overtonase trip dan kembali ke hitungan otomatis'
+    );
+
+    return NextResponse.json({
+        data: {
+            _id: id,
+            manualOvertonaseWeightKg: manualOvertonaseWeightKg > 0 ? manualOvertonaseWeightKg : undefined,
+            overtonaseWeightKg: overtonageResult.overtonaseWeightKg,
+            overtonaseDriverAmount: overtonageResult.overtonaseDriverAmount,
+            taripBorongan: overtonageResult.effectiveTripFee,
+            linkedVoucherAdjustmentSummary: tripOvertonage.linkedVoucherAdjustmentSummary,
+            settledVoucherOvertonageWarning: tripOvertonage.settledVoucherOvertonageWarning,
+        },
+    });
 }
 
 export async function handleDeliveryOrderTripResourceAssign(

@@ -228,9 +228,8 @@ function mergeSuratJalanDocumentWithLiveCargo(
         return document;
     }
 
-    const isDraftDocumentWithoutActualCargo =
+    const shouldPreserveDraftStatus =
         document.tripStatus === 'CREATED' &&
-        liveDocument.itemCount === 0 &&
         ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveDocument.tripStatus || '') &&
         !hasAnyCargo(document.billableCargo) &&
         !hasAnyCargo(document.holdCargo) &&
@@ -249,7 +248,7 @@ function mergeSuratJalanDocumentWithLiveCargo(
         pickupAddress: liveHasHoldCargo
             ? liveDocument.pickupAddress || document.pickupAddress
             : document.pickupAddress || liveDocument.pickupAddress,
-        tripStatus: isDraftDocumentWithoutActualCargo ? document.tripStatus : liveDocument.tripStatus,
+        tripStatus: shouldPreserveDraftStatus ? document.tripStatus : liveDocument.tripStatus,
         itemCount: liveDocument.itemCount,
         cargoSummary: liveDocument.cargoSummary,
         billableCargo: liveDocument.billableCargo,

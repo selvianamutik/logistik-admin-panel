@@ -667,6 +667,8 @@ export interface DeliveryActualDropPoint {
   shipperReferenceNumber?: string;
   billingCustomerRef?: string;
   billingCustomerName?: string;
+  originLocationName?: string;
+  originLocationAddress?: string;
   locationName: string;
   locationAddress?: string;
   qtyKoli?: number;
@@ -741,6 +743,7 @@ export interface DeliveryOrder {
   actualTotalWeightKg?: number;
   serviceMaxPayloadKg?: number;
   vehicleCapacityKg?: number;
+  manualOvertonaseWeightKg?: number;
   overtonaseWeightKg?: number;
   overtonaseDriverRatePerKg?: number;
   overtonaseDriverAmount?: number;

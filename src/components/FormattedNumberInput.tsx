@@ -58,19 +58,6 @@ export default function FormattedNumberInput({
   function formatLive(raw: string): string {
     if (raw === "" || raw === ",") return raw;
 
-    if (supportsFraction && !raw.includes(",") && (raw.match(/\./g) || []).length === 1) {
-      const [rawInteger = "", rawFraction = ""] = raw.split(".");
-      const fraction = rawFraction.replace(/\D/g, "");
-      if (fraction.length > 0 && fraction.length < 3) {
-        const integerDigits = rawInteger.replace(/\D/g, "");
-        const intNum = parseInt(integerDigits || "0", 10);
-        const formattedInt = isNaN(intNum)
-          ? "0"
-          : buildFormattedNumberFormatter(0).format(intNum);
-        return `${formattedInt},${fraction}`;
-      }
-    }
-
     const sanitized = sanitizeRaw(raw);
     const commaIndex = sanitized.indexOf(",");
     const hasComma = commaIndex !== -1;
