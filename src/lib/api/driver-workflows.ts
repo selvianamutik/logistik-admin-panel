@@ -849,6 +849,29 @@ async function getDriverVoucherState(voucherId: string) {
     return { voucher, items, disbursements };
 }
 
+async function rejectIfVoucherDeliveryOrderCancelled(
+    voucher: { bonNumber?: string; deliveryOrderRef?: string; doNumber?: string },
+    actionLabel: string
+) {
+    const deliveryOrderRef = normalizeOptionalText(voucher.deliveryOrderRef);
+    if (!deliveryOrderRef) return null;
+
+    const deliveryOrder = await getDocumentById<{
+        _id: string;
+        doNumber?: string;
+        status?: string;
+    }>(deliveryOrderRef, 'deliveryOrder');
+    if (deliveryOrder?.status !== 'CANCELLED') return null;
+
+    const doNumber = deliveryOrder.doNumber || voucher.doNumber || deliveryOrderRef;
+    return NextResponse.json(
+        {
+            error: `Trip ${doNumber} sudah dibatalkan. ${actionLabel} tidak boleh dicatat ke bon driver; biaya pembatalan harus masuk Pengeluaran perusahaan.`,
+        },
+        { status: 409 }
+    );
+}
+
 export async function handleDriverVoucherCreate(
     session: Pick<ApiSession, '_id' | 'name'>,
     data: Record<string, unknown>,
@@ -1161,6 +1184,11 @@ export async function handleDriverVoucherTopUp(
     if (state.voucher.status === 'SETTLED') {
         return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa ditambah lagi' }, { status: 409 });
     }
+    const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
+        state.voucher,
+        'Tambahan uang jalan'
+    );
+    if (cancelledTripError) return cancelledTripError;
 
     const bank = await getLedgerAccount(bankAccountRef);
     if (!bank) {
@@ -1302,6 +1330,11 @@ export async function handleDriverVoucherItemCreate(
     if (state.voucher.status === 'SETTLED') {
         return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
     }
+    const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
+        state.voucher,
+        'Biaya lain-lain'
+    );
+    if (cancelledTripError) return cancelledTripError;
 
     const itemId = crypto.randomUUID();
     const nextOperationalSpent = state.items.reduce(
@@ -1387,6 +1420,11 @@ export async function handleDriverVoucherItemUpdate(
     if (state.voucher.status === 'SETTLED') {
         return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
     }
+    const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
+        state.voucher,
+        'Biaya lain-lain'
+    );
+    if (cancelledTripError) return cancelledTripError;
 
     const existingItem = state.items.find(existing => existing._id === itemId);
     if (!existingItem) {
@@ -1701,6 +1739,11 @@ export async function handleDriverVoucherDisbursementUpdate(
     if (state.voucher.status === 'SETTLED') {
         return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
     }
+    const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
+        state.voucher,
+        'Koreksi tambahan uang jalan'
+    );
+    if (cancelledTripError) return cancelledTripError;
 
     const disbursement = state.disbursements.find(existing => existing._id === disbursementId);
     if (!disbursement) {
@@ -1898,6 +1941,11 @@ export async function handleDriverVoucherSettlement(
     if (state.voucher.status === 'SETTLED') {
         return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
     }
+    const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
+        state.voucher,
+        'Settlement uang jalan trip'
+    );
+    if (cancelledTripError) return cancelledTripError;
     const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 });
     if (state.items.length === 0 && driverFeeAmount <= 0) {
         return NextResponse.json({ error: 'Isi biaya lain-lain atau upah borongan sebelum penyelesaian trip' }, { status: 400 });
