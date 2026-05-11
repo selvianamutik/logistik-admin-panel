@@ -4,6 +4,7 @@ import { useState, useEffect, type ChangeEvent } from 'react';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { DEFAULT_PRIMARY_THEME_COLOR, DEFAULT_SECONDARY_THEME_COLOR, applyCompanyThemeColors, isThemeHexColor } from '@/lib/theme';
 import type { BankAccount, CompanyProfile } from '@/lib/types';
 
 export default function CompanyPage() {
@@ -18,7 +19,7 @@ export default function CompanyPage() {
             try {
                 const [res, accountRows] = await Promise.all([
                     fetch('/api/data?entity=company'),
-            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening invoice'),
+                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening invoice'),
                 ]);
                 const payload = await res.json();
                 if (!res.ok) {
@@ -28,6 +29,8 @@ export default function CompanyPage() {
                 const profile = payload.data || {};
                 profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'INV-', notaCounter: 0, notaSeriesCode: '3', receiptPrefix: 'RCV-', receiptCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
                 profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
+                profile.themeColor = isThemeHexColor(profile.themeColor) ? profile.themeColor : DEFAULT_PRIMARY_THEME_COLOR;
+                profile.secondaryThemeColor = isThemeHexColor(profile.secondaryThemeColor) ? profile.secondaryThemeColor : DEFAULT_SECONDARY_THEME_COLOR;
                 const eligibleBankAccounts = (accountRows || []).filter(account => account.active !== false && account.accountType !== 'CASH');
                 const eligibleBankRefSet = new Set(eligibleBankAccounts.map(account => account._id));
                 profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER', invoiceBankAccountRefs: [], defaultInvoiceBankAccountRef: undefined };
@@ -144,41 +147,14 @@ export default function CompanyPage() {
         };
     });
 
-    // Live theme preview — apply CSS vars instantly
-    const previewTheme = (hex: string) => {
-        u('themeColor', hex);
-        if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
-        const ri = parseInt(hex.slice(1, 3), 16), gi = parseInt(hex.slice(3, 5), 16), bi = parseInt(hex.slice(5, 7), 16);
-        const [h, s, l] = (() => {
-            const r = ri / 255, g = gi / 255, b = bi / 255;
-            const max = Math.max(r, g, b), min = Math.min(r, g, b), lv = (max + min) / 2;
-            if (max === min) return [0, 0, lv * 100];
-            const d = max - min, sv = lv > 0.5 ? d / (2 - max - min) : d / (max + min);
-            let hv = 0;
-            if (max === r) hv = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-            else if (max === g) hv = ((b - r) / d + 2) / 6;
-            else hv = ((r - g) / d + 4) / 6;
-            return [hv * 360, sv * 100, lv * 100];
-        })();
-        const toHex = (hh: number, ss: number, ll: number) => {
-            const s2 = ss / 100, l2 = ll / 100, a = s2 * Math.min(l2, 1 - l2);
-            const f = (n: number) => { const k = (n + hh / 30) % 12; return l2 - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
-            const tx = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0');
-            return `#${tx(f(0))}${tx(f(8))}${tx(f(4))}`;
-        };
-        const root = document.documentElement;
-        root.style.setProperty('--color-primary', hex);
-        root.style.setProperty('--color-primary-hover', toHex(h, s, Math.max(0, l - 8)));
-        root.style.setProperty('--color-primary-light', toHex(h, Math.min(100, s + 20), 96));
-        root.style.setProperty('--color-primary-50', toHex(h, Math.min(100, s + 10), 93));
-        root.style.setProperty('--color-primary-100', toHex(h, Math.min(100, s + 5), 88));
-        root.style.setProperty('--color-primary-200', toHex(h, s, 80));
-        root.style.setProperty('--color-primary-600', hex);
-        root.style.setProperty('--color-primary-700', toHex(h, s, Math.max(0, l - 8)));
-        root.style.setProperty('--color-primary-800', toHex(h, s, Math.max(0, l - 16)));
-        // Sidebar active colors
-        root.style.setProperty('--sidebar-active-bg', hex + '33');
-        root.style.setProperty('--sidebar-active-text', toHex(h, Math.min(100, s + 15), Math.min(85, l + 30)));
+    const previewTheme = (field: 'themeColor' | 'secondaryThemeColor', hex: string) => {
+        u(field, hex);
+        if (!isThemeHexColor(hex)) return;
+        applyCompanyThemeColors(
+            document.documentElement,
+            field === 'themeColor' ? hex : data?.themeColor,
+            field === 'secondaryThemeColor' ? hex : data?.secondaryThemeColor,
+        );
     };
 
     if (loading || !data) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
@@ -236,19 +212,20 @@ export default function CompanyPage() {
                         </div>
                         <div className="form-section-title">Tema Warna Aplikasi</div>
                         <div className="form-group">
-                            <label className="form-label">Pilih Warna Tema</label>
+                            <label className="form-label">Primary</label>
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
                                 {[
-                                    { color: '#4f46e5', name: 'Indigo' },
-                                    { color: '#2563eb', name: 'Biru' },
-                                    { color: '#0891b2', name: 'Cyan' },
+                                    { color: '#0f766e', name: 'GMS Hijau' },
                                     { color: '#059669', name: 'Hijau' },
+                                    { color: '#0891b2', name: 'Cyan' },
+                                    { color: '#2563eb', name: 'Biru' },
+                                    { color: '#4f46e5', name: 'Indigo' },
                                     { color: '#d97706', name: 'Orange' },
                                     { color: '#dc2626', name: 'Merah' },
                                     { color: '#7c3aed', name: 'Ungu' },
                                     { color: '#db2777', name: 'Pink' },
                                 ].map(t => (
-                                    <button key={t.color} onClick={() => previewTheme(t.color)} title={t.name}
+                                    <button key={t.color} type="button" onClick={() => previewTheme('themeColor', t.color)} title={t.name}
                                         style={{
                                             width: 40, height: 40, borderRadius: '0.5rem', border: data.themeColor === t.color ? '3px solid #1e293b' : '2px solid #e2e8f0',
                                             background: t.color, cursor: 'pointer', boxShadow: data.themeColor === t.color ? '0 0 0 2px white, 0 0 0 4px ' + t.color : 'none',
@@ -257,18 +234,46 @@ export default function CompanyPage() {
                                 ))}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                <input type="color" value={data.themeColor || '#4f46e5'} onChange={e => previewTheme(e.target.value)}
+                                <input type="color" value={data.themeColor || DEFAULT_PRIMARY_THEME_COLOR} onChange={e => previewTheme('themeColor', e.target.value)}
                                     style={{ width: 40, height: 36, padding: 0, border: '1px solid #e2e8f0', borderRadius: '0.375rem', cursor: 'pointer' }} />
-                                <input className="form-input" value={data.themeColor || '#4f46e5'} onChange={e => previewTheme(e.target.value)} placeholder="#4f46e5" style={{ maxWidth: 140 }} />
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Warna kustom</span>
+                                <input className="form-input" value={data.themeColor || DEFAULT_PRIMARY_THEME_COLOR} onChange={e => previewTheme('themeColor', e.target.value)} placeholder={DEFAULT_PRIMARY_THEME_COLOR} style={{ maxWidth: 140 }} />
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Menu dan tombol utama</span>
+                            </div>
+                            <label className="form-label">Secondary</label>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                                {[
+                                    { color: '#dc2626', name: 'GMS Merah' },
+                                    { color: '#b91c1c', name: 'Merah Gelap' },
+                                    { color: '#d97706', name: 'Orange' },
+                                    { color: '#ca8a04', name: 'Kuning' },
+                                    { color: '#2563eb', name: 'Biru' },
+                                    { color: '#7c3aed', name: 'Ungu' },
+                                    { color: '#db2777', name: 'Pink' },
+                                    { color: '#475569', name: 'Slate' },
+                                ].map(t => (
+                                    <button key={t.color} type="button" onClick={() => previewTheme('secondaryThemeColor', t.color)} title={t.name}
+                                        style={{
+                                            width: 40, height: 40, borderRadius: '0.5rem', border: data.secondaryThemeColor === t.color ? '3px solid #1e293b' : '2px solid #e2e8f0',
+                                            background: t.color, cursor: 'pointer', boxShadow: data.secondaryThemeColor === t.color ? '0 0 0 2px white, 0 0 0 4px ' + t.color : 'none',
+                                            transition: 'all 0.15s'
+                                        }} />
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                <input type="color" value={data.secondaryThemeColor || DEFAULT_SECONDARY_THEME_COLOR} onChange={e => previewTheme('secondaryThemeColor', e.target.value)}
+                                    style={{ width: 40, height: 36, padding: 0, border: '1px solid #e2e8f0', borderRadius: '0.375rem', cursor: 'pointer' }} />
+                                <input className="form-input" value={data.secondaryThemeColor || DEFAULT_SECONDARY_THEME_COLOR} onChange={e => previewTheme('secondaryThemeColor', e.target.value)} placeholder={DEFAULT_SECONDARY_THEME_COLOR} style={{ maxWidth: 140 }} />
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aksen dashboard dan status pendukung</span>
                             </div>
                             {/* Live Preview Bar */}
                             <div style={{ padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Preview:</span>
                                 <button className="btn btn-primary btn-sm" style={{ pointerEvents: 'none' }}>Tombol Primary</button>
-                                <button className="btn btn-secondary btn-sm" style={{ pointerEvents: 'none' }}>Secondary</button>
+                                <button className="btn btn-accent btn-sm" style={{ pointerEvents: 'none' }}>Tombol Secondary</button>
                                 <span className="badge badge-primary" style={{ pointerEvents: 'none' }}>Badge</span>
+                                <span className="badge badge-secondary" style={{ pointerEvents: 'none' }}>Aksen</span>
                                 <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)' }} />
+                                <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-secondary)' }} />
                             </div>
                         </div>
                         <div className="form-section-title">Rekening yang Tampil di Invoice</div>
@@ -380,17 +385,17 @@ export default function CompanyPage() {
                                 <div className="form-group" />
                             </div>
                             <div className="form-row">
-                    <div className="form-group"><label className="form-label">Prefix Invoice</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'INV-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Invoice Ongkos</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'INV-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Penerimaan</label><input className="form-input" value={data.numberingSettings.receiptPrefix || 'RCV-'} onChange={e => uNum('receiptPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kode Seri Cetak Invoice</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>
-                                <div className="form-group"><label className="form-label">Prefix Arsip Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Arsip Borongan Supir</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Dipakai untuk nomor cetak invoice model client, misalnya <strong>26/II/3/001</strong>. No. Invoice Internal tetap memakai format aplikasi.
+                                        Dipakai untuk nomor cetak Invoice Ongkos model client, misalnya <strong>26/II/3/001</strong>. Nomor internal invoice tetap memakai format aplikasi.
                                     </p>
                                 </div>
                                 <div className="form-group" />

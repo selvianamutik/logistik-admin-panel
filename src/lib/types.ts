@@ -95,6 +95,7 @@ export interface CompanyProfile {
   bankHolder?: string;
   logoUrl?: string;
   themeColor?: string;
+  secondaryThemeColor?: string;
   headerStampUrl?: string;
   signatureStampUrl?: string;
   numberingSettings: {

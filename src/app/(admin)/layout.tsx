@@ -13,30 +13,10 @@ import {
 import { matchesPathSegment } from '@/lib/pathname';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSidebarMenu } from '@/lib/rbac';
+import { applyCompanyThemeColors } from '@/lib/theme';
 import type { SessionUser, ToastMessage, CompanyProfile } from '@/lib/types';
 
 // ── Color helpers for theme generation ──
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    if (max === min) return [0, 0, l * 100];
-    const d = max - min;
-    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    let h = 0;
-    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (max === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-    return [h * 360, s * 100, l * 100];
-}
-function hslToHex(h: number, s: number, l: number): string {
-    s /= 100; l /= 100;
-    const a = s * Math.min(l, 1 - l);
-    const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
-    const toHex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0');
-    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
-}
-
 // ── Icon map ──
 const ICON_MAP: Record<string, React.ReactNode> = {
     LayoutDashboard: <LayoutDashboard size={20} />,
@@ -124,26 +104,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const [isMobile, setIsMobile] = useState(false);
     const [isTablet, setIsTablet] = useState(false);
 
-    // Generate theme palette from a single hex color
-    const applyTheme = useCallback((hex: string) => {
-        if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
-        const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-        const hsl = rgbToHsl(r, g, b);
-        const root = document.documentElement;
-        root.style.setProperty('--color-primary', hex);
-        root.style.setProperty('--color-primary-hover', hslToHex(hsl[0], hsl[1], Math.max(0, hsl[2] - 8)));
-        root.style.setProperty('--color-primary-light', hslToHex(hsl[0], Math.min(100, hsl[1] + 20), 96));
-        root.style.setProperty('--color-primary-50', hslToHex(hsl[0], Math.min(100, hsl[1] + 10), 93));
-        root.style.setProperty('--color-primary-100', hslToHex(hsl[0], Math.min(100, hsl[1] + 5), 88));
-        root.style.setProperty('--color-primary-200', hslToHex(hsl[0], hsl[1], 80));
-        root.style.setProperty('--color-primary-600', hex);
-        root.style.setProperty('--color-primary-700', hslToHex(hsl[0], hsl[1], Math.max(0, hsl[2] - 8)));
-        root.style.setProperty('--color-primary-800', hslToHex(hsl[0], hsl[1], Math.max(0, hsl[2] - 16)));
-        // Sidebar active colors from theme
-        root.style.setProperty('--sidebar-active-bg', hex + '33');
-        root.style.setProperty('--sidebar-active-text', hslToHex(hsl[0], Math.min(100, hsl[1] + 15), Math.min(85, hsl[2] + 30)));
-    }, []);
-
     // Fetch session + company profile
     useEffect(() => {
         const loadAppContext = async () => {
@@ -175,7 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 }
                 if (companyRes?.ok && co.data) {
                     setCompany(co.data);
-                    if (co.data.themeColor) applyTheme(co.data.themeColor);
+                    applyCompanyThemeColors(document.documentElement, co.data.themeColor, co.data.secondaryThemeColor);
                 }
             } catch {
                 router.push('/login');
@@ -210,7 +170,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             mobileQuery.removeEventListener('change', syncViewport);
             tabletQuery.removeEventListener('change', syncViewport);
         };
-    }, [router, applyTheme]);
+    }, [router]);
 
     useEffect(() => {
         if (!user || !company?.name) {

@@ -352,6 +352,7 @@ async function sanitizeCompanyInvoiceSettings(
         bankAccount: normalizeOptionalText(input.bankAccount) || normalizeOptionalText(existingCompany?.bankAccount),
         bankHolder: normalizeOptionalText(input.bankHolder) || normalizeOptionalText(existingCompany?.bankHolder),
         themeColor: sanitizeCompanyThemeColor(input.themeColor, sanitizeCompanyThemeColor(existingCompany?.themeColor)),
+        secondaryThemeColor: sanitizeCompanyThemeColor(input.secondaryThemeColor, sanitizeCompanyThemeColor(existingCompany?.secondaryThemeColor)),
         logoUrl: sanitizeCompanyAssetUrl(input.logoUrl, 'Logo perusahaan') ?? sanitizeCompanyAssetUrl(existingCompany?.logoUrl, 'Logo perusahaan'),
         headerStampUrl:
             sanitizeCompanyAssetUrl(input.headerStampUrl, 'Header stamp perusahaan')

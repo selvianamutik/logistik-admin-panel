@@ -72,6 +72,8 @@ const seedData: DataStore = {
         bankName: 'Bank BCA',
         bankAccount: '123-456-7890',
         bankHolder: 'PT Ekspedisi Nusantara',
+        themeColor: '#0f766e',
+        secondaryThemeColor: '#dc2626',
         numberingSettings: {
             resiPrefix: 'R',
             resiCounter: 1,

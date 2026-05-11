@@ -17,6 +17,18 @@
   --color-primary-600: #4f46e5;
   --color-primary-700: #4338ca;
   --color-primary-800: #3730a3;
+  --color-primary-soft: #c7d2fe;
+  --color-primary-surface: #eef2ff;
+
+  --color-secondary: #dc2626;
+  --color-secondary-hover: #b91c1c;
+  --color-secondary-light: #fef2f2;
+  --color-secondary-50: #fee2e2;
+  --color-secondary-100: #fecaca;
+  --color-secondary-200: #fca5a5;
+  --color-secondary-600: #dc2626;
+  --color-secondary-700: #b91c1c;
+  --color-secondary-800: #991b1b;
 
   --color-success: #059669;
   --color-success-light: #ecfdf5;
@@ -743,6 +755,17 @@ a:hover {
   border-color: var(--color-gray-400);
 }
 
+.btn-accent {
+  background: var(--color-secondary);
+  color: white;
+  border-color: var(--color-secondary);
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: var(--color-secondary-hover);
+  border-color: var(--color-secondary-hover);
+}
+
 .btn-danger {
   background: var(--color-danger);
   color: white;
@@ -991,6 +1014,11 @@ a:hover {
 .kpi-icon.primary {
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.kpi-icon.secondary {
+  background: var(--color-secondary-light);
+  color: var(--color-secondary);
 }
 
 .kpi-icon.success {
@@ -1444,6 +1472,11 @@ tbody td {
 .badge-primary {
   background: var(--color-primary-50);
   color: var(--color-primary-800);
+}
+
+.badge-secondary {
+  background: var(--color-secondary-50);
+  color: var(--color-secondary-800);
 }
 
 .badge-success {

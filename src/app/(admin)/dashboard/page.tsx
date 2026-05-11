@@ -148,7 +148,7 @@ export default function DashboardPage() {
 
                 {canViewDeliveryOrders && <Link href="/delivery-orders" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
-                        <div className="kpi-icon info"><Truck size={24} /></div>
+                        <div className="kpi-icon secondary"><Truck size={24} /></div>
                         <div className="kpi-content">
                             <div className="kpi-label">DO Dalam Pengiriman</div>
                             <div className="kpi-value">{data.doStats.onDelivery}</div>
