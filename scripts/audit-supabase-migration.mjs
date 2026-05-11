@@ -258,6 +258,7 @@ const expectedTripRouteRatePhotoSources = new Map([
   ['Tronton dan Trailer Jawa Timur', 81],
   ['Tronton dan Trailer Jawa Tengah', 80],
 ]);
+const bcryptHashRe = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -523,6 +524,13 @@ if (
 }
 const seedPath = path.join(repoRoot, 'artifacts/default-supabase-seed.json');
 const seedDocuments = JSON.parse(readFileSync(seedPath, 'utf8'));
+const seedUsers = seedDocuments.filter(doc => doc?._type === 'user');
+const invalidSeedPasswordUsers = seedUsers.filter(user => typeof user.passwordHash !== 'string' || !bcryptHashRe.test(user.passwordHash));
+if (invalidSeedPasswordUsers.length > 0) {
+  fail(`Seed user masih punya passwordHash bukan bcrypt valid: ${invalidSeedPasswordUsers.map(user => user.email || user._id).slice(0, 5).join(', ')}`);
+} else {
+  console.log(`- OK   seed user password hashes bcrypt-valid (${seedUsers.length} users)`);
+}
 const tripRouteRates = seedDocuments.filter(doc => doc?._type === 'tripRouteRate');
 const tripRouteRateSourceCounts = new Map();
 const tripRouteRateKeys = new Set();

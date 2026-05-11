@@ -43,8 +43,8 @@ interface DataStore {
     auditLogs: AuditLog[];
 }
 
-// ── Password hash for TEST1234 (pre-computed bcrypt) ──
-const OWNER_PASSWORD_HASH = '$2a$10$dummyhashforTEST1234ownerpassword';
+// ── Pre-computed bcrypt hash for the demo owner account ──
+const OWNER_PASSWORD_HASH = '$2b$10$gmQQXBYsr6av5en3FKDsRuW/ZiOXB6hOqzD2EXmGWICdq2EADL2YW';
 
 // ── Seed Data ──
 const seedData: DataStore = {

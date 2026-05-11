@@ -11,6 +11,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
     "audit:settings-document-format": "npx tsx scripts/audit-settings-document-format.ts",
+    "audit:password-hashes": "node scripts/audit-password-hashes.mjs",
     "audit:accounting-integrity": "npx tsx --conditions react-server scripts/audit-accounting-integrity.ts",
     "audit:finance-integrity": "npx tsx --conditions react-server scripts/audit-finance-integrity.ts",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",

@@ -17,19 +17,16 @@ import {
     verifySessionToken,
 } from './session';
 
-const BCRYPT_PREFIX = /^\$2[aby]\$/;
+const BCRYPT_HASH_RE = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
 export function isPasswordHashMigrated(passwordHash: string) {
-    return BCRYPT_PREFIX.test(passwordHash);
+    return BCRYPT_HASH_RE.test(passwordHash);
 }
 
 export async function verifyPassword(plainPassword: string, storedHash: string): Promise<boolean> {
     if (!storedHash) return false;
-    if (isPasswordHashMigrated(storedHash)) {
-        return compare(plainPassword, storedHash);
-    }
-    // Transitional support for legacy/plaintext seed rows until every user is re-saved.
-    return plainPassword === storedHash;
+    if (!isPasswordHashMigrated(storedHash)) return false;
+    return compare(plainPassword, storedHash);
 }
 
 export async function hashPassword(password: string): Promise<string> {

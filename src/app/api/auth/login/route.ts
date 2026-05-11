@@ -2,7 +2,7 @@
    LOGISTIK - Login API Route
    ============================================================ */
 
-import { createSession, hashPassword, isPasswordHashMigrated, setSessionCookie, verifyPassword } from '@/lib/auth';
+import { createSession, setSessionCookie, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
@@ -59,7 +59,6 @@ export async function GET() {
 
 async function syncSuccessfulLogin(
     user: User,
-    plainPassword: string,
     loginScope: 'ADMIN' | 'DRIVER'
 ): Promise<{ user: User } | { errorResponse: Response }> {
     if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
@@ -101,13 +100,9 @@ async function syncSuccessfulLogin(
         }
     }
 
-    const nextPasswordHash = !isPasswordHashMigrated(user.passwordHash)
-        ? await hashPassword(plainPassword)
-        : undefined;
     const lastLoginAt = new Date().toISOString();
     const updated = await updateUserLoginState(user._id, {
         lastLoginAt,
-        passwordHash: nextPasswordHash,
     });
 
     return {
@@ -115,7 +110,6 @@ async function syncSuccessfulLogin(
             ...user,
             ...updated,
             lastLoginAt,
-            passwordHash: nextPasswordHash || user.passwordHash,
         },
     };
 }
@@ -167,7 +161,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
-        const syncResult = await syncSuccessfulLogin(user, normalizedPassword, loginScope);
+        const syncResult = await syncSuccessfulLogin(user, loginScope);
         if ('errorResponse' in syncResult) {
             return syncResult.errorResponse;
         }

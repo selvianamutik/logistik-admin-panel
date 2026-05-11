@@ -147,8 +147,8 @@ export async function normalizeUserUpdates(
     updates: Record<string, unknown>,
     currentPassword: unknown
 ) {
-    const allowedOwnerFields = new Set(['name', 'email', 'role', 'active', 'driverRef', 'password', 'passwordHash']);
-    const allowedSelfFields = new Set(['name', 'password', 'passwordHash']);
+    const allowedOwnerFields = new Set(['name', 'email', 'role', 'active', 'driverRef', 'password']);
+    const allowedSelfFields = new Set(['name', 'password']);
     const existingUser = await getDocumentById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string; driverRef?: string }>(
         targetUserId,
         'user'
@@ -244,12 +244,7 @@ export async function normalizeUserUpdates(
         }
     }
 
-    const rawPassword =
-        typeof nextUpdates.password === 'string'
-            ? nextUpdates.password
-            : typeof nextUpdates.passwordHash === 'string'
-                ? nextUpdates.passwordHash
-                : null;
+    const rawPassword = typeof nextUpdates.password === 'string' ? nextUpdates.password : null;
 
     if (rawPassword !== null) {
         const password = rawPassword.trim();

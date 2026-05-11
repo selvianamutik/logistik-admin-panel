@@ -1,4 +1,4 @@
-import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
+import { createSession, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
@@ -26,10 +26,7 @@ function tooManyAttemptsResponse(retryAfterSeconds: number) {
     );
 }
 
-async function syncSuccessfulDriverLogin(
-    user: User,
-    plainPassword: string
-): Promise<{ user: User; driver: Driver } | { errorResponse: Response }> {
+async function syncSuccessfulDriverLogin(user: User): Promise<{ user: User; driver: Driver } | { errorResponse: Response }> {
     if (user.role !== 'DRIVER') {
         return {
             errorResponse: jsonNoStore(
@@ -58,13 +55,9 @@ async function syncSuccessfulDriverLogin(
         };
     }
 
-    const nextPasswordHash = !isPasswordHashMigrated(user.passwordHash)
-        ? await hashPassword(plainPassword)
-        : undefined;
     const lastLoginAt = new Date().toISOString();
     const updated = await updateUserLoginState(user._id, {
         lastLoginAt,
-        passwordHash: nextPasswordHash,
     });
 
     return {
@@ -72,7 +65,6 @@ async function syncSuccessfulDriverLogin(
             ...user,
             ...updated,
             lastLoginAt,
-            passwordHash: nextPasswordHash || user.passwordHash,
         },
         driver,
     };
@@ -111,7 +103,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
-        const syncResult = await syncSuccessfulDriverLogin(user, password);
+        const syncResult = await syncSuccessfulDriverLogin(user);
         if ('errorResponse' in syncResult) {
             return syncResult.errorResponse;
         }

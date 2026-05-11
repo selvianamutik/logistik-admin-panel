@@ -25,11 +25,9 @@ export async function updateUserLoginState(
     id: string,
     updates: {
         lastLoginAt: string;
-        passwordHash?: string;
     }
 ) {
     return updateDocument<User>(id, {
         lastLoginAt: updates.lastLoginAt,
-        ...(updates.passwordHash ? { passwordHash: updates.passwordHash } : {}),
     }, 'user', { skipApiReadCacheClear: true, skipRelationalReadCacheClear: true });
 }
