@@ -9,7 +9,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { formatCreditLimitCurrency, formatCustomerCreditBlockMessage, summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
-import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
+import { buildServiceCapacityRangeMap, formatUnitCapacityLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import { buildTripResourceLocks } from '@/lib/trip-resource-lock-support';
 import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, FreightNota, Order, Service, TripRouteRate, Vehicle } from '@/lib/types';
@@ -747,7 +747,7 @@ export default function NewOrderPage() {
                                                 {availableTripVehicles.map(vehicle => (
                                                     <option key={vehicle._id} value={vehicle._id}>
                                                         {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || vehicle._id}
-                                                        {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatCapacityRangeLabel(vehicle)}
+                                                        {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatUnitCapacityLabel(vehicle)}
                                                     </option>
                                                 ))}
                                             </select>

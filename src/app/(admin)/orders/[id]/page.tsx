@@ -57,7 +57,7 @@ import {
 } from '@/lib/order-create-page-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
-import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
+import { buildServiceCapacityRangeMap, formatUnitCapacityLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, ExpenseCategory, FreightNota, FreightNotaItem, Service, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
@@ -1148,7 +1148,7 @@ export default function OrderDetailPage() {
     const effectiveDoVehicleRef = selectedOrderTripPlan?.vehicleRef || doVehicle;
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === effectiveDoVehicleRef);
     const selectedVehicleCapacityLabel = selectedVehicleData
-        ? formatCapacityRangeLabel(selectedVehicleData)
+        ? formatUnitCapacityLabel(selectedVehicleData)
         : 'Belum dipilih';
     const requiresVehicleOverrideReason = !selectedOrderTripPlan && shouldRequireVehicleOverrideReason(order, selectedVehicleData);
     const deliveryOrderById = new Map(dos.map(deliveryOrder => [deliveryOrder._id, deliveryOrder]));
@@ -2453,7 +2453,7 @@ export default function OrderDetailPage() {
                                         {availableTripDraftVehicles.map(vehicle => (
                                             <option key={vehicle._id} value={vehicle._id}>
                                                 {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || vehicle._id}
-                                                {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatCapacityRangeLabel(vehicle)}
+                                                {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatUnitCapacityLabel(vehicle)}
                                             </option>
                                         ))}
                                     </select>
@@ -2930,7 +2930,7 @@ export default function OrderDetailPage() {
                                             {availableVehicles.map(vehicle => (
                                                 <option key={vehicle._id} value={vehicle._id}>
                                                     {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber}
-                                                    {vehicle.serviceName ? ` (${vehicle.serviceName})` : ' (Kategori belum diisi)'} | {formatCapacityRangeLabel(vehicle)}
+                                                    {vehicle.serviceName ? ` (${vehicle.serviceName})` : ' (Kategori belum diisi)'} | {formatUnitCapacityLabel(vehicle)}
                                                 </option>
                                             ))}
                                         </select>

@@ -60,10 +60,24 @@ export function formatCapacityRangeLabel(source: CapacityRangeSource) {
     return 'Kapasitas belum diisi';
 }
 
+export function formatUnitCapacityLabel(source: CapacityRangeSource) {
+    const { minTon, maxTon } = getVehicleCapacityRange(source);
+    if (minTon !== undefined && maxTon !== undefined) {
+        return `kapasitas unit ${formatTonValue(minTon)} ton - ${formatTonValue(maxTon)} ton`;
+    }
+    if (maxTon !== undefined) {
+        return `kapasitas unit ${formatTonValue(maxTon)} ton`;
+    }
+    if (minTon !== undefined) {
+        return `kapasitas unit mulai ${formatTonValue(minTon)} ton`;
+    }
+    return 'Kapasitas unit belum diisi';
+}
+
 export function buildServiceCapacityRangeMap(services: Service[]) {
     return services.reduce<Record<string, string>>((acc, service) => {
         if (service.maxPayloadKg && service.maxPayloadKg > 0) {
-            acc[service._id] = `maks ${formatTonValue(service.maxPayloadKg / 1000)} ton`;
+            acc[service._id] = `batas layanan ${formatTonValue(service.maxPayloadKg / 1000)} ton`;
             return acc;
         }
 
