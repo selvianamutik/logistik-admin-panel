@@ -2,6 +2,7 @@ import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/r
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
 import { handleIncidentCreate } from '@/lib/api/operations-workflows';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, Incident, IncidentActionLog, IncidentSettlementCategory, IncidentSettlementLine } from '@/lib/types';
 
@@ -38,7 +39,7 @@ function normalizeCostCategory(value: unknown): IncidentSettlementCategory {
 }
 
 function todayDateInput() {
-    return new Date().toISOString().slice(0, 10);
+    return getBusinessDateValue();
 }
 
 async function ensureDriverIncidentAccess(incidentRef: string, driverId: string) {

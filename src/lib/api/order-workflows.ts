@@ -303,6 +303,17 @@ function getPendingDriverRequestsFromDeliveryOrder(
     }];
 }
 
+function hasPendingDriverApprovalRequest(deliveryOrder: { pendingDriverStatus?: unknown; pendingDriverRequests?: unknown }) {
+    return Boolean(deliveryOrder.pendingDriverStatus) ||
+        (Array.isArray(deliveryOrder.pendingDriverRequests) &&
+            deliveryOrder.pendingDriverRequests.some(request =>
+                request &&
+                typeof request === 'object' &&
+                'requestId' in request &&
+                'status' in request
+            ));
+}
+
 function clearLegacyPendingDriverRequestFields() {
     return {
         pendingDriverStatus: null,
@@ -2777,10 +2788,10 @@ export async function handleDeliveryOrderStatusUpdate(
         );
     }
 
-    if (deliveryOrder.pendingDriverStatus && status !== deliveryOrder.pendingDriverStatus) {
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
         return NextResponse.json(
             {
-                error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval permintaan driver ${deliveryOrder.pendingDriverStatus}. Review/approve atau tolak dulu sebelum ganti ke status lain.`,
+                error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval permintaan driver. Review/approve atau tolak dulu sebelum ganti status manual.`,
             },
             { status: 409 }
         );
@@ -3250,9 +3261,9 @@ export async function handleDeliveryOrderContinueHeldCargo(
             { status: 409 }
         );
     }
-    if (deliveryOrder.pendingDriverStatus) {
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
         return NextResponse.json(
-            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum muatan hold dilanjutkan.` },
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval driver. Review dulu sebelum muatan hold dilanjutkan.` },
             { status: 409 }
         );
     }
@@ -3487,9 +3498,9 @@ export async function handleDeliveryOrderCancelTrip(
     if (deliveryOrder.status === 'CANCELLED') {
         return NextResponse.json({ error: 'Trip sudah dibatalkan.' }, { status: 409 });
     }
-    if (deliveryOrder.pendingDriverStatus) {
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
         return NextResponse.json(
-            { error: `Trip ${deliveryOrder.doNumber || id} masih punya permintaan driver ${deliveryOrder.pendingDriverStatus} yang belum diputuskan.` },
+            { error: `Trip ${deliveryOrder.doNumber || id} masih punya permintaan driver yang belum diputuskan.` },
             { status: 409 }
         );
     }
@@ -5708,11 +5719,13 @@ export async function handleDeliveryOrderCreate(
                 vehicleRef?: unknown;
                 vehiclePlate?: string;
                 status?: string;
+                tripClosedByAdminAt?: string;
             }>('deliveryOrder', {
                 status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'],
             })).find(candidate =>
-                extractRefId(candidate.vehicleRef) === vehicleRef
-                || normalizeOptionalText(candidate.vehiclePlate)?.toLowerCase() === (vehicle.plateNumber || vehiclePlate || '').toLowerCase()
+                !candidate.tripClosedByAdminAt &&
+                (extractRefId(candidate.vehicleRef) === vehicleRef
+                || normalizeOptionalText(candidate.vehiclePlate)?.toLowerCase() === (vehicle.plateNumber || vehiclePlate || '').toLowerCase())
             ) || null;
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
@@ -5767,11 +5780,13 @@ export async function handleDeliveryOrderCreate(
                 driverRef?: unknown;
                 driverName?: string;
                 status?: string;
+                tripClosedByAdminAt?: string;
             }>('deliveryOrder', {
                 status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'],
             })).find(candidate =>
-                extractRefId(candidate.driverRef) === driverRef
-                || normalizeOptionalText(candidate.driverName)?.toLowerCase() === (driver.name || driverName || '').toLowerCase()
+                !candidate.tripClosedByAdminAt &&
+                (extractRefId(candidate.driverRef) === driverRef
+                || normalizeOptionalText(candidate.driverName)?.toLowerCase() === (driver.name || driverName || '').toLowerCase())
             ) || null;
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
@@ -6560,6 +6575,7 @@ export async function handleDeliveryOrderAppendCargoItems(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        pendingDriverRequests?: PendingDriverStatusRequest[];
         tripClosedByAdminAt?: string;
         orderRef?: unknown;
         customerRef?: unknown;
@@ -6595,6 +6611,12 @@ export async function handleDeliveryOrderAppendCargoItems(
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json(
             { error: 'Trip ini sudah ditutup admin. Buka kembali trip jika masih ingin menambah SJ atau barang.' },
+            { status: 409 }
+        );
+    }
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+        return NextResponse.json(
+            { error: 'SJ/barang tidak bisa diubah saat menunggu approval admin.' },
             { status: 409 }
         );
     }
@@ -6895,6 +6917,12 @@ export async function handleDeliveryOrderTripClosureSet(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Trip tidak ditemukan' }, { status: 404 });
     }
+    if (closed && deliveryOrder.status !== 'DELIVERED' && deliveryOrder.status !== 'PARTIAL_HOLD') {
+        return NextResponse.json(
+            { error: 'Trip hanya bisa ditutup setelah statusnya Terkirim atau masih punya hold.' },
+            { status: 409 }
+        );
+    }
 
     const timestamp = new Date().toISOString();
     const pendingDriverRequestId = typeof data.pendingDriverRequestId === 'string' ? data.pendingDriverRequestId : '';
@@ -6980,6 +7008,7 @@ export async function handleDeliveryOrderCargoItemRemove(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        pendingDriverRequests?: PendingDriverStatusRequest[];
         tripClosedByAdminAt?: string;
         orderRef?: unknown;
     }>(id, 'deliveryOrder');
@@ -6989,8 +7018,8 @@ export async function handleDeliveryOrderCargoItemRemove(
     if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa dihapus pada status surat jalan saat ini' }, { status: 409 });
     }
-    if (deliveryOrder.pendingDriverStatus) {
-        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval driver' }, { status: 409 });
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval admin.' }, { status: 409 });
     }
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
@@ -7079,6 +7108,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
         doNumber?: string;
         status?: string;
         pendingDriverStatus?: string;
+        pendingDriverRequests?: PendingDriverStatusRequest[];
         tripClosedByAdminAt?: string;
         orderRef?: unknown;
         customerRef?: unknown;
@@ -7100,8 +7130,8 @@ export async function handleDeliveryOrderCargoItemUpdate(
     if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa diubah pada status surat jalan saat ini' }, { status: 409 });
     }
-    if (deliveryOrder.pendingDriverStatus) {
-        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval driver' }, { status: 409 });
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval admin.' }, { status: 409 });
     }
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
@@ -7247,8 +7277,8 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
     if (deliveryOrder.status === 'CANCELLED') {
         return NextResponse.json({ error: 'Aktual item tidak bisa diubah untuk trip yang sudah dibatalkan.' }, { status: 409 });
     }
-    if (deliveryOrder.pendingDriverStatus) {
-        return NextResponse.json({ error: 'Aktual item tidak bisa diubah saat menunggu approval driver.' }, { status: 409 });
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+        return NextResponse.json({ error: 'Aktual item tidak bisa diubah saat menunggu approval admin.' }, { status: 409 });
     }
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga aktual item tidak bisa diubah lagi.' }, { status: 409 });
@@ -7749,10 +7779,12 @@ export async function handleDeliveryOrderTripResourceAssign(
                 vehicleRef?: unknown;
                 vehiclePlate?: string;
                 status?: string;
+                tripClosedByAdminAt?: string;
             }>('deliveryOrder', {
                 status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'],
             })).find(candidate =>
                 candidate._id !== id
+                && !candidate.tripClosedByAdminAt
                 && (
                     extractRefId(candidate.vehicleRef) === vehicleRef
                     || normalizeOptionalText(candidate.vehiclePlate)?.toLowerCase() === (vehicle.plateNumber || nextVehiclePlate || '').toLowerCase()
@@ -7817,10 +7849,12 @@ export async function handleDeliveryOrderTripResourceAssign(
                 driverRef?: unknown;
                 driverName?: string;
                 status?: string;
+                tripClosedByAdminAt?: string;
             }>('deliveryOrder', {
                 status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'],
             })).find(candidate =>
                 candidate._id !== id
+                && !candidate.tripClosedByAdminAt
                 && (
                     extractRefId(candidate.driverRef) === driverRef
                     || normalizeOptionalText(candidate.driverName)?.toLowerCase() === (driver.name || nextDriverName || '').toLowerCase()
@@ -7946,6 +7980,8 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         doNumber?: string;
         customerDoNumber?: string;
         status?: DOStatus;
+        pendingDriverStatus?: string;
+        pendingDriverRequests?: PendingDriverStatusRequest[];
         tripClosedByAdminAt?: string;
         customerRef?: unknown;
         customerName?: string;
@@ -7981,6 +8017,12 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json(
             { error: 'Trip ini sudah ditutup admin. Buka kembali trip jika masih ingin mengubah SJ.' },
+            { status: 409 }
+        );
+    }
+    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+        return NextResponse.json(
+            { error: 'SJ tidak bisa diubah saat menunggu approval admin.' },
             { status: 409 }
         );
     }

@@ -30,6 +30,7 @@ void main() {
         DeliveryCargoItem(
           id: 'item-1',
           description: 'Keramik',
+          shipperReferenceNumber: 'SJ-001',
           qtyKoli: 10,
           weightInputValue: 750,
           weightInputUnit: 'KG',
@@ -51,11 +52,13 @@ void main() {
       shipperReferences: [
         DeliveryShipperReference(
           referenceNumber: 'SJ-010',
+          documentId: 'do-002:SJ-010',
           receiverCompany: 'PT Alpha',
           receiverAddress: 'Jl. Alpha',
         ),
         DeliveryShipperReference(
           referenceNumber: 'SJ-011',
+          documentId: 'do-002:SJ-011',
           receiverCompany: 'PT Beta',
           receiverAddress: 'Jl. Beta',
         ),
@@ -64,6 +67,7 @@ void main() {
         DeliveryCargoItem(
           id: 'item-2',
           description: 'Beras',
+          shipperReferenceNumber: 'SJ-010',
           qtyKoli: 5,
           weightInputValue: 500,
           weightInputUnit: 'KG',
@@ -111,8 +115,9 @@ void main() {
         description: 'Nama Lokasi TextField',
         skipOffstage: false,
       );
-      await tester.ensureVisible(locationField);
-      await tester.enterText(locationField, 'PT Penerima');
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+      await tester.pumpAndSettle();
+      await tester.enterText(locationField.first, 'PT Penerima');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.check_circle_rounded));
@@ -122,6 +127,9 @@ void main() {
       expect(result!.actualItems, hasLength(1));
       expect(result!.actualItems.first.deliveryOrderItemRef, 'item-1');
       expect(result!.actualItems.first.actualQtyKoli, 10);
+      expect(result!.podReceiverName, 'PT Penerima');
+      expect(result!.podReceivedDate, matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
+      expect(result!.selectedSuratJalanRefs, ['do-001:SJ-001']);
       expect(result!.actualDropPoints, hasLength(1));
       expect(result!.actualDropPoints.first.locationName, 'PT Penerima');
       expect(result!.actualDropPoints.first.qtyKoli, 10);
@@ -141,6 +149,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('beberapa target SJ'), findsOneWidget);
+      expect(find.text('SJ Finalisasi'), findsOneWidget);
+      expect(find.text('SJ-010'), findsWidgets);
+      expect(find.text('SJ-011'), findsWidgets);
     });
 
     testWidgets('keeps actual cargo and drop fields usable on compact width', (
@@ -174,6 +185,106 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps actual numeric input stable while keyboard is open', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 900);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: singleTargetTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final actualKoliField = find.widgetWithText(
+        TextFormField,
+        'Qty Aktual *',
+        skipOffstage: false,
+      );
+
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -350));
+      await tester.pumpAndSettle();
+      await tester.enterText(actualKoliField.first, '8');
+      await tester.pumpAndSettle();
+
+      final koliWidget = tester.widget<TextFormField>(actualKoliField.first);
+      expect(koliWidget.controller?.text, '8');
+      expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('renders legacy units and duplicate SJ references safely', (
+      tester,
+    ) async {
+      const legacyTrip = DeliveryTrip(
+        deliveryOrderId: 'do-legacy',
+        doNumber: 'DO-LEGACY',
+        vehiclePlate: 'L 9999 ZZ',
+        originLabel: 'Gudang',
+        destinationLabel: 'Tujuan',
+        customerName: 'PT Legacy',
+        status: TripStatus.arrived,
+        etdLabel: 'Tanggal DO 2026-04-18',
+        statusNote: 'Driver sudah tiba',
+        allowsDirectCargoInput: true,
+        shipperReferences: [
+          DeliveryShipperReference(referenceNumber: 'SJ-DUP'),
+          DeliveryShipperReference(referenceNumber: 'SJ-DUP'),
+        ],
+        cargoItems: [
+          DeliveryCargoItem(
+            id: 'item-legacy',
+            description: 'Barang legacy',
+            qtyKoli: 3,
+            weightInputValue: 15,
+            weightInputUnit: 'KGS',
+            volumeInputValue: 4,
+            volumeInputUnit: 'CBM',
+          ),
+        ],
+        pendingActualDropPoints: [
+          DeliveryActualDropPoint(
+            stopType: 'RETURN',
+            locationName: 'Gudang penerima',
+            qtyKoli: 3,
+            weightInputValue: 15,
+            weightInputUnit: 'KGS',
+            volumeInputValue: 4,
+            volumeInputUnit: 'CBM',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: legacyTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Barang legacy'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

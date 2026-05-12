@@ -4452,6 +4452,8 @@ export default function TripDetailPage() {
     const canAppendCargoToDo =
         canEditDeliveryCargo &&
         ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(doData.status) &&
+        pendingDriverRequests.length === 0 &&
+        !doData.pendingDriverStatus &&
         !isTripClosedByAdmin;
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
     const linkedVoucherCashBreakdown = linkedVoucher && linkedVoucherSummary

@@ -19,21 +19,92 @@ class DeliveryCompletionPage extends StatefulWidget {
 
 class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
   final _noteController = TextEditingController();
+  late final TextEditingController _podReceiverNameController;
+  late final TextEditingController _podReceivedDateController;
   bool _submitting = false;
   late List<_ActualCargoDraft> _cargoDrafts;
   late List<_ActualDropDraft> _dropDrafts;
+  late Set<String> _selectedShipperReferenceValues;
 
   @override
   void initState() {
     super.initState();
     _cargoDrafts = _buildInitialCargoDrafts(widget.trip);
     _dropDrafts = _buildInitialDropDrafts(widget.trip, _cargoDrafts);
+    _selectedShipperReferenceValues = _initialSelectedReferenceValues(
+      widget.trip,
+      _cargoDrafts,
+    );
+    _dropDrafts = _normalizeDropDraftsForSelectedReferences(
+      _dropDrafts,
+      _selectedShipperReferences,
+      _selectedCargoDrafts,
+    );
+    _podReceiverNameController = TextEditingController(
+      text: _defaultPodReceiverName(widget.trip, _selectedShipperReferences),
+    );
+    _podReceivedDateController = TextEditingController(
+      text: _currentJakartaDateValue(),
+    );
   }
 
   @override
   void dispose() {
     _noteController.dispose();
+    _podReceiverNameController.dispose();
+    _podReceivedDateController.dispose();
     super.dispose();
+  }
+
+  List<DeliveryShipperReference> get _selectedShipperReferences =>
+      _selectedReferencesForValues(
+        widget.trip.shipperReferences,
+        _selectedShipperReferenceValues,
+      );
+
+  List<_ActualCargoDraft> get _selectedCargoDrafts =>
+      _cargoDraftsForSelectedReferences(
+        _cargoDrafts,
+        widget.trip.shipperReferences,
+        _selectedShipperReferences,
+      );
+
+  List<_ActualDropDraft> get _selectedDropDrafts =>
+      _dropDraftsForSelectedReferences(
+        _dropDrafts,
+        widget.trip.shipperReferences,
+        _selectedShipperReferences,
+      );
+
+  void _setShipperReferenceSelected(String optionValue, bool selected) {
+    setState(() {
+      final nextValues = Set<String>.from(_selectedShipperReferenceValues);
+      if (selected) {
+        nextValues.add(optionValue);
+      } else {
+        nextValues.remove(optionValue);
+      }
+      _selectedShipperReferenceValues = nextValues;
+      _dropDrafts = _normalizeDropDraftsForSelectedReferences(
+        _dropDrafts,
+        _selectedShipperReferences,
+        _selectedCargoDrafts,
+      );
+    });
+  }
+
+  Future<void> _pickPodReceivedDate() async {
+    final initialDate =
+        _parseDateValue(_podReceivedDateController.text) ??
+        _jakartaDateTimeNow();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(_jakartaDateTimeNow().year + 2, 12, 31),
+    );
+    if (picked == null) return;
+    _podReceivedDateController.text = _formatDateValue(picked);
   }
 
   void _updateCargo(
@@ -169,23 +240,30 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
       return;
     }
 
-    final actualItems = _cargoDrafts
+    final selectedReferences = _selectedShipperReferences;
+    final submissionDropDrafts = _selectedDropDrafts
+        .map(
+          (draft) =>
+              _applySingleReferenceToBlankDrop(draft, selectedReferences),
+        )
+        .toList(growable: false);
+    final actualItems = _selectedCargoDrafts
         .map(
           (draft) => DriverActualCargoInput(
             deliveryOrderItemRef: draft.itemId,
             actualQtyKoli: draft.qtyKoliValue,
             actualWeightInputValue: draft.weightInputValueNumber,
-            actualWeightInputUnit: draft.weightInputUnit,
+            actualWeightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
             actualVolumeInputValue: draft.volumeInputValueNumber,
-            actualVolumeInputUnit: draft.volumeInputUnit,
+            actualVolumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
           ),
         )
         .toList(growable: false);
 
-    final actualDropPoints = _dropDrafts
+    final actualDropPoints = submissionDropDrafts
         .map(
           (draft) => DriverActualDropPointInput(
-            stopType: draft.stopType,
+            stopType: _normalizeDropStopType(draft.stopType),
             shipperReferenceNumber:
                 draft.shipperReferenceNumber.trim().isNotEmpty
                 ? draft.shipperReferenceNumber.trim()
@@ -199,9 +277,9 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
             locationAddress: draft.locationAddress.trim(),
             qtyKoli: draft.qtyKoliValue,
             weightInputValue: draft.weightInputValueNumber,
-            weightInputUnit: draft.weightInputUnit,
+            weightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
             volumeInputValue: draft.volumeInputValueNumber,
-            volumeInputUnit: draft.volumeInputUnit,
+            volumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
             note: draft.note.trim().isNotEmpty ? draft.note.trim() : null,
           ),
         )
@@ -211,6 +289,13 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
     Navigator.of(context).pop(
       DeliveryCompletionSubmitResult(
         note: _noteController.text.trim(),
+        podReceiverName: _podReceiverNameController.text.trim(),
+        podReceivedDate: _podReceivedDateController.text.trim(),
+        selectedSuratJalanRefs: _selectedSuratJalanDocumentIds(
+          widget.trip,
+          selectedReferences,
+          _selectedCargoDrafts,
+        ),
         actualItems: actualItems,
         actualDropPoints: actualDropPoints,
       ),
@@ -218,11 +303,24 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
   }
 
   String? _validateDrafts() {
-    if (_cargoDrafts.isEmpty) {
+    final selectedReferences = _selectedShipperReferences;
+    final selectedCargoDrafts = _selectedCargoDrafts;
+    final selectedDropDrafts = _selectedDropDrafts;
+    if (widget.trip.shipperReferences.isNotEmpty &&
+        selectedReferences.isEmpty) {
+      return 'Pilih minimal satu SJ untuk diajukan selesai.';
+    }
+    if (_podReceiverNameController.text.trim().isEmpty) {
+      return 'Nama penerima POD wajib diisi.';
+    }
+    if (!_isValidDateValue(_podReceivedDateController.text)) {
+      return 'Tanggal terima POD wajib diisi dengan format YYYY-MM-DD.';
+    }
+    if (selectedCargoDrafts.isEmpty) {
       return 'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.';
     }
 
-    for (final draft in _cargoDrafts) {
+    for (final draft in selectedCargoDrafts) {
       final qty = draft.qtyKoliValue;
       final weight = draft.weightInputValueNumber;
       final volume = draft.volumeInputValueNumber;
@@ -241,11 +339,11 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
       }
     }
 
-    if (_dropDrafts.isEmpty) {
+    if (selectedDropDrafts.isEmpty) {
       return 'Isi minimal satu titik realisasi drop.';
     }
 
-    for (final draft in _dropDrafts) {
+    for (final draft in selectedDropDrafts) {
       final locationName = draft.locationName.trim();
       final locationAddress = draft.locationAddress.trim();
       final hasLocation = locationName.isNotEmpty || locationAddress.isNotEmpty;
@@ -259,8 +357,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
       }
     }
 
-    final cargoTotals = _summarizeCargoDrafts(_cargoDrafts);
-    final dropTotals = _summarizeDropDrafts(_dropDrafts);
+    final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
+    final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
     if (cargoTotals.qtyKoli > 0 &&
         (dropTotals.qtyKoli - cargoTotals.qtyKoli).abs() > 0.01) {
       return 'Total qty titik drop harus sama dengan qty aktual muatan.';
@@ -286,17 +384,23 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final cargoTotals = _summarizeCargoDrafts(_cargoDrafts);
-    final dropTotals = _summarizeDropDrafts(_dropDrafts);
+    final selectedCargoDrafts = _selectedCargoDrafts;
+    final selectedDropDrafts = _selectedDropDrafts;
+    final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
+    final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
     final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: const Text('Ajukan Selesai')),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
                   _InfoCard(
@@ -304,6 +408,22 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                     message: hasMultiTargetDefault
                         ? 'Trip ini punya beberapa target SJ. Driver perlu isi realisasi muatan dan alokasi titik drop dengan benar.'
                         : 'Isi realisasi muatan dan titik drop. Admin akan cross-check sebelum DO diselesaikan.',
+                  ),
+                  if (widget.trip.shipperReferences.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _BatchSuratJalanCard(
+                      references: widget.trip.shipperReferences,
+                      selectedValues: _selectedShipperReferenceValues,
+                      onChanged: _submitting
+                          ? null
+                          : _setShipperReferenceSelected,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _PodCard(
+                    receiverController: _podReceiverNameController,
+                    dateController: _podReceivedDateController,
+                    onPickDate: _submitting ? null : _pickPodReceivedDate,
                   ),
                   const SizedBox(height: 16),
                   _TotalsCard(
@@ -314,7 +434,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                         '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
                   ),
                   const SizedBox(height: 12),
-                  ..._cargoDrafts.map(
+                  ...selectedCargoDrafts.map(
                     (draft) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _ActualCargoCard(
@@ -333,7 +453,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                         '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
                   ),
                   const SizedBox(height: 12),
-                  ..._dropDrafts.asMap().entries.map(
+                  ...selectedDropDrafts.asMap().entries.map(
                     (entry) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _ActualDropCard(
@@ -342,8 +462,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                         draft: entry.value,
                         shipperReferences: widget.trip.shipperReferences,
                         customerRecipients: widget.customerRecipients,
-                        cargoDrafts: _cargoDrafts,
-                        showRemove: _dropDrafts.length > 1,
+                        cargoDrafts: selectedCargoDrafts,
+                        showRemove: selectedDropDrafts.length > 1,
                         onChanged: _updateDrop,
                         onReferenceChanged: _selectDropReference,
                         onRecipientChanged: _selectRecipient,
@@ -361,6 +481,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                     controller: _noteController,
                     minLines: 2,
                     maxLines: 4,
+                    scrollPadding: EdgeInsets.fromLTRB(
+                      20,
+                      20,
+                      20,
+                      MediaQuery.viewInsetsOf(context).bottom + 120,
+                    ),
                     decoration: const InputDecoration(
                       labelText: 'Catatan Driver',
                       hintText: 'Opsional',
@@ -369,8 +495,10 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + keyboardInset),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -399,11 +527,17 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
 class DeliveryCompletionSubmitResult {
   const DeliveryCompletionSubmitResult({
     required this.note,
+    required this.podReceiverName,
+    required this.podReceivedDate,
+    required this.selectedSuratJalanRefs,
     required this.actualItems,
     required this.actualDropPoints,
   });
 
   final String note;
+  final String podReceiverName;
+  final String podReceivedDate;
+  final List<String> selectedSuratJalanRefs;
   final List<DriverActualCargoInput> actualItems;
   final List<DriverActualDropPointInput> actualDropPoints;
 }
@@ -674,6 +808,248 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
   ];
 }
 
+Set<String> _initialSelectedReferenceValues(
+  DeliveryTrip trip,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  final referencesWithCargo = trip.shipperReferences
+      .where((reference) => reference.canRequestFinalization)
+      .where(
+        (reference) => cargoDrafts.any(
+          (draft) => _cargoDraftMatchesReference(draft, reference),
+        ),
+      )
+      .map(_shipperReferenceOptionValue)
+      .toSet();
+  if (referencesWithCargo.isNotEmpty) return referencesWithCargo;
+  return trip.shipperReferences
+      .where((reference) => reference.canRequestFinalization)
+      .map(_shipperReferenceOptionValue)
+      .toSet();
+}
+
+List<DeliveryShipperReference> _selectedReferencesForValues(
+  List<DeliveryShipperReference> references,
+  Set<String> selectedValues,
+) {
+  return references
+      .where(
+        (reference) =>
+            selectedValues.contains(_shipperReferenceOptionValue(reference)),
+      )
+      .where((reference) => reference.canRequestFinalization)
+      .toList(growable: false);
+}
+
+List<_ActualCargoDraft> _cargoDraftsForSelectedReferences(
+  List<_ActualCargoDraft> drafts,
+  List<DeliveryShipperReference> references,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  if (references.isEmpty) return drafts;
+  if (selectedReferences.isEmpty) return const [];
+  if (selectedReferences.length == references.length) return drafts;
+  return drafts
+      .where(
+        (draft) => selectedReferences.any(
+          (reference) => _cargoDraftMatchesReference(draft, reference),
+        ),
+      )
+      .toList(growable: false);
+}
+
+List<_ActualDropDraft> _dropDraftsForSelectedReferences(
+  List<_ActualDropDraft> drafts,
+  List<DeliveryShipperReference> references,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  if (references.isEmpty) return drafts;
+  if (selectedReferences.isEmpty) return const [];
+  if (selectedReferences.length == references.length) return drafts;
+  return drafts
+      .where(
+        (draft) =>
+            _dropDraftHasNoReference(draft) ||
+            selectedReferences.any(
+              (reference) => _dropDraftMatchesReference(draft, reference),
+            ),
+      )
+      .toList(growable: false);
+}
+
+List<_ActualDropDraft> _normalizeDropDraftsForSelectedReferences(
+  List<_ActualDropDraft> drafts,
+  List<DeliveryShipperReference> selectedReferences,
+  List<_ActualCargoDraft> selectedCargoDrafts,
+) {
+  final totals = _summarizeCargoDrafts(selectedCargoDrafts);
+  final retainedDrafts = drafts
+      .where(
+        (draft) =>
+            selectedReferences.isEmpty ||
+            _dropDraftHasNoReference(draft) ||
+            selectedReferences.any(
+              (reference) => _dropDraftMatchesReference(draft, reference),
+            ),
+      )
+      .toList(growable: false);
+  var nextDrafts = retainedDrafts.isNotEmpty
+      ? retainedDrafts
+      : [
+          _ActualDropDraft.create(
+            qtyKoli: _formatMetric(totals.qtyKoli),
+            weightInputValue: _formatMetric(totals.weightKg),
+            volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+          ),
+        ];
+
+  if (selectedReferences.length == 1 &&
+      nextDrafts.length == 1 &&
+      _dropDraftHasNoReference(nextDrafts.first)) {
+    nextDrafts = [
+      nextDrafts.first.copyWith(
+        qtyKoli: _formatMetric(totals.qtyKoli),
+        weightInputValue: _formatMetric(totals.weightKg),
+        volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+      ),
+    ];
+  }
+
+  if (selectedReferences.length != 1) {
+    return nextDrafts;
+  }
+
+  return nextDrafts
+      .map(
+        (draft) => _applySingleReferenceToBlankDrop(draft, selectedReferences),
+      )
+      .toList(growable: false);
+}
+
+_ActualDropDraft _applySingleReferenceToBlankDrop(
+  _ActualDropDraft draft,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  if (selectedReferences.length != 1 || !_dropDraftHasNoReference(draft)) {
+    return draft;
+  }
+  final reference = selectedReferences.first;
+  return draft.copyWith(
+    shipperReferenceNumber: reference.referenceNumber,
+    shipperReferenceKey: reference.key ?? '',
+  );
+}
+
+bool _cargoDraftMatchesReference(
+  _ActualCargoDraft draft,
+  DeliveryShipperReference reference,
+) {
+  final draftKey = draft.shipperReferenceKey.trim();
+  final draftNumber = draft.shipperReferenceNumber.trim().toUpperCase();
+  final referenceKey = (reference.key ?? '').trim();
+  final referenceNumber = reference.referenceNumber.trim().toUpperCase();
+  return (draftKey.isNotEmpty &&
+          referenceKey.isNotEmpty &&
+          draftKey == referenceKey) ||
+      (draftNumber.isNotEmpty &&
+          referenceNumber.isNotEmpty &&
+          draftNumber == referenceNumber);
+}
+
+bool _dropDraftHasNoReference(_ActualDropDraft draft) =>
+    draft.shipperReferenceKey.trim().isEmpty &&
+    draft.shipperReferenceNumber.trim().isEmpty;
+
+bool _dropDraftMatchesReference(
+  _ActualDropDraft draft,
+  DeliveryShipperReference reference,
+) {
+  final draftKey = draft.shipperReferenceKey.trim();
+  final draftNumber = draft.shipperReferenceNumber.trim().toUpperCase();
+  final referenceKey = (reference.key ?? '').trim();
+  final referenceNumber = reference.referenceNumber.trim().toUpperCase();
+  return (draftKey.isNotEmpty &&
+          referenceKey.isNotEmpty &&
+          draftKey == referenceKey) ||
+      (draftNumber.isNotEmpty &&
+          referenceNumber.isNotEmpty &&
+          draftNumber == referenceNumber);
+}
+
+List<String> _selectedSuratJalanDocumentIds(
+  DeliveryTrip trip,
+  List<DeliveryShipperReference> selectedReferences,
+  List<_ActualCargoDraft> selectedCargoDrafts,
+) {
+  if (trip.shipperReferences.isEmpty || selectedReferences.isEmpty) {
+    return const [];
+  }
+  final selectedAllReferences =
+      selectedReferences.length == trip.shipperReferences.length;
+  final hasUnmappedCargo = selectedCargoDrafts.any(
+    (draft) =>
+        draft.shipperReferenceKey.trim().isEmpty &&
+        draft.shipperReferenceNumber.trim().isEmpty,
+  );
+  if (selectedAllReferences && hasUnmappedCargo) {
+    return const [];
+  }
+
+  return selectedReferences
+      .map((reference) => _suratJalanDocumentIdForReference(trip, reference))
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+}
+
+String _suratJalanDocumentIdForReference(
+  DeliveryTrip trip,
+  DeliveryShipperReference reference,
+) {
+  final documentId = reference.documentId?.trim();
+  if (documentId != null && documentId.isNotEmpty) return documentId;
+  final key = (reference.key ?? '').trim();
+  final suffix = key.isNotEmpty ? key : reference.referenceNumber.trim();
+  if (trip.deliveryOrderId.trim().isEmpty || suffix.isEmpty) return '';
+  return '${trip.deliveryOrderId}:$suffix';
+}
+
+String _defaultPodReceiverName(
+  DeliveryTrip trip,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  final tripReceiver = (trip.receiverName ?? '').trim();
+  if (tripReceiver.isNotEmpty) return tripReceiver;
+  for (final reference in selectedReferences) {
+    final targetLabel = reference.targetLabel.trim();
+    if (targetLabel.isNotEmpty && targetLabel != '-') return targetLabel;
+  }
+  return '';
+}
+
+DateTime _jakartaDateTimeNow() =>
+    DateTime.now().toUtc().add(const Duration(hours: 7));
+
+String _currentJakartaDateValue() => _formatDateValue(_jakartaDateTimeNow());
+
+String _formatDateValue(DateTime date) {
+  String twoDigits(int value) => value.toString().padLeft(2, '0');
+  return '${date.year}-${twoDigits(date.month)}-${twoDigits(date.day)}';
+}
+
+DateTime? _parseDateValue(String value) {
+  final parts = value.trim().split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  return DateTime(year, month, day);
+}
+
+bool _isValidDateValue(String value) =>
+    RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value.trim());
+
 _ActualCargoTotals _summarizeCargoDrafts(List<_ActualCargoDraft> drafts) {
   double qtyKoli = 0;
   double weightKg = 0;
@@ -774,6 +1150,24 @@ DeliveryShipperReference? _findShipperReferenceByOptionValue(
   return null;
 }
 
+List<DropdownMenuItem<String>> _buildUniqueShipperReferenceItems(
+  List<DeliveryShipperReference> references,
+) {
+  final seenValues = <String>{};
+  final items = <DropdownMenuItem<String>>[];
+  for (final reference in references) {
+    final value = _shipperReferenceOptionValue(reference);
+    if (!seenValues.add(value)) continue;
+    items.add(
+      DropdownMenuItem(
+        value: value,
+        child: Text(reference.referenceNumber, overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+  return items;
+}
+
 String _resolveDropReferenceOptionValue(
   _ActualDropDraft drop,
   List<DeliveryShipperReference> references,
@@ -831,12 +1225,154 @@ double _convertVolumeToM3(double value, String unit) {
   }
 }
 
+String _normalizeWeightUnit(String value) {
+  final normalized = value.trim().toUpperCase();
+  return normalized == 'TON' ? 'TON' : 'KG';
+}
+
+String _normalizeVolumeUnit(String value) {
+  final normalized = value.trim().toUpperCase();
+  return switch (normalized) {
+    'LITER' => 'LITER',
+    'KL' => 'KL',
+    _ => 'M3',
+  };
+}
+
+String _normalizeDropStopType(String value) {
+  final normalized = value.trim().toUpperCase();
+  return switch (normalized) {
+    'HOLD' => 'HOLD',
+    'EXTRA_DROP' => 'EXTRA_DROP',
+    _ => 'DROP',
+  };
+}
+
 String _formatMetric(double? value, {int fractionDigits = 2}) {
   if (value == null || value <= 0) return '';
   final rounded = value.toStringAsFixed(fractionDigits);
   return rounded.contains('.')
       ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
       : rounded;
+}
+
+class _PodCard extends StatelessWidget {
+  const _PodCard({
+    required this.receiverController,
+    required this.dateController,
+    required this.onPickDate,
+  });
+
+  final TextEditingController receiverController;
+  final TextEditingController dateController;
+  final VoidCallback? onPickDate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'POD',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: receiverController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Nama Penerima POD'),
+              scrollPadding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                MediaQuery.viewInsetsOf(context).bottom + 120,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: dateController,
+              keyboardType: TextInputType.datetime,
+              decoration: InputDecoration(
+                labelText: 'Tanggal Terima POD',
+                suffixIcon: IconButton(
+                  onPressed: onPickDate,
+                  icon: const Icon(Icons.calendar_today_rounded),
+                  tooltip: 'Pilih tanggal',
+                ),
+              ),
+              scrollPadding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                MediaQuery.viewInsetsOf(context).bottom + 120,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BatchSuratJalanCard extends StatelessWidget {
+  const _BatchSuratJalanCard({
+    required this.references,
+    required this.selectedValues,
+    required this.onChanged,
+  });
+
+  final List<DeliveryShipperReference> references;
+  final Set<String> selectedValues;
+  final void Function(String optionValue, bool selected)? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'SJ Finalisasi',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+            for (final reference in references)
+              CheckboxListTile(
+                value: selectedValues.contains(
+                  _shipperReferenceOptionValue(reference),
+                ),
+                onChanged: reference.canRequestFinalization && onChanged != null
+                    ? (value) => onChanged!(
+                        _shipperReferenceOptionValue(reference),
+                        value ?? false,
+                      )
+                    : null,
+                title: Text(reference.referenceNumber),
+                subtitle: Text(_shipperReferenceSubtitle(reference)),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _shipperReferenceSubtitle(DeliveryShipperReference reference) {
+  final parts = [
+    reference.targetLabel,
+    if ((reference.tripStatus ?? '').trim().isNotEmpty)
+      reference.tripStatus!.trim(),
+  ].where((value) => value.trim().isNotEmpty && value.trim() != '-');
+  return parts.isEmpty ? 'Belum ada tujuan' : parts.join(' | ');
 }
 
 class _InfoCard extends StatelessWidget {
@@ -1024,8 +1560,11 @@ class _ActualCargoCard extends StatelessWidget {
                 }
 
                 Widget weightUnitField() {
+                  final selectedUnit = _normalizeWeightUnit(
+                    draft.weightInputUnit,
+                  );
                   return DropdownButtonFormField<String>(
-                    initialValue: draft.weightInputUnit,
+                    initialValue: selectedUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
                     items: const [
@@ -1076,8 +1615,11 @@ class _ActualCargoCard extends StatelessWidget {
                 }
 
                 Widget volumeUnitField() {
+                  final selectedUnit = _normalizeVolumeUnit(
+                    draft.volumeInputUnit,
+                  );
                   return DropdownButtonFormField<String>(
-                    initialValue: draft.volumeInputUnit,
+                    initialValue: selectedUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
                     items: const [
@@ -1160,6 +1702,11 @@ class _ActualDropCard extends StatelessWidget {
       draft,
       shipperReferences,
     );
+    final referenceItems = _buildUniqueShipperReferenceItems(shipperReferences);
+    final resolvedReferenceValue =
+        referenceItems.any((item) => item.value == selectedReferenceValue)
+        ? selectedReferenceValue
+        : '';
     final selectedRecipientValue = _resolveRecipientOptionValue(
       draft,
       customerRecipients,
@@ -1195,7 +1742,7 @@ class _ActualDropCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              initialValue: draft.stopType,
+              initialValue: _normalizeDropStopType(draft.stopType),
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Tipe'),
               items: const [
@@ -1212,8 +1759,8 @@ class _ActualDropCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (shipperReferences.isNotEmpty) ...[
               DropdownButtonFormField<String>(
-                key: ValueKey('drop-ref-${draft.id}-$selectedReferenceValue'),
-                initialValue: selectedReferenceValue,
+                key: ValueKey('drop-ref-${draft.id}-$resolvedReferenceValue'),
+                initialValue: resolvedReferenceValue,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'No. SJ / Barang'),
                 items: [
@@ -1221,15 +1768,7 @@ class _ActualDropCard extends StatelessWidget {
                     value: '',
                     child: Text('Semua / manual'),
                   ),
-                  ...shipperReferences.map((reference) {
-                    return DropdownMenuItem(
-                      value: _shipperReferenceOptionValue(reference),
-                      child: Text(
-                        reference.referenceNumber,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }),
+                  ...referenceItems,
                 ],
                 onChanged: (value) => onReferenceChanged(draft.id, value ?? ''),
               ),
@@ -1322,8 +1861,11 @@ class _ActualDropCard extends StatelessWidget {
                 }
 
                 Widget weightUnitField() {
+                  final selectedUnit = _normalizeWeightUnit(
+                    draft.weightInputUnit,
+                  );
                   return DropdownButtonFormField<String>(
-                    initialValue: draft.weightInputUnit,
+                    initialValue: selectedUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
                     items: const [
@@ -1370,8 +1912,11 @@ class _ActualDropCard extends StatelessWidget {
                 }
 
                 Widget volumeUnitField() {
+                  final selectedUnit = _normalizeVolumeUnit(
+                    draft.volumeInputUnit,
+                  );
                   return DropdownButtonFormField<String>(
-                    initialValue: draft.volumeInputUnit,
+                    initialValue: selectedUnit,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Unit'),
                     items: const [
@@ -1473,6 +2018,12 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       minLines: widget.minLines,
       maxLines: widget.maxLines,
       decoration: widget.decoration,
+      scrollPadding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 120,
+      ),
       onChanged: widget.onChanged,
     );
   }

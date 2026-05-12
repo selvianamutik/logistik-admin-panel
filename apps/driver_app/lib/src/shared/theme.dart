@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
   const base = Color(0xFFB91C1C);
-  const surface = Color(0xFFFAF7F5);
-  const outline = Color(0xFFE8DDD8);
+  const surface = Color(0xFFF6F7F9);
+  const outline = Color(0xFFD8DEE7);
 
   return ThemeData(
     colorScheme: ColorScheme.fromSeed(
@@ -33,7 +33,7 @@ ThemeData buildAppTheme() {
       color: Colors.white,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(8),
         side: const BorderSide(color: outline),
       ),
     ),
@@ -42,7 +42,7 @@ ThemeData buildAppTheme() {
         backgroundColor: base,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
@@ -51,7 +51,7 @@ ThemeData buildAppTheme() {
         foregroundColor: const Color(0xFF2A1715),
         side: const BorderSide(color: outline),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
     ),
@@ -59,15 +59,15 @@ ThemeData buildAppTheme() {
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: outline),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: outline),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: base, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

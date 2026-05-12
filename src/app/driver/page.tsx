@@ -67,6 +67,7 @@ import {
 } from '@/lib/order-create-page-support';
 import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { isDeliveryOrderResourceLocked } from '@/lib/trip-resource-lock-support';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 import type { Customer, CustomerProduct, CustomerRecipient, Driver, Incident, IncidentSettlementCategory, IncidentSettlementLine, PendingDriverStatusRequest, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan, DriverAssignedTripPlanPickupStop, DriverPortalVoucher } from '@/lib/api/driver-portal';
@@ -1984,7 +1985,7 @@ export default function DriverPortalPage() {
         setCompletionInvoiceCustomerRef(order.customerRef || '');
         setCompletionInvoiceCustomerName(order.customerName || '');
         setCompletionPodReceiverName(order.receiverName || order.receiverCompany || '');
-        setCompletionPodReceivedDate(new Date().toISOString().slice(0, 10));
+        setCompletionPodReceivedDate(getBusinessDateValue());
         setCompletionPodNote('');
         setSelectedCompletionSjRefs(nextSelectedRefs);
         setCompletionCargoItems(nextCargoItems);
@@ -3606,7 +3607,9 @@ export default function DriverPortalPage() {
                         const pendingRequests = getDriverPendingRequests(item);
                         const canManageCargo =
                             item.status !== 'DELIVERED' &&
-                            item.status !== 'CANCELLED';
+                            item.status !== 'CANCELLED' &&
+                            pendingRequests.length === 0 &&
+                            !item.pendingDriverStatus;
                         const cargoItemCount = item.driverCargoItems?.length || 0;
                         const canShowBatchUpdate =
                             cargoItemCount > 0 &&
@@ -3951,8 +3954,8 @@ export default function DriverPortalPage() {
                                             <button
                                                 className="btn btn-secondary btn-sm"
                                                 onClick={() => openCargoInputModal(item, 'SJ_ADD')}
-                                                disabled={isActionInFlight || item.pendingDriverStatus === 'DELIVERED'}
-                                                title={item.pendingDriverStatus === 'DELIVERED' ? 'Finalisasi aktual lama sedang menunggu approval admin.' : undefined}
+                                                disabled={isActionInFlight || pendingRequests.length > 0 || Boolean(item.pendingDriverStatus)}
+                                                title={pendingRequests.length > 0 || item.pendingDriverStatus ? 'Permintaan driver sedang menunggu approval admin.' : undefined}
                                             >
                                                 <Plus size={15} /> Tambah SJ
                                             </button>

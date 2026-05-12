@@ -437,9 +437,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
           description: description,
           qtyKoli: item.qtyKoliValue,
           weightInputValue: item.weightInputValueNumber,
-          weightInputUnit: item.weightInputUnit,
+          weightInputUnit: _normalizeWeightUnit(item.weightInputUnit),
           volumeInputValue: item.volumeInputValueNumber,
-          volumeInputUnit: item.volumeInputUnit,
+          volumeInputUnit: _normalizeVolumeUnit(item.volumeInputUnit),
           shipperReferenceNumber: referenceNumber,
           pickupStopKey: group.pickupStopKey.trim().isNotEmpty
               ? group.pickupStopKey.trim()
@@ -486,9 +486,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
               description: item.description.trim(),
               qtyKoli: item.qtyKoliValue,
               weightInputValue: item.weightInputValueNumber,
-              weightInputUnit: item.weightInputUnit,
+              weightInputUnit: _normalizeWeightUnit(item.weightInputUnit),
               volumeInputValue: item.volumeInputValueNumber,
-              volumeInputUnit: item.volumeInputUnit,
+              volumeInputUnit: _normalizeVolumeUnit(item.volumeInputUnit),
               shipperReferenceNumber: referenceNumber,
               pickupStopKey: group.pickupStopKey.trim().isNotEmpty
                   ? group.pickupStopKey.trim()
@@ -536,8 +536,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
         child: Form(
@@ -546,6 +548,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
             children: [
               Expanded(
                 child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   children: [
                     if (widget.existingCargoItems.isNotEmpty) ...[
@@ -594,8 +598,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              AnimatedPadding(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + keyboardInset),
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -817,6 +823,20 @@ String _formatDraftNumber(double? value) {
       .replaceFirst(RegExp(r'\.$'), '');
 }
 
+String _normalizeWeightUnit(String value) {
+  final normalized = value.trim().toUpperCase();
+  return normalized == 'TON' ? 'TON' : 'KG';
+}
+
+String _normalizeVolumeUnit(String value) {
+  final normalized = value.trim().toUpperCase();
+  return switch (normalized) {
+    'LITER' => 'LITER',
+    'KL' => 'KL',
+    _ => 'M3',
+  };
+}
+
 class _ManifestGroupCard extends StatelessWidget {
   const _ManifestGroupCard({
     super.key,
@@ -1007,12 +1027,16 @@ class _ManifestItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final selectedProductValue =
+        customerProducts.any((product) => product.id == item.customerProductRef)
+        ? item.customerProductRef
+        : null;
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
       ),
       child: Column(
@@ -1038,11 +1062,9 @@ class _ManifestItemCard extends StatelessWidget {
           ),
           if (customerProducts.isNotEmpty) ...[
             DropdownButtonFormField<String>(
-              key: ValueKey('product-${item.id}-${item.customerProductRef}'),
+              key: ValueKey('product-${item.id}'),
               isExpanded: true,
-              initialValue: item.customerProductRef.isNotEmpty
-                  ? item.customerProductRef
-                  : null,
+              initialValue: selectedProductValue,
               decoration: const InputDecoration(
                 labelText: 'Master Barang Customer',
               ),
@@ -1093,12 +1115,11 @@ class _ManifestItemCard extends StatelessWidget {
               }
 
               Widget weightUnitField() {
+                final selectedUnit = _normalizeWeightUnit(item.weightInputUnit);
                 return DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'weight-unit-${item.id}-${item.weightInputUnit}',
-                  ),
+                  key: ValueKey('unitWeight-${item.id}'),
                   isExpanded: true,
-                  initialValue: item.weightInputUnit,
+                  initialValue: selectedUnit,
                   decoration: const InputDecoration(labelText: 'Unit'),
                   items: const [
                     DropdownMenuItem(value: 'KG', child: Text('KG')),
@@ -1147,12 +1168,11 @@ class _ManifestItemCard extends StatelessWidget {
               }
 
               Widget volumeUnitField() {
+                final selectedUnit = _normalizeVolumeUnit(item.volumeInputUnit);
                 return DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'volume-unit-${item.id}-${item.volumeInputUnit}',
-                  ),
+                  key: ValueKey('unitVolume-${item.id}'),
                   isExpanded: true,
-                  initialValue: item.volumeInputUnit,
+                  initialValue: selectedUnit,
                   decoration: const InputDecoration(labelText: 'Unit'),
                   items: const [
                     DropdownMenuItem(value: 'M3', child: Text('M3')),
@@ -1246,6 +1266,12 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       textCapitalization: widget.textCapitalization,
       decoration: widget.decoration,
       enabled: widget.enabled,
+      scrollPadding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 120,
+      ),
       validator: widget.validator,
       onChanged: widget.onChanged,
     );
@@ -1265,7 +1291,7 @@ class _InfoCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

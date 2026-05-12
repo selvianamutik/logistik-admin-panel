@@ -166,5 +166,86 @@ void main() {
       expect(find.text('Kelola SJ & Barang'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('keeps numeric cargo input stable while keyboard is open', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryManifestPage(
+            title: 'Kelola SJ & Barang',
+            submitLabel: 'Simpan SJ & Barang',
+            pickupStops: pickupStops,
+            customerProducts: [],
+            allowsDirectCargoInput: true,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final sjField = find.widgetWithText(TextFormField, 'No. SJ Pengirim');
+      final descriptionField = find.widgetWithText(
+        TextFormField,
+        'Deskripsi Barang',
+      );
+      final koliField = find.widgetWithText(TextFormField, 'Koli');
+
+      await tester.enterText(sjField, 'sj-keyboard');
+      await tester.enterText(descriptionField, 'Besi Beton');
+      await tester.ensureVisible(koliField);
+      await tester.enterText(koliField, '12');
+      await tester.pumpAndSettle();
+
+      final koliWidget = tester.widget<TextFormField>(koliField);
+      expect(koliWidget.controller?.text, '12');
+      expect(find.text('Simpan SJ & Barang'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('renders existing cargo with unknown unit values safely', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryManifestPage(
+            title: 'Kelola SJ & Barang',
+            submitLabel: 'Simpan SJ & Barang',
+            pickupStops: pickupStops,
+            customerProducts: [],
+            allowsDirectCargoInput: true,
+            initialShipperReferences: [
+              DeliveryShipperReference(referenceNumber: 'SJ-LEGACY'),
+            ],
+            existingCargoItems: [
+              DeliveryCargoItem(
+                id: 'legacy-item',
+                description: 'Barang lama',
+                shipperReferenceNumber: 'SJ-LEGACY',
+                qtyKoli: 1,
+                weightInputValue: 10,
+                weightInputUnit: 'KGS',
+                volumeInputValue: 2,
+                volumeInputUnit: 'CBM',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Barang lama'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

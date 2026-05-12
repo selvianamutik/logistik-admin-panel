@@ -27,7 +27,9 @@ class DeliveryPickupStop {
 class DeliveryShipperReference {
   const DeliveryShipperReference({
     required this.referenceNumber,
+    this.documentId,
     this.key,
+    this.tripStatus,
     this.pickupStopKey,
     this.pickupAddress,
     this.receiverName,
@@ -36,12 +38,22 @@ class DeliveryShipperReference {
   });
 
   final String referenceNumber;
+  final String? documentId;
   final String? key;
+  final String? tripStatus;
   final String? pickupStopKey;
   final String? pickupAddress;
   final String? receiverName;
   final String? receiverCompany;
   final String? receiverAddress;
+
+  bool get canRequestFinalization {
+    final status = tripStatus?.trim().toUpperCase();
+    return status == null ||
+        status.isEmpty ||
+        status == 'ARRIVED' ||
+        status == 'PARTIAL_HOLD';
+  }
 
   String get targetLabel {
     final company = (receiverCompany ?? '').trim();

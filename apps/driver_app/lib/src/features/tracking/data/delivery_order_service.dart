@@ -117,6 +117,9 @@ class DeliveryOrderService {
     required String sessionToken,
     required String deliveryOrderId,
     String? note,
+    required String podReceiverName,
+    required String podReceivedDate,
+    required List<String> selectedSuratJalanRefs,
     required List<DriverActualCargoInput> actualItems,
     required List<DriverActualDropPointInput> actualDropPoints,
   }) async {
@@ -132,6 +135,10 @@ class DeliveryOrderService {
         'id': deliveryOrderId,
         'status': 'DELIVERED',
         if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        'podReceiverName': podReceiverName.trim(),
+        'podReceivedDate': podReceivedDate.trim(),
+        if (selectedSuratJalanRefs.isNotEmpty)
+          'selectedSuratJalanRefs': selectedSuratJalanRefs,
         'actualItems': actualItems.map((item) => item.toJson()).toList(),
         'actualDropPoints': actualDropPoints
             .map((item) => item.toJson())
@@ -515,6 +522,7 @@ class DeliveryOrderService {
       shipperReferences: _mapShipperReferences(
         json['shipperReferences'],
         suratJalanRecords: json['driverSuratJalanRecords'],
+        fallbackDeliveryOrderId: json['_id'] as String? ?? '',
         fallbackCustomerDoNumber: (json['customerDoNumber'] as String?)?.trim(),
         fallbackPickupStopKey: pickupStops.isNotEmpty
             ? pickupStops.first.key
@@ -711,10 +719,11 @@ class DeliveryOrderService {
   List<DeliveryShipperReference> _mapShipperReferences(
     dynamic raw, {
     dynamic suratJalanRecords,
+    String? fallbackDeliveryOrderId,
     String? fallbackCustomerDoNumber,
     String? fallbackPickupStopKey,
   }) {
-    final suratJalanPickupByKey = _mapSuratJalanPickupAddresses(
+    final suratJalanRecordByKey = _mapSuratJalanRecordMetadata(
       suratJalanRecords,
     );
     final references = <DeliveryShipperReference>[];
@@ -723,16 +732,27 @@ class DeliveryOrderService {
         final referenceNumber = (item['referenceNumber'] as String?)?.trim();
         if (referenceNumber == null || referenceNumber.isEmpty) continue;
         final referenceKey = (item['_key'] as String?)?.trim();
-        final pickupAddress =
+        final recordMetadata =
             (referenceKey != null && referenceKey.isNotEmpty
-                ? suratJalanPickupByKey['key:$referenceKey']
+                ? suratJalanRecordByKey['key:$referenceKey']
                 : null) ??
-            suratJalanPickupByKey['number:${referenceNumber.toUpperCase()}'] ??
+            suratJalanRecordByKey['number:${referenceNumber.toUpperCase()}'];
+        final pickupAddress =
+            recordMetadata?.pickupAddress ??
             (item['pickupAddress'] as String?)?.trim();
         references.add(
           DeliveryShipperReference(
             referenceNumber: referenceNumber,
+            documentId:
+                recordMetadata?.documentId ??
+                _deriveSuratJalanDocumentId(
+                  fallbackDeliveryOrderId,
+                  referenceKey?.isNotEmpty == true
+                      ? referenceKey
+                      : referenceNumber,
+                ),
             key: referenceKey,
+            tripStatus: recordMetadata?.tripStatus,
             pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
             pickupAddress: pickupAddress?.isNotEmpty == true
                 ? pickupAddress
@@ -747,33 +767,61 @@ class DeliveryOrderService {
     if (references.isEmpty &&
         fallbackCustomerDoNumber != null &&
         fallbackCustomerDoNumber.isNotEmpty) {
+      final recordMetadata =
+          suratJalanRecordByKey['number:${fallbackCustomerDoNumber.toUpperCase()}'] ??
+          suratJalanRecordByKey['id:$fallbackDeliveryOrderId:primary'];
       references.add(
         DeliveryShipperReference(
           referenceNumber: fallbackCustomerDoNumber,
+          documentId:
+              recordMetadata?.documentId ??
+              _deriveSuratJalanDocumentId(fallbackDeliveryOrderId, 'primary'),
           key: null,
+          tripStatus: recordMetadata?.tripStatus,
           pickupStopKey: fallbackPickupStopKey,
+          pickupAddress: recordMetadata?.pickupAddress,
         ),
       );
     }
     return references;
   }
 
-  Map<String, String> _mapSuratJalanPickupAddresses(dynamic raw) {
-    final result = <String, String>{};
+  Map<String, _SuratJalanRecordMetadata> _mapSuratJalanRecordMetadata(
+    dynamic raw,
+  ) {
+    final result = <String, _SuratJalanRecordMetadata>{};
     if (raw is! List) return result;
     for (final item in raw.whereType<Map<String, dynamic>>()) {
       final pickupAddress = (item['pickupAddress'] as String?)?.trim();
-      if (pickupAddress == null || pickupAddress.isEmpty) continue;
+      final documentId = (item['_id'] as String?)?.trim();
+      final tripStatus = (item['tripStatus'] as String?)?.trim();
+      final metadata = _SuratJalanRecordMetadata(
+        documentId: documentId,
+        pickupAddress: pickupAddress?.isNotEmpty == true ? pickupAddress : null,
+        tripStatus: tripStatus,
+      );
+      if (documentId != null && documentId.isNotEmpty) {
+        result['id:$documentId'] = metadata;
+      }
       final referenceKey = (item['referenceKey'] as String?)?.trim();
       if (referenceKey != null && referenceKey.isNotEmpty) {
-        result['key:$referenceKey'] = pickupAddress;
+        result['key:$referenceKey'] = metadata;
       }
       final referenceNumber = (item['suratJalanNumber'] as String?)?.trim();
       if (referenceNumber != null && referenceNumber.isNotEmpty) {
-        result['number:${referenceNumber.toUpperCase()}'] = pickupAddress;
+        result['number:${referenceNumber.toUpperCase()}'] = metadata;
       }
     }
     return result;
+  }
+
+  String? _deriveSuratJalanDocumentId(String? deliveryOrderId, String? suffix) {
+    final normalizedDeliveryOrderId = deliveryOrderId?.trim() ?? '';
+    final normalizedSuffix = suffix?.trim() ?? '';
+    if (normalizedDeliveryOrderId.isEmpty || normalizedSuffix.isEmpty) {
+      return null;
+    }
+    return '$normalizedDeliveryOrderId:$normalizedSuffix';
   }
 
   List<DeliveryCargoItem> _mapCargoItems(dynamic raw) {
@@ -1062,4 +1110,16 @@ class DeliveryOrderException implements Exception {
 
   @override
   String toString() => 'DeliveryOrderException($statusCode): $message';
+}
+
+class _SuratJalanRecordMetadata {
+  const _SuratJalanRecordMetadata({
+    required this.documentId,
+    required this.pickupAddress,
+    required this.tripStatus,
+  });
+
+  final String? documentId;
+  final String? pickupAddress;
+  final String? tripStatus;
 }

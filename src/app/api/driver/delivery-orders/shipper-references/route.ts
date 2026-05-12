@@ -33,6 +33,11 @@ async function addAuditLog(
     }
 }
 
+function hasPendingDriverApprovalRequest(deliveryOrder: Pick<DeliveryOrder, 'pendingDriverStatus' | 'pendingDriverRequests'>) {
+    return Boolean(deliveryOrder.pendingDriverStatus) ||
+        (Array.isArray(deliveryOrder.pendingDriverRequests) && deliveryOrder.pendingDriverRequests.length > 0);
+}
+
 export async function POST(request: Request) {
     const hasBearerAuth = Boolean(request.headers.get('authorization')?.toLowerCase().startsWith('bearer '));
     if (!hasBearerAuth) {
@@ -76,8 +81,8 @@ export async function POST(request: Request) {
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
         }
-        if (deliveryOrder.pendingDriverStatus === 'DELIVERED') {
-            return jsonNoStore({ error: 'Permintaan selesai sudah diajukan. SJ tidak bisa diubah lagi dari portal driver.' }, { status: 409 });
+        if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+            return jsonNoStore({ error: 'Permintaan driver sedang menunggu approval admin. SJ tidak bisa diubah dulu dari portal driver.' }, { status: 409 });
         }
         if (deliveryOrder.status === 'CANCELLED') {
             return jsonNoStore({ error: 'SJ pada trip batal tidak bisa diubah.' }, { status: 409 });

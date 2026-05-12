@@ -801,6 +801,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         sessionToken: sessionToken,
         deliveryOrderId: trip.deliveryOrderId,
         note: result.note,
+        podReceiverName: result.podReceiverName,
+        podReceivedDate: result.podReceivedDate,
+        selectedSuratJalanRefs: result.selectedSuratJalanRefs,
         actualItems: result.actualItems,
         actualDropPoints: result.actualDropPoints,
       );
@@ -913,6 +916,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: false,
                       ),
+                      scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: InputDecoration(
                         labelText: 'Odometer Akhir Trip',
                         suffixText: 'km',
@@ -925,6 +929,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       controller: noteController,
                       minLines: 2,
                       maxLines: 4,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: const InputDecoration(
                         labelText: 'Catatan',
                         hintText: 'Opsional',
@@ -1122,6 +1127,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       controller: locationController,
                       minLines: 1,
                       maxLines: 3,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: const InputDecoration(
                         labelText: 'Lokasi Insiden',
                         hintText: 'Koordinat / nama jalan / lokasi kejadian',
@@ -1133,6 +1139,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: false,
                       ),
+                      scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: const InputDecoration(
                         labelText: 'Odometer Saat Insiden',
                         suffixText: 'km',
@@ -1144,6 +1151,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       controller: descriptionController,
                       minLines: 4,
                       maxLines: 6,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: const InputDecoration(
                         labelText: 'Kronologi',
                         hintText:
@@ -1320,8 +1328,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
             return AlertDialog(
               title: Text('Ajukan Selesai ${incident.incidentNumber}'),
-              content: SizedBox(
-                width: 460,
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1346,6 +1354,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         controller: noteController,
                         minLines: 3,
                         maxLines: 5,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
                         decoration: const InputDecoration(
                           labelText: 'Catatan Penyelesaian',
                           hintText: 'Jelaskan tindakan yang sudah dilakukan',
@@ -1356,6 +1365,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         controller: locationController,
                         minLines: 1,
                         maxLines: 3,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
                         decoration: const InputDecoration(
                           labelText: 'Lokasi Akhir',
                         ),
@@ -1366,6 +1376,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: false,
                         ),
+                        scrollPadding: _keyboardAwareScrollPadding(context),
                         decoration: const InputDecoration(
                           labelText: 'Odometer Akhir',
                           suffixText: 'km',
@@ -2043,6 +2054,28 @@ double _parseCurrencyInput(String value) {
   return parsed == null || parsed.isNaN || parsed.isInfinite ? 0 : parsed;
 }
 
+const _jakartaUtcOffset = Duration(hours: 7);
+final _dateOnlyPattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
+
+EdgeInsets _keyboardAwareScrollPadding(BuildContext context) {
+  return EdgeInsets.fromLTRB(
+    20,
+    20,
+    20,
+    MediaQuery.viewInsetsOf(context).bottom + 120,
+  );
+}
+
+DateTime _toJakartaDateTime(DateTime value) {
+  return value.toUtc().add(_jakartaUtcOffset);
+}
+
+String _formatJakartaTimeText(DateTime value) {
+  final jakarta = _toJakartaDateTime(value);
+  String twoDigits(int input) => input.toString().padLeft(2, '0');
+  return '${twoDigits(jakarta.hour)}:${twoDigits(jakarta.minute)} WIB';
+}
+
 String _formatRupiah(num value) {
   final rounded = value.round().toString();
   final buffer = StringBuffer();
@@ -2059,9 +2092,13 @@ String _formatRupiah(num value) {
 String _formatDateText(String? value) {
   final rawValue = value?.trim();
   if (rawValue == null || rawValue.isEmpty) return '-';
+  final dateOnlyMatch = _dateOnlyPattern.firstMatch(rawValue);
+  if (dateOnlyMatch != null) {
+    return '${dateOnlyMatch.group(3)}/${dateOnlyMatch.group(2)}/${dateOnlyMatch.group(1)}';
+  }
   final parsed = DateTime.tryParse(rawValue);
   if (parsed == null) return rawValue;
-  final local = parsed.toLocal();
+  final local = _toJakartaDateTime(parsed);
   String twoDigits(int input) => input.toString().padLeft(2, '0');
   return '${twoDigits(local.day)}/${twoDigits(local.month)}/${local.year}';
 }
@@ -2163,7 +2200,7 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
               ],
             ),
             pw.Text(
-              'Dicetak: ${_formatDateText(DateTime.now().toIso8601String())}',
+              'Dicetak: ${_formatDateText(DateTime.now().toUtc().toIso8601String())}',
             ),
           ],
         ),
@@ -3564,6 +3601,7 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
           TextField(
             controller: widget.row.amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            scrollPadding: _keyboardAwareScrollPadding(context),
             decoration: const InputDecoration(
               labelText: 'Nominal',
               prefixText: 'Rp ',
@@ -3574,6 +3612,7 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
             controller: widget.row.description,
             minLines: 2,
             maxLines: 3,
+            scrollPadding: _keyboardAwareScrollPadding(context),
             decoration: const InputDecoration(
               labelText: 'Deskripsi Biaya',
               hintText: 'Contoh: tambal ban / derek / sparepart',
@@ -3582,6 +3621,7 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
           const SizedBox(height: 10),
           TextField(
             controller: widget.row.payeeName,
+            scrollPadding: _keyboardAwareScrollPadding(context),
             decoration: const InputDecoration(labelText: 'Dibayar ke'),
           ),
           const SizedBox(height: 10),
@@ -3589,6 +3629,7 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
             controller: widget.row.note,
             minLines: 1,
             maxLines: 3,
+            scrollPadding: _keyboardAwareScrollPadding(context),
             decoration: const InputDecoration(labelText: 'Catatan'),
           ),
         ],
@@ -3876,9 +3917,7 @@ class _TrackingCard extends StatelessWidget {
                       children: [
                         _StatMini(
                           label: 'Terakhir',
-                          value: TimeOfDay.fromDateTime(
-                            location!.recordedAt,
-                          ).format(context),
+                          value: _formatJakartaTimeText(location!.recordedAt),
                         ),
                         _StatMini(
                           label: 'Kecepatan',

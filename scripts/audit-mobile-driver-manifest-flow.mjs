@@ -53,6 +53,9 @@ for (const payloadKey of [
     "'cargoItems'",
     "'actualItems'",
     "'actualDropPoints'",
+    "'selectedSuratJalanRefs'",
+    "'podReceiverName'",
+    "'podReceivedDate'",
     "'referenceNumber'",
     "'shipperReferenceNumber'",
     "'shipperReferenceKey'",
@@ -144,6 +147,21 @@ assertIncludes(
     completionSource,
     'labelText: \'Master Tujuan Customer\'',
     'Mobile completion harus menyediakan dropdown master tujuan saat finalisasi drop.'
+);
+assertIncludes(
+    completionSource,
+    "labelText: 'Nama Penerima POD'",
+    'Mobile completion harus meminta nama penerima POD sebelum finalisasi.'
+);
+assertIncludes(
+    completionSource,
+    "labelText: 'Tanggal Terima POD'",
+    'Mobile completion harus meminta tanggal terima POD sebelum finalisasi.'
+);
+assertIncludes(
+    completionSource,
+    '_selectedSuratJalanDocumentIds',
+    'Mobile completion harus mengirim pilihan batch SJ seperti admin.'
 );
 assertNotIncludes(
     completionSource,
