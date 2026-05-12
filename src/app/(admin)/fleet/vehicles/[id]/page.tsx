@@ -1246,9 +1246,9 @@ export default function VehicleDetailPage() {
                                         {availableRegisteredTires.length === 0 && (
                                             <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
                                                 {tireForm.tireSource === 'WAREHOUSE'
-                                                    ? 'Tidak ada ban gudang yang cocok dengan kategori armada unit ini.'
+                                                    ? 'Tidak ada ban gudang yang tersedia.'
                                                     : tireForm.sourceVehicleRef
-                                                        ? 'Tidak ada ban di unit sumber yang cocok dengan kategori armada unit ini.'
+                                                        ? 'Tidak ada ban di unit sumber yang tersedia.'
                                                         : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
                                             </div>
                                         )}

@@ -7329,30 +7329,47 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
         (point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP') && isTargetedPoint(point);
     const previousTargetedBillablePoints = currentDropPoints.filter(isTargetedBillablePoint);
     const firstTargetedBillablePoint = previousTargetedBillablePoints[0];
-    const nextActualTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
-    const nextDropPoint: NonNullable<DeliveryOrder['actualDropPoints']>[number] = {
-        ...(firstTargetedBillablePoint || {}),
-        _key: firstTargetedBillablePoint?._key || crypto.randomUUID(),
-        sequence: firstTargetedBillablePoint?.sequence || currentDropPoints.length + 1,
-        stopType: 'DROP',
-        deliveryOrderItemRef: targetItems.length === 1 ? targetItems[0]._id : undefined,
-        deliveryOrderItemRefs: targetItems.length > 1 ? targetItems.map(item => item._id) : undefined,
-        shipperReferenceKey: recordKey && recordKey !== 'primary' ? recordKey : targetItems[0]?.shipperReferenceKey,
-        shipperReferenceNumber: suratJalanRecord.suratJalanNumber || targetItems[0]?.shipperReferenceNumber,
-        locationName: firstTargetedBillablePoint?.locationName || 'Tujuan Invoice',
-        locationAddress: firstTargetedBillablePoint?.locationAddress || '',
-        qtyKoli: nextActualTotals.qtyKoli > 0 ? nextActualTotals.qtyKoli : undefined,
-        weightKg: nextActualTotals.weightKg > 0 ? nextActualTotals.weightKg : undefined,
-        weightInputValue: nextActualTotals.weightKg > 0 ? nextActualTotals.weightKg : undefined,
-        weightInputUnit: 'KG',
-        volumeM3: nextActualTotals.volumeM3 > 0 ? nextActualTotals.volumeM3 : undefined,
-        volumeInputValue: nextActualTotals.volumeM3 > 0 ? nextActualTotals.volumeM3 : undefined,
-        volumeInputUnit: 'M3',
-        note: firstTargetedBillablePoint?.note || 'Aktual item SJ diedit',
-    };
+    const previousTargetedBillablePointByItemId = new Map<string, NonNullable<DeliveryOrder['actualDropPoints']>[number]>();
+    previousTargetedBillablePoints.forEach(point => {
+        const pointRefs = [
+            normalizeOptionalText(point.deliveryOrderItemRef),
+            ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
+                .map(ref => normalizeOptionalText(ref))
+                .filter((ref): ref is string => Boolean(ref))),
+        ].filter((ref): ref is string => Boolean(ref));
+        pointRefs.forEach(ref => {
+            if (targetItemIds.has(ref) && !previousTargetedBillablePointByItemId.has(ref)) {
+                previousTargetedBillablePointByItemId.set(ref, point);
+            }
+        });
+    });
+    const nextDropPoints: NonNullable<DeliveryOrder['actualDropPoints']> = targetItems.map((item, index) => {
+        const actualCargo = actualCargoByDoItemId.get(item._id);
+        const previousPoint = previousTargetedBillablePointByItemId.get(item._id) || (targetItems.length === 1 ? firstTargetedBillablePoint : undefined);
+        return {
+            ...(previousPoint || {}),
+            _key: previousPoint?._key || crypto.randomUUID(),
+            sequence: previousPoint?.sequence || currentDropPoints.length + index + 1,
+            stopType: 'DROP',
+            deliveryOrderItemRef: item._id,
+            deliveryOrderItemRefs: undefined,
+            shipperReferenceKey: recordKey && recordKey !== 'primary' ? recordKey : item.shipperReferenceKey,
+            shipperReferenceNumber: suratJalanRecord.suratJalanNumber || item.shipperReferenceNumber,
+            locationName: previousPoint?.locationName || firstTargetedBillablePoint?.locationName || 'Tujuan Invoice',
+            locationAddress: previousPoint?.locationAddress || firstTargetedBillablePoint?.locationAddress || '',
+            qtyKoli: actualCargo && actualCargo.actualQtyKoli > 0 ? actualCargo.actualQtyKoli : undefined,
+            weightKg: actualCargo && actualCargo.actualWeightKg > 0 ? actualCargo.actualWeightKg : undefined,
+            weightInputValue: actualCargo && actualCargo.actualWeightKg > 0 ? actualCargo.actualWeightKg : undefined,
+            weightInputUnit: 'KG',
+            volumeM3: actualCargo?.actualVolumeM3 && actualCargo.actualVolumeM3 > 0 ? actualCargo.actualVolumeM3 : undefined,
+            volumeInputValue: actualCargo?.actualVolumeM3 && actualCargo.actualVolumeM3 > 0 ? actualCargo.actualVolumeM3 : undefined,
+            volumeInputUnit: 'M3',
+            note: previousPoint?.note || firstTargetedBillablePoint?.note || 'Aktual item SJ diedit',
+        };
+    });
     const mergedActualDropPoints = [
         ...currentDropPoints.filter(point => !isTargetedBillablePoint(point)),
-        nextDropPoint,
+        ...nextDropPoints,
     ].map((point, index) => ({ ...point, sequence: index + 1 }));
     const nextActualDropPointTotals = summarizeActualDropPointCargo(mergedActualDropPoints);
     const tripOvertonage = await computeTripOvertonageAdjustment({

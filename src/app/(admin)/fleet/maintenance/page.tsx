@@ -269,18 +269,7 @@ export default function MaintenancePage() {
                 } else if (tireMaintenanceForm.sourceVehicleRef && row.vehicleRef !== tireMaintenanceForm.sourceVehicleRef) {
                     return false;
                 }
-                const hasExplicitCompatibility = Boolean(row.compatibleServiceRef?.trim() || row.compatibleServiceName?.trim());
-                if (row.compatibleServiceRef?.trim()) return row.compatibleServiceRef.trim() === selectedCompleteVehicle.serviceRef;
-                if (row.compatibleServiceName?.trim() && selectedCompleteVehicle.serviceName?.trim()) {
-                    return row.compatibleServiceName.trim().toLowerCase() === selectedCompleteVehicle.serviceName.trim().toLowerCase();
-                }
-                if (!hasExplicitCompatibility) return true;
-                const identity = `${selectedCompleteVehicle.serviceRef || ''} ${selectedCompleteVehicle.serviceName || ''} ${selectedCompleteVehicle.unitCode || ''}`.toLowerCase();
-                const code = row.tireCode?.toUpperCase() || '';
-                if ((identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trd')) && code.startsWith('NEW-TR-')) return true;
-                if ((identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) && code.startsWith('NEW-CDD-')) return true;
-                if ((identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) && code.startsWith('NEW-ENG-')) return true;
-                return false;
+                return true;
             })
             .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID')),
         [resolvedTireRows, selectedCompleteVehicle, tireMaintenanceForm.sourceVehicleRef, tireMaintenanceForm.tireSource]
@@ -297,18 +286,7 @@ export default function MaintenancePage() {
                 ) {
                     return false;
                 }
-                const hasExplicitCompatibility = Boolean(row.compatibleServiceRef?.trim() || row.compatibleServiceName?.trim());
-                if (row.compatibleServiceRef?.trim()) return row.compatibleServiceRef.trim() === selectedCompleteVehicle.serviceRef;
-                if (row.compatibleServiceName?.trim() && selectedCompleteVehicle.serviceName?.trim()) {
-                    return row.compatibleServiceName.trim().toLowerCase() === selectedCompleteVehicle.serviceName.trim().toLowerCase();
-                }
-                if (!hasExplicitCompatibility) return true;
-                const identity = `${selectedCompleteVehicle.serviceRef || ''} ${selectedCompleteVehicle.serviceName || ''} ${selectedCompleteVehicle.unitCode || ''}`.toLowerCase();
-                const code = row.tireCode?.toUpperCase() || '';
-                if ((identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trd')) && code.startsWith('NEW-TR-')) return true;
-                if ((identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) && code.startsWith('NEW-CDD-')) return true;
-                if ((identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) && code.startsWith('NEW-ENG-')) return true;
-                return false;
+                return true;
             })
             .reduce<Array<{ value: string; label: string; tireCount: number }>>((options, row) => {
                 const existing = options.find(option => option.value === row.vehicleRef);

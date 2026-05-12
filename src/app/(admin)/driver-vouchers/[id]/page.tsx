@@ -27,6 +27,19 @@ import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocument
 import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DeliveryOrder, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
+import {
+    convertKgToWeightInputValue,
+    convertWeightToKg,
+    getWeightInputFractionDigits,
+    WEIGHT_INPUT_UNIT_OPTIONS,
+    type WeightInputUnit,
+} from '@/lib/measurement';
+
+function roundToPrecision(value: number, digits = 2) {
+    const factor = 10 ** digits;
+    return Math.round(value * factor) / factor;
+}
 
 export default function DriverVoucherDetailPage() {
     const params = useParams();
@@ -44,6 +57,10 @@ export default function DriverVoucherDetailPage() {
     const [settling, setSettling] = useState(false);
     const [savingItem, setSavingItem] = useState(false);
     const [toppingUp, setToppingUp] = useState(false);
+    const [savingManualOvertonase, setSavingManualOvertonase] = useState(false);
+    const [manualOvertonaseReviewMode, setManualOvertonaseReviewMode] = useState<'manual' | 'automatic' | null>(null);
+    const [manualOvertonaseWeightInputValue, setManualOvertonaseWeightInputValue] = useState(0);
+    const [manualOvertonaseWeightInputUnit, setManualOvertonaseWeightInputUnit] = useState<WeightInputUnit>('KG');
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [editingDisbursementId, setEditingDisbursementId] = useState<string | null>(null);
     const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
@@ -132,6 +149,114 @@ export default function DriverVoucherDetailPage() {
     const linkedDoOvertonaseAmount = linkedDeliveryOrder?.overtonaseDriverAmount || 0;
     const linkedDoHasFinalActualWeight = (linkedDeliveryOrder?.actualTotalWeightKg || 0) > 0;
     const linkedDoFinalTripFee = linkedDeliveryOrder?.taripBorongan || driverFeeAmount;
+    const linkedDoOvertonaseRatePerTon = linkedDeliveryOrder?.overtonaseDriverRatePerKg
+        ? Math.round(linkedDeliveryOrder.overtonaseDriverRatePerKg * 1000)
+        : 0;
+    const linkedDoPayableOvertonaseTon = Math.floor((linkedDeliveryOrder?.overtonaseWeightKg || 0) / 1000);
+    const linkedDoHasManualOvertonase = (linkedDeliveryOrder?.manualOvertonaseWeightKg || 0) > 0;
+    const canManageVoucherOvertonase = Boolean(
+        linkedDeliveryOrder &&
+        canManageVoucherItems &&
+        linkedDeliveryOrder.status !== 'CANCELLED' &&
+        !linkedDeliveryOrder.tripClosedByAdminAt
+    );
+
+    const updateManualOvertonaseWeightUnit = (nextUnit: WeightInputUnit) => {
+        const currentWeightKg = convertWeightToKg(
+            parseFormattedNumberish(manualOvertonaseWeightInputValue || 0, {
+                maxFractionDigits: getWeightInputFractionDigits(manualOvertonaseWeightInputUnit),
+            }),
+            manualOvertonaseWeightInputUnit
+        );
+        setManualOvertonaseWeightInputUnit(nextUnit);
+        setManualOvertonaseWeightInputValue(currentWeightKg > 0 ? convertKgToWeightInputValue(currentWeightKg, nextUnit) : 0);
+    };
+
+    const getManualOvertonasePreview = (clearManualValue = false) => {
+        if (!linkedDeliveryOrder) return null;
+        const inputWeight = parseFormattedNumberish(manualOvertonaseWeightInputValue || 0, {
+            maxFractionDigits: getWeightInputFractionDigits(manualOvertonaseWeightInputUnit),
+        });
+        const manualWeightKg = clearManualValue
+            ? 0
+            : roundToPrecision(convertWeightToKg(inputWeight, manualOvertonaseWeightInputUnit), 2);
+        const actualTotalWeightKg = linkedDeliveryOrder.actualTotalWeightKg || 0;
+        const payloadLimitKg = linkedDeliveryOrder.serviceMaxPayloadKg || 0;
+        const automaticOvertonaseWeightKg =
+            actualTotalWeightKg > 0 && payloadLimitKg > 0
+                ? Math.max(roundToPrecision(actualTotalWeightKg - payloadLimitKg, 2), 0)
+                : 0;
+        const nextOvertonaseWeightKg = manualWeightKg > 0 ? manualWeightKg : automaticOvertonaseWeightKg;
+        const currentPayableTon = Math.floor((linkedDeliveryOrder.overtonaseWeightKg || 0) / 1000);
+        const nextPayableTon = Math.floor(nextOvertonaseWeightKg / 1000);
+        const ratePerKg = linkedDeliveryOrder.overtonaseDriverRatePerKg || 0;
+        const ratePerTon = Math.round(ratePerKg * 1000);
+        const nextDriverAmount = nextPayableTon * 1000 * ratePerKg;
+        const baseFee = linkedDeliveryOrder.baseTaripBorongan ?? linkedDeliveryOrder.taripBorongan ?? 0;
+
+        return {
+            automaticOvertonaseWeightKg,
+            nextOvertonaseWeightKg,
+            currentPayableTon,
+            nextPayableTon,
+            ratePerTon,
+            baseFee,
+            currentDriverAmount: linkedDeliveryOrder.overtonaseDriverAmount || 0,
+            nextDriverAmount,
+            currentTripFee: linkedDeliveryOrder.taripBorongan || driverFeeAmount || 0,
+            nextTripFee: baseFee + nextDriverAmount,
+            modeLabel: manualWeightKg > 0 ? 'Manual' : 'Otomatis',
+        };
+    };
+
+    const openManualOvertonaseReview = (clearManualValue = false) => {
+        if (!canManageVoucherOvertonase || !linkedDeliveryOrder) return;
+        setManualOvertonaseWeightInputUnit('KG');
+        setManualOvertonaseWeightInputValue(clearManualValue ? 0 : linkedDeliveryOrder.manualOvertonaseWeightKg || 0);
+        setManualOvertonaseReviewMode(clearManualValue ? 'automatic' : 'manual');
+    };
+
+    const saveManualOvertonase = async (clearManualValue = false) => {
+        if (!linkedDeliveryOrder || !canManageVoucherOvertonase) return;
+        const preview = getManualOvertonasePreview(clearManualValue);
+        if (!preview) return;
+
+        setSavingManualOvertonase(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-manual-overtonase',
+                    data: {
+                        id: linkedDeliveryOrder._id,
+                        manualOvertonaseWeightInputValue: clearManualValue ? 0 : manualOvertonaseWeightInputValue,
+                        manualOvertonaseWeightInputUnit,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan overtonase');
+                return;
+            }
+
+            setManualOvertonaseReviewMode(null);
+            await loadVoucherDetail();
+            if (result.data?.linkedVoucherAdjustmentSummary) {
+                addToast('success', `Overtonase disimpan, ${result.data.linkedVoucherAdjustmentSummary}`);
+            } else if (result.data?.settledVoucherOvertonageWarning) {
+                addToast('success', result.data.settledVoucherOvertonageWarning);
+            } else {
+                addToast('success', clearManualValue ? 'Overtonase kembali ke hitungan otomatis' : 'Overtonase manual disimpan');
+            }
+        } catch {
+            addToast('error', 'Gagal menyimpan overtonase');
+        } finally {
+            setSavingManualOvertonase(false);
+        }
+    };
 
     const openAddItemModal = () => {
         if (isSettled || !canManageVoucherItems) return;
@@ -507,6 +632,10 @@ export default function DriverVoucherDetailPage() {
         }
     };
 
+    const manualOvertonasePendingPreview = manualOvertonaseReviewMode
+        ? getManualOvertonasePreview(manualOvertonaseReviewMode === 'automatic')
+        : null;
+
     if (loading || !voucher) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     }
@@ -590,6 +719,17 @@ export default function DriverVoucherDetailPage() {
                             ? `Dasar ${formatCurrency(linkedDoBaseTripFee)}${linkedDoHasFinalActualWeight ? ` | Overtonase ${formatCurrency(linkedDoOvertonaseAmount)} | Final ${formatCurrency(linkedDoFinalTripFee)}` : ' | Overtonase menunggu aktual final'}`
                             : 'Nilai ini mengikuti upah borongan pada DO dan master biaya rute trip'}
                     </div>
+                    {canManageVoucherOvertonase && (
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => openManualOvertonaseReview(false)}
+                            disabled={savingManualOvertonase}
+                            style={{ marginTop: '0.75rem' }}
+                        >
+                            <Plus size={14} /> {linkedDoHasManualOvertonase ? 'Edit Overtonase' : 'Tambah Overtonase'}
+                        </button>
+                    )}
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Net Settlement Akhir</div>
@@ -769,6 +909,96 @@ export default function DriverVoucherDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {manualOvertonaseReviewMode && manualOvertonasePendingPreview && linkedDeliveryOrder && (
+                <div className="modal-overlay" onClick={() => { if (!savingManualOvertonase) setManualOvertonaseReviewMode(null); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Review Perubahan Overtonase</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                    {voucher.doNumber || linkedDeliveryOrder.doNumber || 'Trip'} | {voucher.bonNumber}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={() => setManualOvertonaseReviewMode(null)} disabled={savingManualOvertonase}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Berat Overtonase</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px', gap: '0.5rem' }}>
+                                        <FormattedNumberInput
+                                            min={0}
+                                            maxFractionDigits={getWeightInputFractionDigits(manualOvertonaseWeightInputUnit)}
+                                            value={manualOvertonaseWeightInputValue}
+                                            onValueChange={value => {
+                                                setManualOvertonaseWeightInputValue(value);
+                                                setManualOvertonaseReviewMode('manual');
+                                            }}
+                                            disabled={savingManualOvertonase || manualOvertonaseReviewMode === 'automatic'}
+                                            placeholder="Isi berat manual"
+                                        />
+                                        <select
+                                            className="form-select"
+                                            value={manualOvertonaseWeightInputUnit}
+                                            onChange={event => {
+                                                updateManualOvertonaseWeightUnit(event.target.value as WeightInputUnit);
+                                                setManualOvertonaseReviewMode('manual');
+                                            }}
+                                            disabled={savingManualOvertonase || manualOvertonaseReviewMode === 'automatic'}
+                                        >
+                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button type="button" className={manualOvertonaseReviewMode === 'manual' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => setManualOvertonaseReviewMode('manual')} disabled={savingManualOvertonase}>
+                                        Manual
+                                    </button>
+                                    <button type="button" className={manualOvertonaseReviewMode === 'automatic' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => setManualOvertonaseReviewMode('automatic')} disabled={savingManualOvertonase}>
+                                        Pakai Otomatis
+                                    </button>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Berat Sekarang</div>
+                                        <div className="detail-value">{linkedDeliveryOrder.overtonaseWeightKg ? `${linkedDeliveryOrder.overtonaseWeightKg} kg` : '-'}</div>
+                                        <div className="text-muted text-sm">Dibayar {manualOvertonasePendingPreview.currentPayableTon} ton penuh</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Berat Baru</div>
+                                        <div className="detail-value">{manualOvertonasePendingPreview.nextOvertonaseWeightKg ? `${manualOvertonasePendingPreview.nextOvertonaseWeightKg} kg` : '-'}</div>
+                                        <div className="text-muted text-sm">Dibayar {manualOvertonasePendingPreview.nextPayableTon} ton penuh</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Tambahan Driver Baru</div>
+                                        <div className="detail-value">{manualOvertonasePendingPreview.nextDriverAmount ? formatCurrency(manualOvertonasePendingPreview.nextDriverAmount) : '-'}</div>
+                                        <div className="text-muted text-sm">Rate {manualOvertonasePendingPreview.ratePerTon ? formatCurrency(manualOvertonasePendingPreview.ratePerTon) : '-'} / ton</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Upah Final Baru</div>
+                                        <div className="detail-value">{manualOvertonasePendingPreview.nextTripFee ? formatCurrency(manualOvertonasePendingPreview.nextTripFee) : '-'}</div>
+                                        <div className="text-muted text-sm">Dasar {manualOvertonasePendingPreview.baseFee ? formatCurrency(manualOvertonasePendingPreview.baseFee) : '-'}</div>
+                                    </div>
+                                </div>
+
+                                <div className="text-muted text-sm">
+                                    Hitungan otomatis dari muatan aktual saat ini: <strong>{manualOvertonasePendingPreview.automaticOvertonaseWeightKg} kg</strong>.
+                                    {!linkedDoHasFinalActualWeight ? ' Muatan aktual belum final, jadi hasil otomatis masih bisa berubah.' : ''}
+                                    {isSettled ? ' Bon ini sudah settle, perubahan akan tersimpan di trip tetapi settlement lama tidak otomatis berubah.' : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setManualOvertonaseReviewMode(null)} disabled={savingManualOvertonase}>Batal</button>
+                            <button className="btn btn-primary" onClick={() => void saveManualOvertonase(manualOvertonaseReviewMode === 'automatic')} disabled={savingManualOvertonase}>
+                                <Save size={16} /> {savingManualOvertonase ? 'Menyimpan...' : 'Konfirmasi Simpan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showAddItem && canManageVoucherItems && (
                 <div className="modal-overlay" onClick={closeItemModal}>

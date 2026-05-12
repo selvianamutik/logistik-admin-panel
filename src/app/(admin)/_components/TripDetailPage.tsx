@@ -254,6 +254,21 @@ function hasActualDropItemValues(values: ActualDropItemValueDraft) {
     return qtyKoli > 0 || weightKg > 0 || volumeM3 > 0;
 }
 
+function hasDeliveryOrderItemActualCargo(item: Pick<DeliveryOrderItem, 'actualQtyKoli' | 'actualWeightKg' | 'actualVolumeM3'>) {
+    return (
+        (item.actualQtyKoli || 0) > 0 ||
+        (item.actualWeightKg || 0) > 0 ||
+        (item.actualVolumeM3 || 0) > 0
+    );
+}
+
+function formatItemCodeNameLabel(code: string, name: string, fallback: string) {
+    const cleanCode = code.trim();
+    const cleanName = name.trim();
+    if (cleanCode && cleanName) return `${cleanCode} - ${cleanName}`;
+    return cleanName || cleanCode || fallback;
+}
+
 function normalizeActualDropGroupText(value?: string) {
     return (value || '').trim();
 }
@@ -561,6 +576,7 @@ export default function TripDetailPage() {
     const [showSuratJalanActualEditModal, setShowSuratJalanActualEditModal] = useState(false);
     const [manualOvertonaseReviewMode, setManualOvertonaseReviewMode] = useState<'manual' | 'automatic' | null>(null);
     const [selectedSuratJalanActualEditDocument, setSelectedSuratJalanActualEditDocument] = useState<SuratJalanDocument | null>(null);
+    const [selectedSuratJalanActualEditItemRef, setSelectedSuratJalanActualEditItemRef] = useState('');
     const statusModalBodyRef = useRef<HTMLDivElement | null>(null);
     const statusModalScrollTopRef = useRef(0);
     const shouldRestoreStatusModalScrollRef = useRef(false);
@@ -630,7 +646,7 @@ export default function TripDetailPage() {
     >(null);
     const [editingCargoItemId, setEditingCargoItemId] = useState<string | null>(null);
     const [editableCargoItemMap, setEditableCargoItemMap] = useState<Record<string, boolean>>({});
-    const [linkedOrderItemDetailMap, setLinkedOrderItemDetailMap] = useState<Record<string, Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef'> | undefined>>({});
+    const [linkedOrderItemDetailMap, setLinkedOrderItemDetailMap] = useState<Record<string, Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'> | undefined>>({});
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
@@ -831,7 +847,7 @@ export default function TripDetailPage() {
             )
         );
         const linkedOrderItems = linkedOrderItemRefs.length > 0
-            ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef'>>(
+            ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>(
                 `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
                 'Gagal memuat detail trip'
             )
@@ -851,7 +867,7 @@ export default function TripDetailPage() {
         setDoItems(deliveryOrderItems);
         setEditableCargoItemMap(nextEditableCargoItemMap);
         setLinkedOrderItemDetailMap(
-            (linkedOrderItems || []).reduce<Record<string, Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef'> | undefined>>((acc, item) => {
+            (linkedOrderItems || []).reduce<Record<string, Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'> | undefined>>((acc, item) => {
                 acc[item._id] = item;
                 return acc;
             }, {})
@@ -2508,17 +2524,34 @@ export default function TripDetailPage() {
         });
     };
 
-    const openSuratJalanActualEditModal = (document: SuratJalanDocument) => {
-        if (!canManageDeliveryStatus || isTripClosedByAdmin || document.tripStatus !== 'DELIVERED') {
+    const openSuratJalanActualEditModal = (document?: SuratJalanDocument) => {
+        if (!canManageDeliveryStatus || isTripClosedByAdmin) {
             return;
         }
+        const targetDocument = document || suratJalanActualEditDocumentOptions[0];
+        if (!targetDocument || targetDocument.tripStatus !== 'DELIVERED') {
+            addToast('error', 'Pilih SJ delivered yang punya muatan aktual.');
+            return;
+        }
+        openSuratJalanActualEditDocument(targetDocument);
+    };
+
+    const openSuratJalanActualEditDocument = (document: SuratJalanDocument) => {
         const documentItems = getDeliveryOrderItemsForSuratJalanDocument(document);
         if (documentItems.length === 0) {
             addToast('error', 'Item SJ tidak ditemukan untuk diedit.');
             return;
         }
+        const actualItemRefs = new Set(documentItems.filter(hasDeliveryOrderItemActualCargo).map(item => item._id));
+        const editableItems = buildActualCargoDrafts(documentItems);
+        const firstActualItem = editableItems.find(item => actualItemRefs.has(item.deliveryOrderItemRef));
+        if (!firstActualItem) {
+            addToast('error', 'SJ ini belum punya item terkirim aktual yang bisa diedit.');
+            return;
+        }
         setSelectedSuratJalanActualEditDocument(document);
-        setSuratJalanActualEditItems(buildActualCargoDrafts(documentItems));
+        setSuratJalanActualEditItems(editableItems);
+        setSelectedSuratJalanActualEditItemRef(firstActualItem.deliveryOrderItemRef);
         setShowSuratJalanActualEditModal(true);
     };
 
@@ -2529,6 +2562,14 @@ export default function TripDetailPage() {
         setShowSuratJalanActualEditModal(false);
         setSelectedSuratJalanActualEditDocument(null);
         setSuratJalanActualEditItems([]);
+        setSelectedSuratJalanActualEditItemRef('');
+    };
+
+    const selectSuratJalanActualEditDocument = (documentId: string) => {
+        const document = suratJalanActualEditDocumentOptions.find(item => item._id === documentId);
+        if (document) {
+            openSuratJalanActualEditDocument(document);
+        }
     };
 
     const updateSuratJalanActualEditItem = (
@@ -2644,6 +2685,7 @@ export default function TripDetailPage() {
             setShowSuratJalanActualEditModal(false);
             setSelectedSuratJalanActualEditDocument(null);
             setSuratJalanActualEditItems([]);
+            setSelectedSuratJalanActualEditItemRef('');
             await refreshTripDetail();
             addToast('success', 'Aktual item SJ berhasil diperbarui');
         } catch {
@@ -4189,6 +4231,38 @@ export default function TripDetailPage() {
         number: string,
         document?: SuratJalanDocument | null
     ) => `${number}${hasSuratJalanHoldIndicator(document) ? ' (HOLD)' : ''}`;
+    const customerProductById = new Map(customerProducts.map(item => [item._id, item]));
+    const getDeliveryOrderItemIdentity = (item?: Pick<DeliveryOrderItem, '_id' | 'orderItemRef' | 'orderItemDescription'> | null) => {
+        const linkedOrderItem = item?.orderItemRef ? linkedOrderItemDetailMap[item.orderItemRef] : undefined;
+        const product = linkedOrderItem?.customerProductRef ? customerProductById.get(linkedOrderItem.customerProductRef) : undefined;
+        return {
+            code: linkedOrderItem?.customerProductCode || product?.code || '',
+            name: linkedOrderItem?.customerProductName || product?.name || item?.orderItemDescription || '',
+        };
+    };
+    const getActualEditItemLabel = (item: Pick<ActualCargoDraft, 'deliveryOrderItemRef' | 'description'>, fallbackIndex?: number) => {
+        const deliveryOrderItem = doItems.find(row => row._id === item.deliveryOrderItemRef);
+        const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
+        return formatItemCodeNameLabel(identity.code, identity.name || item.description, fallbackIndex !== undefined ? `Item ${fallbackIndex + 1}` : item.deliveryOrderItemRef);
+    };
+    const suratJalanActualEditDocumentOptions = suratJalanDocuments.filter(document =>
+        document.tripStatus === 'DELIVERED' &&
+        getDeliveryOrderItemsForSuratJalanDocument(document).some(hasDeliveryOrderItemActualCargo)
+    );
+    const selectedSuratJalanActualEditItemRefs = new Set(
+        selectedSuratJalanActualEditDocument
+            ? getDeliveryOrderItemsForSuratJalanDocument(selectedSuratJalanActualEditDocument)
+                .filter(hasDeliveryOrderItemActualCargo)
+                .map(item => item._id)
+            : []
+    );
+    const suratJalanActualEditSelectableItems = suratJalanActualEditItems.filter(item =>
+        selectedSuratJalanActualEditItemRefs.has(item.deliveryOrderItemRef)
+    );
+    const selectedSuratJalanActualEditItem =
+        suratJalanActualEditItems.find(item => item.deliveryOrderItemRef === selectedSuratJalanActualEditItemRef) ||
+        suratJalanActualEditSelectableItems[0] ||
+        null;
     const isTripClosedByAdmin = Boolean(doData.tripClosedByAdminAt);
     const pendingDriverRequests: PendingDriverStatusRequest[] = Array.isArray(doData.pendingDriverRequests) && doData.pendingDriverRequests.length > 0
         ? doData.pendingDriverRequests.filter(request => request && request.requestId && request.status)
@@ -4436,6 +4510,20 @@ export default function TripDetailPage() {
     const overtonaseDriverRatePerTon = doData.overtonaseDriverRatePerKg
         ? Math.round(doData.overtonaseDriverRatePerKg * 1000)
         : 0;
+    const formatWeightKg = (value?: number | null) =>
+        value && value > 0 ? `${formatQuantity(value, 0)} kg` : '-';
+    const tripFeeRowStyle = {
+        display: 'grid',
+        gridTemplateColumns: 'minmax(140px, 1fr) minmax(120px, auto)',
+        alignItems: 'baseline',
+        gap: '0.75rem',
+        padding: '0.45rem 0',
+        borderBottom: '1px solid var(--color-gray-100)',
+    } as const;
+    const tripFeeValueStyle = {
+        textAlign: 'right',
+        fontVariantNumeric: 'tabular-nums',
+    } as const;
     const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || hasManualOvertonase || exceedsVehicleCapacity;
     const settledVoucherNeedsManualAdjustment = Boolean(
         linkedVoucher?.status === 'SETTLED' &&
@@ -5686,11 +5774,23 @@ export default function TripDetailPage() {
                 <div className="card">
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Dokumen Surat Jalan</span>
-                        {canEditShipperReference && !isTripClosedByAdmin && (
-                            <button className="btn btn-secondary btn-sm" onClick={() => openShipperReferenceModal()}>
-                                <Edit size={14} /> {hasShipperReference ? 'Edit Surat Jalan' : 'Isi Surat Jalan'}
-                            </button>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                            {canManageDeliveryStatus && !isTripClosedByAdmin && (
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => openSuratJalanActualEditModal()}
+                                    disabled={savingSuratJalanActualEdit || suratJalanActualEditDocumentOptions.length === 0}
+                                    title={suratJalanActualEditDocumentOptions.length === 0 ? 'Belum ada SJ delivered dengan muatan aktual' : 'Edit aktual barang SJ'}
+                                >
+                                    <Edit size={14} /> Edit Aktual
+                                </button>
+                            )}
+                            {canEditShipperReference && !isTripClosedByAdmin && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => openShipperReferenceModal()}>
+                                    <Edit size={14} /> {hasShipperReference ? 'Edit Surat Jalan' : 'Isi Surat Jalan'}
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div className="card-body">
                         <div className="text-muted text-sm" style={{ marginBottom: '0.85rem' }}>
@@ -5759,17 +5859,6 @@ export default function TripDetailPage() {
                                                                     <span className={`badge badge-${documentStatusMeta.color}`}>
                                                                         <span className="badge-dot" /> {documentStatusMeta.label}
                                                                     </span>
-                                                                    {document?.tripStatus === 'DELIVERED' && canManageDeliveryStatus && !isTripClosedByAdmin && (
-                                                                        <button
-                                                                            type="button"
-                                                                            className="btn btn-secondary btn-sm"
-                                                                            onClick={() => openSuratJalanActualEditModal(document)}
-                                                                            disabled={savingSuratJalanActualEdit}
-                                                                            title="Edit aktual barang SJ"
-                                                                        >
-                                                                            <Edit size={14} /> Edit Aktual
-                                                                        </button>
-                                                                    )}
                                                                     {canEditShipperReference && !isTripClosedByAdmin && (
                                                                         <button
                                                                             type="button"
@@ -5992,101 +6081,108 @@ export default function TripDetailPage() {
             <div id="delivery-order-trip-fee-card">
             <CollapsibleCard title="Trip Overtonase & Upah Driver" defaultOpen={shouldOpenTripFeeCard}>
                     {!editingTarip ? (
-                        <div>
-                            <div className="detail-row">
-                                <div className="detail-item">
-                                    <div className="detail-label">Upah Dasar Trip</div>
-                                    <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                        {baseTripFee ? formatCurrency(baseTripFee) : 'Belum diisi'}
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Tambahan Driver Overtonase</div>
-                                    <div className="detail-value font-semibold" style={{ color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
-                                        {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : '-'}
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Total Upah Trip Final</div>
-                                    <div className="detail-value font-semibold" style={{ color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                        <div style={{ display: 'grid', gap: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                                <div>
+                                    <div className="detail-label">Total Upah Driver</div>
+                                    <div className="font-semibold" style={{ color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)', fontSize: '1.35rem', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                                         {totalTripFee ? formatCurrency(totalTripFee) : 'Belum diisi'}
                                     </div>
-                                </div>
-                            </div>
-                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
-                                <div className="detail-item">
-                                    <div className="detail-label">Keterangan</div>
-                                    <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                        {hasOvertonase
+                                            ? `${formatCurrency(baseTripFee)} + ${formatCurrency(overtonaseDriverAmount)} overtonase`
+                                            : baseTripFee
+                                                ? 'Tidak ada tambahan overtonase'
+                                                : 'Upah dasar belum diisi'}
+                                    </div>
                                 </div>
                                 {canManageTripFee && !hasLinkedTripCash && !canShowTripManager && (
-                                    <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                                        <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
-                                            <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
-                                        </button>
-                                    </div>
+                                    <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
+                                        <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
+                                    </button>
                                 )}
                             </div>
-                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
-                                <div className="detail-item">
-                                    <div className="detail-label">Berat Aktual Trip</div>
-                                    <div className="detail-value">
-                                        {doData.actualTotalWeightKg ? `${doData.actualTotalWeightKg} kg` : 'Belum difinalkan'}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '1rem' }}>
+                                <section>
+                                    <div className="font-semibold" style={{ marginBottom: '0.35rem' }}>Kapasitas & Muatan</div>
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Kapasitas layanan</span>
+                                        <strong style={tripFeeValueStyle}>{formatWeightKg(effectiveOvertonaseLimitKg)}</strong>
                                     </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Batas Payload Service</div>
-                                    <div className="detail-value">
-                                        {effectiveOvertonaseLimitKg ? `${effectiveOvertonaseLimitKg} kg` : '-'}
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Muatan aktual</span>
+                                        <strong style={tripFeeValueStyle}>{doData.actualTotalWeightKg ? formatWeightKg(doData.actualTotalWeightKg) : 'Belum final'}</strong>
                                     </div>
-                                    <div className="text-muted text-sm">{effectiveOvertonaseLimitKg ? 'Batas layanan' : 'Batas layanan belum diisi'}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Referensi Layanan</div>
-                                    <div className="detail-value">
-                                        {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
+                                    <div style={{ ...tripFeeRowStyle, borderBottom: 0 }}>
+                                        <span className="text-muted text-sm">Berat overtonase</span>
+                                        <strong style={{ ...tripFeeValueStyle, color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
+                                            {formatWeightKg(doData.overtonaseWeightKg)}
+                                        </strong>
                                     </div>
-                                </div>
+                                </section>
+
+                                <section>
+                                    <div className="font-semibold" style={{ marginBottom: '0.35rem' }}>Perhitungan Overtonase</div>
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Mode hitung</span>
+                                        <strong style={tripFeeValueStyle}>{hasManualOvertonase ? 'Manual' : 'Otomatis'}</strong>
+                                    </div>
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Rate / ton</span>
+                                        <strong style={tripFeeValueStyle}>{overtonaseDriverRatePerTon ? formatCurrency(overtonaseDriverRatePerTon) : '-'}</strong>
+                                    </div>
+                                    <div style={{ ...tripFeeRowStyle, borderBottom: 0 }}>
+                                        <span className="text-muted text-sm">Ton dibayar</span>
+                                        <strong style={tripFeeValueStyle}>{hasOvertonase ? `${payableOvertonaseTon} ton` : '-'}</strong>
+                                    </div>
+                                </section>
+
+                                <section>
+                                    <div className="font-semibold" style={{ marginBottom: '0.35rem' }}>Upah Driver</div>
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Upah dasar</span>
+                                        <strong style={tripFeeValueStyle}>{baseTripFee ? formatCurrency(baseTripFee) : 'Belum diisi'}</strong>
+                                    </div>
+                                    <div style={tripFeeRowStyle}>
+                                        <span className="text-muted text-sm">Tambahan overtonase</span>
+                                        <strong style={{ ...tripFeeValueStyle, color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
+                                            {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : '-'}
+                                        </strong>
+                                    </div>
+                                    <div style={{ ...tripFeeRowStyle, borderBottom: 0 }}>
+                                        <span className="text-muted text-sm">Total final</span>
+                                        <strong style={{ ...tripFeeValueStyle, color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                                            {totalTripFee ? formatCurrency(totalTripFee) : 'Belum diisi'}
+                                        </strong>
+                                    </div>
+                                </section>
                             </div>
-                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
-                                <div className="detail-item">
-                                    <div className="detail-label">Berat Overtonase</div>
-                                    <div className="detail-value">
-                                        {hasOvertonase ? `${doData.overtonaseWeightKg} kg` : '-'}
-                                    </div>
-                                    <div className="text-muted text-sm">
-                                        {hasManualOvertonase ? `Manual: ${doData.manualOvertonaseWeightKg} kg` : 'Otomatis dari muatan aktual'}
-                                    </div>
+
+                            <div style={{ borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.85rem', display: 'grid', gap: '0.45rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 180px) minmax(0, 1fr)', gap: '0.75rem' }}>
+                                    <span className="text-muted text-sm">Rute tarif</span>
+                                    <span className="text-sm">
+                                        {[doData.tripOriginArea || '-', doData.tripDestinationArea || '-'].join(' -> ')}
+                                    </span>
                                 </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Rate Overtonase / ton</div>
-                                    <div className="detail-value">
-                                        {overtonaseDriverRatePerTon ? formatCurrency(overtonaseDriverRatePerTon) : '-'}
-                                    </div>
-                                    <div className="text-muted text-sm">
-                                        Dibayar {payableOvertonaseTon} ton penuh
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Asal Area Trip</div>
-                                    <div className="detail-value">{doData.tripOriginArea || '-'}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Tujuan Area Trip</div>
-                                    <div className="detail-value">{doData.tripDestinationArea || '-'}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Master Tarif</div>
-                                    <div className="detail-value">
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 180px) minmax(0, 1fr)', gap: '0.75rem' }}>
+                                    <span className="text-muted text-sm">Master tarif</span>
+                                    <span className="text-sm">
                                         {matchedTripRouteRate
                                             ? formatTripRouteRateLabel(matchedTripRouteRate)
-                                        : doData.tripRouteRateRef
-                                            ? (canManageTripFee ? 'Master tidak ditemukan' : 'Tersambung ke master tarif')
-                                            : '-'}
-                                    </div>
+                                            : doData.tripRouteRateRef
+                                                ? (canManageTripFee ? 'Master tidak ditemukan' : 'Tersambung ke master tarif')
+                                                : '-'}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 180px) minmax(0, 1fr)', gap: '0.75rem' }}>
+                                    <span className="text-muted text-sm">Keterangan</span>
+                                    <span className="text-sm">{doData.keteranganBorongan || '-'}</span>
                                 </div>
                             </div>
                             {canManageTripFee && !isTripClosedByAdmin && (
-                                <div style={{ marginTop: '0.85rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                <div style={{ padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     <div style={{ minWidth: 220 }}>
                                         <div className="font-semibold">Manual Overtonase</div>
                                         <div className="text-muted text-sm">
@@ -6106,17 +6202,17 @@ export default function TripDetailPage() {
                                 </div>
                             )}
                             {exceedsVehicleCapacity && (
-                                <div className="text-danger text-sm" style={{ marginTop: '0.75rem' }}>
+                                <div className="text-danger text-sm">
                                     Berat aktual final melebihi kapasitas kendaraan sebesar {doData.vehicleCapacityExceededKg} kg. Ini bukan sekadar overtonase tarif, tapi sudah melewati batas armada dan perlu evaluasi operasional.
                                 </div>
                             )}
                             {linkedTripCashBonNumber && (
-                                <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
+                                <div className="text-muted text-sm">
                                     Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedTripCashBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
                                 </div>
                             )}
                             {settledVoucherNeedsManualAdjustment && (
-                                <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
+                                <div className="text-muted text-sm">
                                     Bon {linkedTripCashBonNumber || linkedVoucher?.bonNumber} sudah settle. Tambahan overtonase hanya tercermin di DO ini dan tidak mengubah settlement lama secara otomatis.
                                 </div>
                             )}
@@ -6295,7 +6391,17 @@ export default function TripDetailPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="font-medium">{item.orderItemDescription}</td>
+                                        <td>
+                                            {(() => {
+                                                const identity = getDeliveryOrderItemIdentity(item);
+                                                return (
+                                                    <>
+                                                        <div className="font-mono text-xs text-muted">{identity.code || '-'}</div>
+                                                        <div className="font-medium">{identity.name || item.orderItemDescription || '-'}</div>
+                                                    </>
+                                                );
+                                            })()}
+                                        </td>
                                         <td>
                                             <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
                                             <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
@@ -8067,16 +8173,58 @@ export default function TripDetailPage() {
                                 </div>
                             ) : (
                                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                    {suratJalanActualEditItems.map((item, index) => (
-                                        <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Surat Jalan Delivered</label>
+                                        <select
+                                            className="form-select"
+                                            value={selectedSuratJalanActualEditDocument?._id || ''}
+                                            onChange={event => selectSuratJalanActualEditDocument(event.target.value)}
+                                            disabled={savingSuratJalanActualEdit || suratJalanActualEditDocumentOptions.length <= 1}
+                                        >
+                                            {suratJalanActualEditDocumentOptions.map(document => (
+                                                <option key={document._id} value={document._id}>
+                                                    {formatSuratJalanDisplayNumber(document.suratJalanNumber, document)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {suratJalanActualEditSelectableItems.length === 0 || !selectedSuratJalanActualEditItem ? (
+                                        <div className="empty-state">
+                                            <div className="empty-state-title">Belum ada item terkirim aktual yang bisa diedit</div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="form-group">
+                                                <label className="form-label">Item Terkirim Aktual</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={selectedSuratJalanActualEditItem.deliveryOrderItemRef}
+                                                    onChange={event => setSelectedSuratJalanActualEditItemRef(event.target.value)}
+                                                    disabled={savingSuratJalanActualEdit}
+                                                >
+                                                    {suratJalanActualEditSelectableItems.map((item, index) => (
+                                                        <option key={item.deliveryOrderItemRef} value={item.deliveryOrderItemRef}>
+                                                            {getActualEditItemLabel(item, index)}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            {(() => {
+                                                const item = selectedSuratJalanActualEditItem;
+                                                const deliveryOrderItem = doItems.find(row => row._id === item.deliveryOrderItemRef);
+                                                const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
+                                                return (
+                                                    <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
                                             <div>
-                                                <div className="font-semibold">Item {index + 1}</div>
-                                                <div className="text-muted text-sm">{item.description || '-'}</div>
+                                                {identity.code ? <div className="font-mono text-xs text-muted">{identity.code}</div> : null}
+                                                <div className="font-semibold">{identity.name || item.description || '-'}</div>
+                                                <div className="text-muted text-sm">Muatan aktual item yang dipilih</div>
                                             </div>
                                             <div className="form-row">
                                                 <div className="form-group">
                                                     <label className="form-label">Qty Aktual</label>
                                                     <FormattedNumberInput
+                                                        key={`${item.deliveryOrderItemRef}-qty`}
                                                         min={0}
                                                         maxFractionDigits={2}
                                                         value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
@@ -8088,6 +8236,7 @@ export default function TripDetailPage() {
                                                     <label className="form-label">Berat Aktual</label>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                         <FormattedNumberInput
+                                                            key={`${item.deliveryOrderItemRef}-weight`}
                                                             min={0}
                                                             maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
                                                             value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
@@ -8110,6 +8259,7 @@ export default function TripDetailPage() {
                                                     <label className="form-label">Volume Aktual</label>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                         <FormattedNumberInput
+                                                            key={`${item.deliveryOrderItemRef}-volume`}
                                                             min={0}
                                                             maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
                                                             value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
@@ -8130,13 +8280,16 @@ export default function TripDetailPage() {
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
+                                                );
+                                            })()}
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={closeSuratJalanActualEditModal} disabled={savingSuratJalanActualEdit}>Batal</button>
-                            <button className="btn btn-primary" onClick={() => void saveSuratJalanActualEdit()} disabled={savingSuratJalanActualEdit || suratJalanActualEditItems.length === 0}>
+                            <button className="btn btn-primary" onClick={() => void saveSuratJalanActualEdit()} disabled={savingSuratJalanActualEdit || suratJalanActualEditItems.length === 0 || !selectedSuratJalanActualEditItem}>
                                 <Save size={16} /> {savingSuratJalanActualEdit ? 'Menyimpan...' : 'Simpan Aktual'}
                             </button>
                         </div>

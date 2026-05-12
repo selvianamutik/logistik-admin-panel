@@ -2517,8 +2517,8 @@ export async function handleFreightNotaCreate(
         if (!deliveryOrder) {
         return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
-        if (deliveryOrder.status !== 'DELIVERED') {
-            return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
+        if (deliveryOrder.status === 'CANCELLED') {
+            return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} sudah dibatalkan` }, { status: 409 });
         }
         const orderRef = extractRefId(deliveryOrder.orderRef);
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
@@ -2570,6 +2570,14 @@ export async function handleFreightNotaCreate(
             builtRows: builtNotaRowsByDoRef.get(row.doRef) || [],
         });
 
+        if (deliveryOrder.status !== 'DELIVERED' && !hasActualDropPoints) {
+            return NextResponse.json(
+                {
+                    error: `DO ${deliveryOrder.doNumber || row.doRef} belum delivered dan belum punya realisasi drop yang bisa ditagihkan`,
+                },
+                { status: 409 }
+            );
+        }
         if (hasActualDropPoints && !hasDeliveryOrderBillableCargo(deliveryOrder, resolvedNoSj)) {
             return NextResponse.json(
                 {
@@ -3376,8 +3384,8 @@ export async function handleFreightNotaUpdate(
         if (!deliveryOrder) {
         return NextResponse.json({ error: 'DO invoice tidak ditemukan' }, { status: 404 });
         }
-        if (deliveryOrder.status !== 'DELIVERED') {
-            return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
+        if (deliveryOrder.status === 'CANCELLED') {
+            return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} sudah dibatalkan` }, { status: 409 });
         }
         const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
             normalizeOptionalText(reference.referenceNumber) === normalizeOptionalText(row.noSJ)
@@ -3476,6 +3484,14 @@ export async function handleFreightNotaUpdate(
             deliveryOrder: deliveryOrder as DeliveryOrder,
             builtRows: builtNotaRowsByDoRef.get(row.doRef) || [],
         });
+        if (deliveryOrder.status !== 'DELIVERED' && !hasActualDropPoints) {
+            return NextResponse.json(
+                {
+                    error: `DO ${deliveryOrder.doNumber || row.doRef} belum delivered dan belum punya realisasi drop yang bisa ditagihkan`,
+                },
+                { status: 409 }
+            );
+        }
         if (hasActualDropPoints && !hasDeliveryOrderBillableCargo(deliveryOrder as DeliveryOrder, resolvedNoSj)) {
             return NextResponse.json(
                 {

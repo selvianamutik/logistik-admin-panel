@@ -877,21 +877,8 @@ export async function handleTireInstallToSlot(
     ) {
         return NextResponse.json({ error: 'Lokasi unit sumber ban tidak lengkap. Perbarui data ban sebelum dipasang.' }, { status: 409 });
     }
-    const compatibleServiceRef = normalizeOptionalText(installingTire.compatibleServiceRef);
-    const compatibleServiceName = normalizeOptionalText(installingTire.compatibleServiceName);
     const vehicleServiceRef = normalizeOptionalText(vehicle.serviceRef);
     const vehicleServiceName = normalizeOptionalText(vehicle.serviceName);
-    if (compatibleServiceRef && vehicleServiceRef && compatibleServiceRef !== vehicleServiceRef) {
-        return NextResponse.json({ error: 'Ban pengganti tidak sesuai kategori armada kendaraan' }, { status: 409 });
-    }
-    if (
-        !compatibleServiceRef &&
-        compatibleServiceName &&
-        vehicleServiceName &&
-        compatibleServiceName.toLowerCase() !== vehicleServiceName.toLowerCase()
-    ) {
-        return NextResponse.json({ error: 'Ban pengganti tidak sesuai kategori armada kendaraan' }, { status: 409 });
-    }
 
     const oldTire = activeTires.find(item =>
         normalizeOptionalText(item._id) !== installingTireRef &&

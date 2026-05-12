@@ -27,6 +27,7 @@ import {
     isEmptyNotaRow,
     type NotaItemRow,
 } from '@/lib/invoice-create-page-support';
+import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { convertWeightToKg } from '@/lib/measurement';
 import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import type { CompanyProfile, Customer, CustomerBillingRate, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaBillingMode, FreightNotaItem, Order } from '@/lib/types';
@@ -128,7 +129,10 @@ export default function NewNotaPage() {
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
-                setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
+                setDeliveryOrders((dos || []).filter((item: DeliveryOrder) =>
+                    item.status === 'DELIVERED' ||
+                    (item.status !== 'CANCELLED' && hasDeliveryOrderBillableCargo(item))
+                ));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
                 setCustomerBillingRates((billingRates || []).filter(rate => rate.active !== false));
@@ -846,7 +850,7 @@ export default function NewNotaPage() {
                                         label={
                                             customerRef
                                                 ? `DO dengan SJ customer ${customerName || '-'} (${availableDeliveryOrderOptions.length})`
-                                                : `Semua DO Selesai (${availableDeliveryOrderOptions.length})`
+                                                : `SJ Siap Ditagih (${availableDeliveryOrderOptions.length})`
                                         }
                                     >
                                         {availableDeliveryOrderOptions.map(({ deliveryOrder, noSJSummary, tujuanSummary, sjCount, rowCount }) => (

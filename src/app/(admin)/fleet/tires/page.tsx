@@ -53,11 +53,6 @@ type TireInstallFormState = {
     note: string;
 };
 
-type TireCompatibilityEvent = TireEvent & {
-    compatibleServiceRef?: string;
-    compatibleServiceName?: string;
-};
-
 const CATAT_BAN_HOLDER_TYPE_OPTIONS = TIRE_HOLDER_TYPE_OPTIONS.filter(option => option.value !== 'EXTERNAL_VEHICLE');
 const CATAT_BAN_STATUS_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.value !== 'LOANED_OUT');
 const BAN_LIST_STATUS_FILTER_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.value !== 'LOANED_OUT');
@@ -76,39 +71,6 @@ function createDefaultInstallForm(): TireInstallFormState {
         maintenanceDate: getBusinessDateValue(),
         note: '',
     };
-}
-
-function getVehicleServiceCodeHint(vehicle: Vehicle | null) {
-    const identity = `${vehicle?.serviceRef || ''} ${vehicle?.serviceName || ''} ${vehicle?.unitCode || ''} ${vehicle?.vehicleType || ''}`.toLowerCase();
-    if (!identity.trim()) return '';
-    if (identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trailer') || identity.includes('trd')) return 'TR';
-    if (identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) return 'CDD';
-    if (identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) return 'ENG';
-    return '';
-}
-
-function isInstallTireCompatibleWithVehicle(event: TireCompatibilityEvent, vehicle: Vehicle | null, sameVehicleTireSizes: Set<string>) {
-    if (!vehicle) return false;
-
-    const hasExplicitCompatibility = Boolean(event.compatibleServiceRef?.trim() || event.compatibleServiceName?.trim());
-    if (event.compatibleServiceRef?.trim()) {
-        return event.compatibleServiceRef.trim() === vehicle.serviceRef;
-    }
-    if (event.compatibleServiceName?.trim() && vehicle.serviceName?.trim()) {
-        return event.compatibleServiceName.trim().toLowerCase() === vehicle.serviceName.trim().toLowerCase();
-    }
-
-    const codeHint = getVehicleServiceCodeHint(vehicle);
-    const tireCode = event.tireCode?.trim().toUpperCase() || '';
-    if (codeHint && tireCode.startsWith(`NEW-${codeHint}-`)) {
-        return true;
-    }
-
-    if (!hasExplicitCompatibility) {
-        return true;
-    }
-
-    return sameVehicleTireSizes.has(event.tireSize?.trim().toLowerCase() || '');
 }
 
 function getTireCompatibilityCategoryValue(tire: Pick<TireEvent, 'compatibleServiceRef' | 'compatibleServiceName' | 'vehicleRef'>, vehicles: Vehicle[]) {
@@ -362,22 +324,10 @@ export default function TiresPage() {
         }).map(option => ({ ...option, disabled: false })),
         [allTireEvents, installForm.tireEventRef, installSelectedVehicle]
     );
-    const sameVehicleTireSizes = useMemo(
-        () => new Set(
-            resolveFleetTireEvents(allTireEvents)
-                .filter(event =>
-                    event.vehicleRef === installForm.vehicleRef &&
-                    event.holderType === 'INTERNAL_VEHICLE' &&
-                    event.status === 'IN_USE' &&
-                    event.tireSize?.trim()
-                )
-                .map(event => event.tireSize.trim().toLowerCase())
-        ),
-        [allTireEvents, installForm.vehicleRef]
-    );
     const availableInstallTires = useMemo(
         () => resolveFleetTireEvents(allTireEvents)
             .filter(event => {
+                if (!installSelectedVehicle) return false;
                 if (event.status === 'SCRAPPED') return false;
                 if (installForm.tireSource === 'WAREHOUSE') {
                     if (event.holderType !== 'WAREHOUSE' || event.status !== 'IN_WAREHOUSE') return false;
@@ -391,19 +341,19 @@ export default function TiresPage() {
                 } else if (installForm.sourceVehicleRef && event.vehicleRef !== installForm.sourceVehicleRef) {
                     return false;
                 }
-                return isInstallTireCompatibleWithVehicle(event, installSelectedVehicle, sameVehicleTireSizes);
+                return true;
             })
             .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID')),
-        [allTireEvents, installForm.sourceVehicleRef, installForm.tireSource, installForm.vehicleRef, installSelectedVehicle, sameVehicleTireSizes]
+        [allTireEvents, installForm.sourceVehicleRef, installForm.tireSource, installForm.vehicleRef, installSelectedVehicle]
     );
     const installSourceUnitOptions = useMemo(
         () => resolveFleetTireEvents(allTireEvents)
             .filter(event =>
+                installSelectedVehicle &&
                 event.holderType === 'INTERNAL_VEHICLE' &&
                 event.status === 'IN_USE' &&
                 event.vehicleRef &&
-                event.vehicleRef !== installForm.vehicleRef &&
-                isInstallTireCompatibleWithVehicle(event, installSelectedVehicle, sameVehicleTireSizes)
+                event.vehicleRef !== installForm.vehicleRef
             )
             .reduce<Array<{ value: string; label: string; tireCount: number }>>((options, event) => {
                 const existing = options.find(option => option.value === event.vehicleRef);
@@ -419,7 +369,7 @@ export default function TiresPage() {
                 return options;
             }, [])
             .sort((left, right) => left.label.localeCompare(right.label, 'id-ID')),
-        [allTireEvents, installForm.vehicleRef, installSelectedVehicle, sameVehicleTireSizes]
+        [allTireEvents, installForm.vehicleRef, installSelectedVehicle]
     );
     const selectedInstallTire = useMemo(
         () => availableInstallTires.find(event => event._id === installForm.tireEventRef) || null,
@@ -1415,9 +1365,9 @@ export default function TiresPage() {
                                     {installSelectedVehicle && availableInstallTires.length === 0 && (
                                         <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
                                             {installForm.tireSource === 'WAREHOUSE'
-                                                ? 'Tidak ada ban gudang yang cocok untuk kategori armada ini.'
+                                                ? 'Tidak ada ban gudang yang tersedia.'
                                                 : installForm.sourceVehicleRef
-                                                    ? 'Tidak ada ban di unit sumber yang cocok untuk kategori armada ini.'
+                                                    ? 'Tidak ada ban di unit sumber yang tersedia.'
                                                     : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
                                         </div>
                                     )}

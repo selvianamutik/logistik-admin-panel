@@ -40,7 +40,7 @@ import {
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
-import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, Order } from '@/lib/types';
+import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, Order, OrderItem } from '@/lib/types';
 import type { SuratJalanDetailSnapshot, SuratJalanDocument, SuratJalanDocumentItem } from '@/lib/trip-document-types';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -118,6 +118,13 @@ function hasCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; v
     );
 }
 
+function formatItemCodeNameLabel(code: string, name: string, fallback: string) {
+    const cleanCode = code.trim();
+    const cleanName = name.trim();
+    if (cleanCode && cleanName) return `${cleanCode} - ${cleanName}`;
+    return cleanName || cleanCode || fallback;
+}
+
 export default function SuratJalanDetailPage() {
     const params = useParams();
     const pathname = usePathname();
@@ -129,6 +136,7 @@ export default function SuratJalanDetailPage() {
     const [sourceOrder, setSourceOrder] = useState<Order | null>(null);
     const [documentItems, setDocumentItems] = useState<SuratJalanDocumentItem[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
+    const [linkedOrderItems, setLinkedOrderItems] = useState<Array<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
@@ -164,6 +172,7 @@ export default function SuratJalanDetailPage() {
     const [editExistingItems, setEditExistingItems] = useState<EditExistingCargoItem[]>([]);
     const [editNewItems, setEditNewItems] = useState<DeliveryOrderCargoDraftItem[]>([]);
     const [actualEditItems, setActualEditItems] = useState<ActualCargoDraft[]>([]);
+    const [selectedActualEditItemRef, setSelectedActualEditItemRef] = useState('');
     const canOpenTripPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canOpenOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
@@ -543,12 +552,24 @@ export default function SuratJalanDetailPage() {
                 setSourceOrder(null);
                 setDocumentItems([]);
                 setDeliveryOrderItems([]);
+                setLinkedOrderItems([]);
                 return;
             }
             const loadedDeliveryOrderItems = await fetchAdminCollectionData<DeliveryOrderItem[]>(
                 `/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: detail.deliveryOrder._id }))}`,
                 'Gagal memuat detail surat jalan'
             );
+            const linkedOrderItemRefs = Array.from(new Set(
+                (loadedDeliveryOrderItems || [])
+                    .map(item => item.orderItemRef)
+                    .filter((value): value is string => Boolean(value))
+            ));
+            const loadedLinkedOrderItems = linkedOrderItemRefs.length > 0
+                ? await fetchAdminCollectionData<Array<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>>(
+                    `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
+                    'Gagal memuat item order surat jalan'
+                )
+                : [];
             const productRows = detail.deliveryOrder.customerRef
                 ? await fetchAdminCollectionData<CustomerProduct[]>(
                     `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: detail.deliveryOrder.customerRef, active: true }))}`,
@@ -560,6 +581,7 @@ export default function SuratJalanDetailPage() {
             setSourceOrder(detail.sourceOrder);
             setDocumentItems(detail.documentItems || []);
             setDeliveryOrderItems(loadedDeliveryOrderItems || []);
+            setLinkedOrderItems(loadedLinkedOrderItems || []);
             setCustomerProducts(productRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
@@ -655,7 +677,33 @@ export default function SuratJalanDetailPage() {
             .map(item => resolveDocumentItemDeliveryOrderItemRef(item))
             .filter(Boolean)
     );
+    const deliveredDocumentItemRefs = new Set(
+        documentItems
+            .filter(item => hasCargoSummaryValue(item.actualCargo))
+            .map(item => resolveDocumentItemDeliveryOrderItemRef(item))
+            .filter(Boolean)
+    );
     const selectedDeliveryOrderItems = deliveryOrderItems.filter(item => selectedDocumentItemRefs.has(item._id));
+    const actualEditSelectableItems = actualEditItems.filter(item => deliveredDocumentItemRefs.has(item.deliveryOrderItemRef));
+    const selectedActualEditItem =
+        actualEditItems.find(item => item.deliveryOrderItemRef === selectedActualEditItemRef) ||
+        actualEditSelectableItems[0] ||
+        null;
+    const linkedOrderItemById = new Map(linkedOrderItems.map(item => [item._id, item]));
+    const customerProductById = new Map(customerProducts.map(item => [item._id, item]));
+    const getDeliveryOrderItemIdentity = (item?: Pick<DeliveryOrderItem, '_id' | 'orderItemRef' | 'orderItemDescription'> | null) => {
+        const linkedOrderItem = item?.orderItemRef ? linkedOrderItemById.get(item.orderItemRef) : undefined;
+        const product = linkedOrderItem?.customerProductRef ? customerProductById.get(linkedOrderItem.customerProductRef) : undefined;
+        return {
+            code: linkedOrderItem?.customerProductCode || product?.code || '',
+            name: linkedOrderItem?.customerProductName || product?.name || item?.orderItemDescription || '',
+        };
+    };
+    const getActualEditItemLabel = (item: Pick<ActualCargoDraft, 'deliveryOrderItemRef' | 'description'>, fallbackIndex?: number) => {
+        const deliveryOrderItem = deliveryOrderItems.find(row => row._id === item.deliveryOrderItemRef);
+        const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
+        return formatItemCodeNameLabel(identity.code, identity.name || item.description, fallbackIndex !== undefined ? `Item ${fallbackIndex + 1}` : item.deliveryOrderItemRef);
+    };
     const matchesSelectedSuratJalan = (shipperReferenceKey?: string, shipperReferenceNumber?: string) => {
         const normalizedKey = (shipperReferenceKey || '').trim();
         const normalizedNumber = (shipperReferenceNumber || '').trim().toUpperCase();
@@ -1058,7 +1106,14 @@ export default function SuratJalanDetailPage() {
 
     const openActualEditModal = () => {
         if (!isDeliveredStatus || deliveryOrder.tripClosedByAdminAt) return;
-        setActualEditItems(buildActualCargoDrafts(selectedDeliveryOrderItems));
+        const editableItems = buildActualCargoDrafts(selectedDeliveryOrderItems);
+        const firstDeliveredItem = editableItems.find(item => deliveredDocumentItemRefs.has(item.deliveryOrderItemRef));
+        if (!firstDeliveredItem) {
+            addToast('error', 'Belum ada item terkirim aktual yang bisa diedit.');
+            return;
+        }
+        setActualEditItems(editableItems);
+        setSelectedActualEditItemRef(firstDeliveredItem.deliveryOrderItemRef);
         setShowActualEditModal(true);
     };
 
@@ -1171,6 +1226,7 @@ export default function SuratJalanDetailPage() {
                 return;
             }
             setShowActualEditModal(false);
+            setSelectedActualEditItemRef('');
             await loadDocument();
             addToast('success', 'Aktual item SJ berhasil diperbarui');
         } catch {
@@ -1640,7 +1696,7 @@ export default function SuratJalanDetailPage() {
                 </div>
                 <div className="page-actions">
                     {isDeliveredStatus && canManageDeliveryStatus && !deliveryOrder.tripClosedByAdminAt && (
-                        <button className="btn btn-secondary" onClick={openActualEditModal}>
+                        <button className="btn btn-secondary" onClick={openActualEditModal} disabled={deliveredItemCount === 0} title={deliveredItemCount === 0 ? 'Belum ada item terkirim aktual' : 'Edit aktual item terkirim'}>
                             <Edit size={16} /> Edit Aktual
                         </button>
                     )}
@@ -1722,7 +1778,18 @@ export default function SuratJalanDetailPage() {
                                 <tbody>
                                     {documentItems.map(item => (
                                         <tr key={item._id}>
-                                            <td>{item.orderItemDescription || '-'}</td>
+                                            <td>
+                                                {(() => {
+                                                    const deliveryOrderItem = deliveryOrderItems.find(row => row._id === resolveDocumentItemDeliveryOrderItemRef(item));
+                                                    const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
+                                                    return (
+                                                        <>
+                                                            <div className="font-mono text-xs text-muted">{identity.code || '-'}</div>
+                                                            <div className="font-medium">{identity.name || item.orderItemDescription || '-'}</div>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td>
                                                 <div
                                                     style={{
@@ -1764,24 +1831,56 @@ export default function SuratJalanDetailPage() {
             )}
 
             {showActualEditModal && (
-                <div className="modal-overlay" onClick={() => { if (!savingActualEdit) setShowActualEditModal(false); }}>
+                <div className="modal-overlay" onClick={() => { if (!savingActualEdit) { setShowActualEditModal(false); setSelectedActualEditItemRef(''); } }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Edit Aktual Item SJ</h3>
-                            <button className="modal-close" onClick={() => setShowActualEditModal(false)} disabled={savingActualEdit}>&times;</button>
+                            <button className="modal-close" onClick={() => { setShowActualEditModal(false); setSelectedActualEditItemRef(''); }} disabled={savingActualEdit}>&times;</button>
                         </div>
                         <div className="modal-body">
-                            <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                {actualEditItems.map((item, index) => (
-                                    <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
+                            {actualEditSelectableItems.length === 0 || !selectedActualEditItem ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Belum ada item terkirim aktual yang bisa diedit</div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Item Terkirim Aktual</label>
+                                        <select
+                                            className="form-select"
+                                            value={selectedActualEditItem.deliveryOrderItemRef}
+                                            onChange={event => setSelectedActualEditItemRef(event.target.value)}
+                                            disabled={savingActualEdit}
+                                        >
+                                            {actualEditSelectableItems.map((item, index) => (
+                                                <option key={item.deliveryOrderItemRef} value={item.deliveryOrderItemRef}>
+                                                    {getActualEditItemLabel(item, index)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {(() => {
+                                        const item = selectedActualEditItem;
+                                        return (
+                                            <div key={item.deliveryOrderItemRef} style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', background: 'var(--color-gray-50)', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)' }}>
                                         <div>
-                                            <div className="font-semibold">Item {index + 1}</div>
-                                            <div className="text-muted text-sm">{item.description || '-'}</div>
+                                            {(() => {
+                                                const deliveryOrderItem = deliveryOrderItems.find(row => row._id === item.deliveryOrderItemRef);
+                                                const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
+                                                return (
+                                                    <>
+                                                        {identity.code ? <div className="font-mono text-xs text-muted">{identity.code}</div> : null}
+                                                        <div className="font-semibold">{identity.name || item.description || '-'}</div>
+                                                    </>
+                                                );
+                                            })()}
+                                            <div className="text-muted text-sm">Muatan aktual item yang dipilih</div>
                                         </div>
                                         <div className="form-row">
                                             <div className="form-group">
                                                 <label className="form-label">Qty Aktual</label>
                                                 <FormattedNumberInput
+                                                    key={`${item.deliveryOrderItemRef}-qty`}
                                                     min={0}
                                                     maxFractionDigits={2}
                                                     value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
@@ -1793,6 +1892,7 @@ export default function SuratJalanDetailPage() {
                                                 <label className="form-label">Berat Aktual</label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                     <FormattedNumberInput
+                                                        key={`${item.deliveryOrderItemRef}-weight`}
                                                         min={0}
                                                         maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
                                                         value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
@@ -1815,6 +1915,7 @@ export default function SuratJalanDetailPage() {
                                                 <label className="form-label">Volume Aktual</label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                     <FormattedNumberInput
+                                                        key={`${item.deliveryOrderItemRef}-volume`}
                                                         min={0}
                                                         maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
                                                         value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
@@ -1835,12 +1936,14 @@ export default function SuratJalanDetailPage() {
                                             </div>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowActualEditModal(false)} disabled={savingActualEdit}>Batal</button>
-                            <button className="btn btn-primary" onClick={() => void saveActualEdit()} disabled={savingActualEdit || actualEditItems.length === 0}>
+                            <button className="btn btn-secondary" onClick={() => { setShowActualEditModal(false); setSelectedActualEditItemRef(''); }} disabled={savingActualEdit}>Batal</button>
+                            <button className="btn btn-primary" onClick={() => void saveActualEdit()} disabled={savingActualEdit || actualEditItems.length === 0 || !selectedActualEditItem}>
                                 <Save size={16} /> {savingActualEdit ? 'Menyimpan...' : 'Simpan Aktual'}
                             </button>
                         </div>

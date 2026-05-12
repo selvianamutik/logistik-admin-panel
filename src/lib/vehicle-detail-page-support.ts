@@ -76,36 +76,6 @@ export function normalizeVehicleTireRow(event: TireEvent): NormalizedVehicleTire
     };
 }
 
-function getVehicleServiceCodeHint(vehicle: Vehicle) {
-    const identity = `${vehicle.serviceRef || ''} ${vehicle.serviceName || ''} ${vehicle.unitCode || ''} ${vehicle.vehicleType || ''}`.toLowerCase();
-    if (identity.includes('svc-006') || identity.includes('tronton') || identity.includes('trailer') || identity.includes('trd')) return 'TR';
-    if (identity.includes('svc-001') || identity.includes('cdd') || identity.includes('cddd')) return 'CDD';
-    if (identity.includes('svc-005') || identity.includes('engkel') || identity.includes('engd')) return 'ENG';
-    return '';
-}
-
-function isTireCompatibleWithVehicle(row: NormalizedVehicleTireRow, vehicle: Vehicle) {
-    const hasExplicitCompatibility = Boolean(row.compatibleServiceRef?.trim() || row.compatibleServiceName?.trim());
-    if (row.compatibleServiceRef?.trim()) {
-        return row.compatibleServiceRef.trim() === vehicle.serviceRef;
-    }
-    if (row.compatibleServiceName?.trim() && vehicle.serviceName?.trim()) {
-        return row.compatibleServiceName.trim().toLowerCase() === vehicle.serviceName.trim().toLowerCase();
-    }
-
-    const codeHint = getVehicleServiceCodeHint(vehicle);
-    const tireCode = row.tireCode?.trim().toUpperCase() || '';
-    if (codeHint && tireCode.startsWith(`NEW-${codeHint}-`)) {
-        return true;
-    }
-
-    if (!hasExplicitCompatibility) {
-        return true;
-    }
-
-    return false;
-}
-
 export function buildVehicleTireDetailState(params: {
     vehicle: Vehicle;
     tireEvents: TireEvent[];
@@ -156,7 +126,7 @@ export function buildVehicleTireDetailState(params: {
         } else if (tireForm.sourceVehicleRef && row.vehicleRef !== tireForm.sourceVehicleRef) {
             return false;
         }
-        return isTireCompatibleWithVehicle(row, vehicle);
+        return true;
     });
 
     return {
