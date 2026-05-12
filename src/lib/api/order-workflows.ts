@@ -8456,3 +8456,93 @@ export async function handleOrderDelete(
     await addAuditLog(session, 'DELETE', 'orders', id, `Deleted orders ${order.masterResi || id}`);
     return NextResponse.json({ success: true });
 }
+
+export async function handleOrderCancel(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const note = normalizeOptionalText(data.note);
+    if (!id) {
+        return NextResponse.json({ error: 'Order tidak valid' }, { status: 400 });
+    }
+
+    const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string; status?: string }>(id, 'order');
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.status === 'CANCELLED') {
+        return NextResponse.json({ error: 'Order sudah dibatalkan.' }, { status: 409 });
+    }
+    if (!isSupabaseBackendEnabled() && !order._rev) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const relatedDeliveryOrders = await listDocumentsByFilter<{ _id: string; doNumber?: string; status?: string }>('deliveryOrder', { orderRef: id });
+    const activeDeliveryOrders = relatedDeliveryOrders.filter(deliveryOrder => deliveryOrder.status !== 'CANCELLED');
+    if (activeDeliveryOrders.length > 0) {
+        return NextResponse.json(
+            {
+                error: `Batalkan trip aktif dulu sebelum membatalkan order/resi: ${activeDeliveryOrders.map(item => item.doNumber || item._id).join(', ')}`,
+            },
+            { status: 409 }
+        );
+    }
+
+    const relatedDeliveryOrderIds = relatedDeliveryOrders.map(item => item._id);
+    if (relatedDeliveryOrderIds.length > 0) {
+        const relatedNotaItem = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
+            doRef: relatedDeliveryOrderIds,
+        }))[0] || null;
+        if (relatedNotaItem) {
+            return NextResponse.json(
+                { error: 'Order/resi yang sudah masuk invoice tidak bisa dibatalkan.' },
+                { status: 409 }
+            );
+        }
+    }
+
+    const legacyInvoice = (await listDocumentsByFilter<{ _id: string }>('invoice', { orderRef: id }))[0] || null;
+    if (legacyInvoice) {
+        return NextResponse.json(
+            { error: 'Order/resi yang sudah masuk invoice tidak bisa dibatalkan.' },
+            { status: 409 }
+        );
+    }
+
+    const orderItems = await listDocumentsByFilter<OrderItemProgressSnapshot & { _rev?: string }>('orderItem', { orderRef: id });
+    const deliveredItem = orderItems.find(item => {
+        const progress = getOrderItemProgress(item);
+        return progress.deliveredQtyKoli > 0 || progress.deliveredWeight > 0 || progress.deliveredVolume > 0;
+    });
+    if (deliveredItem) {
+        return NextResponse.json(
+            { error: 'Order/resi yang sudah punya muatan terkirim tidak bisa dibatalkan. Gunakan revisi/retur sesuai alur operasional.' },
+            { status: 409 }
+        );
+    }
+
+    try {
+        await updateDocument(id, { status: 'CANCELLED' }, 'order');
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Order/resi dibatalkan: ${order.masterResi || id}${note ? ` | ${note}` : ''}`
+    );
+
+    const updatedOrder = await getDocumentById(id, 'order');
+    return NextResponse.json({ data: updatedOrder || { ...order, status: 'CANCELLED' }, id });
+}

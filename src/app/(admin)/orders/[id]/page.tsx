@@ -319,6 +319,9 @@ export default function OrderDetailPage() {
     const [cancelTripExpenseCategories, setCancelTripExpenseCategories] = useState<ExpenseCategory[]>([]);
     const [loadingCancelExpenseRefs, setLoadingCancelExpenseRefs] = useState(false);
     const [cancellingTripPlan, setCancellingTripPlan] = useState(false);
+    const [showCancelOrderModal, setShowCancelOrderModal] = useState(false);
+    const [cancelOrderNote, setCancelOrderNote] = useState('');
+    const [cancellingOrder, setCancellingOrder] = useState(false);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
@@ -336,7 +339,7 @@ export default function OrderDetailPage() {
     const canManageOrderTrips = user ? hasPermission(user.role, 'orders', 'update') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
-    const hasOpenModal = showDOModal || showAddTripModal || showTripPlanActionModal || showCancelTripModal || showHoldModal;
+    const hasOpenModal = showDOModal || showAddTripModal || showTripPlanActionModal || showCancelTripModal || showCancelOrderModal || showHoldModal;
     const currentPath = pathname || `/orders/${orderId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
 
@@ -1019,6 +1022,38 @@ export default function OrderDetailPage() {
         }
     };
 
+    const cancelOrder = async () => {
+        if (!order?._id || cancellingOrder) return;
+        setCancellingOrder(true);
+        try {
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'orders',
+                    action: 'cancel-order',
+                    data: {
+                        id: order._id,
+                        note: cancelOrderNote,
+                    },
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                addToast('error', result.error || 'Gagal membatalkan order/resi');
+                return;
+            }
+            setShowCancelOrderModal(false);
+            setCancelOrderNote('');
+            await refreshOrderCoreState('Gagal memuat ulang order setelah dibatalkan');
+            addToast('success', 'Order/resi berhasil dibatalkan');
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal membatalkan order/resi');
+        } finally {
+            setCancellingOrder(false);
+        }
+    };
+
     const openCreateDOModal = (tripPlanKey?: string) => {
         const tripPlan = orderTripPlans.find(plan => plan._key === tripPlanKey) || null;
         const defaultPickupStopKey = tripPlan?.pickupStopKeys[0] || resolvedOrderPickupStops[0]?._key || '';
@@ -1160,6 +1195,20 @@ export default function OrderDetailPage() {
     );
     const unplannedDos = dos.filter(deliveryOrder => !linkedTripDoIds.has(deliveryOrder._id));
     const nonCancelledDos = dos.filter(deliveryOrder => deliveryOrder.status !== 'CANCELLED');
+    const hasDeliveredOrderProgress = items.some(item =>
+        (item.deliveredQtyKoli || 0) > 0 ||
+        (item.deliveredWeight || 0) > 0 ||
+        (item.deliveredVolume || 0) > 0 ||
+        item.status === 'DELIVERED' ||
+        item.status === 'PARTIAL'
+    );
+    const orderIsCancelled = order?.status === 'CANCELLED';
+    const canCancelOrder =
+        canManageOrderTrips &&
+        !orderIsCancelled &&
+        nonCancelledDos.length === 0 &&
+        notas.length === 0 &&
+        !hasDeliveredOrderProgress;
     const selectedCancelTripPlan = orderTripPlans.find(plan => plan._key === cancelTripPlanKey) || null;
     const selectedCancelDeliveryOrder =
         selectedCancelTripPlan?.linkedDeliveryOrderRef
@@ -1211,13 +1260,17 @@ export default function OrderDetailPage() {
     }, [busyVehicleIds, doVehicle, selectedOrderTripPlan]);
     const usesExistingItemsForDeliveryOrder = !isHeaderOnlyOrder;
     const canCreateDeliveryOrder =
-        isHeaderOnlyOrder ||
-        (!usesExistingItemsForDeliveryOrder || (availableItems.length > 0 && nonCancelledDos.length === 0));
+        !orderIsCancelled &&
+        (
+            isHeaderOnlyOrder ||
+            (!usesExistingItemsForDeliveryOrder || (availableItems.length > 0 && nonCancelledDos.length === 0))
+        );
     const primaryDeliveryOrderButtonLabel =
         isHeaderOnlyOrder && nonCancelledDos.length > 0
             ? 'Tambah Surat Jalan'
             : 'Buat Surat Jalan';
     const canShowPrimaryDeliveryOrderButton =
+        !orderIsCancelled &&
         !hasPlannedTrips &&
         (isHeaderOnlyOrder || nonCancelledDos.length === 0);
     const flattenedDirectCargoItems = flattenDirectCargoGroups(directCargoGroups);
@@ -1708,6 +1761,25 @@ export default function OrderDetailPage() {
                     >
                         <Edit size={16} /> Edit
                     </button>
+                    {canManageOrderTrips && order.status !== 'CANCELLED' && (
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setShowCancelOrderModal(true)}
+                            disabled={!canCancelOrder}
+                            title={
+                                nonCancelledDos.length > 0
+                                    ? 'Batalkan semua trip aktif dulu sebelum membatalkan order/resi'
+                                    : notas.length > 0
+                                        ? 'Order/resi sudah masuk invoice'
+                                        : hasDeliveredOrderProgress
+                                            ? 'Order/resi sudah punya muatan terkirim'
+                                            : 'Batalkan order/resi'
+                            }
+                            style={{ color: 'var(--color-danger)' }}
+                        >
+                            <X size={16} /> Batalkan Order
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1847,7 +1919,7 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
-            {isHeaderOnlyOrder && !hasPlannedTrips && (
+            {isHeaderOnlyOrder && !hasPlannedTrips && !orderIsCancelled && (
                 <div className="card mt-6">
                     <div className="card-body" style={{ padding: '0.9rem 1rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <div>
@@ -1875,7 +1947,7 @@ export default function OrderDetailPage() {
                 <div className="card mt-6">
                     <div className="card-header">
                         <span className="card-header-title">Rencana Trip ({orderTripPlans.length})</span>
-                        {isHeaderOnlyOrder && (
+                        {isHeaderOnlyOrder && !orderIsCancelled && (
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={openAddTripModal}>
                                     <Plus size={14} /> Tambah Trip
@@ -2638,6 +2710,44 @@ export default function OrderDetailPage() {
                             ) : (
                                 <div className="text-muted text-sm">Pilih trip untuk langsung membuka form edit.</div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCancelOrderModal && (
+                <div className="modal-overlay" onClick={() => { if (!cancellingOrder) setShowCancelOrderModal(false); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Batalkan Order/Resi</h3>
+                            <button className="modal-close" onClick={() => setShowCancelOrderModal(false)} disabled={cancellingOrder}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'grid', gap: '1rem' }}>
+                            <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-danger-light)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}>
+                                Order/resi {order.masterResi} akan ditandai dibatalkan. Data order, trip yang sudah dibatalkan, dan riwayat audit tetap tersimpan.
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Catatan Pembatalan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={cancelOrderNote}
+                                    onChange={event => setCancelOrderNote(event.target.value)}
+                                    placeholder="Mis. customer membatalkan order / resi salah input"
+                                    disabled={cancellingOrder}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowCancelOrderModal(false)} disabled={cancellingOrder}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => void cancelOrder()}
+                                disabled={cancellingOrder || !canCancelOrder}
+                                style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+                            >
+                                <X size={16} /> {cancellingOrder ? 'Membatalkan...' : 'Batalkan Order'}
+                            </button>
                         </div>
                     </div>
                 </div>
