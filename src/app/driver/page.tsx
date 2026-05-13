@@ -800,6 +800,17 @@ function toCargoDraftItemFromDriverOrderItem(item: NonNullable<DriverAssignedDel
     };
 }
 
+function isModalKeyboardTarget(element: Element | null): element is HTMLElement {
+    return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+}
+
+function scrollModalKeyboardTargetIntoView(target: HTMLElement) {
+    if (!target.closest('.modal')) return;
+    window.setTimeout(() => {
+        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    }, 80);
+}
+
 export default function DriverPortalPage() {
     const router = useRouter();
     const intervalRef = useRef<number | null>(null);
@@ -1675,6 +1686,34 @@ export default function DriverPortalPage() {
     useEffect(() => {
         void loadDriverPortal();
     }, [loadDriverPortal]);
+
+    useEffect(() => {
+        const scrollActiveModalField = () => {
+            const activeElement = document.activeElement;
+            if (isModalKeyboardTarget(activeElement)) {
+                scrollModalKeyboardTargetIntoView(activeElement);
+            }
+        };
+
+        const handleFocusIn = (event: FocusEvent) => {
+            const target = event.target as Element | null;
+            if (isModalKeyboardTarget(target)) {
+                scrollModalKeyboardTargetIntoView(target);
+            }
+        };
+
+        document.addEventListener('focusin', handleFocusIn);
+        window.addEventListener('resize', scrollActiveModalField);
+        window.visualViewport?.addEventListener('resize', scrollActiveModalField);
+        window.visualViewport?.addEventListener('scroll', scrollActiveModalField);
+
+        return () => {
+            document.removeEventListener('focusin', handleFocusIn);
+            window.removeEventListener('resize', scrollActiveModalField);
+            window.visualViewport?.removeEventListener('resize', scrollActiveModalField);
+            window.visualViewport?.removeEventListener('scroll', scrollActiveModalField);
+        };
+    }, []);
 
     const postTrackingAction = useCallback(
         async (

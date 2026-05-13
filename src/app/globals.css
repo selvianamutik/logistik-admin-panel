@@ -1724,6 +1724,15 @@ tbody td {
   padding: var(--space-6);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  scroll-padding-top: var(--space-6);
+  scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+.modal input,
+.modal textarea,
+.modal select {
+  scroll-margin-top: var(--space-6);
+  scroll-margin-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
 }
 
 .modal-footer {
