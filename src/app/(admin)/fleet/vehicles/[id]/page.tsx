@@ -316,8 +316,10 @@ export default function VehicleDetailPage() {
                 typeof usage.subtotalCost === 'number' &&
                 usage.subtotalCost > 0
             );
-            if (tireLines.length > 0) {
-                return tireLines.map((usage, index) => ({
+            if (allTireLines.length > 0) {
+                const laborCost = typeof maintenance.laborCost === 'number' ? maintenance.laborCost : 0;
+                return [
+                    ...tireLines.map((usage, index) => ({
                     id: `maintenance-${maintenance._id}-tire-${index}`,
                     date: maintenance.completedDate || maintenance.plannedDate || '',
                     source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance Ban</Link>,
@@ -329,10 +331,20 @@ export default function VehicleDetailPage() {
                         </div>
                     ),
                     amount: usage.subtotalCost || 0,
-                }));
-            }
-            if (allTireLines.length > 0) {
-                return [];
+                    })),
+                    ...(laborCost > 0 ? [{
+                        id: `maintenance-${maintenance._id}-technician`,
+                        date: maintenance.completedDate || maintenance.plannedDate || '',
+                        source: <Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>Maintenance Ban</Link>,
+                        description: (
+                            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                <div>Biaya teknisi ban</div>
+                                <div className="text-muted text-sm">{maintenance.vendor || maintenance.type}</div>
+                            </div>
+                        ),
+                        amount: laborCost,
+                    }] : []),
+                ];
             }
 
             return [{
@@ -343,6 +355,24 @@ export default function VehicleDetailPage() {
                 amount: getMaintenanceRecordedCost(maintenance),
             }];
         });
+    const tireUsageVehicleCostRows = tireUsageCostRows
+        .filter(row =>
+            Number(row.usageCost || 0) > 0 &&
+            (!row.relatedMaintenanceRef || !maintenanceRefsWithRecordedCost.has(row.relatedMaintenanceRef))
+        )
+        .map(row => ({
+            id: `tire-usage-${row._id}`,
+            date: row.timestamp || '',
+            source: <Link href={`/fleet/tires/${row.tireEventRef}`} style={{ color: 'var(--color-primary)' }}>Pemakaian Ban</Link>,
+            description: (
+                <div style={{ display: 'grid', gap: '0.2rem' }}>
+                    <div>{row.tireCode || row.tireEventRef}</div>
+                    <div className="text-muted text-sm">{row.fromPlacementLabel || '-'} -&gt; {row.toPlacementLabel || '-'}</div>
+                    <div className="text-muted text-sm">Pemakaian {formatQuantity(row.usagePercent || 0, 2)}% | sisa {formatQuantity(row.remainingPercentAfter || 0, 2)}% ({formatCurrency(row.remainingValueAfter || 0)})</div>
+                </div>
+            ),
+            amount: Number(row.usageCost || 0),
+        }));
     const renderIncidentCostSummary = (incident: Incident) => {
         const summary = summarizeIncidentFinancials(
             incidentSettlementLinesByRef.get(incident._id) || [],
@@ -479,6 +509,7 @@ export default function VehicleDetailPage() {
             };
         }),
         ...maintenanceCostRows,
+        ...tireUsageVehicleCostRows,
         ...currentVehicleTireCostRows,
     ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
     const totalMaintenanceExpense = vehicleCostRows.reduce((sum, row) => sum + row.amount, 0);
@@ -519,6 +550,7 @@ export default function VehicleDetailPage() {
     const openVehicleMaintenance = () => {
         router.push(`/fleet/maintenance?vehicleRef=${vehicle._id}&open=1`);
     };
+
 
     const openVehicleIncident = () => {
         const params = new URLSearchParams({ vehicleRef: vehicle._id, open: '1' });
@@ -655,8 +687,6 @@ export default function VehicleDetailPage() {
             tireType: tireForm.tireType,
             tireBrand: tireForm.tireBrand.trim(),
             tireSize: tireForm.tireSize.trim(),
-            compatibleServiceRef: vehicle.serviceRef,
-            compatibleServiceName: vehicle.serviceName,
             installDate: tireForm.installDate,
             purchaseCost: tireForm.originalCost,
             originalCost: tireForm.originalCost,
@@ -692,7 +722,47 @@ export default function VehicleDetailPage() {
                     addToast('error', result.error || 'Gagal memasang ban');
                     return;
                 }
-                addToast('success', editingTire ? 'Ban berhasil diganti dan maintenance ban dicatat' : 'Ban berhasil dipasang dan maintenance ban dicatat');
+                const tireCostLines = [
+                    ...(selectedRegisteredTire ? [{
+                        warehouseItemRef: `tire:${selectedRegisteredTire._id}`,
+                        itemCode: selectedRegisteredTire.tireCodeLabel || selectedRegisteredTire.tireCode,
+                        itemName: `Pasang ban pengganti ${selectedRegisteredTire.tireCodeLabel || selectedRegisteredTire.tireCode || ''}`.trim(),
+                        subtotalCost: Number(result.summary?.installCost ?? selectedRegisteredTire.originalCost ?? selectedRegisteredTire.purchaseCost ?? 0),
+                        note: `Dipasang ke slot ${normalizedSlotCode}`,
+                    }] : []),
+                    ...(editingTire ? [{
+                        warehouseItemRef: `tire:${editingTire._id}`,
+                        itemCode: editingTire.tireCode,
+                        itemName: `Pemakaian ban lama ${editingTire.tireCode || ''}`.trim(),
+                        subtotalCost: Number(result.summary?.oldTireUsageCost ?? oldTireUsageCostPreview),
+                        note: `${oldTireUsagePercentPreview}% pemakaian di ${vehicle.plateNumber}`,
+                    }] : []),
+                ];
+                const technicianRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'maintenances',
+                        action: 'record-tire-technician-cost',
+                        data: {
+                            vehicleRef: vehicle._id,
+                            completedDate: tireForm.installDate,
+                            vendor: tireForm.technicianVendor.trim() || undefined,
+                            laborCost: tireForm.technicianCost,
+                            maintenanceType: editingTire ? 'Ganti Ban' : 'Pasang Ban',
+                            tireContext: `${editingTire ? 'Ganti' : 'Pasang'} ban ${selectedRegisteredTire?.tireCodeLabel || tireForm.tireCode || '-'} ke slot ${normalizedSlotCode}${editingTire ? `, ban lama ${editingTire.tireCode || editingTire._id}` : ''}`,
+                            tireCostLines,
+                            completionNotes: tireForm.notes.trim() || undefined,
+                        },
+                    }),
+                });
+                const technicianPayload = await technicianRes.json();
+                if (!technicianRes.ok) {
+                    addToast('error', technicianPayload.error || 'Ban berhasil dipasang, tapi catatan maintenance ban gagal dibuat');
+                    await loadVehicleDetail();
+                    return;
+                }
+                addToast('success', editingTire ? 'Ban berhasil diganti dan riwayat ban dicatat' : 'Ban berhasil dipasang dan riwayat ban dicatat');
                 closeTireModal();
                 await loadVehicleDetail();
                 return;
@@ -1389,6 +1459,23 @@ export default function VehicleDetailPage() {
                                 <div className="form-group">
                                     <label className="form-label">Catatan</label>
                                     <textarea className="form-textarea" rows={3} value={tireForm.notes} onChange={e => updateTireForm('notes', e.target.value)} placeholder="Mis. ban baru, hasil rotasi, kondisi khusus, atau alasan pindah slot." disabled={savingTire} />
+                                </div>
+
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                    <div>
+                                        <div className="font-medium">Biaya Teknisi</div>
+                                        <div className="text-muted text-sm">Isi 0 kalau tidak ada biaya teknisi.</div>
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Biaya Teknisi</label>
+                                            <FormattedNumberInput allowDecimal={false} value={tireForm.technicianCost} onValueChange={value => updateTireForm('technicianCost', value)} disabled={savingTire} zeroAsEmpty />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Teknisi / Bengkel</label>
+                                            <input className="form-input" value={tireForm.technicianVendor} onChange={e => updateTireForm('technicianVendor', e.target.value)} placeholder="Opsional" disabled={savingTire} />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

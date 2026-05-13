@@ -18,6 +18,7 @@ import type {
     PurchaseItem,
     Service,
     StockMovement,
+    TireHistoryLog,
     Vehicle,
     WarehouseItem,
 } from '@/lib/types';
@@ -221,7 +222,7 @@ async function resolveMaintenanceExpenseCategory() {
     throw new Error('Kategori biaya maintenance belum tersedia');
 }
 
-async function prepareMaintenanceLaborExpensePosting(
+export async function prepareMaintenanceLaborExpensePosting(
     laborCost: number,
     bankAccountRef?: string
 ): Promise<MaintenanceLaborExpensePosting | null> {
@@ -241,7 +242,7 @@ async function prepareMaintenanceLaborExpensePosting(
     return { category, bankAccount, nextBankBalance: nextBalance };
 }
 
-async function createMaintenanceLaborExpense(input: {
+export async function createMaintenanceLaborExpense(input: {
     session: ApiSession;
     maintenance: Maintenance;
     category: ExpenseCategory;
@@ -580,6 +581,158 @@ export async function handleMaintenanceComplete(
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Penyelesaian maintenance tidak valid' },
+            { status: 400 }
+        );
+    }
+}
+
+export async function handleTireTechnicianCostCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    try {
+        const vehicleRef = normalizeOptionalText(data.vehicleRef);
+        const completedDate = normalizeOptionalText(data.completedDate) || getBusinessDateValue();
+        const vendor = normalizeOptionalText(data.vendor);
+        const completionNotes = normalizeOptionalText(data.completionNotes || data.note);
+        const tireContext = normalizeOptionalText(data.tireContext);
+        const tireHistoryLogRef = normalizeOptionalText(data.tireHistoryLogRef);
+        const laborBankAccountRef = normalizeOptionalText(data.laborBankAccountRef);
+        const laborCost = parseWholeMoneyAmount(data.laborCost ?? data.technicianCost ?? 0);
+        const rawTireCostLines = Array.isArray(data.tireCostLines) ? data.tireCostLines : [];
+
+        if (!vehicleRef) {
+            return NextResponse.json({ error: 'Kendaraan wajib dipilih' }, { status: 400 });
+        }
+        assertIsoDate(completedDate, 'Tanggal biaya teknisi');
+        if (!Number.isFinite(laborCost) || laborCost < 0) {
+            return NextResponse.json({ error: 'Biaya teknisi tidak valid' }, { status: 400 });
+        }
+
+        const vehicle = await getDocumentById<Vehicle>(vehicleRef, 'vehicle');
+        if (!vehicle) {
+            return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
+        }
+        const tireHistory = tireHistoryLogRef
+            ? await getDocumentById<TireHistoryLog>(tireHistoryLogRef, 'tireHistoryLog')
+            : null;
+        if (tireHistoryLogRef && !tireHistory) {
+            return NextResponse.json({ error: 'Riwayat ban tidak ditemukan' }, { status: 404 });
+        }
+        if (tireHistory && tireHistory.costSourceVehicleRef && tireHistory.costSourceVehicleRef !== vehicleRef) {
+            return NextResponse.json({ error: 'Riwayat ban tidak sesuai kendaraan' }, { status: 409 });
+        }
+
+        const laborPosting = await prepareMaintenanceLaborExpensePosting(laborCost, laborBankAccountRef);
+        const maintenanceRef = `maintenance-${crypto.randomUUID()}`;
+        const movementLine = tireHistory
+            ? `Riwayat ban ${tireHistory.tireCode || tireHistory.tireEventRef}: ${tireHistory.fromPlacementLabel || '-'} -> ${tireHistory.toPlacementLabel || '-'}`
+            : '';
+        const materialUsages: MaintenanceMaterialUsage[] = rawTireCostLines
+            .map((line, index): MaintenanceMaterialUsage | null => {
+                if (!line || typeof line !== 'object') return null;
+                const row = line as Record<string, unknown>;
+                const itemCode = normalizeOptionalText(row.itemCode);
+                const itemName = normalizeOptionalText(row.itemName);
+                const note = normalizeOptionalText(row.note);
+                const subtotalCost = parseWholeMoneyAmount(row.subtotalCost ?? row.unitCostSnapshot ?? 0);
+                if (!itemCode && !itemName) return null;
+                return {
+                    warehouseItemRef: normalizeOptionalText(row.warehouseItemRef) || `tire-display:${maintenanceRef}:${index}`,
+                    itemCode: itemCode || undefined,
+                    itemName: itemName || itemCode || 'Biaya ban',
+                    category: 'Ban',
+                    unit: 'PCS',
+                    quantity: 1,
+                    unitCostSnapshot: Number.isFinite(subtotalCost) ? Math.max(subtotalCost, 0) : 0,
+                    subtotalCost: Number.isFinite(subtotalCost) ? Math.max(subtotalCost, 0) : 0,
+                    note: note || undefined,
+                };
+            })
+            .filter((line): line is MaintenanceMaterialUsage => Boolean(line));
+        if (materialUsages.length === 0 && tireContext) {
+            materialUsages.push({
+                warehouseItemRef: `tire-context:${maintenanceRef}`,
+                itemName: tireContext,
+                category: 'Ban',
+                unit: 'PCS',
+                quantity: 1,
+                unitCostSnapshot: 0,
+                subtotalCost: 0,
+                note: 'Konteks ganti/pasang ban',
+            });
+        }
+        const maintenanceDoc: Maintenance = {
+            _id: maintenanceRef,
+            _type: 'maintenance',
+            vehicleRef,
+            vehiclePlate: vehicle.plateNumber,
+            type: normalizeOptionalText(data.maintenanceType) || 'Ganti / Pasang Ban',
+            scheduleType: 'DATE',
+            plannedDate: completedDate,
+            status: 'DONE',
+            completedDate,
+            vendor: vendor || undefined,
+            completionNotes: [movementLine, tireContext, completionNotes].filter(Boolean).join('\n'),
+            attachmentUrls: [],
+            materialUsages,
+            materialUsageCount: materialUsages.length,
+            materialCostTotal: 0,
+            laborCost,
+            totalCost: laborCost,
+            cost: laborCost,
+            source: 'TIRE_REPLACEMENT',
+        };
+
+        await createDocument(maintenanceDoc as unknown as { _type: string; [key: string]: unknown });
+
+        const laborExpenseRef = laborPosting
+            ? await createMaintenanceLaborExpense({
+                session,
+                maintenance: maintenanceDoc,
+                category: laborPosting.category,
+                bankAccount: laborPosting.bankAccount,
+                nextBankBalance: laborPosting.nextBankBalance,
+                completedDate,
+                laborCost,
+                vendor,
+                completionNotes,
+            })
+            : undefined;
+
+        if (laborExpenseRef || laborPosting?.bankAccount) {
+            await updateDocument(maintenanceRef, {
+                laborExpenseRef: laborExpenseRef || null,
+                relatedExpenseRef: laborExpenseRef || null,
+                laborBankAccountRef: laborPosting?.bankAccount?._id || null,
+                laborBankAccountName: laborPosting?.bankAccount?.bankName || null,
+                laborBankAccountNumber: laborPosting?.bankAccount?.accountNumber || null,
+            }, 'maintenance');
+        }
+
+        if (tireHistory && !tireHistory.relatedMaintenanceRef) {
+            await updateDocument(tireHistory._id, { relatedMaintenanceRef: maintenanceRef }, 'tireHistoryLog');
+        }
+
+        await addAuditLog(
+            session,
+            'CREATE',
+            'maintenances',
+            maintenanceRef,
+            `Catat biaya teknisi ban ${vehicle.plateNumber || vehicleRef} ${formatAuditMoney(laborCost)}`
+        );
+
+        return NextResponse.json({
+            data: {
+                maintenanceRef,
+                laborCost,
+                laborExpenseRef,
+            },
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Gagal mencatat biaya teknisi ban' },
             { status: 400 }
         );
     }

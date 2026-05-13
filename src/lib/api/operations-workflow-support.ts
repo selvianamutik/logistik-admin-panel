@@ -49,8 +49,6 @@ export type NormalizedTireEventPayload = {
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
     tireBrand: string;
     tireSize: string;
-    compatibleServiceRef?: string;
-    compatibleServiceName?: string;
     installDate: string;
     replaceDate?: string;
     purchaseCost?: number;
@@ -900,8 +898,6 @@ export async function normalizeTireEventPayload(
     const parsedAccumulatedKm = normalizeNumber(data.accumulatedKm, { maxFractionDigits: 0 });
     const accumulatedKm = Number.isFinite(parsedAccumulatedKm) ? Math.max(parsedAccumulatedKm, 0) : 0;
     const notes = normalizeOptionalText(data.notes);
-    const compatibleServiceRef = normalizeOptionalText(data.compatibleServiceRef);
-    const compatibleServiceName = normalizeOptionalText(data.compatibleServiceName);
     const externalPartyName = normalizeOptionalText(data.externalPartyName);
     const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
     const tireType =
@@ -1017,8 +1013,6 @@ export async function normalizeTireEventPayload(
         tireType,
         tireBrand,
         tireSize,
-        compatibleServiceRef,
-        compatibleServiceName,
         installDate,
         replaceDate,
         purchaseCost,

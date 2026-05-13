@@ -14,9 +14,9 @@ import {
     buildTiresQuery,
     createDefaultTireForm,
     getSelectableInternalTireSlotOptions,
-    getSelectableTireVehicleCategories,
-    getSelectableTireVehiclesByCategory,
-    getTireVehicleCategoryValue,
+    getSelectableTireVehiclesByVehicleCategory,
+    getSelectableVehicleCategories,
+    getVehicleCategoryValue,
     resolveFleetTireEvents,
     TIRE_TYPES,
     type ResolvedFleetTireEvent,
@@ -49,6 +49,8 @@ type TireInstallFormState = {
     sourceTireUsagePercent: number | null;
     oldTireUsagePercent: number | null;
     oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
+    technicianCost: number;
+    technicianVendor: string;
     maintenanceDate: string;
     note: string;
 };
@@ -68,28 +70,11 @@ function createDefaultInstallForm(): TireInstallFormState {
         sourceTireUsagePercent: null,
         oldTireUsagePercent: null,
         oldTireDestination: 'WAREHOUSE',
+        technicianCost: 0,
+        technicianVendor: '',
         maintenanceDate: getBusinessDateValue(),
         note: '',
     };
-}
-
-function getTireCompatibilityCategoryValue(tire: Pick<TireEvent, 'compatibleServiceRef' | 'compatibleServiceName' | 'vehicleRef'>, vehicles: Vehicle[]) {
-    if (tire.vehicleRef) {
-        const vehicle = vehicles.find(item => item._id === tire.vehicleRef);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-    }
-    if (tire.compatibleServiceRef?.trim()) {
-        const vehicle = vehicles.find(item => item.serviceRef === tire.compatibleServiceRef);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-        return `service:${tire.compatibleServiceRef.trim()}`;
-    }
-    if (tire.compatibleServiceName?.trim()) {
-        const serviceName = tire.compatibleServiceName.trim().toLowerCase();
-        const vehicle = vehicles.find(item => item.serviceName?.trim().toLowerCase() === serviceName);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-        return `service-name:${serviceName}`;
-    }
-    return '';
 }
 
 export default function TiresPage() {
@@ -224,11 +209,11 @@ export default function TiresPage() {
 
     const resolvedEvents = resolveFleetTireEvents(events);
     const vehicleCategoryOptions = useMemo(
-        () => getSelectableTireVehicleCategories(vehicles, editTarget),
+        () => getSelectableVehicleCategories(vehicles, editTarget),
         [editTarget, vehicles]
     );
     const selectableVehicles = useMemo(
-        () => getSelectableTireVehiclesByCategory(vehicles, editTarget, vehicleCategoryFilter || undefined),
+        () => getSelectableTireVehiclesByVehicleCategory(vehicles, editTarget, vehicleCategoryFilter || undefined),
         [editTarget, vehicleCategoryFilter, vehicles]
     );
     const trackedTireItems = useMemo(
@@ -242,10 +227,6 @@ export default function TiresPage() {
     const selectedVehicle = useMemo(
         () => vehicles.find(vehicle => vehicle._id === form.vehicleRef) || null,
         [form.vehicleRef, vehicles]
-    );
-    const selectedCompatibilityVehicle = useMemo(
-        () => vehicles.find(vehicle => getTireVehicleCategoryValue(vehicle) === vehicleCategoryFilter) || null,
-        [vehicleCategoryFilter, vehicles]
     );
     const slotOptions = useMemo(
         () => getSelectableInternalTireSlotOptions({
@@ -305,11 +286,11 @@ export default function TiresPage() {
     const remainingPercentAfterPreview = Math.max(remainingPercentBeforeExit - usagePercentPreview, 0);
     const remainingValueAfterPreview = Math.round(Number(form.originalCost || 0) * remainingPercentAfterPreview / 100);
     const installVehicleCategoryOptions = useMemo(
-        () => getSelectableTireVehicleCategories(vehicles, null),
+        () => getSelectableVehicleCategories(vehicles, null),
         [vehicles]
     );
     const installSelectableVehicles = useMemo(
-        () => getSelectableTireVehiclesByCategory(vehicles, null, installForm.vehicleCategory || undefined),
+        () => getSelectableTireVehiclesByVehicleCategory(vehicles, null, installForm.vehicleCategory || undefined),
         [installForm.vehicleCategory, vehicles]
     );
     const installSelectedVehicle = useMemo(
@@ -329,13 +310,13 @@ export default function TiresPage() {
             .filter(event => {
                 if (!installSelectedVehicle) return false;
                 if (event.status === 'SCRAPPED') return false;
+                if (event.vehicleRef === installForm.vehicleRef) return false;
                 if (installForm.tireSource === 'WAREHOUSE') {
                     if (event.holderType !== 'WAREHOUSE' || event.status !== 'IN_WAREHOUSE') return false;
                 } else if (
                     event.holderType !== 'INTERNAL_VEHICLE' ||
                     event.status !== 'IN_USE' ||
-                    !event.vehicleRef ||
-                    event.vehicleRef === installForm.vehicleRef
+                    !event.vehicleRef
                 ) {
                     return false;
                 } else if (installForm.sourceVehicleRef && event.vehicleRef !== installForm.sourceVehicleRef) {
@@ -426,9 +407,9 @@ export default function TiresPage() {
         const holderType = resolvedEvent?.holderType || 'INTERNAL_VEHICLE';
         const status = resolvedEvent?.status || 'IN_USE';
         const slotCode = resolvedEvent?.slotCode || resolveTireSlotCode(event) || '';
-        const nextVehicleCategory = getTireCompatibilityCategoryValue(event, vehicles);
+        const nextVehicle = vehicles.find(item => item._id === event.vehicleRef) || null;
         setEditTarget(event);
-        setVehicleCategoryFilter(nextVehicleCategory);
+        setVehicleCategoryFilter(nextVehicle ? getVehicleCategoryValue(nextVehicle) : '');
         setForm({
             tireCode: event.tireCode || '',
             holderType,
@@ -575,8 +556,12 @@ export default function TiresPage() {
         if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
-        if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
-        if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
+        if (!editTarget && !form.linkedWarehouseItemRef) {
+            addToast('error', 'Pilih master barang gudang agar ban baru masuk stok gudang');
+            return;
+        }
+        if (editTarget && form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
+        if (editTarget && form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
         if (form.totalUsedPercent < 0 || form.totalUsedPercent > 100) {
             addToast('error', 'Total pemakaian ban harus 0-100%');
             return;
@@ -595,13 +580,16 @@ export default function TiresPage() {
         setSaving(true);
         try {
             const vehicle = vehicles.find(item => item._id === form.vehicleRef);
-            const compatibilityVehicle = form.holderType === 'INTERNAL_VEHICLE' ? vehicle : form.holderType === 'WAREHOUSE' ? selectedCompatibilityVehicle : null;
+            const effectiveHolderType = editTarget ? form.holderType : 'WAREHOUSE';
+            const effectiveStatus = editTarget ? form.status : 'IN_WAREHOUSE';
             const payload = {
                 ...form,
-                vehiclePlate: vehicle?.plateNumber,
-                compatibleServiceRef: compatibilityVehicle?.serviceRef,
-                compatibleServiceName: compatibilityVehicle?.serviceName,
-                slotLabel: form.slotCode ? formatTireSlotLabel(form.slotCode) : undefined,
+                holderType: effectiveHolderType,
+                status: effectiveStatus,
+                vehicleRef: effectiveHolderType === 'INTERNAL_VEHICLE' ? form.vehicleRef : '',
+                vehiclePlate: effectiveHolderType === 'INTERNAL_VEHICLE' ? vehicle?.plateNumber : undefined,
+                slotCode: effectiveHolderType === 'INTERNAL_VEHICLE' ? form.slotCode : '',
+                slotLabel: effectiveHolderType === 'INTERNAL_VEHICLE' && form.slotCode ? formatTireSlotLabel(form.slotCode) : undefined,
                 linkedWarehouseItemRef: form.linkedWarehouseItemRef || undefined,
                 purchaseCost: form.originalCost,
                 originalCost: form.originalCost,
@@ -703,7 +691,47 @@ export default function TiresPage() {
                 addToast('error', result.error || 'Gagal memasang ban');
                 return;
             }
-            addToast('success', `Ban berhasil dipasang. Biaya maintenance ${formatCurrency(result.summary?.totalMaintenanceCost ?? installTotalCostPreview)}`);
+            const tireCostLines = [
+                ...(selectedInstallTire ? [{
+                    warehouseItemRef: `tire:${selectedInstallTire._id}`,
+                    itemCode: selectedInstallTire.tireCodeLabel || selectedInstallTire.tireCode,
+                    itemName: `Pasang ban pengganti ${selectedInstallTire.tireCodeLabel || selectedInstallTire.tireCode || ''}`.trim(),
+                    subtotalCost: Number(result.summary?.installCost ?? installCostPreview),
+                    note: `Dipasang ke ${installSelectedVehicle?.plateNumber || '-'} slot ${installForm.slotCode}`,
+                }] : []),
+                ...(oldTireInInstallSlot ? [{
+                    warehouseItemRef: `tire:${oldTireInInstallSlot._id}`,
+                    itemCode: oldTireInInstallSlot.tireCodeLabel || oldTireInInstallSlot.tireCode,
+                    itemName: `Pemakaian ban lama ${oldTireInInstallSlot.tireCodeLabel || oldTireInInstallSlot.tireCode || ''}`.trim(),
+                    subtotalCost: Number(result.summary?.oldTireUsageCost ?? oldUsageCostPreview),
+                    note: `${oldUsagePercentPreview}% pemakaian di ${installSelectedVehicle?.plateNumber || '-'}`,
+                }] : []),
+            ];
+            const technicianRes = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'maintenances',
+                    action: 'record-tire-technician-cost',
+                    data: {
+                        vehicleRef: installForm.vehicleRef,
+                        completedDate: installForm.maintenanceDate,
+                        vendor: installForm.technicianVendor.trim() || undefined,
+                        laborCost: installForm.technicianCost,
+                        maintenanceType: oldTireInInstallSlot ? 'Ganti Ban' : 'Pasang Ban',
+                        tireContext: `${oldTireInInstallSlot ? 'Ganti' : 'Pasang'} ban ${selectedInstallTire?.tireCodeLabel || selectedInstallTire?.tireCode || '-'} ke ${installSelectedVehicle?.plateNumber || '-'} slot ${installForm.slotCode}${oldTireInInstallSlot ? `, ban lama ${oldTireInInstallSlot.tireCodeLabel || oldTireInInstallSlot.tireCode}` : ''}`,
+                        tireCostLines,
+                        completionNotes: installForm.note.trim() || undefined,
+                    },
+                }),
+            });
+            const technicianPayload = await technicianRes.json();
+            if (!technicianRes.ok) {
+                addToast('error', technicianPayload.error || 'Ban berhasil dipasang, tapi catatan maintenance ban gagal dibuat');
+                await loadData();
+                return;
+            }
+            addToast('success', `Ban berhasil dipasang. Biaya ban ${formatCurrency(result.summary?.totalMaintenanceCost ?? installTotalCostPreview)}`);
             setShowInstallModal(false);
             resetInstallForm();
             await loadData();
@@ -929,7 +957,7 @@ export default function TiresPage() {
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editTarget ? 'Edit Ban' : 'Catat Ban'}</h3>
+                            <h3 className="modal-title">{editTarget ? 'Edit Ban' : 'Catat Ban Gudang'}</h3>
                             <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -976,7 +1004,7 @@ export default function TiresPage() {
                                         onChange={e => updateForm('linkedWarehouseItemRef', e.target.value)}
                                         disabled={saving || linkedWarehouseItemLocked}
                                     >
-                                        <option value="">Tidak dihubungkan</option>
+                                        <option value="">{form.holderType === 'WAREHOUSE' && !editTarget ? 'Pilih master barang gudang' : 'Tidak dihubungkan'}</option>
                                         {trackedTireItems.map(item => (
                                             <option key={item._id} value={item._id}>
                                                 {item.itemCode} - {item.name}
@@ -984,7 +1012,7 @@ export default function TiresPage() {
                                         ))}
                                     </select>
                                     <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
-                                        Pilih master barang jika ban ini harus sinkron ke stok gudang ban. Harga tetap dikelola di modul inventory.
+                                        Ban baru di Gudang Ban wajib dihubungkan ke master barang agar stok gudang bertambah otomatis. Harga tetap dikelola di modul inventory.
                                     </div>
                                 </div>
                                 <div className="form-group">
@@ -1014,6 +1042,7 @@ export default function TiresPage() {
                                 </div>
                             )}
 
+                            {editTarget ? (
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Lokasi Saat Ini</label>
@@ -1072,6 +1101,14 @@ export default function TiresPage() {
                                     </select>
                                 </div>
                             </div>
+                            ) : (
+                                <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                    <div className="info-banner-title">Dicatat ke Gudang Ban</div>
+                                    <div className="info-banner-text">
+                                        Ban baru hanya masuk daftar gudang. Pasang atau ganti ban dilakukan dari detail kendaraan.
+                                    </div>
+                                </div>
+                            )}
 
                             {selectedLinkedWarehouseItem && form.holderType === 'WAREHOUSE' && (
                                 <div className="info-banner" style={{ marginBottom: '1rem' }}>
@@ -1082,7 +1119,7 @@ export default function TiresPage() {
                                 </div>
                             )}
 
-                            {(form.holderType === 'INTERNAL_VEHICLE' || form.holderType === 'WAREHOUSE') && (
+                            {form.holderType === 'INTERNAL_VEHICLE' && (
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Kategori Armada</label>
@@ -1093,53 +1130,38 @@ export default function TiresPage() {
                                                 const nextCategory = e.target.value;
                                                 setVehicleCategoryFilter(nextCategory);
                                                 if (nextCategory && form.vehicleRef) {
-                                                    const selectedVehicleValue = getTireVehicleCategoryValue(selectedVehicle || {
-                                                        _id: '',
-                                                        serviceRef: undefined,
-                                                        serviceName: undefined,
-                                                        vehicleType: '',
-                                                    });
-                                                    if (selectedVehicleValue !== nextCategory) {
+                                                    const currentVehicle = vehicles.find(vehicle => vehicle._id === form.vehicleRef) || null;
+                                                    if (currentVehicle && getVehicleCategoryValue(currentVehicle) !== nextCategory) {
                                                         setForm(prev => ({ ...prev, vehicleRef: '', slotCode: '' }));
                                                     }
                                                 }
                                             }}
                                             disabled={saving}
                                         >
-                                            <option value="">{form.holderType === 'WAREHOUSE' ? 'Pilih kategori armada' : 'Semua kategori'}</option>
+                                            <option value="">Semua kategori</option>
                                             {vehicleCategoryOptions.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label} ({option.vehicleCount} unit)
-                                                </option>
+                                                <option key={option.value} value={option.value}>{option.label} ({option.vehicleCount} unit)</option>
                                             ))}
                                         </select>
-                                        {form.holderType === 'WAREHOUSE' && (
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                                Kategori ini dipakai agar ban gudang muncul di pilihan kendaraan yang sesuai.
-                                            </div>
-                                        )}
                                     </div>
-                                    {form.holderType === 'INTERNAL_VEHICLE' && (
-                                        <div className="form-group">
-                                            <label className="form-label">Kendaraan</label>
-                                            <select
-                                                className="form-select"
-                                                value={form.vehicleRef}
-                                                onChange={e => {
-                                                    const nextVehicleRef = e.target.value;
-                                                    const nextVehicle = selectableVehicles.find(vehicle => vehicle._id === nextVehicleRef) || null;
-                                                    if (nextVehicle) {
-                                                        setVehicleCategoryFilter(getTireVehicleCategoryValue(nextVehicle));
-                                                    }
-                                                    setForm(prev => ({ ...prev, vehicleRef: nextVehicleRef, slotCode: '' }));
-                                                }}
-                                                disabled={saving}
-                                            >
-                                                <option value="">Pilih kendaraan</option>
-                                                {selectableVehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
-                                            </select>
-                                        </div>
-                                    )}
+                                    <div className="form-group">
+                                        <label className="form-label">Kendaraan</label>
+                                        <select
+                                            className="form-select"
+                                            value={form.vehicleRef}
+                                            onChange={e => {
+                                                const nextVehicle = selectableVehicles.find(vehicle => vehicle._id === e.target.value) || null;
+                                                if (nextVehicle) {
+                                                    setVehicleCategoryFilter(getVehicleCategoryValue(nextVehicle));
+                                                }
+                                                setForm(prev => ({ ...prev, vehicleRef: e.target.value, slotCode: '' }));
+                                            }}
+                                            disabled={saving}
+                                        >
+                                            <option value="">Pilih kendaraan</option>
+                                            {selectableVehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                             )}
 
@@ -1290,7 +1312,7 @@ export default function TiresPage() {
                                             setInstallForm(prev => ({
                                                 ...prev,
                                                 vehicleRef: e.target.value,
-                                                vehicleCategory: nextVehicle ? getTireVehicleCategoryValue(nextVehicle) : prev.vehicleCategory,
+                                                vehicleCategory: nextVehicle ? getVehicleCategoryValue(nextVehicle) : prev.vehicleCategory,
                                                 slotCode: '',
                                                 sourceVehicleRef: '',
                                                 tireEventRef: '',
@@ -1463,8 +1485,25 @@ export default function TiresPage() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Total Biaya Maintenance</label>
+                                    <label className="form-label">Total Biaya Ban</label>
                                     <input className="form-input" value={formatCurrency(installTotalCostPreview)} readOnly />
+                                </div>
+                            </div>
+
+                            <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                <div>
+                                    <div className="font-medium">Biaya Teknisi</div>
+                                    <div className="text-muted text-sm">Isi 0 kalau tidak ada biaya teknisi.</div>
+                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Biaya Teknisi</label>
+                                        <FormattedNumberInput allowDecimal={false} value={installForm.technicianCost} onValueChange={value => updateInstallForm('technicianCost', value)} disabled={saving} zeroAsEmpty />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Teknisi / Bengkel</label>
+                                        <input className="form-input" value={installForm.technicianVendor} onChange={e => updateInstallForm('technicianVendor', e.target.value)} placeholder="Opsional" disabled={saving} />
+                                    </div>
                                 </div>
                             </div>
 

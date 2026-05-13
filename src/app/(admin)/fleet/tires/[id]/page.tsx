@@ -10,9 +10,9 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import {
     getSelectableInternalTireSlotOptions,
-    getSelectableTireVehicleCategories,
-    getSelectableTireVehiclesByCategory,
-    getTireVehicleCategoryValue,
+    getSelectableTireVehiclesByVehicleCategory,
+    getSelectableVehicleCategories,
+    getVehicleCategoryValue,
     resolveFleetTireEvents,
     TIRE_TYPES,
 } from '@/lib/fleet-asset-page-support';
@@ -46,25 +46,6 @@ type TireDetailEditForm = {
 
 const BAN_DETAIL_HOLDER_TYPE_OPTIONS = TIRE_HOLDER_TYPE_OPTIONS.filter(option => option.value !== 'EXTERNAL_VEHICLE');
 const BAN_DETAIL_STATUS_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.value !== 'LOANED_OUT');
-
-function getTireCompatibilityCategoryValue(tire: Pick<TireEvent, 'compatibleServiceRef' | 'compatibleServiceName' | 'vehicleRef'>, vehicles: Vehicle[]) {
-    if (tire.vehicleRef) {
-        const vehicle = vehicles.find(item => item._id === tire.vehicleRef);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-    }
-    if (tire.compatibleServiceRef?.trim()) {
-        const vehicle = vehicles.find(item => item.serviceRef === tire.compatibleServiceRef);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-        return `service:${tire.compatibleServiceRef.trim()}`;
-    }
-    if (tire.compatibleServiceName?.trim()) {
-        const serviceName = tire.compatibleServiceName.trim().toLowerCase();
-        const vehicle = vehicles.find(item => item.serviceName?.trim().toLowerCase() === serviceName);
-        if (vehicle) return getTireVehicleCategoryValue(vehicle);
-        return `service-name:${serviceName}`;
-    }
-    return '';
-}
 
 export default function TireDetailPage() {
     const params = useParams();
@@ -167,13 +148,11 @@ export default function TireDetailPage() {
     const statusMeta = TIRE_ASSET_STATUS_MAP[resolvedTire.status];
     const placementLabel = resolvedTire.placementLabel || '-';
     const slotLabel = resolvedTire.slotCode ? `${resolvedTire.slotCode} - ${resolvedTire.slotLabel || formatTireSlotLabel(resolvedTire.slotCode)}` : '-';
-    const compatibleVehicleType = tire.compatibleServiceName || vehicle?.serviceName || tire.compatibleServiceRef || '-';
     const resolvedEditTire = resolveFleetTireEvents([tire])[0];
     const trackedTireItems = warehouseItems.filter(item => isTireTrackedWarehouseItem(item));
     const selectedEditVehicle = vehicles.find(item => item._id === editForm.vehicleRef) || null;
-    const selectedCompatibilityVehicle = vehicles.find(item => getTireVehicleCategoryValue(item) === editForm.vehicleCategory) || null;
-    const vehicleCategoryOptions = getSelectableTireVehicleCategories(vehicles, tire);
-    const selectableVehicles = getSelectableTireVehiclesByCategory(vehicles, tire, editForm.vehicleCategory || undefined);
+    const vehicleCategoryOptions = getSelectableVehicleCategories(vehicles, tire);
+    const selectableVehicles = getSelectableTireVehiclesByVehicleCategory(vehicles, tire, editForm.vehicleCategory || undefined);
     const slotOptions = getSelectableInternalTireSlotOptions({
         vehicle: selectedEditVehicle,
         tireEvents: allTireEvents,
@@ -198,7 +177,7 @@ export default function TireDetailPage() {
             tireCode: tire.tireCode || '',
             holderType: editResolvedTire.holderType,
             status: editResolvedTire.status,
-            vehicleCategory: getTireCompatibilityCategoryValue(tire, vehicles),
+            vehicleCategory: vehicle ? getVehicleCategoryValue(vehicle) : '',
             vehicleRef: tire.vehicleRef || '',
             slotCode: editResolvedTire.slotCode || resolveTireSlotCode(tire) || '',
             linkedWarehouseItemRef: tire.linkedWarehouseItemRef || '',
@@ -250,11 +229,6 @@ export default function TireDetailPage() {
         setSavingEdit(true);
         try {
             const targetVehicle = vehicles.find(item => item._id === editForm.vehicleRef) || null;
-            const compatibilityVehicle = editForm.holderType === 'INTERNAL_VEHICLE'
-                ? targetVehicle
-                : editForm.holderType === 'WAREHOUSE'
-                    ? selectedCompatibilityVehicle
-                    : null;
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -272,8 +246,6 @@ export default function TireDetailPage() {
                             slotCode: editForm.holderType === 'INTERNAL_VEHICLE' ? editForm.slotCode : '',
                             slotLabel: editForm.holderType === 'INTERNAL_VEHICLE' && editForm.slotCode ? formatTireSlotLabel(editForm.slotCode) : undefined,
                             linkedWarehouseItemRef: editForm.linkedWarehouseItemRef || '',
-                            compatibleServiceRef: compatibilityVehicle?.serviceRef || '',
-                            compatibleServiceName: compatibilityVehicle?.serviceName || '',
                             tireType: editForm.tireType,
                             tireBrand: editForm.tireBrand,
                             tireSize: editForm.tireSize,
@@ -364,9 +336,8 @@ export default function TireDetailPage() {
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Relasi</span></div>
                     <div className="card-body">
-                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{vehicle ? (canOpenVehicles ? <Link href={`/fleet/vehicles/${vehicle._id}`}>{vehicle.plateNumber}</Link> : vehicle.plateNumber) : tire.vehiclePlate || '-'}</div></div><div className="detail-item"><div className="detail-label">Tipe Armada Ban</div><div className="detail-value">{compatibleVehicleType}</div></div></div>
-                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Kategori Unit Saat Ini</div><div className="detail-value">{vehicle?.serviceName || '-'}</div></div><div className="detail-item"><div className="detail-label">Kode Kategori Ban</div><div className="detail-value font-mono">{tire.compatibleServiceRef || '-'}</div></div></div>
-                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Item Gudang</div><div className="detail-value">{warehouseItem ? (canOpenItems ? <Link href={`/inventory/items/${warehouseItem._id}`}>{warehouseItem.itemCode || warehouseItem.name}</Link> : warehouseItem.itemCode || warehouseItem.name) : tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-'}</div></div><div className="detail-item"><div className="detail-label">Sumber Pembelian</div><div className="detail-value">{tire.sourcePurchaseNumber || '-'}</div></div></div>
+                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{vehicle ? (canOpenVehicles ? <Link href={`/fleet/vehicles/${vehicle._id}`}>{vehicle.plateNumber}</Link> : vehicle.plateNumber) : tire.vehiclePlate || '-'}</div></div><div className="detail-item"><div className="detail-label">Item Gudang</div><div className="detail-value">{warehouseItem ? (canOpenItems ? <Link href={`/inventory/items/${warehouseItem._id}`}>{warehouseItem.itemCode || warehouseItem.name}</Link> : warehouseItem.itemCode || warehouseItem.name) : tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-'}</div></div></div>
+                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Sumber Pembelian</div><div className="detail-value">{tire.sourcePurchaseNumber || '-'}</div></div></div>
                     </div>
                 </div>
             </div>
@@ -494,7 +465,7 @@ export default function TireDetailPage() {
                                     </select>
                                 </div>
                             </div>
-                            {(editForm.holderType === 'INTERNAL_VEHICLE' || editForm.holderType === 'WAREHOUSE') && (
+                            {editForm.holderType === 'INTERNAL_VEHICLE' && (
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Kategori Armada</label>
@@ -505,48 +476,43 @@ export default function TireDetailPage() {
                                                 const nextCategory = event.target.value;
                                                 setEditForm(current => {
                                                     const currentVehicle = vehicles.find(item => item._id === current.vehicleRef) || null;
-                                                    const currentVehicleCategory = currentVehicle ? getTireVehicleCategoryValue(currentVehicle) : '';
+                                                    const shouldResetVehicle = Boolean(nextCategory && currentVehicle && getVehicleCategoryValue(currentVehicle) !== nextCategory);
                                                     return {
                                                         ...current,
                                                         vehicleCategory: nextCategory,
-                                                        vehicleRef: nextCategory && current.vehicleRef && currentVehicleCategory !== nextCategory ? '' : current.vehicleRef,
-                                                        slotCode: nextCategory && current.vehicleRef && currentVehicleCategory !== nextCategory ? '' : current.slotCode,
+                                                        vehicleRef: shouldResetVehicle ? '' : current.vehicleRef,
+                                                        slotCode: shouldResetVehicle ? '' : current.slotCode,
                                                     };
                                                 });
                                             }}
                                             disabled={savingEdit}
                                         >
-                                            <option value="">{editForm.holderType === 'WAREHOUSE' ? 'Pilih kategori armada' : 'Semua kategori'}</option>
+                                            <option value="">Semua kategori</option>
                                             {vehicleCategoryOptions.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label} ({option.vehicleCount} unit)
-                                                </option>
+                                                <option key={option.value} value={option.value}>{option.label} ({option.vehicleCount} unit)</option>
                                             ))}
                                         </select>
                                     </div>
-                                    {editForm.holderType === 'INTERNAL_VEHICLE' && (
-                                        <div className="form-group">
-                                            <label className="form-label">Kendaraan</label>
-                                            <select
-                                                className="form-select"
-                                                value={editForm.vehicleRef}
-                                                onChange={event => {
-                                                    const nextVehicleRef = event.target.value;
-                                                    const nextVehicle = selectableVehicles.find(item => item._id === nextVehicleRef) || null;
-                                                    setEditForm(current => ({
-                                                        ...current,
-                                                        vehicleRef: nextVehicleRef,
-                                                        vehicleCategory: nextVehicle ? getTireVehicleCategoryValue(nextVehicle) : current.vehicleCategory,
-                                                        slotCode: '',
-                                                    }));
-                                                }}
-                                                disabled={savingEdit}
-                                            >
-                                                <option value="">Pilih kendaraan</option>
-                                                {selectableVehicles.map(item => <option key={item._id} value={item._id}>{item.plateNumber} - {item.brandModel}</option>)}
-                                            </select>
-                                        </div>
-                                    )}
+                                    <div className="form-group">
+                                        <label className="form-label">Kendaraan</label>
+                                        <select
+                                            className="form-select"
+                                            value={editForm.vehicleRef}
+                                            onChange={event => {
+                                                const nextVehicle = selectableVehicles.find(item => item._id === event.target.value) || null;
+                                                setEditForm(current => ({
+                                                    ...current,
+                                                    vehicleRef: event.target.value,
+                                                    vehicleCategory: nextVehicle ? getVehicleCategoryValue(nextVehicle) : current.vehicleCategory,
+                                                    slotCode: '',
+                                                }));
+                                            }}
+                                            disabled={savingEdit}
+                                        >
+                                            <option value="">Pilih kendaraan</option>
+                                            {selectableVehicles.map(item => <option key={item._id} value={item._id}>{item.plateNumber} - {item.brandModel}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                             )}
                             {editForm.holderType === 'INTERNAL_VEHICLE' && (

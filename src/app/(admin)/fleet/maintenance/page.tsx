@@ -257,13 +257,13 @@ export default function MaintenancePage() {
             .filter(row => {
                 if (row.status === 'SCRAPPED') return false;
                 if (!selectedCompleteVehicle) return false;
+                if (row.vehicleRef === selectedCompleteVehicle._id) return false;
                 if (tireMaintenanceForm.tireSource === 'WAREHOUSE') {
                     if (row.holderType !== 'WAREHOUSE' || row.status !== 'IN_WAREHOUSE') return false;
                 } else if (
                     row.holderType !== 'INTERNAL_VEHICLE' ||
                     row.status !== 'IN_USE' ||
-                    !row.vehicleRef ||
-                    row.vehicleRef === selectedCompleteVehicle._id
+                    !row.vehicleRef
                 ) {
                     return false;
                 } else if (tireMaintenanceForm.sourceVehicleRef && row.vehicleRef !== tireMaintenanceForm.sourceVehicleRef) {
@@ -311,15 +311,12 @@ export default function MaintenancePage() {
     const maintenanceOldUsedBefore = Number(oldTireInSlot?.totalUsedPercent || 0);
     const maintenanceOldUsedAfter = Math.min(100, maintenanceOldUsedBefore + maintenanceOldUsagePercentPreview);
     const maintenanceOldRemainingAfter = Math.max(100 - maintenanceOldUsedAfter, 0);
-    const maintenanceOldRemainingValueBefore = Number(oldTireInSlot?.remainingValue ?? Math.round(maintenanceOldOriginalCost * oldTireRemainingPercent / 100));
-    const maintenanceOldRemainingValueAfter = Math.round(maintenanceOldOriginalCost * maintenanceOldRemainingAfter / 100);
     const maintenanceOldCostPreview = Math.round(maintenanceOldOriginalCost * maintenanceOldUsagePercentPreview / 100);
     const maintenanceReplacementOriginalCost = Number(selectedReplacementTire?.originalCost ?? selectedReplacementTire?.purchaseCost ?? 0);
     const maintenanceReplacementPostedBefore = Number(selectedReplacementTire?.maintenanceCostPostedPercent || 0);
     const maintenanceReplacementPostedPercent = Math.max(100 - maintenanceReplacementPostedBefore, 0);
     const maintenanceReplacementPostedAfter = Math.min(100, maintenanceReplacementPostedBefore + maintenanceReplacementPostedPercent);
     const maintenanceReplacementRemainingPercent = Math.max(100 - Number(selectedReplacementTire?.totalUsedPercent || 0), 0);
-    const maintenanceReplacementRemainingValue = Number(selectedReplacementTire?.remainingValue ?? Math.round(maintenanceReplacementOriginalCost * maintenanceReplacementRemainingPercent / 100));
     const maintenanceReplacementCostPreview = Math.round(maintenanceReplacementOriginalCost * maintenanceReplacementPostedPercent / 100);
     const requiresMaintenanceSourceUsagePercent = Boolean(selectedReplacementTire?.holderType === 'INTERNAL_VEHICLE' && selectedReplacementTire.vehicleRef && selectedReplacementTire.vehicleRef !== completeTarget?.vehicleRef);
     const maintenanceSourceUsagePercentPreview = Number(tireMaintenanceForm.sourceTireUsagePercent || 0);
@@ -327,6 +324,8 @@ export default function MaintenancePage() {
     const maintenanceSourceRemainingAfter = Math.max(maintenanceReplacementRemainingPercent - maintenanceSourceUsagePercentPreview, 0);
     const maintenanceSourceRemainingValueAfter = Math.round(maintenanceReplacementOriginalCost * maintenanceSourceRemainingAfter / 100);
     const maintenanceTotalTireCostPreview = maintenanceOldCostPreview + maintenanceReplacementCostPreview;
+    const maintenanceTechnicianCostPreview = Number(completeForm.laborCost || 0);
+    const maintenanceTotalCostPreview = maintenanceTotalTireCostPreview + maintenanceTechnicianCostPreview;
 
     useEffect(() => {
         if (!showCompleteModal || !isTireMaintenance || tireMaintenanceForm.slotCode || tireSlotOptions.length === 0) {
@@ -483,7 +482,6 @@ export default function MaintenancePage() {
                         throw new Error(`Persentase ban lama harus 0-${oldTireRemainingPercent}%`);
                     }
                 }
-
                 setSavingCompletion(true);
                 const res = await fetch('/api/data', {
                     method: 'POST',
@@ -500,6 +498,9 @@ export default function MaintenancePage() {
                             oldTireUsagePercent: oldTireInSlot ? tireMaintenanceForm.oldTireUsagePercent : undefined,
                             oldTireDestination: oldTireInSlot ? tireMaintenanceForm.oldTireDestination : undefined,
                             maintenanceDate: completeForm.completedDate,
+                            vendor: completeForm.vendor.trim() || undefined,
+                            laborCost: completeForm.laborCost,
+                            laborBankAccountRef: completeForm.laborCost > 0 ? completeForm.laborBankAccountRef || undefined : undefined,
                             note: completeForm.completionNotes.trim() || undefined,
                         },
                     }),
@@ -757,18 +758,20 @@ export default function MaintenancePage() {
                             </div>
 
                             <div className="form-group"><label className="form-label">Vendor / Bengkel</label><input className="form-input" value={completeForm.vendor} onChange={event => setCompleteForm(current => ({ ...current, vendor: event.target.value }))} placeholder="Opsional" disabled={savingCompletion} /></div>
-                            <div className="form-row">
-                                <div className="form-group"><label className="form-label">Ongkos Jasa / Tukang</label><FormattedNumberInput allowDecimal={false} value={completeForm.laborCost} onValueChange={(value) => setCompleteForm(current => ({ ...current, laborCost: value }))} disabled={savingCompletion} zeroAsEmpty /></div>
-                                <div className="form-group">
-                                    <label className="form-label">Kas / Bank Pembayaran Jasa</label>
-                                    <select className="form-select" value={completeForm.laborBankAccountRef} onChange={event => setCompleteForm(current => ({ ...current, laborBankAccountRef: event.target.value }))} disabled={savingCompletion || loadingBankAccounts || completeForm.laborCost <= 0}>
-                                        <option value="">{completeForm.laborCost > 0 ? 'Belum dibayar / hutang biaya' : 'Isi ongkos jasa dulu'}</option>
-                                        {bankAccounts.map(account => (
-                                            <option key={account._id} value={account._id}>{account.bankName} {account.accountNumber ? `- ${account.accountNumber}` : ''}</option>
-                                        ))}
-                                    </select>
+                            {!isTireMaintenance && (
+                                <div className="form-row">
+                                    <div className="form-group"><label className="form-label">Ongkos Jasa / Tukang</label><FormattedNumberInput allowDecimal={false} value={completeForm.laborCost} onValueChange={(value) => setCompleteForm(current => ({ ...current, laborCost: value }))} disabled={savingCompletion} zeroAsEmpty /></div>
+                                    <div className="form-group">
+                                        <label className="form-label">Kas / Bank Pembayaran Jasa</label>
+                                        <select className="form-select" value={completeForm.laborBankAccountRef} onChange={event => setCompleteForm(current => ({ ...current, laborBankAccountRef: event.target.value }))} disabled={savingCompletion || loadingBankAccounts || completeForm.laborCost <= 0}>
+                                            <option value="">{completeForm.laborCost > 0 ? 'Belum dibayar / hutang biaya' : 'Isi ongkos jasa dulu'}</option>
+                                            {bankAccounts.map(account => (
+                                                <option key={account._id} value={account._id}>{account.bankName} {account.accountNumber ? `- ${account.accountNumber}` : ''}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             <div className="form-group"><label className="form-label">Catatan Penyelesaian</label><textarea className="form-textarea" rows={3} value={completeForm.completionNotes} onChange={event => setCompleteForm(current => ({ ...current, completionNotes: event.target.value }))} placeholder="Opsional" disabled={savingCompletion} /></div>
 
                             {isTireMaintenance && (
@@ -900,41 +903,93 @@ export default function MaintenancePage() {
                                                 </div>
                                             )}
                                             <div className="form-row">
-                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.55rem' }}>
-                                                    <div>
-                                                        <div className="text-muted text-sm">Ban lama / biaya pemakaian</div>
-                                                        <div className="font-medium">{oldTireInSlot ? `${oldTireInSlot.tireCodeLabel} - ${oldTireInSlot.tireBrand || '-'} ${oldTireInSlot.tireSize || ''}` : 'Slot kosong'}</div>
+                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.7rem' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                                        <div>
+                                                            <div className="text-muted text-sm">Ban Lama</div>
+                                                            <div className="font-medium">{oldTireInSlot ? oldTireInSlot.tireCodeLabel : 'Slot kosong'}</div>
+                                                            {oldTireInSlot && (
+                                                                <div className="text-muted text-sm">{oldTireInSlot.tireBrand || '-'} {oldTireInSlot.tireSize || ''}</div>
+                                                            )}
+                                                        </div>
+                                                        <span className={`badge badge-${tireMaintenanceForm.oldTireDestination === 'SCRAPPED' ? 'danger' : 'gray'}`}>
+                                                            {oldTireInSlot ? (tireMaintenanceForm.oldTireDestination === 'SCRAPPED' ? 'Afkir' : 'Gudang') : 'Kosong'}
+                                                        </span>
                                                     </div>
                                                     {oldTireInSlot ? (
-                                                        <>
-                                                            <div className="text-sm">Sebelum: terpakai {formatQuantity(maintenanceOldUsedBefore, 2)}%, sisa {formatQuantity(oldTireRemainingPercent, 2)}% ({formatCurrency(maintenanceOldRemainingValueBefore)})</div>
-                                                            <div className="text-sm">Biaya pemakaian: {formatQuantity(maintenanceOldUsagePercentPreview, 2)}% x {formatCurrency(maintenanceOldOriginalCost)} = <strong>{formatCurrency(maintenanceOldCostPreview)}</strong></div>
-                                                            <div className="text-sm">Sesudah: terpakai {formatQuantity(maintenanceOldUsedAfter, 2)}%, sisa {formatQuantity(maintenanceOldRemainingAfter, 2)}% ({formatCurrency(maintenanceOldRemainingValueAfter)})</div>
-                                                        </>
+                                                        <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                                            <div>
+                                                                <div className="text-muted text-sm">Biaya Pemakaian</div>
+                                                                <div className="font-semibold" style={{ fontSize: '1.15rem', color: maintenanceOldCostPreview > 0 ? 'var(--color-danger)' : 'var(--color-gray-500)' }}>
+                                                                    {formatCurrency(maintenanceOldCostPreview)}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-muted text-sm">
+                                                                Pakai {formatQuantity(maintenanceOldUsagePercentPreview, 2)}% | sisa {formatQuantity(oldTireRemainingPercent, 2)}% {'>'} {formatQuantity(maintenanceOldRemainingAfter, 2)}%
+                                                            </div>
+                                                        </div>
                                                     ) : (
-                                                        <div className="text-muted text-sm">Tidak ada biaya ban lama karena slot belum berisi ban.</div>
+                                                        <div className="text-muted text-sm">Tidak ada ban lama di slot ini.</div>
                                                     )}
                                                 </div>
-                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.55rem' }}>
-                                                    <div>
-                                                        <div className="text-muted text-sm">Ban pengganti / biaya masuk maintenance</div>
-                                                        <div className="font-medium">{selectedReplacementTire ? `${selectedReplacementTire.tireCodeLabel} - ${selectedReplacementTire.tireBrand || '-'} ${selectedReplacementTire.tireSize || ''}` : 'Pilih ban sumber'}</div>
+                                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.5rem', padding: '0.85rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.7rem' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                                        <div>
+                                                            <div className="text-muted text-sm">Ban Pengganti</div>
+                                                            <div className="font-medium">{selectedReplacementTire ? selectedReplacementTire.tireCodeLabel : 'Belum dipilih'}</div>
+                                                            {selectedReplacementTire && (
+                                                                <div className="text-muted text-sm">{selectedReplacementTire.tireBrand || '-'} {selectedReplacementTire.tireSize || ''}</div>
+                                                            )}
+                                                        </div>
+                                                        <span className="badge badge-primary">{selectedReplacementTire ? `Slot ${tireMaintenanceForm.slotCode || '-'}` : 'Pilih ban'}</span>
                                                     </div>
                                                     {selectedReplacementTire ? (
-                                                        <>
-                                                            <div className="text-sm">Sebelum: tercatat maintenance {formatQuantity(maintenanceReplacementPostedBefore, 2)}%, sisa ban {formatQuantity(maintenanceReplacementRemainingPercent, 2)}% ({formatCurrency(maintenanceReplacementRemainingValue)})</div>
-                                                            <div className="text-sm">Biaya ban pengganti: {formatQuantity(maintenanceReplacementPostedPercent, 2)}% x {formatCurrency(maintenanceReplacementOriginalCost)} = <strong>{formatCurrency(maintenanceReplacementCostPreview)}</strong></div>
-                                                            <div className="text-sm">Sesudah: tercatat maintenance {formatQuantity(maintenanceReplacementPostedAfter, 2)}%, terpasang ke {selectedCompleteVehicle?.plateNumber || '-'} slot {tireMaintenanceForm.slotCode || '-'}</div>
-                                                        </>
+                                                        <div style={{ display: 'grid', gap: '0.45rem' }}>
+                                                            <div>
+                                                                <div className="text-muted text-sm">Biaya Masuk Maintenance</div>
+                                                                <div className="font-semibold" style={{ fontSize: '1.15rem', color: maintenanceReplacementCostPreview > 0 ? 'var(--color-primary)' : 'var(--color-gray-500)' }}>
+                                                                    {formatCurrency(maintenanceReplacementCostPreview)}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-muted text-sm">
+                                                                Posting {formatQuantity(maintenanceReplacementPostedPercent, 2)}% | total tercatat {formatQuantity(maintenanceReplacementPostedAfter, 2)}%
+                                                            </div>
+                                                        </div>
                                                     ) : (
-                                                        <div className="text-muted text-sm">Pilih ban untuk melihat persentase dan biaya yang akan dicatat.</div>
+                                                        <div className="text-muted text-sm">Pilih ban sumber untuk melihat biaya.</div>
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="form-row">
                                                 <div className="form-group">
                                                     <label className="form-label">Total Biaya Maintenance Ban</label>
-                                                    <input className="form-input" value={formatCurrency(maintenanceTotalTireCostPreview)} readOnly />
+                                                    <input className="form-input" value={formatCurrency(maintenanceTotalCostPreview)} readOnly />
+                                                    {maintenanceTechnicianCostPreview > 0 && (
+                                                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                            Ban {formatCurrency(maintenanceTotalTireCostPreview)} + teknisi {formatCurrency(maintenanceTechnicianCostPreview)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                                <div>
+                                                    <div className="font-medium">Biaya Teknisi</div>
+                                                    <div className="text-muted text-sm">Isi 0 kalau tidak ada biaya teknisi.</div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Biaya Teknisi</label>
+                                                        <FormattedNumberInput allowDecimal={false} value={completeForm.laborCost} onValueChange={(value) => setCompleteForm(current => ({ ...current, laborCost: value }))} disabled={savingCompletion} zeroAsEmpty />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Kas / Bank Pembayaran Teknisi</label>
+                                                        <select className="form-select" value={completeForm.laborBankAccountRef} onChange={event => setCompleteForm(current => ({ ...current, laborBankAccountRef: event.target.value }))} disabled={savingCompletion || loadingBankAccounts || completeForm.laborCost <= 0}>
+                                                            <option value="">{completeForm.laborCost > 0 ? 'Belum dibayar / hutang biaya' : 'Isi biaya teknisi dulu'}</option>
+                                                            {bankAccounts.map(account => (
+                                                                <option key={account._id} value={account._id}>{account.bankName} {account.accountNumber ? `- ${account.accountNumber}` : ''}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </>

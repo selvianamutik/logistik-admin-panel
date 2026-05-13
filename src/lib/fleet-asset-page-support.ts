@@ -45,12 +45,6 @@ export type ResolvedFleetTireEvent = TireEvent & {
     placementLabel: string;
 };
 
-export type TireVehicleCategoryOption = {
-    value: string;
-    label: string;
-    vehicleCount: number;
-};
-
 export type TireSlotOption = {
     value: string;
     label: string;
@@ -59,15 +53,21 @@ export type TireSlotOption = {
     disabled: boolean;
 };
 
+export type VehicleCategoryOption = {
+    value: string;
+    label: string;
+    vehicleCount: number;
+};
+
 export const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
 
 export function createDefaultTireForm(): TireFormState {
     return {
         tireCode: '',
-        holderType: 'INTERNAL_VEHICLE',
-        status: 'IN_USE',
+        holderType: 'WAREHOUSE',
+        status: 'IN_WAREHOUSE',
         vehicleRef: '',
-        slotCode: '1L',
+        slotCode: '',
         linkedWarehouseItemRef: '',
         tireType: 'Tubeless',
         tireBrand: '',
@@ -175,11 +175,7 @@ export function getSelectableTireVehicles(vehicles: Vehicle[], editTarget: TireE
     return vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
 }
 
-export function getSelectableInternalTireSlots() {
-    return INTERNAL_TIRE_SLOT_CODES.slice();
-}
-
-export function getTireVehicleCategoryValue(vehicle: Pick<Vehicle, '_id' | 'serviceRef' | 'serviceName' | 'vehicleType'>) {
+export function getVehicleCategoryValue(vehicle: Pick<Vehicle, 'serviceRef' | 'serviceName' | 'vehicleType'>) {
     if (vehicle.serviceRef?.trim()) {
         return `service:${vehicle.serviceRef.trim()}`;
     }
@@ -192,16 +188,15 @@ export function getTireVehicleCategoryValue(vehicle: Pick<Vehicle, '_id' | 'serv
     return 'uncategorized';
 }
 
-export function getTireVehicleCategoryLabel(vehicle: Pick<Vehicle, 'serviceName' | 'vehicleType'>) {
+export function getVehicleCategoryLabel(vehicle: Pick<Vehicle, 'serviceName' | 'vehicleType'>) {
     return vehicle.serviceName?.trim() || vehicle.vehicleType?.trim() || 'Tanpa kategori';
 }
 
-export function getSelectableTireVehicleCategories(vehicles: Vehicle[], editTarget: TireEvent | null): TireVehicleCategoryOption[] {
-    const selectableVehicles = getSelectableTireVehicles(vehicles, editTarget);
-    const categoryMap = new Map<string, TireVehicleCategoryOption>();
+export function getSelectableVehicleCategories(vehicles: Vehicle[], editTarget: TireEvent | null): VehicleCategoryOption[] {
+    const categoryMap = new Map<string, VehicleCategoryOption>();
 
-    selectableVehicles.forEach(vehicle => {
-        const value = getTireVehicleCategoryValue(vehicle);
+    getSelectableTireVehicles(vehicles, editTarget).forEach(vehicle => {
+        const value = getVehicleCategoryValue(vehicle);
         const existing = categoryMap.get(value);
         if (existing) {
             existing.vehicleCount += 1;
@@ -209,7 +204,7 @@ export function getSelectableTireVehicleCategories(vehicles: Vehicle[], editTarg
         }
         categoryMap.set(value, {
             value,
-            label: getTireVehicleCategoryLabel(vehicle),
+            label: getVehicleCategoryLabel(vehicle),
             vehicleCount: 1,
         });
     });
@@ -217,14 +212,18 @@ export function getSelectableTireVehicleCategories(vehicles: Vehicle[], editTarg
     return Array.from(categoryMap.values()).sort((left, right) => left.label.localeCompare(right.label, 'id-ID'));
 }
 
-export function getSelectableTireVehiclesByCategory(
+export function getSelectableTireVehiclesByVehicleCategory(
     vehicles: Vehicle[],
     editTarget: TireEvent | null,
     categoryValue?: string
 ) {
     return getSelectableTireVehicles(vehicles, editTarget)
-        .filter(vehicle => !categoryValue || getTireVehicleCategoryValue(vehicle) === categoryValue)
+        .filter(vehicle => !categoryValue || getVehicleCategoryValue(vehicle) === categoryValue)
         .sort((left, right) => left.plateNumber.localeCompare(right.plateNumber, 'id-ID'));
+}
+
+export function getSelectableInternalTireSlots() {
+    return INTERNAL_TIRE_SLOT_CODES.slice();
 }
 
 export function getSelectableInternalTireSlotOptions(params: {

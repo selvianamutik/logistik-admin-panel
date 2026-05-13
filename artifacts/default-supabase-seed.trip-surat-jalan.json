@@ -1637,7 +1637,14 @@
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
     "_updatedAt": "2026-04-19T15:24:41.71+00:00",
-    "accumulatedKm": 0
+    "accumulatedKm": 0,
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban belakang luar kanan sesudah rotasi Maret.",
@@ -1659,7 +1666,14 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00",
     "accumulatedKm": 117680,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban serep utama untuk unit W 8123 GS.",
@@ -1681,7 +1695,14 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00",
     "accumulatedKm": 1875,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri kondisi baik.",
@@ -1703,7 +1724,14 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00",
     "accumulatedKm": 81880,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "type": "Overhaul mesin",
@@ -4772,7 +4800,14 @@
     "_id": "tire-041",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan luar dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4791,7 +4826,14 @@
     "_id": "tire-040",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan dalam dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4810,7 +4852,14 @@
     "_id": "tire-039",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri luar dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4829,7 +4878,14 @@
     "_id": "tire-038",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri dalam dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4848,7 +4904,14 @@
     "_id": "tire-037",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kanan dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4867,7 +4930,14 @@
     "_id": "tire-036",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri dalam kondisi siap operasi untuk unit AG 6655 UV.",
@@ -4886,7 +4956,14 @@
     "_id": "tire-035",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban serep siap pakai untuk unit W 9012 ST.",
@@ -4905,7 +4982,14 @@
     "_id": "tire-034",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan luar dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -4924,7 +5008,14 @@
     "_id": "tire-033",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan dalam dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -4943,7 +5034,14 @@
     "_id": "tire-032",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri luar dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -4962,7 +5060,14 @@
     "_id": "tire-031",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri dalam dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -4981,7 +5086,14 @@
     "_id": "tire-030",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kanan dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -5000,7 +5112,14 @@
     "_id": "tire-029",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri dalam kondisi siap operasi untuk unit W 9012 ST.",
@@ -5019,7 +5138,14 @@
     "_id": "tire-028",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban serep siap pakai untuk unit L 8081 QR.",
@@ -5038,7 +5164,14 @@
     "_id": "tire-027",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan luar dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5057,7 +5190,14 @@
     "_id": "tire-026",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan dalam dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5076,7 +5216,14 @@
     "_id": "tire-025",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri luar dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5095,7 +5242,14 @@
     "_id": "tire-024",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri dalam dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5114,7 +5268,14 @@
     "_id": "tire-023",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kanan dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5133,7 +5294,14 @@
     "_id": "tire-022",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri dalam kondisi siap operasi untuk unit L 8081 QR.",
@@ -5152,7 +5320,14 @@
     "_id": "tire-021",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban serep siap pakai untuk unit S 7421 OP.",
@@ -5171,7 +5346,14 @@
     "_id": "tire-020",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan luar dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5190,7 +5372,14 @@
     "_id": "tire-019",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan dalam dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5209,7 +5398,14 @@
     "_id": "tire-018",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri luar dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5228,7 +5424,14 @@
     "_id": "tire-017",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri dalam dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5247,7 +5450,14 @@
     "_id": "tire-016",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kanan dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5266,7 +5476,14 @@
     "_id": "tire-015",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri dalam kondisi siap operasi untuk unit S 7421 OP.",
@@ -5285,7 +5502,14 @@
     "_id": "tire-014",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban serep siap pakai untuk unit W 9134 LM.",
@@ -5304,7 +5528,14 @@
     "_id": "tire-013",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan luar dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5323,7 +5554,14 @@
     "_id": "tire-012",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kanan dalam dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5342,7 +5580,14 @@
     "_id": "tire-011",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri luar dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5361,7 +5606,14 @@
     "_id": "tire-010",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban as 2 kiri dalam dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5380,7 +5632,14 @@
     "_id": "tire-009",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kanan dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5399,7 +5658,14 @@
     "_id": "tire-008",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban depan kiri dalam kondisi siap operasi untuk unit W 9134 LM.",
@@ -5418,7 +5684,14 @@
     "_id": "tire-007",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Ban afkir, sidewall sobek dan tidak layak pakai.",
@@ -5434,7 +5707,14 @@
     "_id": "tire-006",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "notes": "Stok ban baru di gudang untuk rotasi unit besar.",
@@ -5449,7 +5729,14 @@
     "_id": "tire-005",
     "_type": "tireEvent",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-04-19T15:24:41.711+00:00",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "action": "LOGIN",
@@ -9176,7 +9463,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8805,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-1r",
@@ -9196,7 +9490,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8790,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-2li",
@@ -9216,7 +9517,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8775,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-2lo",
@@ -9236,7 +9544,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8760,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-2ri",
@@ -9256,7 +9571,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8745,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-2ro",
@@ -9276,7 +9598,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 8730,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-021-sp1",
@@ -9296,7 +9625,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 3480,
     "lastOdometerKm": 12450,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-1l",
@@ -9316,7 +9652,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14670,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-1r",
@@ -9336,7 +9679,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14655,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-2li",
@@ -9356,7 +9706,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14640,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-2lo",
@@ -9376,7 +9733,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14625,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-2ri",
@@ -9396,7 +9760,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14610,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-2ro",
@@ -9416,7 +9787,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 14595,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-020-sp1",
@@ -9436,7 +9814,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 3620,
     "lastOdometerKm": 18420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-1l",
@@ -9456,7 +9841,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22255,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-1r",
@@ -9476,7 +9868,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22240,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-2li",
@@ -9496,7 +9895,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22225,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-2lo",
@@ -9516,7 +9922,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22210,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-2ri",
@@ -9536,7 +9949,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22195,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-2ro",
@@ -9556,7 +9976,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 22180,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-019-sp1",
@@ -9576,7 +10003,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 3760,
     "lastOdometerKm": 26110,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-1l",
@@ -9596,7 +10030,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5390,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-1r",
@@ -9616,7 +10057,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5375,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-2li",
@@ -9636,7 +10084,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5360,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-2lo",
@@ -9656,7 +10111,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5345,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-2ri",
@@ -9676,7 +10138,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5330,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-2ro",
@@ -9696,7 +10165,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 5315,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-018-sp1",
@@ -9716,7 +10192,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 3900,
     "lastOdometerKm": 9350,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-1l",
@@ -9736,7 +10219,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17415,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-1r",
@@ -9756,7 +10246,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17400,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-2li",
@@ -9776,7 +10273,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17385,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-2lo",
@@ -9796,7 +10300,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17370,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-2ri",
@@ -9816,7 +10327,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17355,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-2ro",
@@ -9836,7 +10354,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17340,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-017-sp1",
@@ -9856,7 +10381,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4040,
     "lastOdometerKm": 21480,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-1l",
@@ -9876,7 +10408,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 12050,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-1r",
@@ -9896,7 +10435,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 12035,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-2li",
@@ -9916,7 +10462,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 12020,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-2lo",
@@ -9936,7 +10489,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 12005,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-2ri",
@@ -9956,7 +10516,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 11990,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-2ro",
@@ -9976,7 +10543,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 11975,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-016-sp1",
@@ -9996,7 +10570,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4180,
     "lastOdometerKm": 16220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-1l",
@@ -10016,7 +10597,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35145,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-1r",
@@ -10036,7 +10624,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35130,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-2li",
@@ -10056,7 +10651,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35115,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-2lo",
@@ -10076,7 +10678,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35100,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-2ri",
@@ -10096,7 +10705,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35085,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-2ro",
@@ -10116,7 +10732,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35070,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-3li",
@@ -10136,7 +10759,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35055,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-3lo",
@@ -10156,7 +10786,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35040,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-3ri",
@@ -10176,7 +10813,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35025,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-3ro",
@@ -10196,7 +10840,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 35010,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-015-sp1",
@@ -10216,7 +10867,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4400,
     "lastOdometerKm": 39420,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-1l",
@@ -10236,7 +10894,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20190,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-1r",
@@ -10256,7 +10921,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20175,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-2li",
@@ -10276,7 +10948,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20160,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-2lo",
@@ -10296,7 +10975,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20145,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-2ri",
@@ -10316,7 +11002,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20130,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-2ro",
@@ -10336,7 +11029,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20115,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-3li",
@@ -10356,7 +11056,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20100,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-3lo",
@@ -10376,7 +11083,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20085,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-3ri",
@@ -10396,7 +11110,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20070,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-3ro",
@@ -10416,7 +11137,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 20055,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-014-sp1",
@@ -10436,7 +11164,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4620,
     "lastOdometerKm": 24630,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-1l",
@@ -10456,7 +11191,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43605,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-1r",
@@ -10476,7 +11218,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43590,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-2li",
@@ -10496,7 +11245,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43575,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-2lo",
@@ -10516,7 +11272,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43560,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-2ri",
@@ -10536,7 +11299,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43545,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-2ro",
@@ -10556,7 +11326,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43530,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-3li",
@@ -10576,7 +11353,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43515,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-3lo",
@@ -10596,7 +11380,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43500,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-3ri",
@@ -10616,7 +11407,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43485,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-3ro",
@@ -10636,7 +11434,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 43470,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-013-sp1",
@@ -10656,7 +11461,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4840,
     "lastOdometerKm": 48210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-1l",
@@ -10676,7 +11488,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6110,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-1r",
@@ -10696,7 +11515,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6095,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-2li",
@@ -10716,7 +11542,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6080,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-2lo",
@@ -10736,7 +11569,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6065,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-2ri",
@@ -10756,7 +11596,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6050,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-2ro",
@@ -10776,7 +11623,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 6035,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-012-sp1",
@@ -10796,7 +11650,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 4980,
     "lastOdometerKm": 10880,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-011-3li",
@@ -10816,7 +11677,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17105,
     "lastOdometerKm": 21980,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-011-3lo",
@@ -10836,7 +11704,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17090,
     "lastOdometerKm": 21980,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-011-3ri",
@@ -10856,7 +11731,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17075,
     "lastOdometerKm": 21980,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-011-3ro",
@@ -10876,7 +11758,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 17060,
     "lastOdometerKm": 21980,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-010-3li",
@@ -10896,7 +11785,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 42285,
     "lastOdometerKm": 47220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-010-3lo",
@@ -10916,7 +11812,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 42270,
     "lastOdometerKm": 47220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-010-3ri",
@@ -10936,7 +11839,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 42255,
     "lastOdometerKm": 47220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-010-3ro",
@@ -10956,7 +11866,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 42240,
     "lastOdometerKm": 47220,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-1l",
@@ -10976,7 +11893,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9325,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-1r",
@@ -10996,7 +11920,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9310,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-2li",
@@ -11016,7 +11947,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9295,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-2lo",
@@ -11036,7 +11974,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9280,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-2ri",
@@ -11056,7 +12001,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9265,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-2ro",
@@ -11076,7 +12028,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 9250,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-006-sp1",
@@ -11096,7 +12055,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 5280,
     "lastOdometerKm": 14320,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-1l",
@@ -11116,7 +12082,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53110,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-1r",
@@ -11136,7 +12109,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53095,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-2li",
@@ -11156,7 +12136,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53080,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-2lo",
@@ -11176,7 +12163,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53065,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-2ri",
@@ -11196,7 +12190,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53050,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-2ro",
@@ -11216,7 +12217,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 53035,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-005-sp1",
@@ -11236,7 +12244,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 5420,
     "lastOdometerKm": 58210,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-1l",
@@ -11256,7 +12271,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161995,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-1r",
@@ -11276,7 +12298,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161980,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-2li",
@@ -11296,7 +12325,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161965,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-2lo",
@@ -11316,7 +12352,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161950,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-2ri",
@@ -11336,7 +12379,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161935,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-2ro",
@@ -11356,7 +12406,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 161920,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-003-sp1",
@@ -11376,7 +12433,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 5560,
     "lastOdometerKm": 167200,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-1l",
@@ -11396,7 +12460,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114990,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-1r",
@@ -11416,7 +12487,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114975,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-2li",
@@ -11436,7 +12514,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114960,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-2lo",
@@ -11456,7 +12541,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114945,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-2ri",
@@ -11476,7 +12568,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114930,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-3li",
@@ -11496,7 +12595,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114915,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-3lo",
@@ -11516,7 +12622,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114900,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-3ri",
@@ -11536,7 +12649,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114885,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-3ro",
@@ -11556,7 +12676,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 114870,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-002-sp1",
@@ -11576,7 +12703,14 @@
     "notes": "Seed ban serep untuk testing odometer trip.",
     "accumulatedKm": 5760,
     "lastOdometerKm": 120300,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 2500000,
+    "originalCost": 2500000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 2500000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-001-1r",
@@ -11596,7 +12730,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 79040,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-001-2li",
@@ -11616,7 +12757,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 79025,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-001-2lo",
@@ -11636,7 +12784,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 79010,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-001-2ri",
@@ -11656,7 +12811,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 78995,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "tire-seed-veh-001-2ro",
@@ -11676,7 +12838,14 @@
     "notes": "Seed ban jalan untuk testing odometer trip.",
     "accumulatedKm": 78980,
     "lastOdometerKm": 84500,
-    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z"
+    "lastKmUpdateAt": "2026-05-03T00:00:00.000Z",
+    "purchaseCost": 1000000,
+    "originalCost": 1000000,
+    "totalUsedPercent": 0,
+    "remainingPercent": 100,
+    "remainingValue": 1000000,
+    "maintenanceCostPostedPercent": 0,
+    "maintenanceCostPostedAmount": 0
   },
   {
     "_id": "veh-demo-cdd-01",

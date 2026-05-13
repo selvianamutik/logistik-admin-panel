@@ -64,6 +64,7 @@ import {
 import {
     getMaintenanceMaterialOptions,
     handleMaintenanceComplete,
+    handleTireTechnicianCostCreate,
 } from '@/lib/api/maintenance-workflows';
 import {
     handleGenericCreate,
@@ -1719,6 +1720,10 @@ export async function POST(request: Request) {
 
         if (entity === 'maintenances' && action === 'complete-with-materials') {
             return await handleMaintenanceComplete(session, data, addAuditLog);
+        }
+
+        if (entity === 'maintenances' && action === 'record-tire-technician-cost') {
+            return await handleTireTechnicianCostCreate(session, data, addAuditLog);
         }
 
         if (entity === 'tire-events' && action === 'install-to-slot') {

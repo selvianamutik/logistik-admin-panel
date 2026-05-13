@@ -24,6 +24,8 @@ export type VehicleTireFormState = {
     sourceTireUsagePercent: number | null;
     oldTireUsagePercent: number | null;
     oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
+    technicianCost: number;
+    technicianVendor: string;
     installDate: string;
     notes: string;
 };
@@ -54,6 +56,8 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         sourceTireUsagePercent: null,
         oldTireUsagePercent: null,
         oldTireDestination: 'WAREHOUSE',
+        technicianCost: 0,
+        technicianVendor: '',
         installDate: getBusinessDateValue(),
         notes: '',
     };
@@ -112,6 +116,9 @@ export function buildVehicleTireDetailState(params: {
         if (row.status === 'SCRAPPED') {
             return false;
         }
+        if (row.vehicleRef === vehicle._id) {
+            return false;
+        }
         if (tireForm.tireSource === 'WAREHOUSE') {
             if (row.holderType !== 'WAREHOUSE' || row.status !== 'IN_WAREHOUSE') {
                 return false;
@@ -119,8 +126,7 @@ export function buildVehicleTireDetailState(params: {
         } else if (
             row.holderType !== 'INTERNAL_VEHICLE' ||
             row.status !== 'IN_USE' ||
-            !row.vehicleRef ||
-            row.vehicleRef === vehicle._id
+            !row.vehicleRef
         ) {
             return false;
         } else if (tireForm.sourceVehicleRef && row.vehicleRef !== tireForm.sourceVehicleRef) {

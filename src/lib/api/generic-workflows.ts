@@ -68,6 +68,10 @@ import {
     handleDriverVoucherItemDelete,
 } from './driver-workflows';
 import {
+    createMaintenanceLaborExpense,
+    prepareMaintenanceLaborExpensePosting,
+} from './maintenance-workflows';
+import {
     handleDriverScoreCreate,
     handleDriverScoreUpdate,
 } from './driver-score-workflows';
@@ -818,6 +822,12 @@ export async function handleTireInstallToSlot(
         ? normalizeNumber(data.sourceTireUsagePercent, { maxFractionDigits: 2 })
         : Number.NaN;
     const existingMaintenanceRef = normalizeOptionalText(data.maintenanceRef);
+    const rawLaborCost = data.laborCost ?? data.technicianCost;
+    const laborCost = rawLaborCost === undefined || rawLaborCost === null || rawLaborCost === ''
+        ? 0
+        : normalizeCurrencyNumber(rawLaborCost);
+    const laborBankAccountRef = normalizeOptionalText(data.laborBankAccountRef);
+    const vendor = normalizeOptionalText(data.vendor);
     const note = normalizeOptionalText(data.note);
 
     if (!installingTireRef || !vehicleRef || !slotCode) {
@@ -827,6 +837,9 @@ export async function handleTireInstallToSlot(
         return NextResponse.json({ error: 'Kode slot ban tidak valid' }, { status: 400 });
     }
     assertIsoDate(maintenanceDate, 'Tanggal pasang ban');
+    if (!Number.isFinite(laborCost) || laborCost < 0) {
+        return NextResponse.json({ error: 'Biaya teknisi tidak valid' }, { status: 400 });
+    }
 
     const [vehicle, installingTire, activeTires, existingMaintenance] = await Promise.all([
         getDocumentById<Record<string, unknown>>(vehicleRef, 'vehicle'),
@@ -860,13 +873,13 @@ export async function handleTireInstallToSlot(
         return NextResponse.json({ error: 'Ban pengganti tidak ditemukan' }, { status: 404 });
     }
     const installingSourceVehicleRef = normalizeOptionalText(installingTire.vehicleRef);
+    if (installingSourceVehicleRef === vehicleRef) {
+        return NextResponse.json({ error: 'Ban sumber sudah berada pada unit tujuan. Pilih ban dari gudang atau unit lain.' }, { status: 409 });
+    }
     const installingComesFromInternalUnit =
         normalizeOptionalText(installingTire.holderType) === 'INTERNAL_VEHICLE' &&
         normalizeOptionalText(installingTire.status) === 'IN_USE' &&
         Boolean(installingSourceVehicleRef);
-    if (installingComesFromInternalUnit && installingSourceVehicleRef === vehicleRef) {
-        return NextResponse.json({ error: 'Ban sumber sudah terpasang pada unit tujuan. Pilih ban dari gudang atau unit lain.' }, { status: 409 });
-    }
     if (installingComesFromInternalUnit && !Number.isFinite(sourceUsagePercent)) {
         return NextResponse.json({ error: 'Persentase pemakaian ban di unit sumber wajib diisi' }, { status: 400 });
     }
@@ -877,9 +890,6 @@ export async function handleTireInstallToSlot(
     ) {
         return NextResponse.json({ error: 'Lokasi unit sumber ban tidak lengkap. Perbarui data ban sebelum dipasang.' }, { status: 409 });
     }
-    const vehicleServiceRef = normalizeOptionalText(vehicle.serviceRef);
-    const vehicleServiceName = normalizeOptionalText(vehicle.serviceName);
-
     const oldTire = activeTires.find(item =>
         normalizeOptionalText(item._id) !== installingTireRef &&
         normalizeTireSlotCode(normalizeOptionalText(item.slotCode) || '') === slotCode
@@ -929,8 +939,9 @@ export async function handleTireInstallToSlot(
     const oldUsageCost = roundTireMoney(Number(oldUsageAllocation?.historyFields?.usageCost || 0));
     const shouldPostOldUsageMaintenance = Boolean(oldTire && roundTirePercent(oldUsagePercent) > 1 && oldUsageCost > 0);
     const postedOldUsageCost = shouldPostOldUsageMaintenance ? oldUsageCost : 0;
-    const totalMaintenanceCost = postedOldUsageCost + installCost;
-    const maintenanceRef = existingMaintenance?._id || `maintenance-${crypto.randomUUID()}`;
+    const totalTireMaintenanceCost = postedOldUsageCost + installCost;
+    const totalMaintenanceCost = totalTireMaintenanceCost + laborCost;
+    const maintenanceRef = existingMaintenance?._id;
     const oldLine = oldTire
         ? `Ban lama ${normalizeOptionalText(oldTire.tireCode) || oldTire._id}: ${oldUsagePercent}% = Rp${oldUsageCost.toLocaleString('id-ID')}`
         : 'Slot kosong';
@@ -959,33 +970,24 @@ export async function handleTireInstallToSlot(
             note: `${roundTirePercent(installPostedPercent)}% biaya ban diposting saat pasang`,
         }] : []),
     ];
-    const maintenanceDoc: Maintenance = {
-        ...(existingMaintenance || {
-            _id: maintenanceRef,
-            _type: 'maintenance',
-            vehicleRef,
-            vehiclePlate,
-            type: 'Ganti / Pasang Ban',
-            scheduleType: 'DATE',
-            plannedDate: maintenanceDate,
-            status: 'DONE',
-            attachmentUrls: [],
-        }),
+    const maintenanceDoc: Maintenance | null = existingMaintenance ? {
+        ...existingMaintenance,
         vehicleRef,
         vehiclePlate,
-        type: existingMaintenance?.type || 'Ganti / Pasang Ban',
+        type: existingMaintenance.type || 'Ganti / Pasang Ban',
         status: 'DONE',
         completedDate: maintenanceDate,
-        notes: note || existingMaintenance?.notes,
-        completionNotes: [oldLine, newLine, note || existingMaintenance?.completionNotes].filter(Boolean).join('\n'),
+        vendor: vendor || existingMaintenance.vendor,
+        notes: note || existingMaintenance.notes,
+        completionNotes: [oldLine, newLine, note || existingMaintenance.completionNotes].filter(Boolean).join('\n'),
         materialUsages,
         materialUsageCount: materialUsages.length,
-        materialCostTotal: totalMaintenanceCost,
-        laborCost: 0,
+        materialCostTotal: totalTireMaintenanceCost,
+        laborCost,
         totalCost: totalMaintenanceCost,
         cost: totalMaintenanceCost,
         source: 'TIRE_REPLACEMENT',
-    };
+    } : null;
 
     const installingNextDoc: Record<string, unknown> = {
         ...installingTire,
@@ -993,8 +995,6 @@ export async function handleTireInstallToSlot(
         status: 'IN_USE',
         vehicleRef,
         vehiclePlate,
-        compatibleServiceRef: vehicleServiceRef,
-        compatibleServiceName: vehicleServiceName,
         slotCode,
         slotLabel,
         posisi: buildTirePlacementLabel({
@@ -1007,7 +1007,7 @@ export async function handleTireInstallToSlot(
         installDate: maintenanceDate,
         maintenanceCostPostedPercent: roundTirePercent(Math.min(100, installPostedBefore + installPostedPercent)),
         maintenanceCostPostedAmount: roundTireMoney(normalizeCurrencyNumber(installingTire.maintenanceCostPostedAmount ?? 0) + installCost),
-        lastMaintenanceCostRef: maintenanceRef,
+        lastMaintenanceCostRef: maintenanceRef || undefined,
         externalPartyName: undefined,
         externalPlateNumber: undefined,
     };
@@ -1037,7 +1037,10 @@ export async function handleTireInstallToSlot(
         })
         : null;
     if (oldHistory && oldUsageAllocation) {
-        Object.assign(oldHistory, oldUsageAllocation.historyFields, { relatedMaintenanceRef: maintenanceRef });
+        Object.assign(oldHistory, oldUsageAllocation.historyFields);
+        if (maintenanceRef) {
+            Object.assign(oldHistory, { relatedMaintenanceRef: maintenanceRef });
+        }
     }
 
     const installHistory = buildTireHistoryLogDoc({
@@ -1054,12 +1057,14 @@ export async function handleTireInstallToSlot(
         usagePercent: installPostedPercent,
         usageCost: installCost,
         costAllocationType: 'INSTALL_FULL',
-        relatedMaintenanceRef: maintenanceRef,
         costSourceVehicleRef: vehicleRef,
         costSourceVehiclePlate: vehiclePlate,
         remainingPercentAfter: normalizeNumber(installingNextDoc.remainingPercent ?? Math.max(100 - Number(installingNextDoc.totalUsedPercent || 0), 0), { maxFractionDigits: 2 }),
         remainingValueAfter: normalizeCurrencyNumber(installingNextDoc.remainingValue ?? 0),
     } satisfies Partial<TireHistoryLog>);
+    if (maintenanceRef) {
+        Object.assign(installHistory, { relatedMaintenanceRef: maintenanceRef });
+    }
     const sourceUsageHistory = installingComesFromInternalUnit && sourceUsageAllocation
         ? buildTireHistoryLogDoc({
             tireEventRef: installingTireRef,
@@ -1074,25 +1079,49 @@ export async function handleTireInstallToSlot(
         : null;
     if (sourceUsageHistory && sourceUsageAllocation) {
         Object.assign(sourceUsageHistory, sourceUsageAllocation.historyFields);
+        if (maintenanceRef) {
+            Object.assign(sourceUsageHistory, { relatedMaintenanceRef: maintenanceRef });
+        }
     }
 
     try {
-        if (existingMaintenance) {
+        if (!existingMaintenance && laborCost > 0) {
+            return NextResponse.json({ error: 'Biaya teknisi hanya bisa dicatat dari penyelesaian maintenance ban' }, { status: 400 });
+        }
+        const laborPosting = await prepareMaintenanceLaborExpensePosting(laborCost, laborBankAccountRef);
+        const laborExpenseRef = laborPosting
+            ? await createMaintenanceLaborExpense({
+                session,
+                maintenance: maintenanceDoc as Maintenance,
+                category: laborPosting.category,
+                bankAccount: laborPosting.bankAccount,
+                nextBankBalance: laborPosting.nextBankBalance,
+                completedDate: maintenanceDate,
+                laborCost,
+                vendor,
+                completionNotes: note,
+            })
+            : undefined;
+        if (existingMaintenance && maintenanceDoc && maintenanceRef) {
             await updateDocument(maintenanceRef, {
                 status: 'DONE',
                 completedDate: maintenanceDate,
+                vendor: vendor || null,
                 notes: maintenanceDoc.notes,
                 completionNotes: maintenanceDoc.completionNotes,
                 materialUsages,
                 materialUsageCount: materialUsages.length,
-                materialCostTotal: totalMaintenanceCost,
-                laborCost: 0,
+                materialCostTotal: totalTireMaintenanceCost,
+                laborCost: laborCost > 0 ? laborCost : null,
+                laborExpenseRef: laborExpenseRef || null,
+                relatedExpenseRef: laborExpenseRef || null,
+                laborBankAccountRef: laborPosting?.bankAccount?._id || null,
+                laborBankAccountName: laborPosting?.bankAccount?.bankName || null,
+                laborBankAccountNumber: laborPosting?.bankAccount?.accountNumber || null,
                 totalCost: totalMaintenanceCost,
                 cost: totalMaintenanceCost,
                 source: 'TIRE_REPLACEMENT',
             }, 'maintenance');
-        } else {
-            await createDocument(maintenanceDoc as unknown as { _type: string; [key: string]: unknown });
         }
         if (oldTire && oldNextDoc) {
             await updateDocument(normalizeOptionalText(oldTire._id) || '', {
@@ -1126,11 +1155,9 @@ export async function handleTireInstallToSlot(
             posisi: installingNextDoc.posisi,
             positionKey: installingNextDoc.positionKey,
             installDate: installingNextDoc.installDate,
-            compatibleServiceRef: vehicleServiceRef,
-            compatibleServiceName: vehicleServiceName,
             maintenanceCostPostedPercent: installingNextDoc.maintenanceCostPostedPercent,
             maintenanceCostPostedAmount: installingNextDoc.maintenanceCostPostedAmount,
-            lastMaintenanceCostRef: maintenanceRef,
+            ...(maintenanceRef ? { lastMaintenanceCostRef: maintenanceRef } : {}),
             ...sourceUsageAllocation?.tireUpdates,
             externalPartyName: null,
             externalPlateNumber: null,
@@ -1170,6 +1197,7 @@ export async function handleTireInstallToSlot(
             oldTireUsageCost: oldUsageCost,
             sourceTireUsageCost: roundTireMoney(Number(sourceUsageAllocation?.historyFields?.usageCost || 0)),
             installCost,
+            technicianCost: laborCost,
             totalMaintenanceCost,
             maintenanceRef,
         },
