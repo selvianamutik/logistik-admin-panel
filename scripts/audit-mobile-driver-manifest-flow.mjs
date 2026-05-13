@@ -14,10 +14,12 @@ const completionPath = path.join(
     appDir,
     'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
 );
+const orderWorkflowPath = path.join(appDir, 'src/lib/api/order-workflows.ts');
 
 const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
 const completionSource = fs.readFileSync(completionPath, 'utf8');
+const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -187,6 +189,41 @@ assertIncludes(
     serviceSource,
     'destinationLabel: destinationLabel',
     'Mobile service harus memakai rute trip, bukan alamat tujuan invoice/order, untuk label perjalanan.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'autoAssignOrderCargoFromTripPlan',
+    'Backend create DO driver harus otomatis memasukkan item order pending saat trip plan mobile hanya mengirim SJ.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'Trip ini memakai item order/resi. Dari aplikasi driver, isi 1 nomor SJ utama dulu',
+    'Backend create DO driver harus menolak multi-SJ tanpa mapping barang pada mode barang mengikuti order/resi.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'No. SJ pengirim ${duplicateDeliveryOrderShipperReference} ditulis lebih dari sekali.',
+    'Backend create DO harus menolak nomor SJ duplikat dalam payload driver/admin.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'shipperReferenceKey: autoAssignedShipperReference._key',
+    'Auto-selected item order harus terhubung ke SJ driver supaya finalisasi batch tidak kosong.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'getActualDropTotalMismatchMessage(actualCargoByDoItemId, pendingDriverActualDropPoints,',
+    'Backend driver approval harus menolak draft aktual jika total titik realisasi tidak sama dengan total barang.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    "dropLabel = options?.billableOnly ? 'titik drop terkirim' : 'titik realisasi'",
+    'Backend finalisasi harus punya guard mismatch berat aktual barang vs titik realisasi.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'billableOnly: true',
+    'Backend batch SJ/approval driver harus membandingkan item aktual dengan titik drop terkirim tanpa memblok hold/return.'
 );
 
 for (const unstableKeyPattern of [

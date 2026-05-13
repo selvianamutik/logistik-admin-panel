@@ -695,26 +695,49 @@ function summarizeSuratJalanActualCargo(
 }
 
 function summarizeActualDropPointCargo(
-    actualDropPoints: DeliveryOrder['actualDropPoints'] | ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined
+    actualDropPoints: DeliveryOrder['actualDropPoints'] | ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
+    options?: { billableOnly?: boolean }
 ) {
-    return (actualDropPoints || []).reduce(
-        (sum, point) => addDeliveryCargoSummary(sum, {
-            qtyKoli: normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }),
-            weightKg: normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
-                ? normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 })
-                : convertWeightToKg(
-                    normalizeNumber(point.weightInputValue ?? 0, { maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit) }),
-                    point.weightInputUnit || 'KG'
-                ),
-            volumeM3: normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
-                ? normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 })
-                : convertVolumeToM3(
-                    normalizeNumber(point.volumeInputValue ?? 0, { maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3 }),
-                    point.volumeInputUnit || 'M3'
-                ),
-        }),
-        createDeliveryCargoSummary()
-    );
+    return (actualDropPoints || [])
+        .filter(point => !options?.billableOnly || point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP')
+        .reduce(
+            (sum, point) => addDeliveryCargoSummary(sum, {
+                qtyKoli: normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }),
+                weightKg: normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
+                    ? normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 })
+                    : convertWeightToKg(
+                        normalizeNumber(point.weightInputValue ?? 0, { maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit) }),
+                        point.weightInputUnit || 'KG'
+                    ),
+                volumeM3: normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
+                    ? normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 })
+                    : convertVolumeToM3(
+                        normalizeNumber(point.volumeInputValue ?? 0, { maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3 }),
+                        point.volumeInputUnit || 'M3'
+                    ),
+            }),
+            createDeliveryCargoSummary()
+        );
+}
+
+function getActualDropTotalMismatchMessage(
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>,
+    actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
+    options?: { billableOnly?: boolean }
+) {
+    const actualCargoTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
+    const actualDropTotals = summarizeActualDropPointCargo(actualDropPoints, options);
+    const dropLabel = options?.billableOnly ? 'titik drop terkirim' : 'titik realisasi';
+    if (actualCargoTotals.qtyKoli > 0 && Math.abs(actualDropTotals.qtyKoli - actualCargoTotals.qtyKoli) > 0.01) {
+        return `Total qty ${dropLabel} harus sama dengan qty aktual muatan.`;
+    }
+    if (actualCargoTotals.weightKg > 0 && Math.abs(actualDropTotals.weightKg - actualCargoTotals.weightKg) > 0.01) {
+        return `Total berat ${dropLabel} harus sama dengan berat aktual muatan.`;
+    }
+    if (actualCargoTotals.volumeM3 > 0 && Math.abs(actualDropTotals.volumeM3 - actualCargoTotals.volumeM3) > 0.001) {
+        return `Total volume ${dropLabel} harus sama dengan volume aktual muatan.`;
+    }
+    return null;
 }
 
 async function computeTripOvertonageAdjustment(params: {
@@ -775,6 +798,7 @@ async function computeTripOvertonageAdjustment(params: {
             _id: string;
             driverFeeAmount: number;
             totalClaimAmount: number;
+            balance: number;
         }
         | undefined;
     let linkedVoucherAdjustmentSummary: string | undefined;
@@ -794,6 +818,7 @@ async function computeTripOvertonageAdjustment(params: {
             _id: linkedVoucher._id,
             driverFeeAmount: voucherTotals.driverFeeAmount,
             totalClaimAmount: voucherTotals.totalClaimAmount,
+            balance: voucherTotals.balance,
         };
         linkedVoucherAdjustmentSummary = `bon ${linkedVoucher.bonNumber || linkedVoucher._id} ikut disinkronkan ke ${voucherTotals.driverFeeAmount}`;
     }
@@ -883,7 +908,7 @@ function getAmbiguousActualDropMappingMessage(
             const groupLabel = groupKey === 'TANPA-SJ'
                 ? 'SJ ini'
                 : `SJ ${groupItems[0]?.shipperReferenceNumber || groupKey}`;
-    return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan invoice per barang tidak salah.`;
+            return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan invoice per barang tidak salah.`;
         }
     }
 
@@ -2833,6 +2858,7 @@ export async function handleDeliveryOrderStatusUpdate(
             _id: string;
             driverFeeAmount: number;
             totalClaimAmount: number;
+            balance: number;
         }
         | undefined;
     const targetSuratJalanRefs = normalizeSelectedSuratJalanRefs(data, id);
@@ -2870,6 +2896,10 @@ export async function handleDeliveryOrderStatusUpdate(
             const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(actualDropPoints, doItems);
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+            }
+            const actualDropMismatchMessage = getActualDropTotalMismatchMessage(actualCargoByDoItemId, actualDropPoints);
+            if (actualDropMismatchMessage) {
+                return NextResponse.json({ error: actualDropMismatchMessage }, { status: 400 });
             }
         } catch (error) {
             return NextResponse.json(
@@ -2984,6 +3014,7 @@ export async function handleDeliveryOrderStatusUpdate(
         await updateDocument(linkedVoucherPatch._id, {
             driverFeeAmount: linkedVoucherPatch.driverFeeAmount,
             totalClaimAmount: linkedVoucherPatch.totalClaimAmount,
+            balance: linkedVoucherPatch.balance,
         }, 'driverVoucher');
     }
 
@@ -4461,6 +4492,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             _id: string;
             driverFeeAmount: number;
             totalClaimAmount: number;
+            balance: number;
         }
         | undefined;
     let odometerResult: Awaited<ReturnType<typeof applyTripClosureOdometerUpdates>> = {
@@ -4544,6 +4576,12 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(scopedActualDropPoints, targetedDoItems);
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+            }
+            const actualDropMismatchMessage = getActualDropTotalMismatchMessage(actualCargoByDoItemId, scopedActualDropPoints, {
+                billableOnly: true,
+            });
+            if (actualDropMismatchMessage) {
+                return NextResponse.json({ error: actualDropMismatchMessage }, { status: 400 });
             }
         } catch (error) {
             return NextResponse.json(
@@ -4982,6 +5020,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             await updateDocument(linkedVoucherPatch._id, {
                 driverFeeAmount: linkedVoucherPatch.driverFeeAmount,
                 totalClaimAmount: linkedVoucherPatch.totalClaimAmount,
+                balance: linkedVoucherPatch.balance,
             }, 'driverVoucher');
         }
 
@@ -5267,6 +5306,12 @@ export async function handleDeliveryOrderDriverStatusRequest(
         const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(pendingDriverActualDropPoints, doItems);
         if (ambiguousDropMappingMessage) {
             return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+        }
+        const actualDropMismatchMessage = getActualDropTotalMismatchMessage(actualCargoByDoItemId, pendingDriverActualDropPoints, {
+            billableOnly: true,
+        });
+        if (actualDropMismatchMessage) {
+            return NextResponse.json({ error: actualDropMismatchMessage }, { status: 400 });
         }
     } catch (error) {
         return NextResponse.json(
@@ -5640,6 +5685,26 @@ export async function handleDeliveryOrderCreate(
             };
         })
         .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+    const duplicateDeliveryOrderShipperReference = (() => {
+        const seen = new Set<string>();
+        for (const reference of deliveryOrderShipperReferences) {
+            const referenceNumber = normalizeOptionalText(reference.referenceNumber)?.toUpperCase();
+            if (!referenceNumber) {
+                continue;
+            }
+            if (seen.has(referenceNumber)) {
+                return referenceNumber;
+            }
+            seen.add(referenceNumber);
+        }
+        return '';
+    })();
+    if (duplicateDeliveryOrderShipperReference) {
+        return NextResponse.json(
+            { error: `No. SJ pengirim ${duplicateDeliveryOrderShipperReference} ditulis lebih dari sekali.` },
+            { status: 400 }
+        );
+    }
 
     const customer = orderCustomerRef
         ? await getDocumentById<{
@@ -5885,21 +5950,40 @@ export async function handleDeliveryOrderCreate(
             ? matchedTripRouteRateFee
             : taripBorongan;
 
-    if (customerDoNumber && orderCustomerRef) {
+    const requestedDeliveryOrderReferenceNumbers = new Set([
+        customerDoNumber,
+        ...deliveryOrderShipperReferences.map(reference => normalizeOptionalText(reference.referenceNumber)?.toUpperCase()),
+    ].filter((value): value is string => Boolean(value)));
+    if (requestedDeliveryOrderReferenceNumbers.size > 0 && orderCustomerRef) {
+        let duplicateReferenceNumber = '';
         const duplicateCustomerDoNumber =
             (await listDocumentsByFilter<{
                 _id: string;
                 customerRef?: unknown;
                 customerDoNumber?: string;
+                shipperReferences?: Array<{ referenceNumber?: string }>;
             }>('deliveryOrder', {
                 customerRef: orderCustomerRef,
-            })).find(candidate =>
-                normalizeOptionalText(candidate.customerDoNumber)?.toLowerCase() === customerDoNumber.toLowerCase()
-            ) || null;
+            })).find(candidate => {
+                const candidateCustomerDoNumber = normalizeOptionalText(candidate.customerDoNumber)?.toUpperCase();
+                if (candidateCustomerDoNumber && requestedDeliveryOrderReferenceNumbers.has(candidateCustomerDoNumber)) {
+                    duplicateReferenceNumber = candidateCustomerDoNumber;
+                    return true;
+                }
+                const duplicateShipperReference = (candidate.shipperReferences || []).find(reference => {
+                    const referenceNumber = normalizeOptionalText(reference.referenceNumber)?.toUpperCase();
+                    return Boolean(referenceNumber && requestedDeliveryOrderReferenceNumbers.has(referenceNumber));
+                });
+                if (duplicateShipperReference) {
+                    duplicateReferenceNumber = normalizeOptionalText(duplicateShipperReference.referenceNumber)?.toUpperCase() || '';
+                    return true;
+                }
+                return false;
+            }) || null;
 
         if (duplicateCustomerDoNumber) {
             return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { error: `No. SJ pengirim ${duplicateReferenceNumber || Array.from(requestedDeliveryOrderReferenceNumbers)[0]} sudah dipakai untuk customer ini.` },
                 { status: 409 }
             );
         }
@@ -5917,7 +6001,7 @@ export async function handleDeliveryOrderCreate(
             ? existingOrderItems
             : [];
     const resolvedCargoEntryMode = resolveOrderCargoEntryMode(order, orderItemCargoModeHints);
-    const requestedItemIds = Array.from(new Set([
+    let requestedItemIds = Array.from(new Set([
         ...(Array.isArray(data.itemRefs) ? data.itemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0) : []),
         ...(Array.isArray(data.items)
             ? data.items
@@ -5926,8 +6010,68 @@ export async function handleDeliveryOrderCreate(
                 .filter(Boolean)
             : []),
     ]));
-    const usingDirectCargoInput = requestedItemIds.length === 0;
     const allowsDirectCargoInput = resolvedCargoEntryMode === 'DELIVERY_ORDER' || existingOrderItemCount === 0;
+    let selectionInputData: Record<string, unknown> = data;
+    let autoAssignOrderCargoFromTripPlan = false;
+    let autoAssignedShipperReference: typeof deliveryOrderShipperReferences[number] | undefined;
+    if (requestedItemIds.length === 0 && !allowsDirectCargoInput && selectedTripPlan) {
+        if (deliveryOrderShipperReferences.length !== 1) {
+            return NextResponse.json(
+                { error: 'Trip ini memakai item order/resi. Dari aplikasi driver, isi 1 nomor SJ utama dulu supaya barang order tidak menjadi SJ kosong.' },
+                { status: 409 }
+            );
+        }
+        const orderItemsForAutoSelection = await listDocumentsByFilter<OrderItemProgressSnapshot & { _rev?: string }>('orderItem', { orderRef });
+        const autoSelectedOrderItems = orderItemsForAutoSelection.filter(item => {
+            const progress = getOrderItemProgress(item);
+            return (
+                progress.pendingQtyKoli > 0 ||
+                progress.pendingWeight > 0 ||
+                progress.pendingVolume > 0
+            );
+        });
+        if (autoSelectedOrderItems.length === 0) {
+            return NextResponse.json(
+                { error: 'Order ini tidak punya sisa barang pending yang bisa dibuat menjadi surat jalan driver.' },
+                { status: 409 }
+            );
+        }
+        requestedItemIds = autoSelectedOrderItems.map(item => item._id);
+        selectionInputData = {
+            ...data,
+            items: autoSelectedOrderItems.map(item => {
+                const progress = getOrderItemProgress(item);
+                const weightInputUnit = item.weightInputUnit || 'KG';
+                const volumeInputUnit = item.volumeInputUnit || 'M3';
+                return {
+                    orderItemRef: item._id,
+                    qtyKoli: progress.totalQtyKoli > 0 ? progress.pendingQtyKoli : 0,
+                    weightInputValue: progress.totalQtyKoli <= 0 && progress.pendingWeight > 0
+                        ? roundQuantity(
+                            convertKgToWeightInputValue(progress.pendingWeight, weightInputUnit),
+                            getWeightInputFractionDigits(weightInputUnit)
+                        )
+                        : undefined,
+                    weightInputUnit: progress.totalQtyKoli <= 0 && progress.pendingWeight > 0
+                        ? weightInputUnit
+                        : undefined,
+                    volumeInputValue: progress.totalQtyKoli <= 0 && progress.pendingVolume > 0
+                        ? roundQuantity(
+                            convertM3ToVolumeInputValue(progress.pendingVolume, volumeInputUnit),
+                            volumeInputUnit === 'LITER' ? 0 : 3
+                        )
+                        : undefined,
+                    volumeInputUnit: progress.totalQtyKoli <= 0 && progress.pendingVolume > 0
+                        ? volumeInputUnit
+                        : undefined,
+                    holdRemaining: false,
+                };
+            }),
+        };
+        autoAssignOrderCargoFromTripPlan = true;
+        autoAssignedShipperReference = deliveryOrderShipperReferences[0];
+    }
+    const usingDirectCargoInput = requestedItemIds.length === 0;
     let selectedItems: Array<OrderItemProgressSnapshot & { _rev?: string }> = [];
     let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections> = [];
     let selectionByItemId = new Map<string, ReturnType<typeof normalizeDeliveryOrderSelections>[number]>();
@@ -5996,7 +6140,7 @@ export async function handleDeliveryOrderCreate(
         }
 
         try {
-            normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
+            normalizedSelections = normalizeDeliveryOrderSelections(selectionInputData, selectedItems);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Item surat jalan tidak valid' },
@@ -6341,6 +6485,9 @@ export async function handleDeliveryOrderCreate(
                 const holdQtyToApply = selection.holdRemaining ? (usesQtyBasis ? remainingQtyAfterShipment : 0) : 0;
                 const holdWeightToApply = selection.holdRemaining ? remainingWeightAfterShipment : 0;
                 const holdVolumeToApply = selection.holdRemaining ? remainingVolumeAfterShipment : 0;
+                const autoAssignedPickupStop = autoAssignOrderCargoFromTripPlan && autoAssignedShipperReference?.pickupStopKey
+                    ? deliveryOrderPickupStops.find(stop => stop._key === autoAssignedShipperReference?.pickupStopKey)
+                    : undefined;
                 const nextProgress = {
                     ...progress,
                     assignedQtyKoli: roundQuantity(progress.assignedQtyKoli + shippedQtyKoli),
@@ -6368,6 +6515,14 @@ export async function handleDeliveryOrderCreate(
                         orderItemWeightInputUnit: shippedWeightInputUnit,
                         orderItemVolumeInputValue: shippedVolumeInputValue,
                         orderItemVolumeInputUnit: shippedVolumeInputUnit,
+                        ...(autoAssignOrderCargoFromTripPlan && autoAssignedShipperReference
+                            ? {
+                                pickupStopKey: autoAssignedShipperReference.pickupStopKey,
+                                pickupAddress: autoAssignedShipperReference.pickupAddress || autoAssignedPickupStop?.pickupAddress,
+                                shipperReferenceKey: autoAssignedShipperReference._key,
+                                shipperReferenceNumber: autoAssignedShipperReference.referenceNumber,
+                            }
+                            : {}),
                         shippedQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
                         shippedWeight,
                     });
@@ -7529,6 +7684,7 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
             await updateDocument(tripOvertonage.linkedVoucherPatch._id, {
                 driverFeeAmount: tripOvertonage.linkedVoucherPatch.driverFeeAmount,
                 totalClaimAmount: tripOvertonage.linkedVoucherPatch.totalClaimAmount,
+                balance: tripOvertonage.linkedVoucherPatch.balance,
             }, 'driverVoucher');
         }
         await updateDocument(suratJalanRef, {
@@ -7637,6 +7793,7 @@ export async function handleDeliveryOrderManualOvertonaseUpdate(
             await updateDocument(tripOvertonage.linkedVoucherPatch._id, {
                 driverFeeAmount: tripOvertonage.linkedVoucherPatch.driverFeeAmount,
                 totalClaimAmount: tripOvertonage.linkedVoucherPatch.totalClaimAmount,
+                balance: tripOvertonage.linkedVoucherPatch.balance,
             }, 'driverVoucher');
         }
     } catch (error) {
