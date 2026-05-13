@@ -233,6 +233,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets(
+      'keeps focused actual input visible when viewport shrinks without insets',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: const DeliveryCompletionPage(
+              trip: singleTargetTrip,
+              customerRecipients: [],
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        final actualKoliField = find.widgetWithText(
+          TextFormField,
+          'Qty Aktual *',
+          skipOffstage: false,
+        );
+
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -350));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(actualKoliField.first);
+        await tester.pumpAndSettle();
+        await tester.enterText(actualKoliField.first, '8');
+        await tester.pumpAndSettle();
+
+        tester.view.physicalSize = const Size(360, 520);
+        await tester.pumpAndSettle();
+
+        final rect = tester.getRect(actualKoliField.first);
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.bottom, lessThanOrEqualTo(tester.view.physicalSize.height));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('renders legacy units and duplicate SJ references safely', (
       tester,
     ) async {

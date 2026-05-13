@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
+import 'mobile_input_visibility.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
@@ -29,15 +30,32 @@ class DeliveryManifestPage extends StatefulWidget {
   State<DeliveryManifestPage> createState() => _DeliveryManifestPageState();
 }
 
-class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
+class _DeliveryManifestPageState extends State<DeliveryManifestPage>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
+  final _inputVisibilityKey = GlobalKey();
   bool _submitting = false;
+  bool _inputVisibilityScheduled = false;
   late List<_ManifestGroupDraft> _groups;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_scheduleFocusedInputVisibility);
     _groups = _buildInitialGroups();
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_scheduleFocusedInputVisibility);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    _scheduleFocusedInputVisibility();
   }
 
   List<_ManifestGroupDraft> _buildInitialGroups() {
@@ -535,6 +553,22 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
+  void _scheduleFocusedInputVisibility() {
+    if (_inputVisibilityScheduled) return;
+    if (focusedEditableContextInside(_inputVisibilityKey) == null) return;
+
+    _inputVisibilityScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _inputVisibilityScheduled = false;
+      if (!mounted) return;
+
+      final inputContext = focusedEditableContextInside(_inputVisibilityKey);
+      if (inputContext == null) return;
+
+      ensureMobileInputVisible(inputContext);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -544,89 +578,93 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
       resizeToAvoidBottomInset: true,
       appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  children: [
-                    if (widget.existingCargoItems.isNotEmpty) ...[
-                      _InfoCard(
-                        title: 'Muatan saat ini',
-                        message:
-                            '${widget.existingCargoItems.length} barang sudah tercatat. Tambahan dari halaman ini akan ditambahkan ke DO yang sama.',
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    _InfoCard(
-                      title: widget.allowsDirectCargoInput
-                          ? 'Kelola SJ dan barang'
-                          : 'Kelola SJ',
-                      message: widget.allowsDirectCargoInput
-                          ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
-                          : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
-                    ),
-                    const SizedBox(height: 16),
-                    ..._groups.map(
-                      (group) => Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _ManifestGroupCard(
-                          key: ValueKey(group.id),
-                          group: group,
-                          pickupStops: widget.pickupStops,
-                          customerProducts: widget.customerProducts,
-                          allowsDirectCargoInput: widget.allowsDirectCargoInput,
-                          onGroupChanged: _updateGroup,
-                          onItemChanged: _updateItem,
-                          onProductSelected: _applyCustomerProduct,
-                          onAddItem: _addItem,
-                          onRemoveItem: _removeItem,
-                          onRemoveGroup: _groups.length > 1
-                              ? _removeGroup
-                              : null,
+        child: KeyedSubtree(
+          key: _inputVisibilityKey,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    children: [
+                      if (widget.existingCargoItems.isNotEmpty) ...[
+                        _InfoCard(
+                          title: 'Muatan saat ini',
+                          message:
+                              '${widget.existingCargoItems.length} barang sudah tercatat. Tambahan dari halaman ini akan ditambahkan ke DO yang sama.',
                         ),
+                        const SizedBox(height: 12),
+                      ],
+                      _InfoCard(
+                        title: widget.allowsDirectCargoInput
+                            ? 'Kelola SJ dan barang'
+                            : 'Kelola SJ',
+                        message: widget.allowsDirectCargoInput
+                            ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
+                            : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    OutlinedButton.icon(
-                      onPressed: _submitting ? null : _addGroup,
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Tambah SJ'),
-                    ),
-                  ],
-                ),
-              ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: keyboardOpen
-                    ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
-                    : Padding(
-                        key: const ValueKey('submit-bar'),
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _submitting ? null : _submit,
-                            icon: _submitting
-                                ? SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: scheme.onPrimary,
-                                    ),
-                                  )
-                                : const Icon(Icons.save_rounded),
-                            label: Text(widget.submitLabel),
+                      const SizedBox(height: 16),
+                      ..._groups.map(
+                        (group) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _ManifestGroupCard(
+                            key: ValueKey(group.id),
+                            group: group,
+                            pickupStops: widget.pickupStops,
+                            customerProducts: widget.customerProducts,
+                            allowsDirectCargoInput:
+                                widget.allowsDirectCargoInput,
+                            onGroupChanged: _updateGroup,
+                            onItemChanged: _updateItem,
+                            onProductSelected: _applyCustomerProduct,
+                            onAddItem: _addItem,
+                            onRemoveItem: _removeItem,
+                            onRemoveGroup: _groups.length > 1
+                                ? _removeGroup
+                                : null,
                           ),
                         ),
                       ),
-              ),
-            ],
+                      const SizedBox(height: 4),
+                      OutlinedButton.icon(
+                        onPressed: _submitting ? null : _addGroup,
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Tambah SJ'),
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: keyboardOpen
+                      ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
+                      : Padding(
+                          key: const ValueKey('submit-bar'),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: _submitting ? null : _submit,
+                              icon: _submitting
+                                  ? SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: scheme.onPrimary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.save_rounded),
+                              label: Text(widget.submitLabel),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -15,6 +15,7 @@ import '../data/driver_tracking_service.dart';
 import '../domain/models.dart';
 import 'delivery_completion_page.dart';
 import 'delivery_manifest_page.dart';
+import 'mobile_input_visibility.dart';
 
 enum _DriverHomeSection { trips, vouchers }
 
@@ -895,60 +896,62 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return AlertDialog(
-              title: const Text('Tutup Trip'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Odometer kendaraan terakhir: ${_formatKm(currentOdometer)} km',
-                      style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.65),
+            return MobileInputVisibilityRoot(
+              child: AlertDialog(
+                title: const Text('Tutup Trip'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Odometer kendaraan terakhir: ${_formatKm(currentOdometer)} km',
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.65),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: odometerController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: odometerController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: InputDecoration(
+                          labelText: 'Odometer Akhir Trip',
+                          suffixText: 'km',
+                          errorText: errorText,
+                        ),
+                        onSubmitted: (_) => submit(),
                       ),
-                      scrollPadding: _keyboardAwareScrollPadding(context),
-                      decoration: InputDecoration(
-                        labelText: 'Odometer Akhir Trip',
-                        suffixText: 'km',
-                        errorText: errorText,
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: noteController,
+                        minLines: 2,
+                        maxLines: 4,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Catatan',
+                          hintText: 'Opsional',
+                        ),
                       ),
-                      onSubmitted: (_) => submit(),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: noteController,
-                      minLines: 2,
-                      maxLines: 4,
-                      scrollPadding: _keyboardAwareScrollPadding(context),
-                      decoration: const InputDecoration(
-                        labelText: 'Catatan',
-                        hintText: 'Opsional',
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Batal'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: submit,
+                    icon: const Icon(Icons.lock_clock_rounded),
+                    label: const Text('Ajukan Tutup Trip'),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Batal'),
-                ),
-                FilledButton.icon(
-                  onPressed: submit,
-                  icon: const Icon(Icons.lock_clock_rounded),
-                  label: const Text('Ajukan Tutup Trip'),
-                ),
-              ],
             );
           },
         );
@@ -1054,124 +1057,129 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return AlertDialog(
-              title: Text('Lapor Insiden ${trip.doNumber}'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (errorText != null) ...[
-                      Text(
-                        errorText!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w700,
+            return MobileInputVisibilityRoot(
+              child: AlertDialog(
+                title: Text('Lapor Insiden ${trip.doNumber}'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (errorText != null) ...[
+                        Text(
+                          errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      DropdownButtonFormField<String>(
+                        initialValue: incidentType,
+                        decoration: const InputDecoration(
+                          labelText: 'Tipe Insiden',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'OTHER',
+                            child: Text('Lainnya'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ENGINE_TROUBLE',
+                            child: Text('Mesin bermasalah'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'BLOWOUT_TIRE',
+                            child: Text('Ban pecah'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ACCIDENT_MINOR',
+                            child: Text('Kecelakaan ringan'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ACCIDENT_MAJOR',
+                            child: Text('Kecelakaan berat'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => incidentType = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: urgency,
+                        decoration: const InputDecoration(labelText: 'Urgensi'),
+                        items: const [
+                          DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
+                          DropdownMenuItem(
+                            value: 'MEDIUM',
+                            child: Text('Sedang'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'HIGH',
+                            child: Text('Tinggi'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => urgency = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: locationController,
+                        minLines: 1,
+                        maxLines: 3,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Lokasi Insiden',
+                          hintText: 'Koordinat / nama jalan / lokasi kejadian',
                         ),
                       ),
                       const SizedBox(height: 12),
+                      TextField(
+                        controller: odometerController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Odometer Saat Insiden',
+                          suffixText: 'km',
+                        ),
+                        onSubmitted: (_) => submit(),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        minLines: 4,
+                        maxLines: 6,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Kronologi',
+                          hintText:
+                              'Jelaskan kejadian dan kondisi kendaraan/barang',
+                        ),
+                      ),
                     ],
-                    DropdownButtonFormField<String>(
-                      initialValue: incidentType,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipe Insiden',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'OTHER',
-                          child: Text('Lainnya'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'ENGINE_TROUBLE',
-                          child: Text('Mesin bermasalah'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'BLOWOUT_TIRE',
-                          child: Text('Ban pecah'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'ACCIDENT_MINOR',
-                          child: Text('Kecelakaan ringan'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'ACCIDENT_MAJOR',
-                          child: Text('Kecelakaan berat'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() => incidentType = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: urgency,
-                      decoration: const InputDecoration(labelText: 'Urgensi'),
-                      items: const [
-                        DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
-                        DropdownMenuItem(
-                          value: 'MEDIUM',
-                          child: Text('Sedang'),
-                        ),
-                        DropdownMenuItem(value: 'HIGH', child: Text('Tinggi')),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() => urgency = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: locationController,
-                      minLines: 1,
-                      maxLines: 3,
-                      scrollPadding: _keyboardAwareScrollPadding(context),
-                      decoration: const InputDecoration(
-                        labelText: 'Lokasi Insiden',
-                        hintText: 'Koordinat / nama jalan / lokasi kejadian',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: odometerController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
-                      ),
-                      scrollPadding: _keyboardAwareScrollPadding(context),
-                      decoration: const InputDecoration(
-                        labelText: 'Odometer Saat Insiden',
-                        suffixText: 'km',
-                      ),
-                      onSubmitted: (_) => submit(),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: descriptionController,
-                      minLines: 4,
-                      maxLines: 6,
-                      scrollPadding: _keyboardAwareScrollPadding(context),
-                      decoration: const InputDecoration(
-                        labelText: 'Kronologi',
-                        hintText:
-                            'Jelaskan kejadian dan kondisi kendaraan/barang',
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Batal'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: submit,
+                    icon: const Icon(Icons.report_problem_outlined),
+                    label: const Text('Kirim Laporan'),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Batal'),
-                ),
-                FilledButton.icon(
-                  onPressed: submit,
-                  icon: const Icon(Icons.report_problem_outlined),
-                  label: const Text('Kirim Laporan'),
-                ),
-              ],
             );
           },
         );
@@ -1326,112 +1334,118 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return AlertDialog(
-              title: Text('Ajukan Selesai ${incident.incidentNumber}'),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${trip.doNumber} | ${trip.vehiclePlate}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 12),
-                      if (errorText != null) ...[
+            return MobileInputVisibilityRoot(
+              child: AlertDialog(
+                title: Text('Ajukan Selesai ${incident.incidentNumber}'),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          errorText!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.w700,
+                          '${trip.doNumber} | ${trip.vehiclePlate}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 12),
+                        if (errorText != null) ...[
+                          Text(
+                            errorText!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        TextField(
+                          controller: noteController,
+                          minLines: 3,
+                          maxLines: 5,
+                          scrollPadding: _keyboardAwareScrollPadding(context),
+                          decoration: const InputDecoration(
+                            labelText: 'Catatan Penyelesaian',
+                            hintText: 'Jelaskan tindakan yang sudah dilakukan',
                           ),
                         ),
                         const SizedBox(height: 12),
-                      ],
-                      TextField(
-                        controller: noteController,
-                        minLines: 3,
-                        maxLines: 5,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Catatan Penyelesaian',
-                          hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                        TextField(
+                          controller: locationController,
+                          minLines: 1,
+                          maxLines: 3,
+                          scrollPadding: _keyboardAwareScrollPadding(context),
+                          decoration: const InputDecoration(
+                            labelText: 'Lokasi Akhir',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: locationController,
-                        minLines: 1,
-                        maxLines: 3,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Lokasi Akhir',
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: odometerController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: false,
+                          ),
+                          scrollPadding: _keyboardAwareScrollPadding(context),
+                          decoration: const InputDecoration(
+                            labelText: 'Odometer Akhir',
+                            suffixText: 'km',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: odometerController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false,
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Biaya Driver',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: addCostRow,
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Tambah'),
+                            ),
+                          ],
                         ),
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Odometer Akhir',
-                          suffixText: 'km',
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Biaya Driver',
-                              style: TextStyle(fontWeight: FontWeight.w800),
+                        if (costRows.isEmpty)
+                          Text(
+                            'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.58),
+                              fontSize: 12.5,
                             ),
                           ),
-                          TextButton.icon(
-                            onPressed: addCostRow,
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Tambah'),
+                        for (
+                          var index = 0;
+                          index < costRows.length;
+                          index++
+                        ) ...[
+                          const SizedBox(height: 10),
+                          _IncidentCostInputCard(
+                            key: ObjectKey(costRows[index]),
+                            row: costRows[index],
+                            index: index,
+                            onRemove: () => removeCostRow(index),
                           ),
                         ],
-                      ),
-                      if (costRows.isEmpty)
-                        Text(
-                          'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.58),
-                            fontSize: 12.5,
-                          ),
-                        ),
-                      for (var index = 0; index < costRows.length; index++) ...[
-                        const SizedBox(height: 10),
-                        _IncidentCostInputCard(
-                          key: ObjectKey(costRows[index]),
-                          row: costRows[index],
-                          index: index,
-                          onRemove: () => removeCostRow(index),
-                        ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Batal'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: submit,
+                    icon: const Icon(Icons.task_alt_rounded),
+                    label: const Text('Kirim ke Admin'),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Batal'),
-                ),
-                FilledButton.icon(
-                  onPressed: submit,
-                  icon: const Icon(Icons.task_alt_rounded),
-                  label: const Text('Kirim ke Admin'),
-                ),
-              ],
             );
           },
         );

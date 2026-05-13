@@ -215,6 +215,58 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets(
+      'keeps focused cargo input visible when viewport shrinks without insets',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: const DeliveryManifestPage(
+              title: 'Kelola SJ & Barang',
+              submitLabel: 'Simpan SJ & Barang',
+              pickupStops: pickupStops,
+              customerProducts: [],
+              allowsDirectCargoInput: true,
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'No. SJ Pengirim'),
+          'sj-shrink',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Deskripsi Barang'),
+          'Besi Beton',
+        );
+
+        final koliField = find.widgetWithText(
+          TextFormField,
+          'Koli',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(koliField.first);
+        await tester.pumpAndSettle();
+        await tester.enterText(koliField.first, '12');
+        await tester.pumpAndSettle();
+
+        tester.view.physicalSize = const Size(360, 520);
+        await tester.pumpAndSettle();
+
+        final rect = tester.getRect(koliField.first);
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.bottom, lessThanOrEqualTo(tester.view.physicalSize.height));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('renders existing cargo with unknown unit values safely', (
       tester,
     ) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
+import 'mobile_input_visibility.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
@@ -19,11 +20,14 @@ class DeliveryCompletionPage extends StatefulWidget {
   State<DeliveryCompletionPage> createState() => _DeliveryCompletionPageState();
 }
 
-class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
+class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
+    with WidgetsBindingObserver {
+  final _inputVisibilityKey = GlobalKey();
   final _noteController = TextEditingController();
   late final TextEditingController _podReceiverNameController;
   late final TextEditingController _podReceivedDateController;
   bool _submitting = false;
+  bool _inputVisibilityScheduled = false;
   late List<_ActualCargoDraft> _cargoDrafts;
   late List<_ActualDropDraft> _dropDrafts;
   late Set<String> _selectedShipperReferenceValues;
@@ -31,6 +35,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_scheduleFocusedInputVisibility);
     _cargoDrafts = _buildInitialCargoDrafts(widget.trip);
     _dropDrafts = _buildInitialDropDrafts(widget.trip, _cargoDrafts);
     _selectedShipperReferenceValues = _initialSelectedReferenceValues(
@@ -52,10 +58,17 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_scheduleFocusedInputVisibility);
+    WidgetsBinding.instance.removeObserver(this);
     _noteController.dispose();
     _podReceiverNameController.dispose();
     _podReceivedDateController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    _scheduleFocusedInputVisibility();
   }
 
   List<DeliveryShipperReference> get _selectedShipperReferences =>
@@ -383,6 +396,22 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
     );
   }
 
+  void _scheduleFocusedInputVisibility() {
+    if (_inputVisibilityScheduled) return;
+    if (focusedEditableContextInside(_inputVisibilityKey) == null) return;
+
+    _inputVisibilityScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _inputVisibilityScheduled = false;
+      if (!mounted) return;
+
+      final inputContext = focusedEditableContextInside(_inputVisibilityKey);
+      if (inputContext == null) return;
+
+      ensureMobileInputVisible(inputContext);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -397,128 +426,131 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
       resizeToAvoidBottomInset: true,
       appBar: AppBar(title: const Text('Ajukan Selesai')),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  _InfoCard(
-                    title: 'Realisasi trip',
-                    message: hasMultiTargetDefault
-                        ? 'Trip ini punya beberapa target SJ. Driver perlu isi realisasi muatan dan alokasi titik drop dengan benar.'
-                        : 'Isi realisasi muatan dan titik drop. Admin akan cross-check sebelum DO diselesaikan.',
-                  ),
-                  if (widget.trip.shipperReferences.isNotEmpty) ...[
+        child: KeyedSubtree(
+          key: _inputVisibilityKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  children: [
+                    _InfoCard(
+                      title: 'Realisasi trip',
+                      message: hasMultiTargetDefault
+                          ? 'Trip ini punya beberapa target SJ. Driver perlu isi realisasi muatan dan alokasi titik drop dengan benar.'
+                          : 'Isi realisasi muatan dan titik drop. Admin akan cross-check sebelum DO diselesaikan.',
+                    ),
+                    if (widget.trip.shipperReferences.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _BatchSuratJalanCard(
+                        references: widget.trip.shipperReferences,
+                        selectedValues: _selectedShipperReferenceValues,
+                        onChanged: _submitting
+                            ? null
+                            : _setShipperReferenceSelected,
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    _BatchSuratJalanCard(
-                      references: widget.trip.shipperReferences,
-                      selectedValues: _selectedShipperReferenceValues,
-                      onChanged: _submitting
-                          ? null
-                          : _setShipperReferenceSelected,
+                    _PodCard(
+                      receiverController: _podReceiverNameController,
+                      dateController: _podReceivedDateController,
+                      onPickDate: _submitting ? null : _pickPodReceivedDate,
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  _PodCard(
-                    receiverController: _podReceiverNameController,
-                    dateController: _podReceivedDateController,
-                    onPickDate: _submitting ? null : _pickPodReceivedDate,
-                  ),
-                  const SizedBox(height: 16),
-                  _TotalsCard(
-                    title: 'Qty',
-                    qtyLabel: _formatMetric(cargoTotals.qtyKoli),
-                    weightLabel: '${_formatMetric(cargoTotals.weightKg)} kg',
-                    volumeLabel:
-                        '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
-                  ),
-                  const SizedBox(height: 12),
-                  ...selectedCargoDrafts.map(
-                    (draft) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _ActualCargoCard(
-                        key: ValueKey(draft.itemId),
-                        draft: draft,
-                        onChanged: _updateCargo,
-                      ),
+                    const SizedBox(height: 16),
+                    _TotalsCard(
+                      title: 'Qty',
+                      qtyLabel: _formatMetric(cargoTotals.qtyKoli),
+                      weightLabel: '${_formatMetric(cargoTotals.weightKg)} kg',
+                      volumeLabel:
+                          '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _TotalsCard(
-                    title: 'Qty Drop',
-                    qtyLabel: _formatMetric(dropTotals.qtyKoli),
-                    weightLabel: '${_formatMetric(dropTotals.weightKg)} kg',
-                    volumeLabel:
-                        '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
-                  ),
-                  const SizedBox(height: 12),
-                  ...selectedDropDrafts.asMap().entries.map(
-                    (entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _ActualDropCard(
-                        key: ValueKey(entry.value.id),
-                        index: entry.key + 1,
-                        draft: entry.value,
-                        shipperReferences: widget.trip.shipperReferences,
-                        customerRecipients: widget.customerRecipients,
-                        cargoDrafts: selectedCargoDrafts,
-                        showRemove: selectedDropDrafts.length > 1,
-                        onChanged: _updateDrop,
-                        onReferenceChanged: _selectDropReference,
-                        onRecipientChanged: _selectRecipient,
-                        onRemove: _removeDropPoint,
-                      ),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _submitting ? null : _addDropPoint,
-                    icon: const Icon(Icons.add_location_alt_rounded),
-                    label: const Text('Tambah Titik Drop'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _noteController,
-                    minLines: 2,
-                    maxLines: 4,
-                    scrollPadding: _mobileInputScrollPadding,
-                    decoration: const InputDecoration(
-                      labelText: 'Catatan Driver',
-                      hintText: 'Opsional',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: keyboardOpen
-                  ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
-                  : Padding(
-                      key: const ValueKey('submit-bar'),
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _submitting ? null : _submit,
-                          icon: _submitting
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: scheme.onPrimary,
-                                  ),
-                                )
-                              : const Icon(Icons.check_circle_rounded),
-                          label: const Text('Ajukan Selesai'),
+                    const SizedBox(height: 12),
+                    ...selectedCargoDrafts.map(
+                      (draft) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ActualCargoCard(
+                          key: ValueKey(draft.itemId),
+                          draft: draft,
+                          onChanged: _updateCargo,
                         ),
                       ),
                     ),
-            ),
-          ],
+                    const SizedBox(height: 8),
+                    _TotalsCard(
+                      title: 'Qty Drop',
+                      qtyLabel: _formatMetric(dropTotals.qtyKoli),
+                      weightLabel: '${_formatMetric(dropTotals.weightKg)} kg',
+                      volumeLabel:
+                          '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                    ),
+                    const SizedBox(height: 12),
+                    ...selectedDropDrafts.asMap().entries.map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ActualDropCard(
+                          key: ValueKey(entry.value.id),
+                          index: entry.key + 1,
+                          draft: entry.value,
+                          shipperReferences: widget.trip.shipperReferences,
+                          customerRecipients: widget.customerRecipients,
+                          cargoDrafts: selectedCargoDrafts,
+                          showRemove: selectedDropDrafts.length > 1,
+                          onChanged: _updateDrop,
+                          onReferenceChanged: _selectDropReference,
+                          onRecipientChanged: _selectRecipient,
+                          onRemove: _removeDropPoint,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _submitting ? null : _addDropPoint,
+                      icon: const Icon(Icons.add_location_alt_rounded),
+                      label: const Text('Tambah Titik Drop'),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _noteController,
+                      minLines: 2,
+                      maxLines: 4,
+                      scrollPadding: _mobileInputScrollPadding,
+                      decoration: const InputDecoration(
+                        labelText: 'Catatan Driver',
+                        hintText: 'Opsional',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: keyboardOpen
+                    ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
+                    : Padding(
+                        key: const ValueKey('submit-bar'),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _submitting ? null : _submit,
+                            icon: _submitting
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: scheme.onPrimary,
+                                    ),
+                                  )
+                                : const Icon(Icons.check_circle_rounded),
+                            label: const Text('Ajukan Selesai'),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
