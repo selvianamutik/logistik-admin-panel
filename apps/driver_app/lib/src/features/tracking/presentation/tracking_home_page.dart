@@ -1615,7 +1615,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             onRefresh: hasBlockingNotice ? () async {} : _loadTrips,
             color: scheme.primary,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                10,
+                16,
+                28 + MediaQuery.paddingOf(context).bottom,
+              ),
               physics: hasBlockingNotice
                   ? const NeverScrollableScrollPhysics()
                   : const AlwaysScrollableScrollPhysics(),
@@ -2397,16 +2402,17 @@ class _DriverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final compact = MediaQuery.sizeOf(context).width < 380;
     final tripLabel = tripCount == 1 ? '1 trip' : '$tripCount trip';
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(compact ? 14 : 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: compact ? 42 : 46,
+              height: compact ? 42 : 46,
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(14),
@@ -2414,19 +2420,21 @@ class _DriverCard extends StatelessWidget {
               child: Icon(
                 Icons.person_pin_circle_rounded,
                 color: scheme.primary,
-                size: 24,
+                size: compact ? 22 : 24,
               ),
             ),
-            const SizedBox(width: 14),
+            SizedBox(width: compact ? 12 : 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     session.driverName,
-                    style: const TextStyle(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                      fontSize: compact ? 14 : 15,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2441,8 +2449,12 @@ class _DriverCard extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 10 : 12,
+                vertical: compact ? 5 : 6,
+              ),
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(999),
@@ -2452,7 +2464,7 @@ class _DriverCard extends StatelessWidget {
                 style: TextStyle(
                   color: scheme.primary,
                   fontWeight: FontWeight.w700,
-                  fontSize: 13,
+                  fontSize: compact ? 12 : 13,
                 ),
               ),
             ),

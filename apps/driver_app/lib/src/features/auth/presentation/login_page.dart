@@ -56,16 +56,17 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final width = MediaQuery.sizeOf(context).width;
-    final compact = width < 360;
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width <= 390 || size.height < 760;
+    final veryCompact = size.height < 680;
 
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: EdgeInsets.symmetric(
-              horizontal: compact ? 18 : 24,
-              vertical: compact ? 24 : 32,
+              horizontal: compact ? 20 : 24,
+              vertical: veryCompact ? 18 : (compact ? 22 : 32),
             ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
@@ -73,8 +74,8 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: compact ? 74 : 82,
-                    height: compact ? 52 : 56,
+                    width: veryCompact ? 64 : (compact ? 72 : 82),
+                    height: veryCompact ? 46 : (compact ? 50 : 56),
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -101,17 +102,17 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: veryCompact ? 16 : (compact ? 20 : 24)),
                   Text(
                     gmsCompanyName,
                     style: TextStyle(
                       color: scheme.onSurface,
-                      fontSize: compact ? 26 : 30,
+                      fontSize: veryCompact ? 24 : (compact ? 26 : 30),
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: veryCompact ? 6 : 8),
                   Text(
                     'Aplikasi driver untuk cek trip, uang jalan, dan kirim lokasi.',
                     style: TextStyle(
@@ -120,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                       height: 1.45,
                     ),
                   ),
-                  SizedBox(height: compact ? 28 : 34),
+                  SizedBox(height: veryCompact ? 20 : (compact ? 26 : 34)),
                   Form(
                     key: _formKey,
                     child: Column(
@@ -147,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: veryCompact ? 14 : 16),
                         const _FieldLabel(label: 'Password'),
                         const SizedBox(height: 8),
                         TextFormField(
@@ -213,7 +214,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 24),
+                        SizedBox(height: veryCompact ? 18 : 24),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
