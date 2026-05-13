@@ -15,11 +15,16 @@ const completionPath = path.join(
     'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
 );
 const orderWorkflowPath = path.join(appDir, 'src/lib/api/order-workflows.ts');
+const driverShipperReferencesRoutePath = path.join(
+    appDir,
+    'src/app/api/driver/delivery-orders/shipper-references/route.ts'
+);
 
 const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
 const completionSource = fs.readFileSync(completionPath, 'utf8');
 const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
+const driverShipperReferencesRouteSource = fs.readFileSync(driverShipperReferencesRoutePath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -77,13 +82,23 @@ for (const payloadKey of [
 
 assertIncludes(
     manifestSource,
-    'Satu trip bisa punya banyak SJ. Setiap SJ bisa punya banyak barang.',
-    'Copy mobile manifest harus menjelaskan multi-SJ dan multi-barang.'
+    'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.',
+    'Copy mobile manifest harus menjelaskan multi-SJ, edit SJ, hapus SJ, dan multi-barang.'
 );
 assertIncludes(
     manifestSource,
     "label: const Text('Tambah SJ')",
     'Mobile manifest harus tetap bisa menambah banyak SJ.'
+);
+assertIncludes(
+    manifestSource,
+    "label: const Text('Hapus SJ')",
+    'Mobile manifest harus menyediakan aksi eksplisit untuk menghapus SJ sebelum approval/final.'
+);
+assertIncludes(
+    manifestSource,
+    'onRemoveGroup: _groups.length > 1',
+    'Mobile manifest harus mengizinkan hapus SJ tambahan tanpa mengizinkan submit tanpa nomor SJ.'
 );
 assertIncludes(
     manifestSource,
@@ -224,6 +239,26 @@ assertIncludes(
     orderWorkflowSource,
     'billableOnly: true',
     'Backend batch SJ/approval driver harus membandingkan item aktual dengan titik drop terkirim tanpa memblok hold/return.'
+);
+assertIncludes(
+    driverShipperReferencesRouteSource,
+    'removeLinkedCargoItemsForRemovedShipperReferences: true',
+    'Endpoint driver hapus/sync SJ harus meminta workflow menghapus barang terkait setelah validasi.'
+);
+assertNotIncludes(
+    driverShipperReferencesRouteSource,
+    'handleDeliveryOrderCargoItemRemove',
+    'Endpoint driver SJ tidak boleh menghapus barang sebelum validasi workflow selesai.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'itemsLinkedToRemovedReferences',
+    'Workflow update SJ harus menghitung barang terkait SJ yang dihapus.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'removeLinkedCargoItemsForRemovedShipperReferences',
+    'Workflow update SJ harus punya mode aman untuk hapus SJ driver beserta barang terkait.'
 );
 
 for (const unstableKeyPattern of [

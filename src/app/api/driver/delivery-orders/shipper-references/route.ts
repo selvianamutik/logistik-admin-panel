@@ -1,12 +1,9 @@
 import { extractRefId } from '@/lib/api/data-helpers';
-import {
-    handleDeliveryOrderCargoItemRemove,
-    handleDeliveryOrderShipperReferenceUpdate,
-} from '@/lib/api/order-workflows';
+import { handleDeliveryOrderShipperReferenceUpdate } from '@/lib/api/order-workflows';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
-import { createDocument, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
-import type { DeliveryOrder, DeliveryOrderItem } from '@/lib/types';
+import { createDocument, getDocumentById } from '@/lib/repositories/document-store';
+import type { DeliveryOrder } from '@/lib/types';
 
 async function addAuditLog(
     actor: { _id: string; name: string; email?: string; role?: string },
@@ -88,57 +85,12 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'SJ pada trip batal tidak bisa diubah.' }, { status: 409 });
         }
 
-        const requestedReferences = Array.isArray(parsedBody.data.shipperReferences) ? parsedBody.data.shipperReferences : [];
-        const requestedReferenceKeys = new Set(
-            requestedReferences.map(reference => (reference._key || '').trim()).filter(Boolean)
-        );
-        const requestedReferenceNumbers = new Set(
-            requestedReferences.map(reference => (reference.referenceNumber || '').trim().toUpperCase()).filter(Boolean)
-        );
-        const removedReferences = (deliveryOrder.shipperReferences || []).filter(reference => {
-            const referenceKey = (reference._key || '').trim();
-            const referenceNumber = (reference.referenceNumber || '').trim().toUpperCase();
-            return !(
-                (referenceKey && requestedReferenceKeys.has(referenceKey)) ||
-                (referenceNumber && requestedReferenceNumbers.has(referenceNumber))
-            );
-        });
-        if (removedReferences.length > 0) {
-            const removedReferenceKeys = new Set(
-                removedReferences.map(reference => (reference._key || '').trim()).filter(Boolean)
-            );
-            const removedReferenceNumbers = new Set(
-                removedReferences.map(reference => (reference.referenceNumber || '').trim().toUpperCase()).filter(Boolean)
-            );
-            const deliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
-            const itemsToDelete = deliveryOrderItems.filter(item => {
-                const itemReferenceKey = (item.shipperReferenceKey || '').trim();
-                const itemReferenceNumber = (item.shipperReferenceNumber || '').trim().toUpperCase();
-                return (
-                    (itemReferenceKey && removedReferenceKeys.has(itemReferenceKey)) ||
-                    (itemReferenceNumber && removedReferenceNumbers.has(itemReferenceNumber))
-                );
-            });
-            for (const item of itemsToDelete) {
-                const removeResponse = await handleDeliveryOrderCargoItemRemove(
-                    auth.session,
-                    {
-                        id,
-                        deliveryOrderItemId: item._id,
-                    },
-                    addAuditLog
-                );
-                if (removeResponse.status >= 400) {
-                    return removeResponse;
-                }
-            }
-        }
-
         return await handleDeliveryOrderShipperReferenceUpdate(
             auth.session,
             {
                 id,
                 shipperReferences: parsedBody.data.shipperReferences,
+                removeLinkedCargoItemsForRemovedShipperReferences: true,
             },
             addAuditLog
         );

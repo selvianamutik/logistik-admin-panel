@@ -8126,6 +8126,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     const legacyCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
+    const removeLinkedCargoItemsForRemovedShipperReferences = data.removeLinkedCargoItemsForRemovedShipperReferences === true;
 
     if (!id) {
         return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
@@ -8305,6 +8306,8 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const deliveryOrderItems = await listDocumentsByFilter<{
         _id: string;
+        orderItemRef?: unknown;
+        orderItemDescription?: string;
         shipperReferenceKey?: string;
         shipperReferenceNumber?: string;
         pickupStopKey?: string;
@@ -8387,7 +8390,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             .map(reference => normalizeOptionalText(reference.referenceNumber)?.toUpperCase())
             .filter((value): value is string => Boolean(value))
     );
-    const itemStillUsesRemovedReference = deliveryOrderItems.some(item => {
+    const itemsLinkedToRemovedReferences = deliveryOrderItems.filter(item => {
         if (itemReferencePatches.has(item._id)) {
             return false;
         }
@@ -8398,12 +8401,36 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             (itemReferenceNumber && removedReferenceNumbers.has(itemReferenceNumber))
         );
     });
-    if (itemStillUsesRemovedReference) {
+    if (itemsLinkedToRemovedReferences.length > 0 && !removeLinkedCargoItemsForRemovedShipperReferences) {
         return NextResponse.json(
             { error: 'SJ pengirim yang masih punya barang tidak bisa dihapus. Hapus atau pindahkan barangnya dulu.' },
             { status: 409 }
         );
     }
+    if (itemsLinkedToRemovedReferences.length > 0) {
+        for (const item of itemsLinkedToRemovedReferences) {
+            const orderItemRef = extractRefId(item.orderItemRef);
+            if (!orderItemRef) {
+                return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 409 });
+            }
+            const orderItem = await getDocumentById<{
+                _id: string;
+                entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+                sourceDeliveryOrderRef?: unknown;
+            }>(orderItemRef, 'orderItem');
+            if (!orderItem) {
+                return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 404 });
+            }
+            if (orderItem.entrySource !== 'DELIVERY_ORDER' || extractRefId(orderItem.sourceDeliveryOrderRef) !== id) {
+                return NextResponse.json(
+                    { error: 'Item ini berasal dari target order/resi utama. Koreksi assignment-nya harus dari flow order.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+    const removedDeliveryOrderItemIds = new Set(itemsLinkedToRemovedReferences.map(item => item._id));
+    const deliveryOrderItemsForUpdate = deliveryOrderItems.filter(item => !removedDeliveryOrderItemIds.has(item._id));
     const nextActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
         ? deliveryOrder.actualDropPoints
             .filter(point => {
@@ -8429,6 +8456,19 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     let updatedDeliveryOrder: unknown;
     try {
+        for (const item of itemsLinkedToRemovedReferences) {
+            const removeResponse = await handleDeliveryOrderCargoItemRemove(
+                session,
+                {
+                    id,
+                    deliveryOrderItemId: item._id,
+                },
+                addAuditLog
+            );
+            if (removeResponse.status >= 400) {
+                return removeResponse;
+            }
+        }
         updatedDeliveryOrder = await updateDocument(id, {
             customerDoNumber,
             shipperReferences: nextShipperReferences,
@@ -8438,7 +8478,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 : {}),
             ...(nextActualDropPoints ? { actualDropPoints: nextActualDropPoints } : {}),
         }, 'deliveryOrder');
-        for (const item of deliveryOrderItems) {
+        for (const item of deliveryOrderItemsForUpdate) {
             const nextReference = itemReferencePatches.get(item._id);
             if (!nextReference) {
                 continue;
@@ -8466,7 +8506,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             };
             const suratJalanRecords = mapDeliveryOrderToSuratJalanRecords(
                 deliveryOrderForNewRecords,
-                deliveryOrderItems.map(item => ({
+                deliveryOrderItemsForUpdate.map(item => ({
                     _id: item._id,
                     _type: 'deliveryOrderItem',
                     deliveryOrderRef: id,
@@ -8528,7 +8568,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 : (deliveryOrder.status || 'CREATED'),
             actualDropPoints: nextActualDropPoints as DeliveryOrder['actualDropPoints'],
         };
-        const deliveryOrderItemsForSyncedRecords = deliveryOrderItems.map(item => {
+        const deliveryOrderItemsForSyncedRecords = deliveryOrderItemsForUpdate.map(item => {
             const nextReference = itemReferencePatches.get(item._id);
             return {
                 ...(item as DeliveryOrderItem),

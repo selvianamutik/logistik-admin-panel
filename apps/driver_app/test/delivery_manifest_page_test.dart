@@ -172,7 +172,6 @@ void main() {
     ) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
-      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetViewInsets);
@@ -193,15 +192,17 @@ void main() {
       await tester.pumpAndSettle();
 
       final sjField = find.widgetWithText(TextFormField, 'No. SJ Pengirim');
+      await tester.enterText(sjField, 'sj-keyboard');
+
       final descriptionField = find.widgetWithText(
         TextFormField,
         'Deskripsi Barang',
       );
-      final koliField = find.widgetWithText(TextFormField, 'Koli');
-
-      await tester.enterText(sjField, 'sj-keyboard');
       await tester.enterText(descriptionField, 'Besi Beton');
+      final koliField = find.widgetWithText(TextFormField, 'Koli');
       await tester.ensureVisible(koliField);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
       await tester.enterText(koliField, '12');
       await tester.pumpAndSettle();
 
@@ -246,6 +247,171 @@ void main() {
 
       expect(find.text('Barang lama'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('edits existing SJ number and keeps cargo linked', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: [],
+                          allowsDirectCargoInput: true,
+                          initialShipperReferences: [
+                            DeliveryShipperReference(
+                              key: 'ref-a',
+                              referenceNumber: 'SJ-OLD',
+                            ),
+                          ],
+                          existingCargoItems: [
+                            DeliveryCargoItem(
+                              id: 'cargo-a',
+                              description: 'Barang lama',
+                              shipperReferenceKey: 'ref-a',
+                              shipperReferenceNumber: 'SJ-OLD',
+                              qtyKoli: 1,
+                              weightInputValue: 10,
+                              weightInputUnit: 'KG',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'No. SJ Pengirim'),
+        'sj-new',
+      );
+      await tester.tap(find.text('Simpan SJ & Barang'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(capturedResult!.shipperReferences.single.key, 'ref-a');
+      expect(
+        capturedResult!.shipperReferences.single.referenceNumber,
+        'SJ-NEW',
+      );
+      expect(
+        capturedResult!.updatedCargoItems.single.deliveryOrderItemId,
+        'cargo-a',
+      );
+      expect(
+        capturedResult!
+            .updatedCargoItems
+            .single
+            .cargoItem
+            .shipperReferenceNumber,
+        'SJ-NEW',
+      );
+      expect(capturedResult!.deletedCargoItemIds, isEmpty);
+    });
+
+    testWidgets('removes an existing SJ group with its cargo draft', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: [],
+                          allowsDirectCargoInput: true,
+                          initialShipperReferences: [
+                            DeliveryShipperReference(
+                              key: 'ref-a',
+                              referenceNumber: 'SJ-A',
+                            ),
+                            DeliveryShipperReference(
+                              key: 'ref-b',
+                              referenceNumber: 'SJ-B',
+                            ),
+                          ],
+                          existingCargoItems: [
+                            DeliveryCargoItem(
+                              id: 'cargo-a',
+                              description: 'Barang A',
+                              shipperReferenceKey: 'ref-a',
+                              shipperReferenceNumber: 'SJ-A',
+                              qtyKoli: 1,
+                              weightInputValue: 10,
+                              weightInputUnit: 'KG',
+                            ),
+                            DeliveryCargoItem(
+                              id: 'cargo-b',
+                              description: 'Barang B',
+                              shipperReferenceKey: 'ref-b',
+                              shipperReferenceNumber: 'SJ-B',
+                              qtyKoli: 2,
+                              weightInputValue: 20,
+                              weightInputUnit: 'KG',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hapus SJ'), findsAtLeastNWidgets(1));
+      await tester.tap(find.text('Hapus SJ').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Simpan SJ & Barang'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(capturedResult!.shipperReferences.length, 1);
+      expect(capturedResult!.shipperReferences.single.key, 'ref-b');
+      expect(capturedResult!.shipperReferences.single.referenceNumber, 'SJ-B');
+      expect(capturedResult!.deletedCargoItemIds, contains('cargo-a'));
+      expect(capturedResult!.updatedCargoItems.length, 1);
+      expect(
+        capturedResult!.updatedCargoItems.single.deliveryOrderItemId,
+        'cargo-b',
+      );
     });
   });
 }

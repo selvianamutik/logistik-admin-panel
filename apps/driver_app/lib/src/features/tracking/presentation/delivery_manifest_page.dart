@@ -565,8 +565,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
                           ? 'Kelola SJ dan barang'
                           : 'Kelola SJ',
                       message: widget.allowsDirectCargoInput
-                          ? 'Satu trip bisa punya banyak SJ. Setiap SJ bisa punya banyak barang.'
-                          : 'Order ini mengikuti item order/resi. Dari mobile, driver cukup isi nomor SJ dan pickup-nya.',
+                          ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
+                          : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
                     ),
                     const SizedBox(height: 16),
                     ..._groups.map(
@@ -885,6 +885,7 @@ class _ManifestGroupCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -902,10 +903,10 @@ class _ManifestGroupCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 if (onRemoveGroup != null)
-                  IconButton(
+                  TextButton.icon(
                     onPressed: () => onRemoveGroup!(group.id),
-                    tooltip: 'Hapus SJ',
-                    icon: const Icon(Icons.delete_outline_rounded),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Hapus SJ'),
                   ),
               ],
             ),
