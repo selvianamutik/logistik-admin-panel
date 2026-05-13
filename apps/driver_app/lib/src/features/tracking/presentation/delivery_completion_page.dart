@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 
+const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
+
 class DeliveryCompletionPage extends StatefulWidget {
   const DeliveryCompletionPage({
     super.key,
@@ -389,10 +391,10 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
     final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
     final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
     final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(title: const Text('Ajukan Selesai')),
       body: SafeArea(
         child: Column(
@@ -481,12 +483,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                     controller: _noteController,
                     minLines: 2,
                     maxLines: 4,
-                    scrollPadding: EdgeInsets.fromLTRB(
-                      20,
-                      20,
-                      20,
-                      MediaQuery.viewInsetsOf(context).bottom + 120,
-                    ),
+                    scrollPadding: _mobileInputScrollPadding,
                     decoration: const InputDecoration(
                       labelText: 'Catatan Driver',
                       hintText: 'Opsional',
@@ -495,27 +492,31 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                 ],
               ),
             ),
-            AnimatedPadding(
+            AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + keyboardInset),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _submitting ? null : _submit,
-                  icon: _submitting
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.onPrimary,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle_rounded),
-                  label: const Text('Ajukan Selesai'),
-                ),
-              ),
+              child: keyboardOpen
+                  ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
+                  : Padding(
+                      key: const ValueKey('submit-bar'),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _submitting ? null : _submit,
+                          icon: _submitting
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: scheme.onPrimary,
+                                  ),
+                                )
+                              : const Icon(Icons.check_circle_rounded),
+                          label: const Text('Ajukan Selesai'),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -1284,12 +1285,7 @@ class _PodCard extends StatelessWidget {
               controller: receiverController,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(labelText: 'Nama Penerima POD'),
-              scrollPadding: EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                MediaQuery.viewInsetsOf(context).bottom + 120,
-              ),
+              scrollPadding: _mobileInputScrollPadding,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -1303,12 +1299,7 @@ class _PodCard extends StatelessWidget {
                   tooltip: 'Pilih tanggal',
                 ),
               ),
-              scrollPadding: EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                MediaQuery.viewInsetsOf(context).bottom + 120,
-              ),
+              scrollPadding: _mobileInputScrollPadding,
             ),
           ],
         ),
@@ -2018,12 +2009,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       minLines: widget.minLines,
       maxLines: widget.maxLines,
       decoration: widget.decoration,
-      scrollPadding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 120,
-      ),
+      scrollPadding: _mobileInputScrollPadding,
       onChanged: widget.onChanged,
     );
   }

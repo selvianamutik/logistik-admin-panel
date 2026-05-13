@@ -208,6 +208,9 @@ void main() {
 
       final koliWidget = tester.widget<TextFormField>(koliField);
       expect(koliWidget.controller?.text, '12');
+      expect(find.text('Simpan SJ & Barang'), findsNothing);
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pumpAndSettle();
       expect(find.text('Simpan SJ & Barang'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

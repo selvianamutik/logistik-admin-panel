@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 
+const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
+
 class DeliveryManifestPage extends StatefulWidget {
   const DeliveryManifestPage({
     super.key,
@@ -536,10 +538,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
         child: Form(
@@ -598,27 +600,31 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
                   ],
                 ),
               ),
-              AnimatedPadding(
+              AnimatedSwitcher(
                 duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + keyboardInset),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _submitting ? null : _submit,
-                    icon: _submitting
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: scheme.onPrimary,
-                            ),
-                          )
-                        : const Icon(Icons.save_rounded),
-                    label: Text(widget.submitLabel),
-                  ),
-                ),
+                child: keyboardOpen
+                    ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
+                    : Padding(
+                        key: const ValueKey('submit-bar'),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _submitting ? null : _submit,
+                            icon: _submitting
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: scheme.onPrimary,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_rounded),
+                            label: Text(widget.submitLabel),
+                          ),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -1267,12 +1273,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       textCapitalization: widget.textCapitalization,
       decoration: widget.decoration,
       enabled: widget.enabled,
-      scrollPadding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 120,
-      ),
+      scrollPadding: _mobileInputScrollPadding,
       validator: widget.validator,
       onChanged: widget.onChanged,
     );

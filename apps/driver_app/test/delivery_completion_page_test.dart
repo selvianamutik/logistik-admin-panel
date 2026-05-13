@@ -223,7 +223,13 @@ void main() {
 
       final koliWidget = tester.widget<TextFormField>(actualKoliField.first);
       expect(koliWidget.controller?.text, '8');
-      expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(find.widgetWithText(FilledButton, 'Ajukan Selesai'), findsNothing);
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(FilledButton, 'Ajukan Selesai'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
 

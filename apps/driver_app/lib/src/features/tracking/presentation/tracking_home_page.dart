@@ -2058,12 +2058,7 @@ const _jakartaUtcOffset = Duration(hours: 7);
 final _dateOnlyPattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
 
 EdgeInsets _keyboardAwareScrollPadding(BuildContext context) {
-  return EdgeInsets.fromLTRB(
-    20,
-    20,
-    20,
-    MediaQuery.viewInsetsOf(context).bottom + 120,
-  );
+  return const EdgeInsets.fromLTRB(20, 20, 20, 120);
 }
 
 DateTime _toJakartaDateTime(DateTime value) {
