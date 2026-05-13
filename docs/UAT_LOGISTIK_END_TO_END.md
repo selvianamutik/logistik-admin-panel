@@ -16,6 +16,7 @@ Paket ini disederhanakan untuk divisi tester. Tester cukup membuka workbook, mem
 | Portal Driver / Mobile | DRIVER - Budi | driver.budi@company.local | driver12345 | /driver/login atau app mobile |
 | Portal Driver / Mobile | DRIVER - Catur | driver.catur@company.local | driver12345 | /driver/login atau app mobile |
 | Portal Driver / Mobile | DRIVER - Eko | driver.eko@company.local | driver12345 | /driver/login atau app mobile |
+| Portal Driver / Mobile | DRIVER - Imam | imam@driver | driver12345 | /driver/login atau app mobile |
 
 ## Cara Pakai Workbook
 
