@@ -14,6 +14,7 @@ const completionPath = path.join(
     appDir,
     'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
 );
+const appPath = path.join(appDir, 'apps/driver_app/lib/src/app.dart');
 const orderWorkflowPath = path.join(appDir, 'src/lib/api/order-workflows.ts');
 const driverShipperReferencesRoutePath = path.join(
     appDir,
@@ -23,6 +24,7 @@ const driverShipperReferencesRoutePath = path.join(
 const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
 const completionSource = fs.readFileSync(completionPath, 'utf8');
+const appSource = fs.readFileSync(appPath, 'utf8');
 const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
 const driverShipperReferencesRouteSource = fs.readFileSync(driverShipperReferencesRoutePath, 'utf8');
 
@@ -211,6 +213,16 @@ assertIncludes(
     serviceSource,
     'updateBatchSuratJalanStatus',
     'Mobile service harus bisa update status SJ batch seperti admin/portal driver.'
+);
+assertNotIncludes(
+    appSource,
+    '_requestLocationAccessOnLaunch',
+    'Mobile app tidak boleh memblokir login hanya karena izin lokasi belum siap; izin lokasi dicek saat tracking berjalan.'
+);
+assertNotIncludes(
+    appSource,
+    'Geolocator.requestPermission()',
+    'Mobile app root tidak boleh meminta izin lokasi sebelum driver login.'
 );
 assertIncludes(
     orderWorkflowSource,
