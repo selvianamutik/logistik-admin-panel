@@ -23,6 +23,7 @@
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
     "audit:driver-incident-flow": "npx tsx --conditions react-server scripts/audit-driver-incident-flow.ts",
     "audit:mobile-timezone-consistency": "node scripts/audit-mobile-timezone-consistency.mjs",
+    "audit:driver-trip-closure-flow": "node scripts/audit-driver-trip-closure-flow.mjs",
     "audit:freight-nota-revision-flow": "npx tsx scripts/audit-freight-nota-revision-flow.ts",
     "audit:order-to-nota-e2e": "npx tsx scripts/audit-order-to-nota-e2e.ts",
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
