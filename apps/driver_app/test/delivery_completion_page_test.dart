@@ -154,6 +154,87 @@ void main() {
       expect(find.text('SJ-011'), findsWidgets);
     });
 
+    testWidgets(
+      'keeps pending partial SJ disabled while other SJ can proceed',
+      (tester) async {
+        const pendingPartialTrip = DeliveryTrip(
+          deliveryOrderId: 'do-partial',
+          doNumber: 'DO-PARTIAL',
+          vehiclePlate: 'L 1234 BB',
+          originLabel: 'Gudang B',
+          destinationLabel: 'Multi',
+          customerName: 'PT Contoh',
+          status: TripStatus.partialHold,
+          etdLabel: 'Tanggal DO 2026-04-18',
+          statusNote: 'Sebagian muatan hold',
+          allowsDirectCargoInput: true,
+          shipperReferences: [
+            DeliveryShipperReference(
+              referenceNumber: 'SJ-A',
+              documentId: 'do-partial:SJ-A',
+              tripStatus: 'ARRIVED',
+            ),
+            DeliveryShipperReference(
+              referenceNumber: 'SJ-B',
+              documentId: 'do-partial:SJ-B',
+              tripStatus: 'ARRIVED',
+            ),
+          ],
+          cargoItems: [
+            DeliveryCargoItem(
+              id: 'item-a',
+              description: 'Barang A',
+              shipperReferenceNumber: 'SJ-A',
+              qtyKoli: 5,
+              weightInputValue: 500,
+              weightInputUnit: 'KG',
+            ),
+            DeliveryCargoItem(
+              id: 'item-b',
+              description: 'Barang B',
+              shipperReferenceNumber: 'SJ-B',
+              qtyKoli: 3,
+              weightInputValue: 300,
+              weightInputUnit: 'KG',
+            ),
+          ],
+          pendingDriverRequests: [
+            PendingDriverRequest(
+              requestId: 'request-a',
+              status: 'DELIVERED',
+              targetSuratJalanRefs: ['do-partial:SJ-A'],
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: const DeliveryCompletionPage(
+              trip: pendingPartialTrip,
+              customerRecipients: [],
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        final sjATile = tester.widget<CheckboxListTile>(
+          find.widgetWithText(CheckboxListTile, 'SJ-A'),
+        );
+        final sjBTile = tester.widget<CheckboxListTile>(
+          find.widgetWithText(CheckboxListTile, 'SJ-B'),
+        );
+
+        expect(sjATile.value, isFalse);
+        expect(sjATile.onChanged, isNull);
+        expect(sjBTile.value, isTrue);
+        expect(sjBTile.onChanged, isNotNull);
+        expect(find.textContaining('Menunggu approval admin'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('keeps actual cargo and drop fields usable on compact width', (
       tester,
     ) async {

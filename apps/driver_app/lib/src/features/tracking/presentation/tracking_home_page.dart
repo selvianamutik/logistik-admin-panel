@@ -378,6 +378,20 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     };
   }
 
+  bool _canAdvanceTrip(DeliveryTrip trip) {
+    if (trip.isTripClosedByAdmin || trip.hasBlockingAdminApproval) {
+      return false;
+    }
+    return switch (trip.status) {
+      TripStatus.assigned ||
+      TripStatus.headingToPickup ||
+      TripStatus.onDelivery => true,
+      TripStatus.arrived ||
+      TripStatus.partialHold => trip.canRequestMoreFinalization,
+      TripStatus.delivered => false,
+    };
+  }
+
   Future<void> _openTripManifestPlan(DriverAssignedTripPlan tripPlan) async {
     final sessionToken = widget.session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
@@ -566,7 +580,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   bool _shouldAutoTrack(DeliveryTrip trip) {
-    if (trip.isAwaitingAdminApproval || trip.isTripClosedByAdmin) {
+    if (trip.hasBlockingAdminApproval || trip.isTripClosedByAdmin) {
       return false;
     }
     return switch (trip.status) {
@@ -710,7 +724,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     final trip = _selectedTrip;
     final sessionToken = widget.session.token;
     if (trip == null || sessionToken == null || sessionToken.isEmpty) return;
-    if (trip.isAwaitingAdminApproval) {
+    if (trip.hasBlockingAdminApproval) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -742,6 +756,18 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     };
     if (trip.status == TripStatus.arrived ||
         trip.status == TripStatus.partialHold) {
+      if (!trip.canRequestMoreFinalization) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'SJ yang bisa diajukan sedang menunggu approval admin.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       await _openDeliveryCompletion(trip);
       return;
     }
@@ -1796,9 +1822,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       const SizedBox(height: 12),
                     ],
                     if (_selectedTrip!.isAwaitingAdminApproval) ...[
-                      const _ErrorBanner(
+                      _ErrorBanner(
                         icon: Icons.admin_panel_settings_rounded,
-                        message: 'Trip ini menunggu approval admin.',
+                        message: _selectedTrip!.hasBlockingAdminApproval
+                            ? 'Trip ini menunggu approval admin.'
+                            : 'Sebagian SJ menunggu approval admin. SJ lain tetap bisa diajukan selesai.',
                         isWarning: true,
                       ),
                       const SizedBox(height: 12),
@@ -1824,11 +1852,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       _AdvanceButton(
                         status: _selectedTrip!.status,
                         awaitingAdminApproval:
-                            _selectedTrip!.isAwaitingAdminApproval,
-                        onPressed:
-                            _selectedTrip!.status == TripStatus.delivered ||
-                                _selectedTrip!.isAwaitingAdminApproval ||
-                                _selectedTrip!.isTripClosedByAdmin
+                            _selectedTrip!.hasBlockingAdminApproval ||
+                            (_selectedTrip!.isAwaitingAdminApproval &&
+                                !_selectedTrip!.canRequestMoreFinalization),
+                        onPressed: !_canAdvanceTrip(_selectedTrip!)
                             ? null
                             : (_updatingStatus
                                   ? null

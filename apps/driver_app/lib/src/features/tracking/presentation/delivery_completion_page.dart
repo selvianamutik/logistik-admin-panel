@@ -73,6 +73,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
 
   List<DeliveryShipperReference> get _selectedShipperReferences =>
       _selectedReferencesForValues(
+        widget.trip,
         widget.trip.shipperReferences,
         _selectedShipperReferenceValues,
       );
@@ -447,6 +448,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                       _BatchSuratJalanCard(
                         references: widget.trip.shipperReferences,
                         selectedValues: _selectedShipperReferenceValues,
+                        canRequestFinalization:
+                            widget.trip.canRequestFinalizationForReference,
                         onChanged: _submitting
                             ? null
                             : _setShipperReferenceSelected,
@@ -846,7 +849,7 @@ Set<String> _initialSelectedReferenceValues(
   List<_ActualCargoDraft> cargoDrafts,
 ) {
   final referencesWithCargo = trip.shipperReferences
-      .where((reference) => reference.canRequestFinalization)
+      .where(trip.canRequestFinalizationForReference)
       .where(
         (reference) => cargoDrafts.any(
           (draft) => _cargoDraftMatchesReference(draft, reference),
@@ -856,12 +859,13 @@ Set<String> _initialSelectedReferenceValues(
       .toSet();
   if (referencesWithCargo.isNotEmpty) return referencesWithCargo;
   return trip.shipperReferences
-      .where((reference) => reference.canRequestFinalization)
+      .where(trip.canRequestFinalizationForReference)
       .map(_shipperReferenceOptionValue)
       .toSet();
 }
 
 List<DeliveryShipperReference> _selectedReferencesForValues(
+  DeliveryTrip trip,
   List<DeliveryShipperReference> references,
   Set<String> selectedValues,
 ) {
@@ -870,7 +874,7 @@ List<DeliveryShipperReference> _selectedReferencesForValues(
         (reference) =>
             selectedValues.contains(_shipperReferenceOptionValue(reference)),
       )
-      .where((reference) => reference.canRequestFinalization)
+      .where(trip.canRequestFinalizationForReference)
       .toList(growable: false);
 }
 
@@ -1344,11 +1348,14 @@ class _BatchSuratJalanCard extends StatelessWidget {
   const _BatchSuratJalanCard({
     required this.references,
     required this.selectedValues,
+    required this.canRequestFinalization,
     required this.onChanged,
   });
 
   final List<DeliveryShipperReference> references;
   final Set<String> selectedValues;
+  final bool Function(DeliveryShipperReference reference)
+  canRequestFinalization;
   final void Function(String optionValue, bool selected)? onChanged;
 
   @override
@@ -1371,14 +1378,22 @@ class _BatchSuratJalanCard extends StatelessWidget {
                 value: selectedValues.contains(
                   _shipperReferenceOptionValue(reference),
                 ),
-                onChanged: reference.canRequestFinalization && onChanged != null
+                onChanged:
+                    canRequestFinalization(reference) && onChanged != null
                     ? (value) => onChanged!(
                         _shipperReferenceOptionValue(reference),
                         value ?? false,
                       )
                     : null,
                 title: Text(reference.referenceNumber),
-                subtitle: Text(_shipperReferenceSubtitle(reference)),
+                subtitle: Text(
+                  _shipperReferenceSubtitle(
+                    reference,
+                    pending:
+                        !canRequestFinalization(reference) &&
+                        reference.canRequestFinalization,
+                  ),
+                ),
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               ),
@@ -1389,11 +1404,15 @@ class _BatchSuratJalanCard extends StatelessWidget {
   }
 }
 
-String _shipperReferenceSubtitle(DeliveryShipperReference reference) {
+String _shipperReferenceSubtitle(
+  DeliveryShipperReference reference, {
+  bool pending = false,
+}) {
   final parts = [
     reference.targetLabel,
     if ((reference.tripStatus ?? '').trim().isNotEmpty)
       reference.tripStatus!.trim(),
+    if (pending) 'Menunggu approval admin',
   ].where((value) => value.trim().isNotEmpty && value.trim() != '-');
   return parts.isEmpty ? 'Belum ada tujuan' : parts.join(' | ');
 }

@@ -896,6 +896,7 @@ class DeliveryOrderService {
           (item) => PendingDriverRequest(
             requestId: (item['requestId'] as String?)?.trim() ?? '',
             status: (item['status'] as String?)?.trim() ?? '',
+            targetSuratJalanRefs: _toStringList(item['targetSuratJalanRefs']),
             closeTripOnly: item['closeTripOnly'] == true,
             tripEndOdometerKm: _toDouble(item['tripEndOdometerKm']),
           ),
@@ -960,6 +961,15 @@ class DeliveryOrderService {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
+  }
+
+  List<String> _toStringList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<String>()
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
   }
 
   String? _readRefId(dynamic value) {

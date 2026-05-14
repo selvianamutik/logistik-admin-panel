@@ -555,11 +555,66 @@ class DeliveryTrip {
   bool get hasPendingTripClosureRequest =>
       pendingDriverRequests.any((request) => request.isTripClosureRequest);
 
+  bool get hasUntargetedPendingFinalizationRequest => pendingDriverRequests.any(
+    (request) =>
+        request.status == 'DELIVERED' &&
+        !request.isTripClosureRequest &&
+        request.targetSuratJalanRefs.isEmpty,
+  );
+
+  bool get hasBlockingAdminApproval =>
+      pendingDriverStatus == 'DELIVERED' ||
+      hasPendingTripClosureRequest ||
+      hasUntargetedPendingFinalizationRequest;
+
   bool get isTripClosedByAdmin =>
       tripClosedByAdminAt?.trim().isNotEmpty == true;
 
   bool get isAwaitingAdminApproval =>
       pendingDriverStatus == 'DELIVERED' || pendingDriverRequests.isNotEmpty;
+
+  Set<String> get pendingFinalizationSuratJalanRefs {
+    return pendingDriverRequests
+        .where(
+          (request) =>
+              request.status == 'DELIVERED' && !request.isTripClosureRequest,
+        )
+        .expand((request) => request.targetSuratJalanRefs)
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+  }
+
+  bool isShipperReferencePendingFinalization(
+    DeliveryShipperReference reference,
+  ) {
+    final pendingRefs = pendingFinalizationSuratJalanRefs;
+    if (pendingRefs.isEmpty) return false;
+
+    final documentId = reference.documentId?.trim();
+    final referenceKey = reference.key?.trim();
+    final referenceNumber = reference.referenceNumber.trim();
+    final candidates = <String>{
+      if (documentId != null && documentId.isNotEmpty) documentId,
+      if (referenceKey != null && referenceKey.isNotEmpty)
+        '$deliveryOrderId:$referenceKey',
+      if (referenceNumber.isNotEmpty) '$deliveryOrderId:$referenceNumber',
+      if (referenceKey != null && referenceKey.isNotEmpty) referenceKey,
+      if (referenceNumber.isNotEmpty) referenceNumber,
+    };
+    return candidates.any(pendingRefs.contains);
+  }
+
+  bool canRequestFinalizationForReference(DeliveryShipperReference reference) {
+    return reference.canRequestFinalization &&
+        !isShipperReferencePendingFinalization(reference);
+  }
+
+  bool get canRequestMoreFinalization {
+    if (isTripClosedByAdmin || hasBlockingAdminApproval) return false;
+    if (shipperReferences.isEmpty) return !isAwaitingAdminApproval;
+    return shipperReferences.any(canRequestFinalizationForReference);
+  }
 
   int get shipperReferenceCount => shipperReferences.length;
 
@@ -615,12 +670,14 @@ class PendingDriverRequest {
   const PendingDriverRequest({
     required this.requestId,
     required this.status,
+    this.targetSuratJalanRefs = const [],
     this.closeTripOnly = false,
     this.tripEndOdometerKm,
   });
 
   final String requestId;
   final String status;
+  final List<String> targetSuratJalanRefs;
   final bool closeTripOnly;
   final double? tripEndOdometerKm;
 
