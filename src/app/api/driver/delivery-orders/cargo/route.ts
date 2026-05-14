@@ -30,11 +30,6 @@ async function addAuditLog(
     }
 }
 
-function hasPendingDriverApprovalRequest(deliveryOrder: Pick<DeliveryOrder, 'pendingDriverStatus' | 'pendingDriverRequests'>) {
-    return Boolean(deliveryOrder.pendingDriverStatus) ||
-        (Array.isArray(deliveryOrder.pendingDriverRequests) && deliveryOrder.pendingDriverRequests.length > 0);
-}
-
 export async function POST(request: Request) {
     const hasBearerAuth = Boolean(request.headers.get('authorization')?.toLowerCase().startsWith('bearer '));
     if (!hasBearerAuth) {
@@ -89,10 +84,6 @@ export async function POST(request: Request) {
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
         }
-        if (hasPendingDriverApprovalRequest(deliveryOrder)) {
-            return jsonNoStore({ error: 'Permintaan driver sedang menunggu approval admin. Muatan tidak bisa diubah dulu dari portal driver.' }, { status: 409 });
-        }
-
         return await handleDeliveryOrderAppendCargoItems(
             auth.session,
             {

@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         }
 
         const id = typeof parsedBody.data.id === 'string' ? parsedBody.data.id : '';
-        const status = typeof parsedBody.data.status === 'string' ? parsedBody.data.status : '';
+        const status = typeof parsedBody.data.status === 'string' ? parsedBody.data.status.trim().toUpperCase() : '';
         if (!id || !status) {
             return jsonNoStore({ error: 'Update batch SJ tidak valid' }, { status: 400 });
         }
@@ -75,6 +75,9 @@ export async function POST(request: Request) {
         }
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Trip ini bukan milik supir yang login' }, { status: 403 });
+        }
+        if ((status === 'ON_DELIVERY' || status === 'ARRIVED') && deliveryOrder.trackingState !== 'ACTIVE') {
+            return jsonNoStore({ error: 'Tracking live harus aktif sebelum driver mengirim progres perjalanan.' }, { status: 409 });
         }
         const targetSuratJalanRefs = Array.isArray(parsedBody.data.targetSuratJalanRefs)
             ? parsedBody.data.targetSuratJalanRefs.filter(value => typeof value === 'string')
@@ -99,6 +102,15 @@ export async function POST(request: Request) {
                 }]
                 : [];
         const targetRefSet = new Set(targetSuratJalanRefs);
+        const blockingPendingRequest = pendingRequests.find(request =>
+            request.closeTripOnly ||
+            request.status !== 'DELIVERED' ||
+            !Array.isArray(request.targetSuratJalanRefs) ||
+            request.targetSuratJalanRefs.length === 0
+        );
+        if (blockingPendingRequest) {
+            return jsonNoStore({ error: 'Trip ini masih punya permintaan driver yang menunggu approval admin.' }, { status: 409 });
+        }
         const conflictsWithPendingRequest = pendingRequests.some(request =>
             (request.targetSuratJalanRefs || []).some(ref => targetRefSet.has(ref))
         );

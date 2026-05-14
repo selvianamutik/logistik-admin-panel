@@ -248,18 +248,8 @@ export async function PATCH(request: Request) {
         const existingDriverLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
             incidentRef: incident._id,
         })).filter(line => line.status !== 'VOID' && line.createdBy === auth.session._id);
-        if (existingDriverLines.length > 0) {
-            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tunggu review admin.' }, { status: 409 });
-        }
-
-        const existingActionLogs = await listDocumentsByFilter<IncidentActionLog>('incidentActionLog', {
-            incidentRef: incident._id,
-        });
-        const hasDriverResolutionLog = existingActionLogs.some(log =>
-            log.userRef === auth.session._id &&
-            (log.note || '').includes('Driver mengajukan penyelesaian insiden')
-        );
-        if (hasDriverResolutionLog) {
+        const hasReviewedDriverLine = existingDriverLines.some(line => line.status !== 'DRAFT');
+        if (hasReviewedDriverLine) {
             return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tunggu review admin.' }, { status: 409 });
         }
 
@@ -283,6 +273,16 @@ export async function PATCH(request: Request) {
         const invalidCostIndex = normalizedCosts.findIndex(cost => cost.amount <= 0 || !cost.description);
         if (invalidCostIndex >= 0) {
             return jsonNoStore({ error: `Biaya insiden baris ${invalidCostIndex + 1} wajib berisi nominal dan deskripsi.` }, { status: 400 });
+        }
+        const existingActionLogs = await listDocumentsByFilter<IncidentActionLog>('incidentActionLog', {
+            incidentRef: incident._id,
+        });
+        const hasDriverResolutionLog = existingActionLogs.some(log =>
+            log.userRef === auth.session._id &&
+            (log.note || '').includes('Driver mengajukan penyelesaian insiden')
+        );
+        if (hasDriverResolutionLog && normalizedCosts.length === 0) {
+            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tambahkan biaya baru jika ada perubahan sebelum review admin.' }, { status: 409 });
         }
 
         const now = new Date().toISOString();

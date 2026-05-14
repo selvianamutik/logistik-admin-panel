@@ -304,7 +304,10 @@ void main() {
 
       final koliWidget = tester.widget<TextFormField>(actualKoliField.first);
       expect(koliWidget.controller?.text, '8');
-      expect(find.widgetWithText(FilledButton, 'Ajukan Selesai'), findsNothing);
+      expect(
+        find.widgetWithText(FilledButton, 'Ajukan Selesai'),
+        findsOneWidget,
+      );
       tester.view.viewInsets = const FakeViewPadding();
       await tester.pumpAndSettle();
       expect(

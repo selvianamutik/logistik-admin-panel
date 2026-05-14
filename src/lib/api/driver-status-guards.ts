@@ -5,7 +5,13 @@ export function validateDriverStatusTransition(
     requestedStatus: string
 ) {
     if (deliveryOrder.trackingState !== 'ACTIVE') {
-        return 'Tracking live harus aktif sebelum driver mengirim progres perjalanan.';
+        if (requestedStatus !== 'HEADING_TO_PICKUP') {
+            return 'Tracking live harus aktif sebelum driver mengirim progres perjalanan.';
+        }
+    }
+
+    if (requestedStatus === 'HEADING_TO_PICKUP' && deliveryOrder.status !== 'CREATED') {
+        return 'Driver hanya bisa menuju pickup dari status siap jalan.';
     }
 
     if (requestedStatus === 'ON_DELIVERY' && deliveryOrder.status !== 'HEADING_TO_PICKUP') {

@@ -117,4 +117,60 @@ void main() {
       );
     });
   });
+
+  group('DriverIncident', () {
+    test('allows adding draft costs before admin review', () {
+      const incident = DriverIncident(
+        id: 'incident-1',
+        incidentNumber: 'INC-001',
+        status: 'IN_PROGRESS',
+        incidentType: 'OTHER',
+        urgency: 'LOW',
+        relatedDeliveryOrderRef: 'do-1',
+        relatedDONumber: 'DO-001',
+        description: 'Ban pecah',
+        locationText: 'Tol',
+        settlementLines: [
+          DriverIncidentSettlementLine(
+            id: 'line-1',
+            status: 'DRAFT',
+            category: 'REPAIR',
+            amount: 100000,
+            description: 'Tambal ban',
+          ),
+        ],
+      );
+
+      expect(incident.hasSubmittedResolution, isTrue);
+      expect(incident.hasReviewedResolution, isFalse);
+      expect(incident.canSubmitResolution, isTrue);
+    });
+
+    test('blocks driver resolution after admin has reviewed a cost line', () {
+      const incident = DriverIncident(
+        id: 'incident-2',
+        incidentNumber: 'INC-002',
+        status: 'IN_PROGRESS',
+        incidentType: 'OTHER',
+        urgency: 'LOW',
+        relatedDeliveryOrderRef: 'do-2',
+        relatedDONumber: 'DO-002',
+        description: 'Kerusakan',
+        locationText: 'Gudang',
+        settlementLines: [
+          DriverIncidentSettlementLine(
+            id: 'line-2',
+            status: 'APPROVED',
+            category: 'REPAIR',
+            amount: 150000,
+            description: 'Perbaikan',
+          ),
+        ],
+      );
+
+      expect(incident.hasSubmittedResolution, isTrue);
+      expect(incident.hasReviewedResolution, isTrue);
+      expect(incident.canSubmitResolution, isFalse);
+    });
+  });
 }

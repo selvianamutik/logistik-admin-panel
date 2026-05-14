@@ -572,7 +572,6 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -639,29 +638,27 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                 ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
-                  child: keyboardOpen
-                      ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
-                      : Padding(
-                          key: const ValueKey('submit-bar'),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: _submitting ? null : _submit,
-                              icon: _submitting
-                                  ? SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: scheme.onPrimary,
-                                      ),
-                                    )
-                                  : const Icon(Icons.save_rounded),
-                              label: Text(widget.submitLabel),
-                            ),
-                          ),
-                        ),
+                  child: Padding(
+                    key: const ValueKey('submit-bar'),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _submitting ? null : _submit,
+                        icon: _submitting
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.onPrimary,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: Text(widget.submitLabel),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

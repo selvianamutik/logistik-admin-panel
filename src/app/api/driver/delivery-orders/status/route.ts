@@ -10,7 +10,7 @@ import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument 
 import type { DeliveryOrder, PendingDriverStatusRequest, Vehicle } from '@/lib/types';
 import type { SuratJalanRecord } from '@/lib/trip-document-types';
 
-const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['ON_DELIVERY', 'ARRIVED']);
+const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
 const DRIVER_APPROVAL_REQUEST_STATUSES = new Set(['DELIVERED']);
 
 async function addAuditLog(

@@ -314,6 +314,175 @@ function hasPendingDriverApprovalRequest(deliveryOrder: { pendingDriverStatus?: 
             ));
 }
 
+type PendingDriverApprovalSource = Pick<
+    DeliveryOrder,
+    | '_id'
+    | 'pendingDriverRequests'
+    | 'pendingDriverStatus'
+    | 'pendingDriverStatusRequestedAt'
+    | 'pendingDriverStatusRequestedBy'
+    | 'pendingDriverStatusRequestedByName'
+    | 'pendingDriverStatusNote'
+    | 'pendingDriverStatusSuratJalanRefs'
+    | 'pendingDriverPodReceiverName'
+    | 'pendingDriverPodReceivedDate'
+    | 'pendingDriverPodNote'
+    | 'pendingDriverActualCargoItems'
+    | 'pendingDriverActualDropPoints'
+    | 'tripEndOdometerKm'
+>;
+
+function getBlockingPendingDriverApprovalRequest(deliveryOrder: PendingDriverApprovalSource) {
+    return getPendingDriverRequestsFromDeliveryOrder(deliveryOrder)
+        .find(request =>
+            request.closeTripOnly ||
+            request.status !== 'DELIVERED' ||
+            !Array.isArray(request.targetSuratJalanRefs) ||
+            request.targetSuratJalanRefs.length === 0
+        );
+}
+
+function getPendingFinalizationSuratJalanRefSet(deliveryOrder: PendingDriverApprovalSource) {
+    return new Set(
+        getPendingDriverRequestsFromDeliveryOrder(deliveryOrder)
+            .filter(request =>
+                request.status === 'DELIVERED' &&
+                !request.closeTripOnly &&
+                Array.isArray(request.targetSuratJalanRefs) &&
+                request.targetSuratJalanRefs.length > 0
+            )
+            .flatMap(request => request.targetSuratJalanRefs || [])
+            .map(ref => normalizeOptionalText(ref))
+            .filter((ref): ref is string => Boolean(ref))
+    );
+}
+
+function getSuratJalanIdentityCandidates(
+    deliveryOrderId: string,
+    params: {
+        shipperReferenceKey?: string | null;
+        shipperReferenceNumber?: string | null;
+    }
+) {
+    const key = normalizeOptionalText(params.shipperReferenceKey);
+    const number = normalizeOptionalText(params.shipperReferenceNumber);
+    return Array.from(new Set([
+        key ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId, shipperReferenceKey: key }) : '',
+        number ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId, shipperReferenceNumber: number }) : '',
+        !key && !number ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId }) : '',
+    ].filter(Boolean)));
+}
+
+function intersectsPendingFinalization(
+    pendingRefs: Set<string>,
+    candidates: string[]
+) {
+    return candidates.some(candidate => pendingRefs.has(candidate));
+}
+
+function pendingFinalizationReferenceLabel(
+    deliveryOrderId: string,
+    pendingRefs: Set<string>,
+    fallback = 'SJ ini'
+) {
+    const first = Array.from(pendingRefs)[0];
+    if (!first) return fallback;
+    return first.startsWith(`${deliveryOrderId}:`)
+        ? first.slice(`${deliveryOrderId}:`.length) || fallback
+        : first;
+}
+
+function getPendingShipperReferenceMutationMessage(
+    deliveryOrder: PendingDriverApprovalSource & {
+        shipperReferences?: DeliveryOrder['shipperReferences'];
+    },
+    nextShipperReferences: NonNullable<DeliveryOrder['shipperReferences']>
+) {
+    const blockingRequest = getBlockingPendingDriverApprovalRequest(deliveryOrder);
+    if (blockingRequest) {
+        return 'SJ/barang tidak bisa diubah karena trip masih punya permintaan driver yang menunggu approval admin.';
+    }
+
+    const pendingRefs = getPendingFinalizationSuratJalanRefSet(deliveryOrder);
+    if (pendingRefs.size === 0) {
+        return '';
+    }
+
+    const nextByKey = new Map(
+        nextShipperReferences
+            .map(reference => [normalizeOptionalText(reference._key), reference] as const)
+            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
+    );
+    const nextByNumber = new Map(
+        nextShipperReferences
+            .map(reference => [normalizeOptionalText(reference.referenceNumber)?.toUpperCase(), reference] as const)
+            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
+    );
+
+    for (const currentReference of deliveryOrder.shipperReferences || []) {
+        const candidates = getSuratJalanIdentityCandidates(deliveryOrder._id, {
+            shipperReferenceKey: currentReference._key,
+            shipperReferenceNumber: currentReference.referenceNumber,
+        });
+        if (!intersectsPendingFinalization(pendingRefs, candidates)) {
+            continue;
+        }
+
+        const currentKey = normalizeOptionalText(currentReference._key);
+        const currentNumber = normalizeOptionalText(currentReference.referenceNumber)?.toUpperCase();
+        const nextReference =
+            (currentKey ? nextByKey.get(currentKey) : undefined) ||
+            (currentNumber ? nextByNumber.get(currentNumber) : undefined);
+        if (!nextReference) {
+            return `SJ ${currentReference.referenceNumber || pendingFinalizationReferenceLabel(deliveryOrder._id, pendingRefs)} sedang menunggu approval admin dan tidak boleh dihapus dulu.`;
+        }
+
+        const nextNumber = normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase();
+        const currentPickup = normalizeOptionalText(currentReference.pickupStopKey);
+        const nextPickup = normalizeOptionalText(nextReference.pickupStopKey);
+        if (currentNumber !== nextNumber || currentPickup !== nextPickup) {
+            return `SJ ${currentReference.referenceNumber || pendingFinalizationReferenceLabel(deliveryOrder._id, pendingRefs)} sedang menunggu approval admin dan tidak boleh diubah dulu.`;
+        }
+    }
+
+    return '';
+}
+
+function isCargoItemTargetedByPendingFinalization(
+    deliveryOrderId: string,
+    pendingRefs: Set<string>,
+    item: {
+        shipperReferenceKey?: string | null;
+        shipperReferenceNumber?: string | null;
+    }
+) {
+    return intersectsPendingFinalization(
+        pendingRefs,
+        getSuratJalanIdentityCandidates(deliveryOrderId, {
+            shipperReferenceKey: item.shipperReferenceKey,
+            shipperReferenceNumber: item.shipperReferenceNumber,
+        })
+    );
+}
+
+async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'SJ/barang') {
+    const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
+        doRef: id,
+    }))[0] || null;
+    if (hasNotaReference) {
+        return `${label} tidak boleh diubah karena DO ini sudah masuk invoice.`;
+    }
+
+    const hasBoronganReference = (await listDocumentsByFilter<{ _id: string; boronganRef?: string }>('driverBoronganItem', {
+        doRef: id,
+    }))[0] || null;
+    if (hasBoronganReference) {
+        return `${label} tidak boleh diubah karena DO ini sudah masuk arsip slip borongan.`;
+    }
+
+    return '';
+}
+
 function clearLegacyPendingDriverRequestFields() {
     return {
         pendingDriverStatus: null,
@@ -6769,9 +6938,9 @@ export async function handleDeliveryOrderAppendCargoItems(
             { status: 409 }
         );
     }
-    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
+    if (getBlockingPendingDriverApprovalRequest(deliveryOrder as PendingDriverApprovalSource)) {
         return NextResponse.json(
-            { error: 'SJ/barang tidak bisa diubah saat menunggu approval admin.' },
+            { error: 'SJ/barang tidak bisa diubah karena trip masih punya permintaan driver yang menunggu approval admin.' },
             { status: 409 }
         );
     }
@@ -6913,6 +7082,39 @@ export async function handleDeliveryOrderAppendCargoItems(
         Boolean(resolvedCustomerDoNumber) &&
         normalizeOptionalText(deliveryOrder.customerDoNumber)?.toUpperCase() !== resolvedCustomerDoNumber;
 
+    if (nextShipperReferences) {
+        const pendingReferenceMutationMessage = getPendingShipperReferenceMutationMessage(
+            deliveryOrder as PendingDriverApprovalSource & { shipperReferences?: DeliveryOrder['shipperReferences'] },
+            nextShipperReferences
+        );
+        if (pendingReferenceMutationMessage) {
+            return NextResponse.json({ error: pendingReferenceMutationMessage }, { status: 409 });
+        }
+    }
+
+    const pendingFinalizationRefs = getPendingFinalizationSuratJalanRefSet(deliveryOrder as PendingDriverApprovalSource);
+    if (pendingFinalizationRefs.size > 0 && directCargoItems.length > 0) {
+        const referencesForCargoContext = nextShipperReferences || deliveryOrder.shipperReferences || [];
+        const blockedCargoItem = directCargoItems.find(item => {
+            const itemReferenceNumber = normalizeOptionalText(item.shipperReferenceNumber);
+            const matchedReference = itemReferenceNumber
+                ? referencesForCargoContext.find(reference =>
+                    normalizeOptionalText(reference.referenceNumber)?.toUpperCase() === itemReferenceNumber.toUpperCase()
+                )
+                : undefined;
+            return isCargoItemTargetedByPendingFinalization(id, pendingFinalizationRefs, {
+                shipperReferenceKey: matchedReference?._key,
+                shipperReferenceNumber: itemReferenceNumber,
+            });
+        });
+        if (blockedCargoItem) {
+            return NextResponse.json(
+                { error: `Barang untuk SJ ${blockedCargoItem.shipperReferenceNumber || pendingFinalizationReferenceLabel(id, pendingFinalizationRefs)} sedang menunggu approval admin dan tidak boleh diubah dulu.` },
+                { status: 409 }
+            );
+        }
+    }
+
     if (directCargoItems.length === 0 && !shipperReferencesChanged && !customerDoNumberChanged) {
         return NextResponse.json({
             data: {
@@ -6921,6 +7123,11 @@ export async function handleDeliveryOrderAppendCargoItems(
                 shipperReferenceCount: deliveryOrder.shipperReferences?.length || 0,
             },
         });
+    }
+
+    const billingLockMessage = await getDeliveryOrderBillingMutationLockMessage(id);
+    if (billingLockMessage) {
+        return NextResponse.json({ error: billingLockMessage }, { status: 409 });
     }
 
     const mutationTimestamp = new Date().toISOString();
@@ -7173,8 +7380,8 @@ export async function handleDeliveryOrderCargoItemRemove(
     if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa dihapus pada status surat jalan saat ini' }, { status: 409 });
     }
-    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
-        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval admin.' }, { status: 409 });
+    if (getBlockingPendingDriverApprovalRequest(deliveryOrder as PendingDriverApprovalSource)) {
+        return NextResponse.json({ error: 'Barang tidak bisa diubah karena trip masih punya permintaan driver yang menunggu approval admin.' }, { status: 409 });
     }
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
@@ -7190,6 +7397,17 @@ export async function handleDeliveryOrderCargoItemRemove(
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    const pendingFinalizationRefs = getPendingFinalizationSuratJalanRefSet(deliveryOrder as PendingDriverApprovalSource);
+    if (isCargoItemTargetedByPendingFinalization(id, pendingFinalizationRefs, deliveryOrderItem)) {
+        return NextResponse.json(
+            { error: `Barang untuk SJ ${deliveryOrderItem.shipperReferenceNumber || pendingFinalizationReferenceLabel(id, pendingFinalizationRefs)} sedang menunggu approval admin dan tidak boleh dihapus dulu.` },
+            { status: 409 }
+        );
+    }
+    const billingLockMessage = await getDeliveryOrderBillingMutationLockMessage(id, 'Barang SJ');
+    if (billingLockMessage) {
+        return NextResponse.json({ error: billingLockMessage }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -7285,8 +7503,8 @@ export async function handleDeliveryOrderCargoItemUpdate(
     if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(deliveryOrder.status || '')) {
         return NextResponse.json({ error: 'Barang tidak bisa diubah pada status surat jalan saat ini' }, { status: 409 });
     }
-    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
-        return NextResponse.json({ error: 'Barang tidak bisa diubah saat menunggu approval admin.' }, { status: 409 });
+    if (getBlockingPendingDriverApprovalRequest(deliveryOrder as PendingDriverApprovalSource)) {
+        return NextResponse.json({ error: 'Barang tidak bisa diubah karena trip masih punya permintaan driver yang menunggu approval admin.' }, { status: 409 });
     }
     if (deliveryOrder.tripClosedByAdminAt) {
         return NextResponse.json({ error: 'Trip ini sudah ditutup admin sehingga barang SJ tidak bisa diubah lagi.' }, { status: 409 });
@@ -7301,6 +7519,17 @@ export async function handleDeliveryOrderCargoItemUpdate(
     }>(deliveryOrderItemId, 'deliveryOrderItem');
     if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
         return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    const pendingFinalizationRefs = getPendingFinalizationSuratJalanRefSet(deliveryOrder as PendingDriverApprovalSource);
+    if (isCargoItemTargetedByPendingFinalization(id, pendingFinalizationRefs, deliveryOrderItem)) {
+        return NextResponse.json(
+            { error: `Barang untuk SJ ${deliveryOrderItem.shipperReferenceNumber || pendingFinalizationReferenceLabel(id, pendingFinalizationRefs)} sedang menunggu approval admin dan tidak boleh diubah dulu.` },
+            { status: 409 }
+        );
+    }
+    const billingLockMessage = await getDeliveryOrderBillingMutationLockMessage(id, 'Barang SJ');
+    if (billingLockMessage) {
+        return NextResponse.json({ error: billingLockMessage }, { status: 409 });
     }
     const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
     if (!orderItemRef) {
@@ -8178,13 +8407,6 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
             { status: 409 }
         );
     }
-    if (hasPendingDriverApprovalRequest(deliveryOrder)) {
-        return NextResponse.json(
-            { error: 'SJ tidak bisa diubah saat menunggu approval admin.' },
-            { status: 409 }
-        );
-    }
-
     let nextShipperReferences:
         | Array<{
             _key: string;
@@ -8231,6 +8453,14 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     if (!customerDoNumberChanged && !shipperReferencesChanged) {
         const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder');
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
+    }
+
+    const pendingReferenceMutationMessage = getPendingShipperReferenceMutationMessage(
+        deliveryOrder as PendingDriverApprovalSource & { shipperReferences?: DeliveryOrder['shipperReferences'] },
+        nextShipperReferences
+    );
+    if (pendingReferenceMutationMessage) {
+        return NextResponse.json({ error: pendingReferenceMutationMessage }, { status: 409 });
     }
 
     const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {

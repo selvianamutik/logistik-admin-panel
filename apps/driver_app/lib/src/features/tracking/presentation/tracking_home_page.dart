@@ -55,6 +55,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   bool _trackingEnabled = false;
   bool _loadingTrips = true;
   bool _updatingStatus = false;
+  bool _updatingBatchStatus = false;
   bool _submittingManifest = false;
   bool _acknowledgingWarning = false;
   bool _reportingIncident = false;
@@ -365,7 +366,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   bool _canManageManifest(DeliveryTrip trip) {
-    if (trip.isTripClosedByAdmin || trip.isAwaitingAdminApproval) {
+    if (trip.isTripClosedByAdmin || trip.hasBlockingAdminApproval) {
       return false;
     }
     return switch (trip.status) {
@@ -389,6 +390,113 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       TripStatus.arrived ||
       TripStatus.partialHold => trip.canRequestMoreFinalization,
       TripStatus.delivered => false,
+    };
+  }
+
+  TripStatus? _nextBatchSuratJalanStatus(DeliveryTrip trip) {
+    return switch (trip.status) {
+      TripStatus.assigned => TripStatus.headingToPickup,
+      TripStatus.headingToPickup => TripStatus.onDelivery,
+      TripStatus.onDelivery => TripStatus.arrived,
+      TripStatus.arrived ||
+      TripStatus.partialHold ||
+      TripStatus.delivered => null,
+    };
+  }
+
+  String _statusApiValue(TripStatus status) {
+    return switch (status) {
+      TripStatus.assigned => 'CREATED',
+      TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
+      TripStatus.onDelivery => 'ON_DELIVERY',
+      TripStatus.arrived => 'ARRIVED',
+      TripStatus.partialHold => 'PARTIAL_HOLD',
+      TripStatus.delivered => 'DELIVERED',
+    };
+  }
+
+  String _referenceStatusForBatch(
+    DeliveryTrip trip,
+    DeliveryShipperReference reference,
+  ) {
+    final status = reference.tripStatus?.trim().toUpperCase();
+    if (status != null && status.isNotEmpty) return status;
+    return _statusApiValue(trip.status);
+  }
+
+  bool _canMoveReferenceToStatus(
+    DeliveryTrip trip,
+    DeliveryShipperReference reference,
+    TripStatus nextStatus,
+  ) {
+    if (trip.isShipperReferencePendingFinalization(reference)) {
+      return false;
+    }
+    final currentStatus = _referenceStatusForBatch(trip, reference);
+    return switch (nextStatus) {
+      TripStatus.headingToPickup => currentStatus == 'CREATED',
+      TripStatus.onDelivery => currentStatus == 'HEADING_TO_PICKUP',
+      TripStatus.arrived => currentStatus == 'ON_DELIVERY',
+      TripStatus.assigned ||
+      TripStatus.partialHold ||
+      TripStatus.delivered => false,
+    };
+  }
+
+  List<DeliveryShipperReference> _batchStatusEligibleReferences(
+    DeliveryTrip trip,
+    TripStatus nextStatus,
+  ) {
+    return trip.shipperReferences
+        .where(
+          (reference) => _canMoveReferenceToStatus(trip, reference, nextStatus),
+        )
+        .toList(growable: false);
+  }
+
+  bool _canBatchUpdateSuratJalanStatus(DeliveryTrip trip) {
+    if (trip.shipperReferences.length <= 1 ||
+        trip.isTripClosedByAdmin ||
+        trip.hasBlockingAdminApproval) {
+      return false;
+    }
+    final nextStatus = _nextBatchSuratJalanStatus(trip);
+    if (nextStatus == null) return false;
+    return _batchStatusEligibleReferences(trip, nextStatus).isNotEmpty;
+  }
+
+  String _suratJalanRefForBatch(
+    DeliveryTrip trip,
+    DeliveryShipperReference reference,
+  ) {
+    final documentId = reference.documentId?.trim();
+    if (documentId != null && documentId.isNotEmpty) return documentId;
+    final suffix = reference.key?.trim().isNotEmpty == true
+        ? reference.key!.trim()
+        : reference.referenceNumber.trim();
+    return '${trip.deliveryOrderId}:$suffix';
+  }
+
+  String _batchStatusButtonLabel(TripStatus nextStatus) {
+    return switch (nextStatus) {
+      TripStatus.headingToPickup => 'Update SJ ke Pickup',
+      TripStatus.onDelivery => 'Update SJ Mulai Kirim',
+      TripStatus.arrived => 'Update SJ Tiba',
+      TripStatus.assigned ||
+      TripStatus.partialHold ||
+      TripStatus.delivered => 'Update Status SJ',
+    };
+  }
+
+  String _apiStatusLabel(String status) {
+    return switch (status.trim().toUpperCase()) {
+      'CREATED' => 'Siap',
+      'HEADING_TO_PICKUP' => 'Pickup',
+      'ON_DELIVERY' => 'Kirim',
+      'ARRIVED' => 'Tiba',
+      'PARTIAL_HOLD' => 'Hold',
+      'DELIVERED' => 'Selesai',
+      _ => '-',
     };
   }
 
@@ -561,6 +669,143 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     } finally {
       if (mounted) {
         setState(() => _submittingManifest = false);
+      }
+    }
+  }
+
+  Future<void> _openBatchSuratJalanStatus(DeliveryTrip trip) async {
+    final sessionToken = widget.session.token;
+    final nextStatus = _nextBatchSuratJalanStatus(trip);
+    if (sessionToken == null || sessionToken.isEmpty || nextStatus == null) {
+      return;
+    }
+    if (!_canBatchUpdateSuratJalanStatus(trip)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tidak ada SJ yang bisa diupdate pada tahap ini.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final eligibleRefs = _batchStatusEligibleReferences(trip, nextStatus);
+    final selectedRefs = eligibleRefs
+        .map((reference) => _suratJalanRefForBatch(trip, reference))
+        .toSet();
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(_batchStatusButtonLabel(nextStatus)),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 420),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      Text(
+                        'Pilih SJ yang akan diupdate. SJ yang sedang menunggu approval admin tetap dikunci.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      ...trip.shipperReferences.map((reference) {
+                        final refId = _suratJalanRefForBatch(trip, reference);
+                        final eligible = _canMoveReferenceToStatus(
+                          trip,
+                          reference,
+                          nextStatus,
+                        );
+                        final pending = trip
+                            .isShipperReferencePendingFinalization(reference);
+                        final currentLabel = _apiStatusLabel(
+                          _referenceStatusForBatch(trip, reference),
+                        );
+                        return CheckboxListTile(
+                          value: selectedRefs.contains(refId),
+                          onChanged: eligible
+                              ? (checked) {
+                                  setDialogState(() {
+                                    if (checked == true) {
+                                      selectedRefs.add(refId);
+                                    } else {
+                                      selectedRefs.remove(refId);
+                                    }
+                                  });
+                                }
+                              : null,
+                          title: Text(reference.referenceNumber),
+                          subtitle: Text(
+                            pending
+                                ? 'Menunggu approval admin'
+                                : 'Status sekarang: $currentLabel',
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: selectedRefs.isEmpty
+                      ? null
+                      : () => Navigator.of(
+                          context,
+                        ).pop(selectedRefs.toList(growable: false)),
+                  icon: const Icon(Icons.sync_alt_rounded),
+                  label: const Text('Update SJ'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null || result.isEmpty) {
+      return;
+    }
+
+    setState(() => _updatingBatchStatus = true);
+    try {
+      await _deliveryOrderService.updateBatchSuratJalanStatus(
+        sessionToken: sessionToken,
+        deliveryOrderId: trip.deliveryOrderId,
+        status: nextStatus,
+        targetSuratJalanRefs: result,
+        note: _statusNoteForUpdate(nextStatus),
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${result.length} SJ berhasil diupdate.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingBatchStatus = false);
       }
     }
   }
@@ -1779,6 +2024,33 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       ),
                     ),
                     const SizedBox(height: 12),
+                    if (_canBatchUpdateSuratJalanStatus(_selectedTrip!)) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _updatingBatchStatus
+                              ? null
+                              : () => unawaited(
+                                  _openBatchSuratJalanStatus(_selectedTrip!),
+                                ),
+                          icon: _updatingBatchStatus
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.sync_alt_rounded),
+                          label: Text(
+                            _batchStatusButtonLabel(
+                              _nextBatchSuratJalanStatus(_selectedTrip!)!,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -3591,7 +3863,11 @@ class _DriverIncidentCard extends StatelessWidget {
                                 )
                               : const Icon(Icons.task_alt_rounded),
                           label: Text(
-                            busy ? 'Mengirim...' : 'Ajukan Selesai Insiden',
+                            busy
+                                ? 'Mengirim...'
+                                : incident.hasSubmittedResolution
+                                ? 'Tambah Biaya Insiden'
+                                : 'Ajukan Selesai Insiden',
                           ),
                         ),
                       ),

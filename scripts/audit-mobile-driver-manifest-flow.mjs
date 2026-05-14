@@ -45,6 +45,7 @@ const requiredDriverEndpoints = [
     '/api/driver/delivery-orders/create',
     '/api/driver/delivery-orders/cargo',
     '/api/driver/delivery-orders/status',
+    '/api/driver/delivery-orders/batch-status',
 ];
 
 for (const endpoint of requiredDriverEndpoints) {
@@ -61,6 +62,7 @@ for (const payloadKey of [
     "'actualItems'",
     "'actualDropPoints'",
     "'selectedSuratJalanRefs'",
+    "'targetSuratJalanRefs'",
     "'podReceiverName'",
     "'podReceivedDate'",
     "'referenceNumber'",
@@ -206,6 +208,11 @@ assertIncludes(
     'Mobile service harus memakai rute trip, bukan alamat tujuan invoice/order, untuk label perjalanan.'
 );
 assertIncludes(
+    serviceSource,
+    'updateBatchSuratJalanStatus',
+    'Mobile service harus bisa update status SJ batch seperti admin/portal driver.'
+);
+assertIncludes(
     orderWorkflowSource,
     'autoAssignOrderCargoFromTripPlan',
     'Backend create DO driver harus otomatis memasukkan item order pending saat trip plan mobile hanya mengirim SJ.'
@@ -244,6 +251,16 @@ assertIncludes(
     driverShipperReferencesRouteSource,
     'removeLinkedCargoItemsForRemovedShipperReferences: true',
     'Endpoint driver hapus/sync SJ harus meminta workflow menghapus barang terkait setelah validasi.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'getPendingShipperReferenceMutationMessage',
+    'Workflow driver harus hanya mengunci SJ yang sedang pending approval, bukan seluruh manifest partial.'
+);
+assertIncludes(
+    orderWorkflowSource,
+    'getDeliveryOrderBillingMutationLockMessage',
+    'Workflow driver harus mengunci perubahan SJ/barang saat DO sudah masuk invoice atau borongan.'
 );
 assertNotIncludes(
     driverShipperReferencesRouteSource,
@@ -287,6 +304,17 @@ for (const unstableCompletionPattern of [
         completionSource,
         unstableCompletionPattern,
         `Mobile completion masih punya field tidak sinkron: ${unstableCompletionPattern}.`
+    );
+}
+
+for (const source of [
+    { name: 'manifest', value: manifestSource },
+    { name: 'completion', value: completionSource },
+]) {
+    assertNotIncludes(
+        source.value,
+        "ValueKey('keyboard-open')",
+        `Mobile ${source.name} tidak boleh menyembunyikan submit saat keyboard terbuka.`
     );
 }
 

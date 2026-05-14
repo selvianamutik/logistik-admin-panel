@@ -421,7 +421,6 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
     final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
     final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
     final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
-    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -528,29 +527,27 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
               ),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 180),
-                child: keyboardOpen
-                    ? const SizedBox.shrink(key: ValueKey('keyboard-open'))
-                    : Padding(
-                        key: const ValueKey('submit-bar'),
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _submitting ? null : _submit,
-                            icon: _submitting
-                                ? SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: scheme.onPrimary,
-                                    ),
-                                  )
-                                : const Icon(Icons.check_circle_rounded),
-                            label: const Text('Ajukan Selesai'),
-                          ),
-                        ),
-                      ),
+                child: Padding(
+                  key: const ValueKey('submit-bar'),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _submitting ? null : _submit,
+                      icon: _submitting
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.onPrimary,
+                              ),
+                            )
+                          : const Icon(Icons.check_circle_rounded),
+                      label: const Text('Ajukan Selesai'),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

@@ -113,6 +113,40 @@ class DeliveryOrderService {
     return _mapTrip(data);
   }
 
+  Future<void> updateBatchSuratJalanStatus({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required TripStatus status,
+    required List<String> targetSuratJalanRefs,
+    String? note,
+  }) async {
+    final response = await http.post(
+      Uri.parse(
+        '${AppConfig.apiBaseUrl}/api/driver/delivery-orders/batch-status',
+      ),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'status': _mapStatusToApi(status),
+        'targetSuratJalanRefs': targetSuratJalanRefs,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal memperbarui status SJ';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   Future<void> requestDeliveryCompletion({
     required String sessionToken,
     required String deliveryOrderId,
