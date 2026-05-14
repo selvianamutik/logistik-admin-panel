@@ -20,6 +20,10 @@ const driverShipperReferencesRoutePath = path.join(
     appDir,
     'src/app/api/driver/delivery-orders/shipper-references/route.ts'
 );
+const driverCargoItemRoutePath = path.join(
+    appDir,
+    'src/app/api/driver/delivery-orders/cargo-item/route.ts'
+);
 
 const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
@@ -27,6 +31,7 @@ const completionSource = fs.readFileSync(completionPath, 'utf8');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
 const driverShipperReferencesRouteSource = fs.readFileSync(driverShipperReferencesRoutePath, 'utf8');
+const driverCargoItemRouteSource = fs.readFileSync(driverCargoItemRoutePath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -46,6 +51,8 @@ const requiredDriverEndpoints = [
     '/api/driver/delivery-orders',
     '/api/driver/delivery-orders/create',
     '/api/driver/delivery-orders/cargo',
+    '/api/driver/delivery-orders/shipper-references',
+    '/api/driver/delivery-orders/cargo-item',
     '/api/driver/delivery-orders/status',
     '/api/driver/delivery-orders/batch-status',
 ];
@@ -100,6 +107,21 @@ assertIncludes(
     'Mobile manifest harus menyediakan aksi eksplisit untuk menghapus SJ sebelum approval/final.'
 );
 assertIncludes(
+    serviceSource,
+    'syncDeliveryOrderShipperReferences',
+    'Mobile service harus bisa sync/edit/hapus daftar SJ tanpa menambah barang baru.'
+);
+assertIncludes(
+    serviceSource,
+    'updateDeliveryOrderCargoItem',
+    'Mobile service harus bisa edit barang SJ sebelum approval/final.'
+);
+assertIncludes(
+    serviceSource,
+    'deleteDeliveryOrderCargoItem',
+    'Mobile service harus bisa hapus barang SJ sebelum approval/final.'
+);
+assertIncludes(
     manifestSource,
     'onRemoveGroup: _groups.length > 1',
     'Mobile manifest harus mengizinkan hapus SJ tambahan tanpa mengizinkan submit tanpa nomor SJ.'
@@ -108,6 +130,11 @@ assertIncludes(
     manifestSource,
     "label: const Text('Tambah Barang di SJ Ini')",
     'Mobile manifest harus tetap bisa menambah banyak barang per SJ.'
+);
+assertIncludes(
+    manifestSource,
+    "tooltip: 'Hapus barang'",
+    'Mobile manifest harus menyediakan aksi eksplisit untuk hapus barang sebelum approval/final.'
 );
 assertIncludes(
     manifestSource,
@@ -263,6 +290,26 @@ assertIncludes(
     driverShipperReferencesRouteSource,
     'removeLinkedCargoItemsForRemovedShipperReferences: true',
     'Endpoint driver hapus/sync SJ harus meminta workflow menghapus barang terkait setelah validasi.'
+);
+assertIncludes(
+    driverCargoItemRouteSource,
+    'export async function PATCH(request: Request)',
+    'Endpoint driver cargo-item harus menyediakan PATCH untuk edit barang SJ.'
+);
+assertIncludes(
+    driverCargoItemRouteSource,
+    'export async function DELETE(request: Request)',
+    'Endpoint driver cargo-item harus menyediakan DELETE untuk hapus barang SJ.'
+);
+assertIncludes(
+    driverCargoItemRouteSource,
+    'handleDeliveryOrderCargoItemUpdate',
+    'Endpoint driver cargo-item PATCH harus masuk ke workflow update barang yang sama dengan admin.'
+);
+assertIncludes(
+    driverCargoItemRouteSource,
+    'handleDeliveryOrderCargoItemRemove',
+    'Endpoint driver cargo-item DELETE harus masuk ke workflow hapus barang yang sama dengan admin.'
 );
 assertIncludes(
     orderWorkflowSource,

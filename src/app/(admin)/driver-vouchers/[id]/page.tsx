@@ -149,10 +149,6 @@ export default function DriverVoucherDetailPage() {
     const linkedDoOvertonaseAmount = linkedDeliveryOrder?.overtonaseDriverAmount || 0;
     const linkedDoHasFinalActualWeight = (linkedDeliveryOrder?.actualTotalWeightKg || 0) > 0;
     const linkedDoFinalTripFee = linkedDeliveryOrder?.taripBorongan || driverFeeAmount;
-    const linkedDoOvertonaseRatePerTon = linkedDeliveryOrder?.overtonaseDriverRatePerKg
-        ? Math.round(linkedDeliveryOrder.overtonaseDriverRatePerKg * 1000)
-        : 0;
-    const linkedDoPayableOvertonaseTon = Math.floor((linkedDeliveryOrder?.overtonaseWeightKg || 0) / 1000);
     const linkedDoHasManualOvertonase = (linkedDeliveryOrder?.manualOvertonaseWeightKg || 0) > 0;
     const canManageVoucherOvertonase = Boolean(
         linkedDeliveryOrder &&
