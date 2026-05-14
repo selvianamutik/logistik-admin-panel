@@ -43,5 +43,28 @@ void main() {
       expect(updated.status, TripStatus.arrived);
       expect(updated.statusNote, 'Custom note');
     });
+
+    test('supports partial hold and admin closure state', () {
+      const closedTrip = DeliveryTrip(
+        deliveryOrderId: 'do-closed',
+        doNumber: 'DO-CLOSED',
+        vehiclePlate: 'L 1234 AA',
+        originLabel: 'Gudang A',
+        destinationLabel: 'Tujuan A',
+        customerName: 'PT Contoh',
+        status: TripStatus.partialHold,
+        etdLabel: 'Tanggal DO 2026-04-18',
+        statusNote: 'Sebagian muatan hold',
+        allowsDirectCargoInput: true,
+        tripClosedByAdminAt: '2026-05-14T10:00:00.000Z',
+        tripClosedByAdminName: 'Admin',
+      );
+
+      expect(
+        defaultTripStatusNote(TripStatus.partialHold),
+        'Sebagian muatan hold',
+      );
+      expect(closedTrip.isTripClosedByAdmin, isTrue);
+    });
   });
 }

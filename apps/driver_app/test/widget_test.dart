@@ -26,4 +26,26 @@ void main() {
     expect(find.text(gmsCompanyName), findsOneWidget);
     expect(find.textContaining('Aplikasi driver'), findsOneWidget);
   });
+
+  testWidgets('login submit stays visible on compact mobile viewport', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: LoginPage(onLogin: (_) {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final submitButton = find.widgetWithText(FilledButton, 'Masuk');
+    expect(submitButton, findsOneWidget);
+    expect(tester.getRect(submitButton).bottom, lessThanOrEqualTo(640));
+    expect(tester.takeException(), isNull);
+  });
 }

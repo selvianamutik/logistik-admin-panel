@@ -1,4 +1,11 @@
-enum TripStatus { assigned, headingToPickup, onDelivery, arrived, delivered }
+enum TripStatus {
+  assigned,
+  headingToPickup,
+  onDelivery,
+  arrived,
+  partialHold,
+  delivered,
+}
 
 class DeliveryPickupStop {
   const DeliveryPickupStop({
@@ -501,6 +508,8 @@ class DeliveryTrip {
     this.trackingState,
     this.pendingDriverStatus,
     this.pendingDriverRequests = const [],
+    this.tripClosedByAdminAt,
+    this.tripClosedByAdminName,
     this.vehicleLastOdometer,
     this.vehicleLastOdometerAt,
     this.tripEndOdometerKm,
@@ -529,6 +538,8 @@ class DeliveryTrip {
   final String? trackingState;
   final String? pendingDriverStatus;
   final List<PendingDriverRequest> pendingDriverRequests;
+  final String? tripClosedByAdminAt;
+  final String? tripClosedByAdminName;
   final double? vehicleLastOdometer;
   final String? vehicleLastOdometerAt;
   final double? tripEndOdometerKm;
@@ -543,6 +554,9 @@ class DeliveryTrip {
 
   bool get hasPendingTripClosureRequest =>
       pendingDriverRequests.any((request) => request.isTripClosureRequest);
+
+  bool get isTripClosedByAdmin =>
+      tripClosedByAdminAt?.trim().isNotEmpty == true;
 
   bool get isAwaitingAdminApproval =>
       pendingDriverStatus == 'DELIVERED' || pendingDriverRequests.isNotEmpty;
@@ -580,6 +594,8 @@ class DeliveryTrip {
       trackingState: trackingState ?? this.trackingState,
       pendingDriverStatus: nextPendingDriverStatus,
       pendingDriverRequests: pendingDriverRequests,
+      tripClosedByAdminAt: tripClosedByAdminAt,
+      tripClosedByAdminName: tripClosedByAdminName,
       vehicleLastOdometer: vehicleLastOdometer,
       vehicleLastOdometerAt: vehicleLastOdometerAt,
       tripEndOdometerKm: tripEndOdometerKm,
@@ -627,6 +643,7 @@ String defaultTripStatusNote(
     TripStatus.headingToPickup => 'Driver menuju pickup',
     TripStatus.onDelivery => 'Pengiriman berjalan',
     TripStatus.arrived => 'Driver sudah tiba',
+    TripStatus.partialHold => 'Sebagian muatan hold',
     TripStatus.delivered => 'Trip selesai',
     TripStatus.assigned => 'Trip sudah ditugaskan',
   };

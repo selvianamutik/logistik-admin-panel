@@ -458,6 +458,7 @@ class DeliveryOrderService {
       'HEADING_TO_PICKUP' => TripStatus.headingToPickup,
       'ON_DELIVERY' => TripStatus.onDelivery,
       'ARRIVED' => TripStatus.arrived,
+      'PARTIAL_HOLD' => TripStatus.partialHold,
       'DELIVERED' => TripStatus.delivered,
       _ => TripStatus.assigned,
     };
@@ -515,6 +516,8 @@ class DeliveryOrderService {
       trackingState: (json['trackingState'] as String?)?.trim(),
       pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
       pendingDriverRequests: pendingDriverRequests,
+      tripClosedByAdminAt: (json['tripClosedByAdminAt'] as String?)?.trim(),
+      tripClosedByAdminName: (json['tripClosedByAdminName'] as String?)?.trim(),
       vehicleLastOdometer: _toDouble(json['vehicleLastOdometer']),
       vehicleLastOdometerAt: (json['vehicleLastOdometerAt'] as String?)?.trim(),
       tripEndOdometerKm: _toDouble(json['tripEndOdometerKm']),
@@ -933,6 +936,7 @@ class DeliveryOrderService {
       TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
       TripStatus.onDelivery => 'ON_DELIVERY',
       TripStatus.arrived => 'ARRIVED',
+      TripStatus.partialHold => 'PARTIAL_HOLD',
       TripStatus.delivered => 'DELIVERED',
     };
   }

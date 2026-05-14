@@ -365,10 +365,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   bool _canManageManifest(DeliveryTrip trip) {
-    if (trip.status == TripStatus.delivered) {
+    if (trip.isTripClosedByAdmin || trip.isAwaitingAdminApproval) {
       return false;
     }
-    return !trip.isAwaitingAdminApproval;
+    return switch (trip.status) {
+      TripStatus.assigned ||
+      TripStatus.headingToPickup ||
+      TripStatus.onDelivery ||
+      TripStatus.arrived ||
+      TripStatus.partialHold ||
+      TripStatus.delivered => true,
+    };
   }
 
   Future<void> _openTripManifestPlan(DriverAssignedTripPlan tripPlan) async {
@@ -452,8 +459,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (!_canManageManifest(trip)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('DO ini tidak bisa diubah dari aplikasi driver.'),
+        SnackBar(
+          content: Text(
+            trip.isTripClosedByAdmin
+                ? 'Trip sudah ditutup admin. SJ/barang dikunci sampai trip dibuka kembali.'
+                : 'DO ini tidak bisa diubah dari aplikasi driver.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -555,14 +566,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   bool _shouldAutoTrack(DeliveryTrip trip) {
-    if (trip.isAwaitingAdminApproval) {
+    if (trip.isAwaitingAdminApproval || trip.isTripClosedByAdmin) {
       return false;
     }
     return switch (trip.status) {
       TripStatus.assigned ||
       TripStatus.headingToPickup ||
       TripStatus.onDelivery ||
-      TripStatus.arrived => true,
+      TripStatus.arrived ||
+      TripStatus.partialHold => true,
       TripStatus.delivered => false,
     };
   }
@@ -708,14 +720,28 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       return;
     }
+    if (trip.isTripClosedByAdmin) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Trip sudah ditutup admin. Tidak bisa diubah dari aplikasi driver.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     final nextStatus = switch (trip.status) {
       TripStatus.assigned => TripStatus.headingToPickup,
       TripStatus.headingToPickup => TripStatus.onDelivery,
       TripStatus.onDelivery => TripStatus.arrived,
       TripStatus.arrived => TripStatus.delivered,
+      TripStatus.partialHold => TripStatus.delivered,
       TripStatus.delivered => TripStatus.delivered,
     };
-    if (trip.status == TripStatus.arrived) {
+    if (trip.status == TripStatus.arrived ||
+        trip.status == TripStatus.partialHold) {
       await _openDeliveryCompletion(trip);
       return;
     }
@@ -840,6 +866,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Tutup trip hanya bisa diajukan setelah trip selesai.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (trip.isTripClosedByAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip ini sudah ditutup admin.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1502,6 +1537,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         'Driver mulai bergerak ke pickup via driver app',
       TripStatus.onDelivery => 'Pengiriman dimulai via driver app',
       TripStatus.arrived => 'Driver menandai sudah tiba via driver app',
+      TripStatus.partialHold =>
+        'Driver mengajukan sisa SJ selesai via aplikasi driver',
       TripStatus.delivered =>
         'Driver mengajukan delivery selesai via aplikasi driver',
       TripStatus.assigned => 'Status diperbarui via driver app',
@@ -1766,6 +1803,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       ),
                       const SizedBox(height: 12),
                     ],
+                    if (_selectedTrip!.isTripClosedByAdmin) ...[
+                      const _ErrorBanner(
+                        icon: Icons.lock_clock_rounded,
+                        message:
+                            'Trip sudah ditutup admin. Tambah SJ dan edit muatan dikunci sampai trip dibuka kembali.',
+                        isWarning: true,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _TrackingCard(
                       trackingEnabled: _trackingEnabled,
                       location: _latestLocation,
@@ -1781,7 +1827,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                             _selectedTrip!.isAwaitingAdminApproval,
                         onPressed:
                             _selectedTrip!.status == TripStatus.delivered ||
-                                _selectedTrip!.isAwaitingAdminApproval
+                                _selectedTrip!.isAwaitingAdminApproval ||
+                                _selectedTrip!.isTripClosedByAdmin
                             ? null
                             : (_updatingStatus
                                   ? null
@@ -1789,7 +1836,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       ),
                     ],
                     if (_selectedTrip!.status == TripStatus.delivered &&
-                        !_selectedTrip!.isAwaitingAdminApproval) ...[
+                        !_selectedTrip!.isAwaitingAdminApproval &&
+                        !_selectedTrip!.isTripClosedByAdmin) ...[
                       const SizedBox(height: 12),
                       _CloseTripButton(
                         onPressed: _updatingStatus
@@ -4119,6 +4167,7 @@ class _AdvanceButton extends StatelessWidget {
             TripStatus.headingToPickup => 'Mulai kirim',
             TripStatus.onDelivery => 'Tandai Tiba',
             TripStatus.arrived => 'Ajukan Selesai',
+            TripStatus.partialHold => 'Ajukan Selesai',
             TripStatus.delivered => 'Trip selesai',
           };
     return SizedBox(
@@ -4182,6 +4231,7 @@ class _StatusChip extends StatelessWidget {
       TripStatus.headingToPickup => ('Pickup', const Color(0xFF2563EB)),
       TripStatus.onDelivery => ('Kirim', scheme.primary),
       TripStatus.arrived => ('Tiba', const Color(0xFFB45309)),
+      TripStatus.partialHold => ('Hold', const Color(0xFFB45309)),
       TripStatus.delivered => ('Selesai', const Color(0xFF15803D)),
     };
     return Container(

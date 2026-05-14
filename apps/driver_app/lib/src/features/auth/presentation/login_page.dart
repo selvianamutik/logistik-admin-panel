@@ -122,122 +122,140 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   SizedBox(height: veryCompact ? 20 : (compact ? 26 : 34)),
-                  Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _FieldLabel(label: 'Email'),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: InputDecoration(
-                            hintText: 'driver@perusahaan.com',
-                            prefixIcon: Icon(
-                              Icons.alternate_email_rounded,
-                              size: 18,
-                              color: scheme.onSurface.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          validator: (value) {
-                            final text = value?.trim() ?? '';
-                            if (text.isEmpty || !text.contains('@')) {
-                              return 'Masukkan email yang valid';
-                            }
-                            return null;
-                          },
-                        ),
-                        SizedBox(height: veryCompact ? 14 : 16),
-                        const _FieldLabel(label: 'Password'),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            hintText: 'Masukkan password',
-                            prefixIcon: Icon(
-                              Icons.lock_outline_rounded,
-                              size: 18,
-                              color: scheme.onSurface.withValues(alpha: 0.35),
-                            ),
-                            suffixIcon: GestureDetector(
-                              onTap: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                              child: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
+                  AutofillGroup(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _FieldLabel(label: 'Email'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _emailController,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            autofillHints: const [
+                              AutofillHints.username,
+                              AutofillHints.email,
+                            ],
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              hintText: 'driver@perusahaan.com',
+                              prefixIcon: Icon(
+                                Icons.alternate_email_rounded,
                                 size: 18,
                                 color: scheme.onSurface.withValues(alpha: 0.35),
                               ),
                             ),
+                            validator: (value) {
+                              final text = value?.trim() ?? '';
+                              if (text.isEmpty || !text.contains('@')) {
+                                return 'Masukkan email yang valid';
+                              }
+                              return null;
+                            },
                           ),
-                          validator: (value) {
-                            if ((value ?? '').length < 6) {
-                              return 'Password minimal 6 karakter';
-                            }
-                            return null;
-                          },
-                        ),
-                        if (_errorMessage != null) ...[
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: scheme.errorContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.error_outline_rounded,
-                                  color: scheme.error,
-                                  size: 16,
+                          SizedBox(height: veryCompact ? 14 : 16),
+                          const _FieldLabel(label: 'Password'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _passwordController,
+                            autofillHints: const [AutofillHints.password],
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              hintText: 'Masukkan password',
+                              prefixIcon: Icon(
+                                Icons.lock_outline_rounded,
+                                size: 18,
+                                color: scheme.onSurface.withValues(alpha: 0.35),
+                              ),
+                              suffixIcon: GestureDetector(
+                                onTap: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: TextStyle(
-                                      color: scheme.error,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                child: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 18,
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.35,
                                   ),
                                 ),
-                              ],
+                              ),
+                            ),
+                            validator: (value) {
+                              if ((value ?? '').length < 6) {
+                                return 'Password minimal 6 karakter';
+                              }
+                              return null;
+                            },
+                            onFieldSubmitted: (_) {
+                              if (!_submitting) {
+                                _submit();
+                              }
+                            },
+                          ),
+                          if (_errorMessage != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: scheme.errorContainer,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline_rounded,
+                                    color: scheme.error,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: TextStyle(
+                                        color: scheme.error,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          SizedBox(height: veryCompact ? 18 : 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: _submitting ? null : _submit,
+                              child: _submitting
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: scheme.onPrimary,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Masuk',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                             ),
                           ),
                         ],
-                        SizedBox(height: veryCompact ? 18 : 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _submitting ? null : _submit,
-                            child: _submitting
-                                ? SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: scheme.onPrimary,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Masuk',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
