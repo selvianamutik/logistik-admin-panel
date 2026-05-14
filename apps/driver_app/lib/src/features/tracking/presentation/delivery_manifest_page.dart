@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_input_visibility.dart';
+import 'mobile_unit_selector_field.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
@@ -963,28 +964,12 @@ class _ManifestGroupCard extends StatelessWidget {
                   onGroupChanged(group.id, shipperReferenceNumber: value),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
+            _PickupStopSelectorField(
               key: ValueKey('pickup-${group.id}-${group.pickupStopKey}'),
-              isExpanded: true,
-              initialValue:
-                  pickupStops.any((stop) => stop.key == group.pickupStopKey)
-                  ? group.pickupStopKey
-                  : (pickupStops.isNotEmpty ? pickupStops.first.key : null),
-              decoration: const InputDecoration(labelText: 'Titik Pickup'),
-              items: pickupStops
-                  .map(
-                    (stop) => DropdownMenuItem(
-                      value: stop.key,
-                      child: Text(
-                        '${stop.displayLabel} - ${stop.pickupAddress}',
-                      ),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: pickupStops.isEmpty
-                  ? null
-                  : (value) =>
-                        onGroupChanged(group.id, pickupStopKey: value ?? ''),
+              value: group.pickupStopKey,
+              pickupStops: pickupStops,
+              onChanged: (value) =>
+                  onGroupChanged(group.id, pickupStopKey: value),
             ),
             const SizedBox(height: 12),
             if (allowsDirectCargoInput) ...[
@@ -1039,6 +1024,124 @@ class _ManifestGroupCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PickupStopSelectorField extends StatelessWidget {
+  const _PickupStopSelectorField({
+    super.key,
+    required this.value,
+    required this.pickupStops,
+    required this.onChanged,
+  });
+
+  final String value;
+  final List<DeliveryPickupStop> pickupStops;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pickupStops.isEmpty) {
+      return InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Pickup untuk SJ ini',
+          enabled: false,
+        ),
+        child: Text(
+          'Pickup belum tersedia',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: Theme.of(context).disabledColor,
+          ),
+        ),
+      );
+    }
+
+    final selectedStop = pickupStops.firstWhere(
+      (stop) => stop.key == value,
+      orElse: () => pickupStops.first,
+    );
+    final canChoose = pickupStops.length > 1;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: canChoose ? () => _openPicker(context, selectedStop) : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: canChoose ? 'Pickup untuk SJ ini' : 'Pickup trip',
+          helperText: _pickupStopSubtitle(selectedStop),
+          helperMaxLines: 2,
+          suffixIcon: canChoose ? const Icon(Icons.expand_more_rounded) : null,
+        ),
+        child: Text(
+          _pickupStopTitle(selectedStop),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPicker(
+    BuildContext context,
+    DeliveryPickupStop selectedStop,
+  ) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final selectedKey = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Pickup untuk SJ Ini',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...pickupStops.map(
+                  (stop) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_pickupStopTitle(stop)),
+                    subtitle: _pickupStopSubtitle(stop) == null
+                        ? null
+                        : Text(_pickupStopSubtitle(stop)!),
+                    trailing: stop.key == selectedStop.key
+                        ? const Icon(Icons.check_rounded)
+                        : null,
+                    onTap: () => Navigator.of(context).pop(stop.key),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selectedKey != null && selectedKey != selectedStop.key) {
+      onChanged(selectedKey);
+    }
+  }
+}
+
+String _pickupStopTitle(DeliveryPickupStop stop) {
+  final label = stop.displayLabel.trim();
+  final address = stop.pickupAddress.trim();
+  if (label.isNotEmpty) return label;
+  if (address.isNotEmpty) return address;
+  return 'Pickup';
+}
+
+String? _pickupStopSubtitle(DeliveryPickupStop stop) {
+  final title = _pickupStopTitle(stop).toLowerCase();
+  final address = stop.pickupAddress.trim();
+  if (address.isEmpty || address.toLowerCase() == title) return null;
+  return address;
 }
 
 class _ManifestItemCard extends StatelessWidget {
@@ -1158,17 +1261,11 @@ class _ManifestItemCard extends StatelessWidget {
 
               Widget weightUnitField() {
                 final selectedUnit = _normalizeWeightUnit(item.weightInputUnit);
-                return DropdownButtonFormField<String>(
+                return MobileUnitSelectorField(
                   key: ValueKey('unitWeight-${item.id}'),
-                  isExpanded: true,
-                  initialValue: selectedUnit,
-                  decoration: const InputDecoration(labelText: 'Unit'),
-                  items: const [
-                    DropdownMenuItem(value: 'KG', child: Text('KG')),
-                    DropdownMenuItem(value: 'TON', child: Text('TON')),
-                  ],
-                  onChanged: (value) =>
-                      onChanged(weightInputUnit: value ?? item.weightInputUnit),
+                  value: selectedUnit,
+                  options: const ['KG', 'TON'],
+                  onChanged: (value) => onChanged(weightInputUnit: value),
                 );
               }
 
@@ -1211,18 +1308,11 @@ class _ManifestItemCard extends StatelessWidget {
 
               Widget volumeUnitField() {
                 final selectedUnit = _normalizeVolumeUnit(item.volumeInputUnit);
-                return DropdownButtonFormField<String>(
+                return MobileUnitSelectorField(
                   key: ValueKey('unitVolume-${item.id}'),
-                  isExpanded: true,
-                  initialValue: selectedUnit,
-                  decoration: const InputDecoration(labelText: 'Unit'),
-                  items: const [
-                    DropdownMenuItem(value: 'M3', child: Text('M3')),
-                    DropdownMenuItem(value: 'LITER', child: Text('LITER')),
-                    DropdownMenuItem(value: 'KL', child: Text('KL')),
-                  ],
-                  onChanged: (value) =>
-                      onChanged(volumeInputUnit: value ?? item.volumeInputUnit),
+                  value: selectedUnit,
+                  options: const ['M3', 'LITER', 'KL'],
+                  onChanged: (value) => onChanged(volumeInputUnit: value),
                 );
               }
 

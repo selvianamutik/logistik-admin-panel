@@ -1,5 +1,6 @@
 import 'package:driver_app/src/features/tracking/domain/models.dart';
 import 'package:driver_app/src/features/tracking/presentation/delivery_manifest_page.dart';
+import 'package:driver_app/src/features/tracking/presentation/mobile_unit_selector_field.dart';
 import 'package:driver_app/src/shared/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,20 @@ void main() {
         sequence: 1,
         pickupAddress: 'Gudang A',
         pickupLabel: 'Pabrik Baja',
+      ),
+    ];
+    const multiPickupStops = [
+      DeliveryPickupStop(
+        key: 'pickup-1',
+        sequence: 1,
+        pickupAddress: 'Gudang A',
+        pickupLabel: 'Pabrik Baja',
+      ),
+      DeliveryPickupStop(
+        key: 'pickup-2',
+        sequence: 2,
+        pickupAddress: 'Gudang B',
+        pickupLabel: 'Gudang B',
       ),
     ];
 
@@ -66,6 +81,66 @@ void main() {
       expect(find.text('Tambah Barang di SJ Ini'), findsNothing);
     });
 
+    testWidgets('chooses pickup per SJ from bottom sheet selector', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ',
+                          submitLabel: 'Simpan SJ',
+                          pickupStops: multiPickupStops,
+                          customerProducts: [],
+                          allowsDirectCargoInput: false,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Pickup 1 - Pabrik Baja'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pilih Pickup untuk SJ Ini'), findsOneWidget);
+
+      await tester.tap(find.text('Pickup 2 - Gudang B'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'No. SJ Pengirim'),
+        'sj-pickup-2',
+      );
+      await tester.tap(find.text('Simpan SJ'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(
+        capturedResult!.shipperReferences.single.referenceNumber,
+        'SJ-PICKUP-2',
+      );
+      expect(
+        capturedResult!.shipperReferences.single.pickupStopKey,
+        'pickup-2',
+      );
+    });
+
     testWidgets('submits SJ and cargo when direct cargo input is enabled', (
       tester,
     ) async {
@@ -115,6 +190,14 @@ void main() {
         find.widgetWithText(TextFormField, 'Berat'),
         '850',
       );
+      final unitSelector = find.byType(MobileUnitSelectorField).first;
+      await tester.ensureVisible(unitSelector);
+      await tester.pumpAndSettle();
+      await tester.tap(unitSelector);
+      await tester.pumpAndSettle();
+      expect(find.text('Pilih Unit'), findsOneWidget);
+      await tester.tap(find.text('TON'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Simpan SJ & Barang'));
       await tester.pumpAndSettle();
 
@@ -126,6 +209,7 @@ void main() {
       expect(capturedResult!.cargoItems.first.description, 'Keramik 40x40');
       expect(capturedResult!.cargoItems.first.qtyKoli, 12);
       expect(capturedResult!.cargoItems.first.weightInputValue, 850);
+      expect(capturedResult!.cargoItems.first.weightInputUnit, 'TON');
       expect(capturedResult!.cargoItems.first.shipperReferenceNumber, 'SJ-002');
     });
 

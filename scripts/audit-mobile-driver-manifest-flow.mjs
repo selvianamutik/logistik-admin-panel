@@ -15,6 +15,10 @@ const completionPath = path.join(
     'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
 );
 const appPath = path.join(appDir, 'apps/driver_app/lib/src/app.dart');
+const unitSelectorPath = path.join(
+    appDir,
+    'apps/driver_app/lib/src/features/tracking/presentation/mobile_unit_selector_field.dart'
+);
 const orderWorkflowPath = path.join(appDir, 'src/lib/api/order-workflows.ts');
 const driverShipperReferencesRoutePath = path.join(
     appDir,
@@ -29,6 +33,7 @@ const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
 const completionSource = fs.readFileSync(completionPath, 'utf8');
 const appSource = fs.readFileSync(appPath, 'utf8');
+const unitSelectorSource = fs.readFileSync(unitSelectorPath, 'utf8');
 const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
 const driverShipperReferencesRouteSource = fs.readFileSync(driverShipperReferencesRoutePath, 'utf8');
 const driverCargoItemRouteSource = fs.readFileSync(driverCargoItemRoutePath, 'utf8');
@@ -135,6 +140,51 @@ assertIncludes(
     manifestSource,
     "tooltip: 'Hapus barang'",
     'Mobile manifest harus menyediakan aksi eksplisit untuk hapus barang sebelum approval/final.'
+);
+assertIncludes(
+    manifestSource,
+    'class _PickupStopSelectorField extends StatelessWidget',
+    'Mobile manifest harus memakai selector pickup khusus, bukan dropdown mentah per SJ.'
+);
+assertIncludes(
+    manifestSource,
+    'Pilih Pickup untuk SJ Ini',
+    'Selector pickup mobile harus menjelaskan bahwa pilihan pickup berlaku untuk SJ tersebut.'
+);
+assertIncludes(
+    manifestSource,
+    "labelText: canChoose ? 'Pickup untuk SJ ini' : 'Pickup trip'",
+    'Mobile manifest harus membedakan pickup single-trip read-only dan multi-pickup per SJ.'
+);
+assertNotIncludes(
+    manifestSource,
+    "'${stop.displayLabel} - ${stop.pickupAddress}'",
+    'Mobile manifest tidak boleh menggabungkan label dan alamat pickup panjang di dropdown kecil.'
+);
+assertIncludes(
+    unitSelectorSource,
+    'showModalBottomSheet<String>',
+    'Selector unit mobile harus memakai bottom sheet, bukan popup dropdown yang rawan blank saat keyboard aktif.'
+);
+assertIncludes(
+    unitSelectorSource,
+    'FocusManager.instance.primaryFocus?.unfocus();',
+    'Selector unit mobile harus menutup fokus keyboard sebelum membuka pilihan unit.'
+);
+assertIncludes(
+    manifestSource,
+    'MobileUnitSelectorField',
+    'Mobile manifest harus memakai selector unit bottom sheet untuk KG/TON/M3/LITER/KL.'
+);
+assertIncludes(
+    completionSource,
+    'MobileUnitSelectorField',
+    'Mobile completion harus memakai selector unit bottom sheet untuk aktual final dan titik drop.'
+);
+assertNotIncludes(
+    manifestSource,
+    "DropdownMenuItem(value: 'TON', child: Text('TON'))",
+    'Mobile manifest tidak boleh memakai DropdownButton popup untuk unit KG/TON.'
 );
 assertIncludes(
     manifestSource,

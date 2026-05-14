@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_input_visibility.dart';
+import 'mobile_unit_selector_field.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
@@ -1602,16 +1603,11 @@ class _ActualCargoCard extends StatelessWidget {
                   final selectedUnit = _normalizeWeightUnit(
                     draft.weightInputUnit,
                   );
-                  return DropdownButtonFormField<String>(
-                    initialValue: selectedUnit,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    items: const [
-                      DropdownMenuItem(value: 'KG', child: Text('KG')),
-                      DropdownMenuItem(value: 'TON', child: Text('TON')),
-                    ],
+                  return MobileUnitSelectorField(
+                    value: selectedUnit,
+                    options: const ['KG', 'TON'],
                     onChanged: (value) =>
-                        onChanged(draft.itemId, weightInputUnit: value ?? 'KG'),
+                        onChanged(draft.itemId, weightInputUnit: value),
                   );
                 }
 
@@ -1657,17 +1653,11 @@ class _ActualCargoCard extends StatelessWidget {
                   final selectedUnit = _normalizeVolumeUnit(
                     draft.volumeInputUnit,
                   );
-                  return DropdownButtonFormField<String>(
-                    initialValue: selectedUnit,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    items: const [
-                      DropdownMenuItem(value: 'M3', child: Text('M3')),
-                      DropdownMenuItem(value: 'LITER', child: Text('LITER')),
-                      DropdownMenuItem(value: 'KL', child: Text('KL')),
-                    ],
+                  return MobileUnitSelectorField(
+                    value: selectedUnit,
+                    options: const ['M3', 'LITER', 'KL'],
                     onChanged: (value) =>
-                        onChanged(draft.itemId, volumeInputUnit: value ?? 'M3'),
+                        onChanged(draft.itemId, volumeInputUnit: value),
                   );
                 }
 
@@ -1903,16 +1893,11 @@ class _ActualDropCard extends StatelessWidget {
                   final selectedUnit = _normalizeWeightUnit(
                     draft.weightInputUnit,
                   );
-                  return DropdownButtonFormField<String>(
-                    initialValue: selectedUnit,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    items: const [
-                      DropdownMenuItem(value: 'KG', child: Text('KG')),
-                      DropdownMenuItem(value: 'TON', child: Text('TON')),
-                    ],
+                  return MobileUnitSelectorField(
+                    value: selectedUnit,
+                    options: const ['KG', 'TON'],
                     onChanged: (value) =>
-                        onChanged(draft.id, weightInputUnit: value ?? 'KG'),
+                        onChanged(draft.id, weightInputUnit: value),
                   );
                 }
 
@@ -1954,17 +1939,11 @@ class _ActualDropCard extends StatelessWidget {
                   final selectedUnit = _normalizeVolumeUnit(
                     draft.volumeInputUnit,
                   );
-                  return DropdownButtonFormField<String>(
-                    initialValue: selectedUnit,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    items: const [
-                      DropdownMenuItem(value: 'M3', child: Text('M3')),
-                      DropdownMenuItem(value: 'LITER', child: Text('LITER')),
-                      DropdownMenuItem(value: 'KL', child: Text('KL')),
-                    ],
+                  return MobileUnitSelectorField(
+                    value: selectedUnit,
+                    options: const ['M3', 'LITER', 'KL'],
                     onChanged: (value) =>
-                        onChanged(draft.id, volumeInputUnit: value ?? 'M3'),
+                        onChanged(draft.id, volumeInputUnit: value),
                   );
                 }
 
