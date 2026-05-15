@@ -21,6 +21,7 @@
     "audit:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts",
     "repair:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts --fix",
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
+    "audit:driver-approval-corrections-flow": "npx tsx --conditions react-server scripts/audit-driver-approval-corrections-flow.ts",
     "audit:driver-incident-flow": "npx tsx --conditions react-server scripts/audit-driver-incident-flow.ts",
     "audit:mobile-timezone-consistency": "node scripts/audit-mobile-timezone-consistency.mjs",
     "audit:driver-trip-closure-flow": "node scripts/audit-driver-trip-closure-flow.mjs",
