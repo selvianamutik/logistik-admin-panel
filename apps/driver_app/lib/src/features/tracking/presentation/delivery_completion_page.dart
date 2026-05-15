@@ -288,6 +288,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
             shipperReferenceKey: draft.shipperReferenceKey.trim().isNotEmpty
                 ? draft.shipperReferenceKey.trim()
                 : null,
+            originLocationName: draft.originLocationName.trim().isNotEmpty
+                ? draft.originLocationName.trim()
+                : null,
+            originLocationAddress: draft.originLocationAddress.trim().isNotEmpty
+                ? draft.originLocationAddress.trim()
+                : null,
             locationName: draft.locationName.trim().isNotEmpty
                 ? draft.locationName.trim()
                 : draft.locationAddress.trim(),
@@ -651,6 +657,8 @@ class _ActualDropDraft {
     required this.stopType,
     required this.shipperReferenceNumber,
     required this.shipperReferenceKey,
+    required this.originLocationName,
+    required this.originLocationAddress,
     required this.locationName,
     required this.locationAddress,
     required this.qtyKoli,
@@ -665,6 +673,8 @@ class _ActualDropDraft {
   final String stopType;
   final String shipperReferenceNumber;
   final String shipperReferenceKey;
+  final String originLocationName;
+  final String originLocationAddress;
   final String locationName;
   final String locationAddress;
   final String qtyKoli;
@@ -682,6 +692,8 @@ class _ActualDropDraft {
     String stopType = 'DROP',
     String shipperReferenceNumber = '',
     String shipperReferenceKey = '',
+    String originLocationName = '',
+    String originLocationAddress = '',
     String locationName = '',
     String locationAddress = '',
     String qtyKoli = '',
@@ -696,6 +708,8 @@ class _ActualDropDraft {
       stopType: stopType,
       shipperReferenceNumber: shipperReferenceNumber,
       shipperReferenceKey: shipperReferenceKey,
+      originLocationName: originLocationName,
+      originLocationAddress: originLocationAddress,
       locationName: locationName,
       locationAddress: locationAddress,
       qtyKoli: qtyKoli,
@@ -711,6 +725,8 @@ class _ActualDropDraft {
     String? stopType,
     String? shipperReferenceNumber,
     String? shipperReferenceKey,
+    String? originLocationName,
+    String? originLocationAddress,
     String? locationName,
     String? locationAddress,
     String? qtyKoli,
@@ -726,6 +742,9 @@ class _ActualDropDraft {
       shipperReferenceNumber:
           shipperReferenceNumber ?? this.shipperReferenceNumber,
       shipperReferenceKey: shipperReferenceKey ?? this.shipperReferenceKey,
+      originLocationName: originLocationName ?? this.originLocationName,
+      originLocationAddress:
+          originLocationAddress ?? this.originLocationAddress,
       locationName: locationName ?? this.locationName,
       locationAddress: locationAddress ?? this.locationAddress,
       qtyKoli: qtyKoli ?? this.qtyKoli,
@@ -807,6 +826,8 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
             stopType: point.stopType,
             shipperReferenceNumber: point.shipperReferenceNumber ?? '',
             shipperReferenceKey: point.shipperReferenceKey ?? '',
+            originLocationName: point.originLocationName ?? '',
+            originLocationAddress: point.originLocationAddress ?? '',
             locationName: point.locationName,
             locationAddress: point.locationAddress ?? '',
             qtyKoli: _formatMetric(point.qtyKoli),

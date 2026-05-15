@@ -1639,6 +1639,8 @@ export default function SuratJalanDetailPage() {
                                     deliveryOrderItemRef: item.deliveryOrderItemRef,
                                     shipperReferenceKey: item.shipperReferenceKey,
                                     shipperReferenceNumber: item.shipperReferenceNumber,
+                                    originLocationName: item.originLocationName,
+                                    originLocationAddress: item.originLocationAddress,
                                     locationName: item.locationName,
                                     locationAddress: item.locationAddress,
                                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,

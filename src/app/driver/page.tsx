@@ -2855,6 +2855,8 @@ export default function DriverPortalPage() {
                     shipperReferenceNumber: item.shipperReferenceNumber || undefined,
                     billingCustomerRef: completionInvoiceCustomerRef || undefined,
                     billingCustomerName: completionInvoiceCustomerName || undefined,
+                    originLocationName: item.originLocationName || undefined,
+                    originLocationAddress: item.originLocationAddress || undefined,
                     locationName: item.locationName,
                     locationAddress: item.locationAddress,
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,

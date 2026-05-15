@@ -140,6 +140,8 @@ class DeliveryActualDropPoint {
     this.shipperReferenceNumber,
     this.shipperReferenceKey,
     this.sequence,
+    this.originLocationName,
+    this.originLocationAddress,
     this.locationAddress,
     this.qtyKoli,
     this.weightInputValue,
@@ -153,6 +155,8 @@ class DeliveryActualDropPoint {
   final String stopType;
   final String? shipperReferenceNumber;
   final String? shipperReferenceKey;
+  final String? originLocationName;
+  final String? originLocationAddress;
   final String locationName;
   final String? locationAddress;
   final double? qtyKoli;

@@ -84,6 +84,7 @@ import {
     mapDeliveryOrderToTripRecord,
     parseSuratJalanDocumentId,
 } from '@/lib/trip-document-mappers';
+import { findLatestActualDropPoint, isHoldContinuationStopType } from '@/lib/actual-drop-point-utils';
 
 const MANUAL_DO_STATUSES = ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
 
@@ -4631,10 +4632,13 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         );
     };
     const getHoldOriginForContinuationDrop = (dropPoint: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => {
-        const matchingHoldPoint = currentDropPoints
-            .filter(point => point.stopType === 'HOLD' || point.stopType === 'TRANSIT')
-            .filter(point => matchesTargetedDropPoint(point))
-            .find(point => pointMatchesSameCargo(point, dropPoint));
+        const matchingHoldPoint = findLatestActualDropPoint(
+            currentDropPoints,
+            point =>
+                isHoldContinuationStopType(point.stopType) &&
+                matchesTargetedDropPoint(point) &&
+                pointMatchesSameCargo(point, dropPoint)
+        );
         if (!matchingHoldPoint) {
             return {};
         }

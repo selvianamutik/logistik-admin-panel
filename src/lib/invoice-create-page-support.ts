@@ -9,6 +9,7 @@ import {
 } from './delivery-order-completion';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
+import { findLatestActualDropPoint, getActualDropPointSequence, isHoldContinuationStopType } from '@/lib/actual-drop-point-utils';
 
 export interface NotaItemRow {
     id: string;
@@ -251,10 +252,6 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         point.deliveryOrderItemRef,
         ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
     ].map(value => (value || '').trim()).filter(Boolean);
-    const getActualDropPointSequence = (
-        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
-        pointIndex: number
-    ) => Number.isFinite(point.sequence) ? point.sequence : pointIndex + 1;
     const actualDropPointMatchesCargo = (
         point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
         shipperReferenceNumber: string,
@@ -284,19 +281,16 @@ export function buildNotaRowsFromDeliveryOrder(params: {
 
         const actualPointIndex = Math.max(actualDropPoints.indexOf(point), 0);
         const pointSequence = getActualDropPointSequence(point, actualPointIndex);
-        const holdPoint = actualDropPoints
-            .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
-            .filter(({ candidate }) => ['HOLD', 'TRANSIT'].includes(candidate.stopType || ''))
-            .filter(({ candidate }) => actualDropPointMatchesCargo(candidate, shipperReferenceNumber, deliveryOrderItemRef))
-            .filter(({ candidate, candidateIndex }) => {
-                const candidateSequence = getActualDropPointSequence(candidate, candidateIndex);
-                return candidateSequence < pointSequence || (candidateSequence === pointSequence && candidateIndex < actualPointIndex);
-            })
-            .sort((left, right) => {
-                const leftSequence = getActualDropPointSequence(left.candidate, left.candidateIndex);
-                const rightSequence = getActualDropPointSequence(right.candidate, right.candidateIndex);
-                return rightSequence - leftSequence;
-            })[0]?.candidate;
+        const holdPoint = findLatestActualDropPoint(actualDropPoints, (candidate, candidateIndex) => {
+            if (!isHoldContinuationStopType(candidate.stopType)) {
+                return false;
+            }
+            if (!actualDropPointMatchesCargo(candidate, shipperReferenceNumber, deliveryOrderItemRef)) {
+                return false;
+            }
+            const candidateSequence = getActualDropPointSequence(candidate, candidateIndex);
+            return candidateSequence < pointSequence || (candidateSequence === pointSequence && candidateIndex < actualPointIndex);
+        });
 
         if (holdPoint) {
             return holdPoint.locationName?.trim() || holdPoint.locationAddress?.trim() || '';

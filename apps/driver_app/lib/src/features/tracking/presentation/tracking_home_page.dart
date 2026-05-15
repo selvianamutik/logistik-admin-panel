@@ -477,15 +477,38 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return '${trip.deliveryOrderId}:$suffix';
   }
 
-  String _batchStatusButtonLabel(TripStatus nextStatus) {
+  String _batchStatusButtonLabel(TripStatus? nextStatus) {
+    if (nextStatus == null) {
+      return 'Update Batch SJ';
+    }
     return switch (nextStatus) {
-      TripStatus.headingToPickup => 'Update SJ ke Pickup',
-      TripStatus.onDelivery => 'Update SJ Mulai Kirim',
-      TripStatus.arrived => 'Update SJ Tiba',
+      TripStatus.headingToPickup => 'Update Batch SJ ke Pickup',
+      TripStatus.onDelivery => 'Update Batch SJ Mulai Kirim',
+      TripStatus.arrived => 'Update Batch SJ Tiba',
       TripStatus.assigned ||
       TripStatus.partialHold ||
-      TripStatus.delivered => 'Update Status SJ',
+      TripStatus.delivered => 'Update Batch SJ',
     };
+  }
+
+  String _batchStatusHelperText(DeliveryTrip trip) {
+    final nextStatus = _nextBatchSuratJalanStatus(trip);
+    if (nextStatus == null) {
+      return 'Tidak ada SJ yang bisa diupdate pada tahap ini.';
+    }
+    final eligibleCount = _batchStatusEligibleReferences(
+      trip,
+      nextStatus,
+    ).length;
+    if (eligibleCount == 0) {
+      return 'Tidak ada SJ yang bisa diupdate pada tahap ini.';
+    }
+    final targetLabel = _apiStatusLabel(_statusApiValue(nextStatus));
+    final lockedCount = trip.shipperReferences.length - eligibleCount;
+    if (lockedCount > 0) {
+      return '$eligibleCount SJ siap dipindah ke $targetLabel. SJ lain tetap dikunci approval admin atau belum memenuhi syarat.';
+    }
+    return '$eligibleCount SJ siap dipindah ke $targetLabel.';
   }
 
   String _apiStatusLabel(String status) {
@@ -701,7 +724,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(_batchStatusButtonLabel(nextStatus)),
+              title: const Text('Update Status Batch SJ'),
               content: SizedBox(
                 width: double.maxFinite,
                 child: ConstrainedBox(
@@ -710,11 +733,26 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     shrinkWrap: true,
                     children: [
                       Text(
-                        'Pilih SJ yang akan diupdate. SJ yang sedang menunggu approval admin tetap dikunci.',
+                        'Tujuan status: ${_apiStatusLabel(_statusApiValue(nextStatus))}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Pilih SJ yang akan diupdate. Status trip utama tidak berubah.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
+                      if (trip.shipperReferences.length >
+                          eligibleRefs.length) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '${trip.shipperReferences.length - eligibleRefs.length} SJ lain belum memenuhi syarat atau sedang dikunci approval admin.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                       const SizedBox(height: 12),
-                      ...trip.shipperReferences.map((reference) {
+                      ...eligibleRefs.map((reference) {
                         final refId = _suratJalanRefForBatch(trip, reference);
                         final eligible = _canMoveReferenceToStatus(
                           trip,
@@ -765,7 +803,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                           context,
                         ).pop(selectedRefs.toList(growable: false)),
                   icon: const Icon(Icons.sync_alt_rounded),
-                  label: const Text('Update SJ'),
+                  label: Text('Update ${selectedRefs.length} SJ'),
                 ),
               ],
             );
@@ -2024,33 +2062,25 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (_canBatchUpdateSuratJalanStatus(_selectedTrip!)) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _updatingBatchStatus
-                              ? null
-                              : () => unawaited(
-                                  _openBatchSuratJalanStatus(_selectedTrip!),
-                                ),
-                          icon: _updatingBatchStatus
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.sync_alt_rounded),
-                          label: Text(
-                            _batchStatusButtonLabel(
-                              _nextBatchSuratJalanStatus(_selectedTrip!)!,
-                            ),
-                          ),
-                        ),
+                    _TripStatusActionsCard(
+                      trip: _selectedTrip!,
+                      showBatchSection:
+                          _selectedTrip!.shipperReferenceCount > 1,
+                      batchButtonLabel: _batchStatusButtonLabel(
+                        _nextBatchSuratJalanStatus(_selectedTrip!),
                       ),
-                      const SizedBox(height: 12),
-                    ],
+                      batchHelperText: _batchStatusHelperText(_selectedTrip!),
+                      batchEnabled: _canBatchUpdateSuratJalanStatus(
+                        _selectedTrip!,
+                      ),
+                      batchBusy: _updatingBatchStatus,
+                      onBatchPressed: () =>
+                          unawaited(_openBatchSuratJalanStatus(_selectedTrip!)),
+                      onAdvancePressed: !_canAdvanceTrip(_selectedTrip!)
+                          ? null
+                          : () => unawaited(_advanceStatus()),
+                    ),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -3747,6 +3777,112 @@ class _ManifestSummaryCard extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TripStatusActionsCard extends StatelessWidget {
+  const _TripStatusActionsCard({
+    required this.trip,
+    required this.showBatchSection,
+    required this.batchButtonLabel,
+    required this.batchHelperText,
+    required this.batchEnabled,
+    required this.batchBusy,
+    required this.onAdvancePressed,
+    required this.onBatchPressed,
+  });
+
+  final DeliveryTrip trip;
+  final bool showBatchSection;
+  final String batchButtonLabel;
+  final String batchHelperText;
+  final bool batchEnabled;
+  final bool batchBusy;
+  final VoidCallback? onAdvancePressed;
+  final VoidCallback onBatchPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final helperStyle = TextStyle(
+      color: scheme.onSurface.withValues(alpha: 0.58),
+      fontSize: 12.5,
+      height: 1.35,
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Aksi Status',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Status trip utama dan status SJ batch dipisah.',
+              style: helperStyle,
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Status Trip',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text('Mengubah progres utama trip.', style: helperStyle),
+            const SizedBox(height: 8),
+            _AdvanceButton(
+              status: trip.status,
+              awaitingAdminApproval:
+                  trip.hasBlockingAdminApproval ||
+                  (trip.isAwaitingAdminApproval &&
+                      !trip.canRequestMoreFinalization),
+              onPressed: onAdvancePressed,
+            ),
+            if (showBatchSection) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Status SJ (Batch)',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Mengubah SJ yang dipilih, bukan status trip utama.',
+                style: helperStyle,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: batchEnabled ? onBatchPressed : null,
+                  icon: batchBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync_alt_rounded),
+                  label: Text(batchButtonLabel),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(batchHelperText, style: helperStyle),
+            ],
           ],
         ),
       ),

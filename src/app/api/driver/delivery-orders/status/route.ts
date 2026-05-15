@@ -81,6 +81,8 @@ export async function POST(request: Request) {
                 shipperReferenceNumber?: string;
                 billingCustomerRef?: string;
                 billingCustomerName?: string;
+                originLocationName?: string;
+                originLocationAddress?: string;
                 locationName?: string;
                 locationAddress?: string;
                 qtyKoli?: number;

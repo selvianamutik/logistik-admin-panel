@@ -12,6 +12,7 @@ import {
     getShipperReferenceCount,
 } from './utils';
 import type { DOStatus } from './types';
+import { findLatestActualDropPoint, isHoldContinuationStopType } from '@/lib/actual-drop-point-utils';
 
 function createCargoSummary(): CargoSummary {
     return {
@@ -78,10 +79,10 @@ function findHoldPickupAddressForItems(
 ) {
     const normalizedReferenceKey = (referenceKey || '').trim();
     const normalizedSuratJalanNumber = (suratJalanNumber || '').trim().toUpperCase();
-    const holdPoint = (Array.isArray(deliveryOrder.actualDropPoints) ? deliveryOrder.actualDropPoints : [])
-        .find(point => {
-            const stopType = (point.stopType || '').trim().toUpperCase();
-            if (stopType !== 'HOLD' && stopType !== 'TRANSIT') {
+    const holdPoint = findLatestActualDropPoint(
+        Array.isArray(deliveryOrder.actualDropPoints) ? deliveryOrder.actualDropPoints : [],
+        point => {
+            if (!isHoldContinuationStopType((point.stopType || '').trim().toUpperCase())) {
                 return false;
             }
             if (!hasCargo(getActualDropPointCargo(point))) {
@@ -100,7 +101,8 @@ function findHoldPickupAddressForItems(
                 (normalizedReferenceKey && pointReferenceKey === normalizedReferenceKey) ||
                 (normalizedSuratJalanNumber && pointReferenceNumber === normalizedSuratJalanNumber)
             );
-        });
+        }
+    );
 
     return holdPoint
         ? (holdPoint.locationName || holdPoint.locationAddress || '').trim()
