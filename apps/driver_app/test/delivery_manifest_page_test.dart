@@ -195,8 +195,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(unitSelector);
       await tester.pumpAndSettle();
-      expect(find.text('Pilih Unit'), findsOneWidget);
-      await tester.tap(find.text('TON'));
+      await tester.tap(find.text('TON').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Simpan SJ & Barang'));
       await tester.pumpAndSettle();

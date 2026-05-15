@@ -161,30 +161,30 @@ assertNotIncludes(
     "'${stop.displayLabel} - ${stop.pickupAddress}'",
     'Mobile manifest tidak boleh menggabungkan label dan alamat pickup panjang di dropdown kecil.'
 );
-assertIncludes(
+assertNotIncludes(
     unitSelectorSource,
     'showModalBottomSheet<String>',
-    'Selector unit mobile harus memakai bottom sheet, bukan popup dropdown yang rawan blank saat keyboard aktif.'
+    'Selector unit mobile tidak boleh membuka bottom sheet karena route modal ini terbukti bisa memicu ANR saat keyboard/input aktif.'
+);
+assertIncludes(
+    unitSelectorSource,
+    'DropdownButtonFormField<String>',
+    'Selector unit mobile harus inline/dropdown form field agar tidak menutup halaman manifest dengan modal bottom sheet.'
 );
 assertIncludes(
     unitSelectorSource,
     'FocusManager.instance.primaryFocus?.unfocus();',
-    'Selector unit mobile harus menutup fokus keyboard sebelum membuka pilihan unit.'
+    'Selector unit mobile tetap harus menutup fokus keyboard sebelum mengganti pilihan unit.'
 );
 assertIncludes(
     manifestSource,
     'MobileUnitSelectorField',
-    'Mobile manifest harus memakai selector unit bottom sheet untuk KG/TON/M3/LITER/KL.'
+    'Mobile manifest harus memakai selector unit khusus untuk KG/TON/M3/LITER/KL.'
 );
 assertIncludes(
     completionSource,
     'MobileUnitSelectorField',
-    'Mobile completion harus memakai selector unit bottom sheet untuk aktual final dan titik drop.'
-);
-assertNotIncludes(
-    manifestSource,
-    "DropdownMenuItem(value: 'TON', child: Text('TON'))",
-    'Mobile manifest tidak boleh memakai DropdownButton popup untuk unit KG/TON.'
+    'Mobile completion harus memakai selector unit khusus untuk aktual final dan titik drop.'
 );
 assertIncludes(
     manifestSource,
