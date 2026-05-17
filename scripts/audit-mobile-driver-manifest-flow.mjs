@@ -108,7 +108,7 @@ assertIncludes(
 );
 assertIncludes(
     manifestSource,
-    "label: const Text('Hapus SJ')",
+    "tooltip: 'Hapus SJ'",
     'Mobile manifest harus menyediakan aksi eksplisit untuk menghapus SJ sebelum approval/final.'
 );
 assertIncludes(

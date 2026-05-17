@@ -212,6 +212,64 @@ void main() {
       expect(capturedResult!.cargoItems.first.shipperReferenceNumber, 'SJ-002');
     });
 
+    testWidgets(
+      'blocks direct cargo submit when item has no koli weight or volume',
+      (tester) async {
+        DeliveryManifestSubmitResult? capturedResult;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: FilledButton(
+                    onPressed: () async {
+                      capturedResult = await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const DeliveryManifestPage(
+                            title: 'Kelola SJ & Barang',
+                            submitLabel: 'Simpan SJ & Barang',
+                            pickupStops: pickupStops,
+                            customerProducts: [],
+                            allowsDirectCargoInput: true,
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'No. SJ Pengirim'),
+          'sj-missing-metric',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Deskripsi Barang'),
+          'Barang tanpa ukuran',
+        );
+        await tester.tap(find.text('Simpan SJ & Barang'));
+        await tester.pump();
+
+        expect(capturedResult, isNull);
+        expect(find.text('Simpan SJ & Barang'), findsOneWidget);
+        expect(
+          find.text(
+            'Isi koli, berat, atau volume untuk semua barang yang dicatat.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('keeps cargo input usable on compact mobile width', (
       tester,
     ) async {
@@ -348,6 +406,10 @@ void main() {
         find.widgetWithText(TextFormField, 'Deskripsi Barang').first,
         'Barang A',
       );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Koli').first,
+        '2',
+      );
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
       await tester.pumpAndSettle();
@@ -379,6 +441,10 @@ void main() {
       );
       expect(descriptionFields, findsNWidgets(2));
       await tester.enterText(descriptionFields.last, 'Barang A2');
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Koli', skipOffstage: false).last,
+        '3',
+      );
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(descriptionFields.last).controller?.text,

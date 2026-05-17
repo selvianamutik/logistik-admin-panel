@@ -497,6 +497,12 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           );
           return;
         }
+        if (!item.hasCargoMetric) {
+          _showError(
+            'Isi koli, berat, atau volume untuk semua barang yang dicatat.',
+          );
+          return;
+        }
 
         final cargoInput = DriverManifestCargoItemInput(
           customerProductRef: item.customerProductRef.trim().isNotEmpty
@@ -887,6 +893,11 @@ class _ManifestItemDraft {
   bool get isFilled =>
       customerProductRef.trim().isNotEmpty ||
       description.trim().isNotEmpty ||
+      qtyKoliValue > 0 ||
+      weightInputValueNumber > 0 ||
+      volumeInputValueNumber > 0;
+
+  bool get hasCargoMetric =>
       qtyKoliValue > 0 ||
       weightInputValueNumber > 0 ||
       volumeInputValueNumber > 0;
