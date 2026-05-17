@@ -3,6 +3,7 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { isDeliveryOrderResourceLocked } from '@/lib/trip-resource-lock-support';
 import { mapDeliveryOrderToSuratJalanRecords } from '@/lib/trip-document-mappers';
@@ -206,6 +207,7 @@ export async function getDriverPortalAccessNotice(driverRef: string): Promise<Dr
 }
 
 export async function getDriverAssignedDeliveryOrders(driverRef: string) {
+    clearRelationalReadCache();
     const deliveryOrders = (await listDocumentsByFilter<DriverAssignedDeliveryOrder>('deliveryOrder', { driverRef }))
         .filter(item => isDeliveryOrderResourceLocked(item));
     if (deliveryOrders.length === 0) {

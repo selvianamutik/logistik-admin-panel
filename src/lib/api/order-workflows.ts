@@ -4257,7 +4257,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     const id = typeof data.id === 'string' ? data.id : '';
     const status = normalizeText(data.status);
     const note = normalizeOptionalText(data.note);
-    const targetSuratJalanRefs = Array.from(new Set(
+    const requestedTargetSuratJalanRefs = Array.from(new Set(
         (Array.isArray(data.targetSuratJalanRefs) ? data.targetSuratJalanRefs : [])
             .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
             .map(value => value.trim())
@@ -4270,7 +4270,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     if (!MANUAL_DO_STATUSES.includes(status as (typeof MANUAL_DO_STATUSES)[number])) {
         return NextResponse.json({ error: 'Status batch SJ tidak valid' }, { status: 400 });
     }
-    if (targetSuratJalanRefs.length === 0) {
+    if (requestedTargetSuratJalanRefs.length === 0) {
         return NextResponse.json({ error: 'Pilih minimal 1 surat jalan' }, { status: 400 });
     }
 
@@ -4292,8 +4292,39 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         };
     }>('suratJalan', { tripRef: id });
 
-    const missingTargetSuratJalanRefs = targetSuratJalanRefs.filter(
-        ref => !suratJalanRecords.some(record => record._id === ref)
+    const getParsedSuratJalanReferenceKey = (recordId: string) => {
+        try {
+            return parseSuratJalanDocumentId(recordId).referenceKey;
+        } catch {
+            return '';
+        }
+    };
+    const getRequestedSuratJalanSuffix = (targetRef: string) =>
+        targetRef === `${id}:primary`
+            ? 'primary'
+            : targetRef.startsWith(`${id}:`)
+                ? targetRef.slice(`${id}:`.length)
+                : targetRef;
+    const matchesRequestedSuratJalanRef = (
+        record: { _id: string; referenceKey?: string; suratJalanNumber?: string },
+        targetRef: string
+    ) => {
+        if (record._id === targetRef) return true;
+        const suffix = getRequestedSuratJalanSuffix(targetRef).trim();
+        if (!suffix) return false;
+        const normalizedSuffix = suffix.toUpperCase();
+        const parsedRecordKey = getParsedSuratJalanReferenceKey(record._id);
+        const recordNumber = normalizeOptionalText(record.suratJalanNumber)?.toUpperCase();
+        return Boolean(
+            (suffix === 'primary' && parsedRecordKey === 'primary') ||
+            (record.referenceKey && record.referenceKey === suffix) ||
+            (parsedRecordKey && parsedRecordKey === suffix) ||
+            (recordNumber && recordNumber === normalizedSuffix)
+        );
+    };
+
+    const missingTargetSuratJalanRefs = requestedTargetSuratJalanRefs.filter(
+        ref => !suratJalanRecords.some(record => matchesRequestedSuratJalanRef(record, ref))
     );
     if (suratJalanRecords.length === 0 || missingTargetSuratJalanRefs.length > 0) {
         const deliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', { deliveryOrderRef: id });
@@ -4309,7 +4340,10 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         const missingTargetSuratJalanRefSet = new Set(missingTargetSuratJalanRefs);
         const recordsToCreate = derivedSuratJalanRecords.filter(record =>
             !existingSuratJalanRecordIds.has(record._id) &&
-            (suratJalanRecords.length === 0 || missingTargetSuratJalanRefSet.has(record._id))
+            (
+                suratJalanRecords.length === 0 ||
+                missingTargetSuratJalanRefs.some(ref => missingTargetSuratJalanRefSet.has(ref) && matchesRequestedSuratJalanRef(record, ref))
+            )
         );
 
         for (const record of recordsToCreate) {
@@ -4336,6 +4370,22 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             };
         }>('suratJalan', { tripRef: id });
     }
+
+    const unresolvedTargetSuratJalanRefs = requestedTargetSuratJalanRefs.filter(
+        ref => !suratJalanRecords.some(record => matchesRequestedSuratJalanRef(record, ref))
+    );
+    if (unresolvedTargetSuratJalanRefs.length > 0) {
+        return NextResponse.json(
+            { error: `Surat jalan yang dipilih tidak ditemukan dalam trip ini: ${unresolvedTargetSuratJalanRefs.join(', ')}` },
+            { status: 404 }
+        );
+    }
+
+    const targetSuratJalanRefs = Array.from(new Set(
+        requestedTargetSuratJalanRefs
+            .map(ref => suratJalanRecords.find(record => matchesRequestedSuratJalanRef(record, ref))?._id)
+            .filter((ref): ref is string => Boolean(ref))
+    ));
 
     const allowedStatusesByCurrent: Record<DOStatus, DOStatus[]> = {
         CREATED: ['HEADING_TO_PICKUP'],
@@ -4376,13 +4426,6 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         normalizeNumber(record.holdCargo?.qtyKoli ?? 0) > 0 ||
         normalizeNumber(record.holdCargo?.weightKg ?? 0) > 0 ||
         normalizeNumber(record.holdCargo?.volumeM3 ?? 0) > 0;
-    const getParsedSuratJalanReferenceKey = (recordId: string) => {
-        try {
-            return parseSuratJalanDocumentId(recordId).referenceKey;
-        } catch {
-            return '';
-        }
-    };
     const getDerivedSuratJalanRecord = (record: typeof targetedRecords[number]) => {
         const parsedReferenceKey = getParsedSuratJalanReferenceKey(record._id);
         const recordNumber = normalizeOptionalText(record.suratJalanNumber)?.toUpperCase();
