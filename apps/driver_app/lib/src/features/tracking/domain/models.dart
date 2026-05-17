@@ -7,6 +7,32 @@ enum TripStatus {
   delivered,
 }
 
+String deliveryStatusApiValue(TripStatus status) {
+  return switch (status) {
+    TripStatus.assigned => 'CREATED',
+    TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
+    TripStatus.onDelivery => 'ON_DELIVERY',
+    TripStatus.arrived => 'ARRIVED',
+    TripStatus.partialHold => 'PARTIAL_HOLD',
+    TripStatus.delivered => 'DELIVERED',
+  };
+}
+
+String deliveryStatusLabel(String status) {
+  return switch (status.trim().toUpperCase()) {
+    'CREATED' => 'Dibuat',
+    'HEADING_TO_PICKUP' => 'Menuju Pickup',
+    'ON_DELIVERY' => 'Dalam Pengiriman',
+    'ARRIVED' => 'Tiba di Tujuan',
+    'PARTIAL_HOLD' => 'Terkirim Sebagian / Hold',
+    'DELIVERED' => 'Terkirim',
+    'CANCELLED' => 'Dibatalkan',
+    'DRIVER_REQUESTED_DELIVERED' => 'Driver Ajukan Finalisasi',
+    'DRIVER_REQUEST_REJECTED' => 'Permintaan Driver Ditolak',
+    _ => status.trim().isEmpty ? '-' : status.trim(),
+  };
+}
+
 class DeliveryPickupStop {
   const DeliveryPickupStop({
     required this.key,
@@ -61,6 +87,8 @@ class DeliveryShipperReference {
         status == 'ARRIVED' ||
         status == 'PARTIAL_HOLD';
   }
+
+  String get statusLabel => deliveryStatusLabel(tripStatus ?? '');
 
   String get targetLabel {
     final company = (receiverCompany ?? '').trim();
@@ -137,6 +165,8 @@ class DeliveryActualDropPoint {
   const DeliveryActualDropPoint({
     required this.stopType,
     required this.locationName,
+    this.deliveryOrderItemRef,
+    this.deliveryOrderItemRefs = const [],
     this.shipperReferenceNumber,
     this.shipperReferenceKey,
     this.sequence,
@@ -153,6 +183,8 @@ class DeliveryActualDropPoint {
 
   final int? sequence;
   final String stopType;
+  final String? deliveryOrderItemRef;
+  final List<String> deliveryOrderItemRefs;
   final String? shipperReferenceNumber;
   final String? shipperReferenceKey;
   final String? originLocationName;
@@ -527,6 +559,7 @@ class DeliveryTrip {
     this.pickupStops = const [],
     this.shipperReferences = const [],
     this.cargoItems = const [],
+    this.actualDropPoints = const [],
     this.pendingActualCargoItems = const [],
     this.pendingActualDropPoints = const [],
   });
@@ -557,6 +590,7 @@ class DeliveryTrip {
   final List<DeliveryPickupStop> pickupStops;
   final List<DeliveryShipperReference> shipperReferences;
   final List<DeliveryCargoItem> cargoItems;
+  final List<DeliveryActualDropPoint> actualDropPoints;
   final List<PendingDriverActualCargoItem> pendingActualCargoItems;
   final List<DeliveryActualDropPoint> pendingActualDropPoints;
 
@@ -668,6 +702,7 @@ class DeliveryTrip {
       pickupStops: pickupStops,
       shipperReferences: shipperReferences,
       cargoItems: cargoItems,
+      actualDropPoints: actualDropPoints,
       pendingActualCargoItems: pendingActualCargoItems,
       pendingActualDropPoints: pendingActualDropPoints,
     );

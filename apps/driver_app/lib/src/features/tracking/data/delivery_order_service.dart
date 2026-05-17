@@ -566,6 +566,7 @@ class DeliveryOrderService {
             : null,
       ),
       cargoItems: _mapCargoItems(json['driverCargoItems']),
+      actualDropPoints: _mapActualDropPoints(json['actualDropPoints']),
       pendingActualCargoItems: _mapPendingActualCargoItems(
         json['pendingDriverActualCargoItems'],
       ),
@@ -947,6 +948,9 @@ class DeliveryOrderService {
           (item) => DeliveryActualDropPoint(
             sequence: _toInt(item['sequence']),
             stopType: (item['stopType'] as String?)?.trim() ?? 'DROP',
+            deliveryOrderItemRef: (item['deliveryOrderItemRef'] as String?)
+                ?.trim(),
+            deliveryOrderItemRefs: _toStringList(item['deliveryOrderItemRefs']),
             shipperReferenceNumber: (item['shipperReferenceNumber'] as String?)
                 ?.trim(),
             shipperReferenceKey: (item['shipperReferenceKey'] as String?)
@@ -1118,6 +1122,8 @@ class DriverActualDropPointInput {
     required this.weightInputUnit,
     required this.volumeInputValue,
     required this.volumeInputUnit,
+    this.deliveryOrderItemRef,
+    this.deliveryOrderItemRefs = const [],
     this.shipperReferenceNumber,
     this.shipperReferenceKey,
     this.originLocationName,
@@ -1126,6 +1132,8 @@ class DriverActualDropPointInput {
   });
 
   final String stopType;
+  final String? deliveryOrderItemRef;
+  final List<String> deliveryOrderItemRefs;
   final String? shipperReferenceNumber;
   final String? shipperReferenceKey;
   final String? originLocationName;
@@ -1141,6 +1149,13 @@ class DriverActualDropPointInput {
 
   Map<String, dynamic> toJson() => {
     'stopType': stopType,
+    if (deliveryOrderItemRef != null && deliveryOrderItemRef!.trim().isNotEmpty)
+      'deliveryOrderItemRef': deliveryOrderItemRef!.trim(),
+    if (deliveryOrderItemRefs.isNotEmpty)
+      'deliveryOrderItemRefs': deliveryOrderItemRefs
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false),
     if (shipperReferenceNumber != null &&
         shipperReferenceNumber!.trim().isNotEmpty)
       'shipperReferenceNumber': shipperReferenceNumber!.trim(),

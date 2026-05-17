@@ -72,6 +72,14 @@ void main() {
           weightInputValue: 500,
           weightInputUnit: 'KG',
         ),
+        DeliveryCargoItem(
+          id: 'item-3',
+          description: 'Semen',
+          shipperReferenceNumber: 'SJ-011',
+          qtyKoli: 7,
+          weightInputValue: 700,
+          weightInputUnit: 'KG',
+        ),
       ],
     );
 
@@ -132,6 +140,7 @@ void main() {
       expect(result!.selectedSuratJalanRefs, ['do-001:SJ-001']);
       expect(result!.actualDropPoints, hasLength(1));
       expect(result!.actualDropPoints.first.locationName, 'PT Penerima');
+      expect(result!.actualDropPoints.first.deliveryOrderItemRef, 'item-1');
       expect(result!.actualDropPoints.first.qtyKoli, 10);
     });
 
@@ -153,6 +162,573 @@ void main() {
       expect(find.text('SJ-010'), findsWidgets);
       expect(find.text('SJ-011'), findsWidgets);
     });
+
+    testWidgets('renders drop allocation as a separate workflow section', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: singleTargetTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -700));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tentukan Realisasi Titik Drop'), findsOneWidget);
+      expect(find.text('Alokasi Barang Titik Ini'), findsOneWidget);
+      expect(find.textContaining('SJ-001 | 10 koli / 750 KG'), findsOneWidget);
+    });
+
+    testWidgets(
+      'scopes initial finalization and drop references to selected SJ',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: const DeliveryCompletionPage(
+              trip: multiTargetTrip,
+              customerRecipients: [],
+              initialSelectedSuratJalanRefs: ['do-002:SJ-010'],
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        final sj010Tile = tester.widget<CheckboxListTile>(
+          find.widgetWithText(CheckboxListTile, 'SJ-010'),
+        );
+        final sj011Tile = tester.widget<CheckboxListTile>(
+          find.widgetWithText(CheckboxListTile, 'SJ-011'),
+        );
+
+        expect(sj010Tile.value, isTrue);
+        expect(sj011Tile.value, isFalse);
+
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Beras'), findsOneWidget);
+        expect(find.text('Semen'), findsNothing);
+
+        final dropReferenceDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tentukan Barang',
+          description: 'Tentukan Barang dropdown',
+          skipOffstage: false,
+        );
+        final sj011TextCountBeforeOpen = find.text('SJ-011').evaluate().length;
+
+        await tester.scrollUntilVisible(
+          dropReferenceDropdown,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(dropReferenceDropdown.first);
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('SJ-010'), findsWidgets);
+        expect(find.text('SJ-011').evaluate().length, sj011TextCountBeforeOpen);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'derives actual item from item-specific billable drop when part is hold',
+      (tester) async {
+        DeliveryCompletionSubmitResult? result;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: FilledButton(
+                    onPressed: () async {
+                      result = await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const DeliveryCompletionPage(
+                            trip: singleTargetTrip,
+                            customerRecipients: [],
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Nama Lokasi').first,
+          'PT Penerima',
+        );
+        await tester.pumpAndSettle();
+
+        final cargoTargetDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tentukan Barang',
+          description: 'Tentukan Barang dropdown',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(cargoTargetDropdown.first);
+        await tester.pumpAndSettle();
+        await tester.tap(cargoTargetDropdown.first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('SJ-001 - Keramik').last);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Qty Drop').first,
+          '6',
+        );
+        await tester.pumpAndSettle();
+
+        final addDropButton = find.widgetWithText(
+          OutlinedButton,
+          'Tambah Titik Drop',
+        );
+        await tester.scrollUntilVisible(
+          addDropButton,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
+        await tester.pumpAndSettle();
+
+        final typeDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tipe',
+          description: 'Tipe dropdown',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(typeDropdown.last);
+        await tester.tap(typeDropdown.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Hold Gudang').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.check_circle_rounded));
+        await tester.pumpAndSettle();
+
+        expect(result, isNotNull);
+        expect(result!.actualItems, hasLength(1));
+        expect(result!.actualItems.first.deliveryOrderItemRef, 'item-1');
+        expect(result!.actualItems.first.actualQtyKoli, 6);
+        expect(result!.actualItems.first.actualWeightInputValue, 450);
+        expect(result!.actualDropPoints, hasLength(2));
+        expect(result!.actualDropPoints.first.deliveryOrderItemRef, 'item-1');
+        expect(result!.actualDropPoints.first.deliveryOrderItemRefs, [
+          'item-1',
+        ]);
+        expect(result!.actualDropPoints.first.qtyKoli, 6);
+        expect(result!.actualDropPoints.last.stopType, 'HOLD');
+        expect(result!.actualDropPoints.last.deliveryOrderItemRef, 'item-1');
+        expect(result!.actualDropPoints.last.qtyKoli, 4);
+      },
+    );
+
+    testWidgets(
+      'separates items inside one SJ when one item is delivered and another is hold',
+      (tester) async {
+        const sameSjMultiItemTrip = DeliveryTrip(
+          deliveryOrderId: 'do-same-sj',
+          doNumber: 'DO-SAME-SJ',
+          vehiclePlate: 'L 2222 CC',
+          originLabel: 'Gudang',
+          destinationLabel: 'Satu SJ',
+          customerName: 'PT Contoh',
+          status: TripStatus.arrived,
+          etdLabel: 'Tanggal DO 2026-04-18',
+          statusNote: 'Driver sudah tiba',
+          allowsDirectCargoInput: true,
+          receiverName: 'PT Penerima',
+          receiverAddress: 'Jl. Penerima',
+          shipperReferences: [
+            DeliveryShipperReference(
+              referenceNumber: 'SJ-MIX',
+              receiverCompany: 'PT Penerima',
+              receiverAddress: 'Jl. Penerima',
+            ),
+          ],
+          cargoItems: [
+            DeliveryCargoItem(
+              id: 'item-a',
+              description: 'Barang Terkirim',
+              shipperReferenceNumber: 'SJ-MIX',
+              qtyKoli: 2,
+              weightInputValue: 200,
+              weightInputUnit: 'KG',
+            ),
+            DeliveryCargoItem(
+              id: 'item-b',
+              description: 'Barang Hold',
+              shipperReferenceNumber: 'SJ-MIX',
+              qtyKoli: 3,
+              weightInputValue: 300,
+              weightInputUnit: 'KG',
+            ),
+          ],
+        );
+        DeliveryCompletionSubmitResult? result;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: FilledButton(
+                  onPressed: () async {
+                    result = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryCompletionPage(
+                          trip: sameSjMultiItemTrip,
+                          customerRecipients: [],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await tester.pumpAndSettle();
+        final locationField = find.widgetWithText(TextFormField, 'Nama Lokasi');
+        await tester.scrollUntilVisible(
+          locationField,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.enterText(locationField.first, 'PT Penerima');
+        await tester.pumpAndSettle();
+
+        final cargoTargetDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tentukan Barang',
+          description: 'Tentukan Barang dropdown',
+          skipOffstage: false,
+        );
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, 420));
+        await tester.pumpAndSettle();
+        await tester.tap(cargoTargetDropdown.first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('SJ-MIX - Barang Terkirim').last);
+        await tester.pumpAndSettle();
+
+        final addDropButton = find.widgetWithText(
+          OutlinedButton,
+          'Tambah Titik Drop',
+        );
+        await tester.scrollUntilVisible(
+          addDropButton,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
+        await tester.pumpAndSettle();
+
+        final typeDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tipe',
+          description: 'Tipe dropdown',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(typeDropdown.last);
+        await tester.tap(typeDropdown.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Hold Gudang').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.check_circle_rounded));
+        await tester.pumpAndSettle();
+
+        expect(result, isNotNull);
+        final actualByItem = {
+          for (final item in result!.actualItems)
+            item.deliveryOrderItemRef: item,
+        };
+        expect(actualByItem['item-a']?.actualQtyKoli, 2);
+        expect(actualByItem['item-a']?.actualWeightInputValue, 200);
+        expect(actualByItem['item-b']?.actualQtyKoli, 0);
+        expect(actualByItem['item-b']?.actualWeightInputValue, 0);
+        expect(result!.actualDropPoints, hasLength(2));
+        expect(result!.actualDropPoints.first.deliveryOrderItemRef, 'item-a');
+        expect(result!.actualDropPoints.last.stopType, 'HOLD');
+        expect(result!.actualDropPoints.last.deliveryOrderItemRef, 'item-b');
+      },
+    );
+
+    testWidgets('continues partial hold from remaining hold cargo only', (
+      tester,
+    ) async {
+      const partialHoldContinuationTrip = DeliveryTrip(
+        deliveryOrderId: 'do-hold-continue',
+        doNumber: 'DO-HOLD-CONTINUE',
+        vehiclePlate: 'L 4444 EE',
+        originLabel: 'Gudang',
+        destinationLabel: 'Surabaya',
+        customerName: 'PT Contoh',
+        status: TripStatus.partialHold,
+        etdLabel: 'Tanggal DO 2026-04-18',
+        statusNote: 'Sebagian muatan hold',
+        allowsDirectCargoInput: true,
+        receiverName: 'PT Penerima',
+        receiverAddress: 'Jl. Penerima',
+        shipperReferences: [
+          DeliveryShipperReference(
+            referenceNumber: 'SJ-HOLD',
+            documentId: 'do-hold-continue:SJ-HOLD',
+            tripStatus: 'PARTIAL_HOLD',
+            receiverCompany: 'PT Penerima',
+            receiverAddress: 'Jl. Penerima',
+          ),
+        ],
+        cargoItems: [
+          DeliveryCargoItem(
+            id: 'item-hold',
+            description: 'Barang Hold Lanjutan',
+            shipperReferenceNumber: 'SJ-HOLD',
+            qtyKoli: 3,
+            weightInputValue: 180,
+            weightInputUnit: 'KG',
+            volumeInputValue: 3,
+            volumeInputUnit: 'M3',
+            actualQtyKoli: 3,
+            actualWeightInputValue: 190,
+            actualWeightInputUnit: 'KG',
+            actualVolumeInputValue: 3,
+            actualVolumeInputUnit: 'M3',
+          ),
+        ],
+        actualDropPoints: [
+          DeliveryActualDropPoint(
+            stopType: 'DROP',
+            deliveryOrderItemRef: 'item-hold',
+            deliveryOrderItemRefs: ['item-hold'],
+            shipperReferenceNumber: 'SJ-HOLD',
+            locationName: 'PT Penerima',
+            locationAddress: 'Jl. Penerima',
+            qtyKoli: 1,
+            weightInputValue: 70,
+            weightInputUnit: 'KG',
+            volumeInputValue: 1,
+            volumeInputUnit: 'M3',
+          ),
+          DeliveryActualDropPoint(
+            stopType: 'HOLD',
+            deliveryOrderItemRef: 'item-hold',
+            deliveryOrderItemRefs: ['item-hold'],
+            shipperReferenceNumber: 'SJ-HOLD',
+            locationName: 'Gudang Hold',
+            locationAddress: 'Jl. Hold',
+            qtyKoli: 2,
+            weightInputValue: 120,
+            weightInputUnit: 'KG',
+            volumeInputValue: 2,
+            volumeInputUnit: 'M3',
+          ),
+        ],
+      );
+      DeliveryCompletionSubmitResult? result;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () async {
+                  result = await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const DeliveryCompletionPage(
+                        trip: partialHoldContinuationTrip,
+                        customerRecipients: [],
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.check_circle_rounded));
+      await tester.pumpAndSettle();
+
+      expect(result, isNotNull);
+      expect(result!.actualItems, hasLength(1));
+      expect(result!.actualItems.first.deliveryOrderItemRef, 'item-hold');
+      expect(result!.actualItems.first.actualQtyKoli, 2);
+      expect(result!.actualItems.first.actualWeightInputValue, 120);
+      expect(result!.actualItems.first.actualVolumeInputValue, 2);
+      expect(result!.actualDropPoints, hasLength(1));
+      expect(result!.actualDropPoints.first.stopType, 'DROP');
+      expect(result!.actualDropPoints.first.deliveryOrderItemRef, 'item-hold');
+      expect(result!.actualDropPoints.first.qtyKoli, 2);
+      expect(result!.actualDropPoints.first.weightInputValue, 120);
+      expect(result!.actualDropPoints.first.volumeInputValue, 2);
+      expect(result!.actualDropPoints.first.originLocationName, 'Gudang Hold');
+      expect(result!.actualDropPoints.first.originLocationAddress, 'Jl. Hold');
+      expect(result!.actualDropPoints.first.locationName, 'PT Penerima');
+    });
+
+    testWidgets(
+      'blocks mixed drop and hold in one SJ when the item is still ambiguous',
+      (tester) async {
+        const sameSjMultiItemTrip = DeliveryTrip(
+          deliveryOrderId: 'do-ambiguous',
+          doNumber: 'DO-AMBIGUOUS',
+          vehiclePlate: 'L 3333 DD',
+          originLabel: 'Gudang',
+          destinationLabel: 'Satu SJ',
+          customerName: 'PT Contoh',
+          status: TripStatus.arrived,
+          etdLabel: 'Tanggal DO 2026-04-18',
+          statusNote: 'Driver sudah tiba',
+          allowsDirectCargoInput: true,
+          receiverName: 'PT Penerima',
+          receiverAddress: 'Jl. Penerima',
+          shipperReferences: [
+            DeliveryShipperReference(
+              referenceNumber: 'SJ-MIX',
+              receiverCompany: 'PT Penerima',
+              receiverAddress: 'Jl. Penerima',
+            ),
+          ],
+          cargoItems: [
+            DeliveryCargoItem(
+              id: 'item-a',
+              description: 'Barang A',
+              shipperReferenceNumber: 'SJ-MIX',
+              qtyKoli: 2,
+              weightInputValue: 200,
+              weightInputUnit: 'KG',
+            ),
+            DeliveryCargoItem(
+              id: 'item-b',
+              description: 'Barang B',
+              shipperReferenceNumber: 'SJ-MIX',
+              qtyKoli: 3,
+              weightInputValue: 300,
+              weightInputUnit: 'KG',
+            ),
+          ],
+        );
+        DeliveryCompletionSubmitResult? result;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: FilledButton(
+                  onPressed: () async {
+                    result = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryCompletionPage(
+                          trip: sameSjMultiItemTrip,
+                          customerRecipients: [],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await tester.pumpAndSettle();
+        final locationField = find.widgetWithText(TextFormField, 'Nama Lokasi');
+        await tester.scrollUntilVisible(
+          locationField,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.enterText(locationField.first, 'PT Penerima');
+        await tester.pumpAndSettle();
+
+        final addDropButton = find.widgetWithText(
+          OutlinedButton,
+          'Tambah Titik Drop',
+        );
+        await tester.scrollUntilVisible(
+          addDropButton,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
+        await tester.pumpAndSettle();
+
+        final typeDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tipe',
+          description: 'Tipe dropdown',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(typeDropdown.last);
+        await tester.tap(typeDropdown.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Hold Gudang').last);
+        await tester.pumpAndSettle();
+
+        final cargoTargetDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Tentukan Barang',
+          description: 'Tentukan Barang dropdown',
+          skipOffstage: false,
+        );
+        await tester.ensureVisible(cargoTargetDropdown.last);
+        await tester.tap(cargoTargetDropdown.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('SJ-MIX - semua barang').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.check_circle_rounded));
+        await tester.pumpAndSettle();
+
+        expect(result, isNull);
+        expect(find.textContaining('campuran drop dan hold'), findsOneWidget);
+      },
+    );
 
     testWidgets(
       'keeps pending partial SJ disabled while other SJ can proceed',
@@ -266,6 +842,59 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('warns before removing an actual drop point', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: singleTargetTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final addDropButton = find.widgetWithText(
+        OutlinedButton,
+        'Tambah Titik Drop',
+      );
+      await tester.scrollUntilVisible(
+        addDropButton,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(addDropButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Titik Drop 1'), findsOneWidget);
+      expect(find.text('Titik Drop 2'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Titik Drop 2'),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.delete_outline_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Hapus titik drop?'), findsOneWidget);
+
+      await tester.tap(find.text('Batal'));
+      await tester.pumpAndSettle();
+      expect(find.text('Titik Drop 2'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.delete_outline_rounded).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Hapus Titik'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Titik Drop 1'), findsOneWidget);
+      expect(find.text('Titik Drop 2'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

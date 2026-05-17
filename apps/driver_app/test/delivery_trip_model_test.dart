@@ -118,6 +118,23 @@ void main() {
     });
   });
 
+  group('Delivery status labels', () {
+    test('uses admin operational labels for per-SJ statuses', () {
+      const reference = DeliveryShipperReference(
+        referenceNumber: 'SJ-A',
+        tripStatus: 'HEADING_TO_PICKUP',
+      );
+
+      expect(
+        deliveryStatusApiValue(TripStatus.headingToPickup),
+        'HEADING_TO_PICKUP',
+      );
+      expect(reference.statusLabel, 'Menuju Pickup');
+      expect(deliveryStatusLabel('ON_DELIVERY'), 'Dalam Pengiriman');
+      expect(deliveryStatusLabel('DELIVERED'), 'Terkirim');
+    });
+  });
+
   group('DriverIncident', () {
     test('allows adding draft costs before admin review', () {
       const incident = DriverIncident(

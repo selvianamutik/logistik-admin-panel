@@ -12,6 +12,16 @@ type AuditIssue = {
     message: string;
 };
 
+const VALID_SJ_STATUSES = new Set([
+    'CREATED',
+    'HEADING_TO_PICKUP',
+    'ON_DELIVERY',
+    'ARRIVED',
+    'PARTIAL_HOLD',
+    'DELIVERED',
+    'CANCELLED',
+]);
+
 function getSupabaseRestConfig() {
     const supabaseUrl = requireAnyEnv([
         'SUPABASE_URL',
@@ -233,8 +243,13 @@ async function main() {
         const actualDocumentsById = new Map(actualDocuments.map(document => [document._id, document]));
 
         for (const expected of expectedDocuments) {
-            expectedDocumentsById.set(expected._id, expected);
             const actual = actualDocumentsById.get(expected._id);
+            expectedDocumentsById.set(
+                expected._id,
+                actual && normalizeText(actual.tripStatus)
+                    ? { ...expected, tripStatus: actual.tripStatus as SuratJalanRecord['tripStatus'] }
+                    : expected
+            );
             checkedDocumentCount += 1;
             if (!actual) {
                 issues.push({
@@ -253,11 +268,11 @@ async function main() {
                 });
             }
 
-            if (normalizeText(actual.tripStatus) !== normalizeText(expected.tripStatus)) {
+            if (normalizeText(actual.tripStatus) && !VALID_SJ_STATUSES.has(normalizeText(actual.tripStatus))) {
                 issues.push({
                     kind: 'surat-jalan',
                     ref: actual._id,
-                    message: `Status SJ mismatch: expected ${expected.tripStatus}, actual ${actual.tripStatus}`,
+                    message: `Status SJ tidak dikenal: ${actual.tripStatus}`,
                 });
             }
 

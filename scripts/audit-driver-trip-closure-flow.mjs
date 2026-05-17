@@ -17,6 +17,10 @@ function assertIncludes(source, expected, message) {
     assert(source.includes(expected), message);
 }
 
+function assertNotIncludes(source, expected, message) {
+    assert(!source.includes(expected), message);
+}
+
 function assertMatches(source, pattern, message) {
     assert(pattern.test(source), message);
 }
@@ -49,10 +53,30 @@ assertIncludes(
     'if (trip.isAwaitingAdminApproval)',
     'Mobile driver harus memblokir pengajuan tutup trip saat masih ada approval admin pending.'
 );
+assertMatches(
+    mobileTrackingPageSource,
+    /await _popDialogAfterKeyboardDismiss<_TripClosureSubmitResult>\(\s+context,\s+_TripClosureSubmitResult\(/,
+    'Dialog tutup trip mobile harus memakai pop keyboard-safe sebelum submit agar stabil saat input angka aktif.'
+);
+assertMatches(
+    mobileTrackingPageSource,
+    /_popDialogAfterKeyboardDismiss<_TripClosureSubmitResult>\(\s+context,\s+\)/,
+    'Dialog tutup trip mobile harus memakai pop keyboard-safe sebelum batal agar stabil saat input angka aktif.'
+);
 assertIncludes(
     mobileTrackingPageSource,
-    'MobileInputVisibilityRoot',
-    'Dialog tutup trip mobile harus tetap stabil saat keyboard/input angka aktif.'
+    'FocusManager.instance.primaryFocus?.unfocus();',
+    'Dialog input mobile harus menutup fokus lewat FocusManager sebelum route dialog dipop.'
+);
+assertIncludes(
+    mobileTrackingPageSource,
+    'await Future<void>.delayed(const Duration(milliseconds: 150));',
+    'Dialog input mobile harus memberi jeda singkat setelah unfocus supaya IME/focus settle sebelum pop.'
+);
+assertNotIncludes(
+    mobileTrackingPageSource,
+    "import 'mobile_input_visibility.dart';",
+    'Dialog tracking mobile tidak boleh bergantung ke MobileInputVisibilityRoot karena wrapper ini pernah memicu red screen native saat dialog ditutup dengan input fokus.'
 );
 assertIncludes(
     mobileTrackingPageSource,

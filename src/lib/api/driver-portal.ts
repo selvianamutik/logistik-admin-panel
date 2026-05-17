@@ -303,12 +303,18 @@ function mergeDriverSuratJalanRecordWithLiveCargo(
         !hasDriverSuratJalanCargo(liveRecord.holdCargo) &&
         !hasDriverSuratJalanCargo(liveRecord.returnCargo);
     const liveHasHoldCargo = hasDriverSuratJalanCargo(liveRecord.holdCargo);
+    const resolvedTripStatus =
+        shouldPreserveDraftStatus
+            ? record.tripStatus
+            : record.tripStatus === 'CREATED' && liveRecord.tripStatus && liveRecord.tripStatus !== 'CREATED'
+                ? liveRecord.tripStatus
+                : record.tripStatus || liveRecord.tripStatus;
     return {
         ...record,
         pickupAddress: liveHasHoldCargo
             ? liveRecord.pickupAddress || record.pickupAddress
             : record.pickupAddress || liveRecord.pickupAddress,
-        tripStatus: shouldPreserveDraftStatus ? record.tripStatus : liveRecord.tripStatus,
+        tripStatus: resolvedTripStatus,
         itemCount: liveRecord.itemCount,
         cargoSummary: liveRecord.cargoSummary,
         billableCargo: liveRecord.billableCargo,

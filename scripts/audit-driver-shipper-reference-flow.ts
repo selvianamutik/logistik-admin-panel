@@ -179,19 +179,40 @@ async function main() {
             ),
         }));
 
-    const candidatePair = candidatePairs.find(item => item.driverUser);
-    const candidate = candidatePair?.deliveryOrder;
-    const driverUser = candidatePair?.driverUser;
-    if (!candidate || !driverUser) {
-        console.log('Driver shipper reference audit SKIP: tidak ada DO aktif dengan driver dan daftar SJ pada seed saat ini.');
+    let selectedCandidate: {
+        deliveryOrder: DeliveryOrderLike;
+        driverUser: UserLike;
+        driverCookie: string;
+    } | undefined;
+
+    for (const candidatePair of candidatePairs) {
+        const driverUser = candidatePair.driverUser;
+        if (!driverUser) continue;
+        try {
+            const driverCookie = await loginAndGetCookieHeader({
+                email: normalizeText(driverUser.email),
+                password: process.env.AUDIT_DRIVER_PASSWORD || 'driver12345',
+                scope: 'DRIVER',
+            });
+            selectedCandidate = {
+                deliveryOrder: candidatePair.deliveryOrder,
+                driverUser,
+                driverCookie,
+            };
+            break;
+        } catch {
+            console.warn(
+                `Driver shipper reference audit: skip kandidat ${normalizeText(driverUser.email) || driverUser._id} karena login driver gagal.`
+            );
+        }
+    }
+
+    if (!selectedCandidate) {
+        console.log('Driver shipper reference audit SKIP: tidak ada DO aktif dengan driver, daftar SJ, dan akun driver yang bisa login pada seed saat ini.');
         return;
     }
 
-    const driverCookie = await loginAndGetCookieHeader({
-        email: normalizeText(driverUser.email),
-        password: process.env.AUDIT_DRIVER_PASSWORD || 'driver12345',
-        scope: 'DRIVER',
-    });
+    const { deliveryOrder: candidate, driverCookie } = selectedCandidate;
 
     const originalReferences = mapShipperReferences(candidate);
     assert(originalReferences.length > 0, `DO ${candidate.doNumber || candidate._id} tidak punya daftar SJ awal.`);

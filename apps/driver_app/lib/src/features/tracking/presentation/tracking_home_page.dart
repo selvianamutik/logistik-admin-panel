@@ -15,7 +15,7 @@ import '../data/driver_tracking_service.dart';
 import '../domain/models.dart';
 import 'delivery_completion_page.dart';
 import 'delivery_manifest_page.dart';
-import 'mobile_input_visibility.dart';
+import 'mobile_action_feedback.dart';
 
 enum _DriverHomeSection { trips, vouchers }
 
@@ -379,40 +379,19 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     };
   }
 
-  bool _canAdvanceTrip(DeliveryTrip trip) {
-    if (trip.isTripClosedByAdmin || trip.hasBlockingAdminApproval) {
-      return false;
-    }
-    return switch (trip.status) {
-      TripStatus.assigned ||
-      TripStatus.headingToPickup ||
-      TripStatus.onDelivery => true,
-      TripStatus.arrived ||
-      TripStatus.partialHold => trip.canRequestMoreFinalization,
-      TripStatus.delivered => false,
-    };
-  }
-
-  TripStatus? _nextBatchSuratJalanStatus(DeliveryTrip trip) {
+  TripStatus? _preferredSuratJalanStatus(DeliveryTrip trip) {
     return switch (trip.status) {
       TripStatus.assigned => TripStatus.headingToPickup,
       TripStatus.headingToPickup => TripStatus.onDelivery,
       TripStatus.onDelivery => TripStatus.arrived,
-      TripStatus.arrived ||
-      TripStatus.partialHold ||
+      TripStatus.arrived => TripStatus.delivered,
+      TripStatus.partialHold => TripStatus.headingToPickup,
       TripStatus.delivered => null,
     };
   }
 
   String _statusApiValue(TripStatus status) {
-    return switch (status) {
-      TripStatus.assigned => 'CREATED',
-      TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
-      TripStatus.onDelivery => 'ON_DELIVERY',
-      TripStatus.arrived => 'ARRIVED',
-      TripStatus.partialHold => 'PARTIAL_HOLD',
-      TripStatus.delivered => 'DELIVERED',
-    };
+    return deliveryStatusApiValue(status);
   }
 
   String _referenceStatusForBatch(
@@ -434,16 +413,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     final currentStatus = _referenceStatusForBatch(trip, reference);
     return switch (nextStatus) {
-      TripStatus.headingToPickup => currentStatus == 'CREATED',
+      TripStatus.headingToPickup =>
+        currentStatus == 'CREATED' || currentStatus == 'PARTIAL_HOLD',
       TripStatus.onDelivery => currentStatus == 'HEADING_TO_PICKUP',
       TripStatus.arrived => currentStatus == 'ON_DELIVERY',
-      TripStatus.assigned ||
-      TripStatus.partialHold ||
-      TripStatus.delivered => false,
+      TripStatus.delivered =>
+        reference.canRequestFinalization && currentStatus == 'ARRIVED',
+      TripStatus.assigned || TripStatus.partialHold => false,
     };
   }
 
-  List<DeliveryShipperReference> _batchStatusEligibleReferences(
+  List<DeliveryShipperReference> _suratJalanStatusEligibleReferences(
     DeliveryTrip trip,
     TripStatus nextStatus,
   ) {
@@ -454,15 +434,26 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         .toList(growable: false);
   }
 
-  bool _canBatchUpdateSuratJalanStatus(DeliveryTrip trip) {
-    if (trip.shipperReferences.length <= 1 ||
-        trip.isTripClosedByAdmin ||
-        trip.hasBlockingAdminApproval) {
+  List<TripStatus> _availableSuratJalanStatuses(DeliveryTrip trip) {
+    const orderedStatuses = [
+      TripStatus.headingToPickup,
+      TripStatus.onDelivery,
+      TripStatus.arrived,
+      TripStatus.delivered,
+    ];
+    return orderedStatuses
+        .where(
+          (status) =>
+              _suratJalanStatusEligibleReferences(trip, status).isNotEmpty,
+        )
+        .toList(growable: false);
+  }
+
+  bool _canUpdateSuratJalanStatus(DeliveryTrip trip) {
+    if (trip.isTripClosedByAdmin || trip.hasBlockingAdminApproval) {
       return false;
     }
-    final nextStatus = _nextBatchSuratJalanStatus(trip);
-    if (nextStatus == null) return false;
-    return _batchStatusEligibleReferences(trip, nextStatus).isNotEmpty;
+    return _availableSuratJalanStatuses(trip).isNotEmpty;
   }
 
   String _suratJalanRefForBatch(
@@ -477,26 +468,49 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return '${trip.deliveryOrderId}:$suffix';
   }
 
-  String _batchStatusButtonLabel(TripStatus? nextStatus) {
-    if (nextStatus == null) {
-      return 'Update Batch SJ';
+  String _suratJalanStatusDistributionText(DeliveryTrip trip) {
+    if (trip.shipperReferences.isEmpty) {
+      return deliveryStatusLabel(_statusApiValue(trip.status));
     }
-    return switch (nextStatus) {
-      TripStatus.headingToPickup => 'Update Batch SJ ke Pickup',
-      TripStatus.onDelivery => 'Update Batch SJ Mulai Kirim',
-      TripStatus.arrived => 'Update Batch SJ Tiba',
-      TripStatus.assigned ||
-      TripStatus.partialHold ||
-      TripStatus.delivered => 'Update Batch SJ',
-    };
+
+    final counts = <String, int>{};
+    for (final reference in trip.shipperReferences) {
+      final status = _referenceStatusForBatch(trip, reference);
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+
+    const orderedStatuses = [
+      'CREATED',
+      'HEADING_TO_PICKUP',
+      'ON_DELIVERY',
+      'ARRIVED',
+      'PARTIAL_HOLD',
+      'DELIVERED',
+      'CANCELLED',
+    ];
+    final orderedLabels = [
+      ...orderedStatuses
+          .where((status) => counts.containsKey(status))
+          .map((status) => '${deliveryStatusLabel(status)} ${counts[status]}'),
+      ...counts.entries
+          .where((entry) => !orderedStatuses.contains(entry.key))
+          .map((entry) => '${deliveryStatusLabel(entry.key)} ${entry.value}'),
+    ];
+    return orderedLabels.join(', ');
   }
 
-  String _batchStatusHelperText(DeliveryTrip trip) {
-    final nextStatus = _nextBatchSuratJalanStatus(trip);
+  String _suratJalanStatusHelperText(DeliveryTrip trip) {
+    final availableStatuses = _availableSuratJalanStatuses(trip);
+    final preferredStatus = _preferredSuratJalanStatus(trip);
+    final nextStatus = availableStatuses.contains(preferredStatus)
+        ? preferredStatus
+        : availableStatuses.isEmpty
+        ? null
+        : availableStatuses.first;
     if (nextStatus == null) {
       return 'Tidak ada SJ yang bisa diupdate pada tahap ini.';
     }
-    final eligibleCount = _batchStatusEligibleReferences(
+    final eligibleCount = _suratJalanStatusEligibleReferences(
       trip,
       nextStatus,
     ).length;
@@ -504,23 +518,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       return 'Tidak ada SJ yang bisa diupdate pada tahap ini.';
     }
     final targetLabel = _apiStatusLabel(_statusApiValue(nextStatus));
-    final lockedCount = trip.shipperReferences.length - eligibleCount;
-    if (lockedCount > 0) {
-      return '$eligibleCount SJ siap dipindah ke $targetLabel. SJ lain tetap dikunci approval admin atau belum memenuhi syarat.';
-    }
-    return '$eligibleCount SJ siap dipindah ke $targetLabel.';
+    return 'Status SJ: ${_suratJalanStatusDistributionText(trip)}. $eligibleCount SJ siap dipindah ke $targetLabel.';
   }
 
   String _apiStatusLabel(String status) {
-    return switch (status.trim().toUpperCase()) {
-      'CREATED' => 'Siap',
-      'HEADING_TO_PICKUP' => 'Pickup',
-      'ON_DELIVERY' => 'Kirim',
-      'ARRIVED' => 'Tiba',
-      'PARTIAL_HOLD' => 'Hold',
-      'DELIVERED' => 'Selesai',
-      _ => '-',
-    };
+    return deliveryStatusLabel(status);
   }
 
   Future<void> _openTripManifestPlan(DriverAssignedTripPlan tripPlan) async {
@@ -696,13 +698,13 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
   }
 
-  Future<void> _openBatchSuratJalanStatus(DeliveryTrip trip) async {
+  Future<void> _openSuratJalanStatus(DeliveryTrip trip) async {
     final sessionToken = widget.session.token;
-    final nextStatus = _nextBatchSuratJalanStatus(trip);
-    if (sessionToken == null || sessionToken.isEmpty || nextStatus == null) {
+    if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
-    if (!_canBatchUpdateSuratJalanStatus(trip)) {
+    final availableStatuses = _availableSuratJalanStatuses(trip);
+    if (!_canUpdateSuratJalanStatus(trip) || availableStatuses.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -713,18 +715,29 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       return;
     }
 
-    final eligibleRefs = _batchStatusEligibleReferences(trip, nextStatus);
-    final selectedRefs = eligibleRefs
-        .map((reference) => _suratJalanRefForBatch(trip, reference))
-        .toSet();
+    final preferredStatus = _preferredSuratJalanStatus(trip);
+    var selectedStatus = availableStatuses.contains(preferredStatus)
+        ? preferredStatus!
+        : availableStatuses.first;
+    final selectedRefs = _suratJalanStatusEligibleReferences(
+      trip,
+      selectedStatus,
+    ).map((reference) => _suratJalanRefForBatch(trip, reference)).toSet();
 
-    final result = await showDialog<List<String>>(
+    final result = await showDialog<_SuratJalanStatusSelection>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final eligibleRefs = _suratJalanStatusEligibleReferences(
+              trip,
+              selectedStatus,
+            );
+            final targetLabel = _apiStatusLabel(
+              _statusApiValue(selectedStatus),
+            );
             return AlertDialog(
-              title: const Text('Update Status Batch SJ'),
+              title: const Text('Update Status SJ'),
               content: SizedBox(
                 width: double.maxFinite,
                 child: ConstrainedBox(
@@ -733,14 +746,50 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     shrinkWrap: true,
                     children: [
                       Text(
-                        'Tujuan status: ${_apiStatusLabel(_statusApiValue(nextStatus))}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
+                        'Status SJ saat ini: ${_suratJalanStatusDistributionText(trip)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<TripStatus>(
+                        key: ValueKey(selectedStatus),
+                        initialValue: selectedStatus,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Status Tujuan',
                         ),
+                        items: availableStatuses
+                            .map(
+                              (status) => DropdownMenuItem(
+                                value: status,
+                                child: Text(
+                                  _apiStatusLabel(_statusApiValue(status)),
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            selectedStatus = value;
+                            selectedRefs
+                              ..clear()
+                              ..addAll(
+                                _suratJalanStatusEligibleReferences(
+                                  trip,
+                                  selectedStatus,
+                                ).map(
+                                  (reference) =>
+                                      _suratJalanRefForBatch(trip, reference),
+                                ),
+                              );
+                          });
+                        },
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Pilih SJ yang akan diupdate. Status trip utama tidak berubah.',
+                        selectedStatus == TripStatus.delivered
+                            ? 'Pilih SJ yang akan diajukan terkirim. Setelah ini driver mengisi POD dan realisasi muatan.'
+                            : 'Pilih SJ yang akan diupdate. Status trip utama mengikuti progres SJ.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       if (trip.shipperReferences.length >
@@ -757,7 +806,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         final eligible = _canMoveReferenceToStatus(
                           trip,
                           reference,
-                          nextStatus,
+                          selectedStatus,
                         );
                         final pending = trip
                             .isShipperReferencePendingFinalization(reference);
@@ -781,7 +830,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                           subtitle: Text(
                             pending
                                 ? 'Menunggu approval admin'
-                                : 'Status sekarang: $currentLabel',
+                                : 'Status sekarang: $currentLabel -> $targetLabel',
                           ),
                           controlAffinity: ListTileControlAffinity.leading,
                           contentPadding: EdgeInsets.zero,
@@ -799,9 +848,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 FilledButton.icon(
                   onPressed: selectedRefs.isEmpty
                       ? null
-                      : () => Navigator.of(
-                          context,
-                        ).pop(selectedRefs.toList(growable: false)),
+                      : () => Navigator.of(context).pop(
+                          _SuratJalanStatusSelection(
+                            status: selectedStatus,
+                            targetSuratJalanRefs: selectedRefs.toList(
+                              growable: false,
+                            ),
+                          ),
+                        ),
                   icon: const Icon(Icons.sync_alt_rounded),
                   label: Text('Update ${selectedRefs.length} SJ'),
                 ),
@@ -812,7 +866,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       },
     );
 
-    if (result == null || result.isEmpty) {
+    if (result == null || result.targetSuratJalanRefs.isEmpty) {
+      return;
+    }
+
+    if (result.status == TripStatus.delivered) {
+      await _openDeliveryCompletion(
+        trip,
+        initialSelectedSuratJalanRefs: result.targetSuratJalanRefs,
+      );
       return;
     }
 
@@ -821,15 +883,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       await _deliveryOrderService.updateBatchSuratJalanStatus(
         sessionToken: sessionToken,
         deliveryOrderId: trip.deliveryOrderId,
-        status: nextStatus,
-        targetSuratJalanRefs: result,
-        note: _statusNoteForUpdate(nextStatus),
+        status: result.status,
+        targetSuratJalanRefs: result.targetSuratJalanRefs,
+        note: _statusNoteForUpdate(result.status),
       );
       await _loadTrips();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${result.length} SJ berhasil diupdate.'),
+          content: Text(
+            '${result.targetSuratJalanRefs.length} SJ berhasil diupdate.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1003,103 +1067,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   // ── Trip actions ───────────────────────────────────────────
 
-  Future<void> _advanceStatus() async {
-    final trip = _selectedTrip;
-    final sessionToken = widget.session.token;
-    if (trip == null || sessionToken == null || sessionToken.isEmpty) return;
-    if (trip.hasBlockingAdminApproval) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip ini sudah menunggu approval admin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    if (trip.isTripClosedByAdmin) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Trip sudah ditutup admin. Tidak bisa diubah dari aplikasi driver.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    final nextStatus = switch (trip.status) {
-      TripStatus.assigned => TripStatus.headingToPickup,
-      TripStatus.headingToPickup => TripStatus.onDelivery,
-      TripStatus.onDelivery => TripStatus.arrived,
-      TripStatus.arrived => TripStatus.delivered,
-      TripStatus.partialHold => TripStatus.delivered,
-      TripStatus.delivered => TripStatus.delivered,
-    };
-    if (trip.status == TripStatus.arrived ||
-        trip.status == TripStatus.partialHold) {
-      if (!trip.canRequestMoreFinalization) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'SJ yang bisa diajukan sedang menunggu approval admin.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-      await _openDeliveryCompletion(trip);
-      return;
-    }
-    setState(() => _updatingStatus = true);
-    try {
-      final updatedTrip = await _deliveryOrderService.updateTripStatus(
-        sessionToken: sessionToken,
-        deliveryOrderId: trip.deliveryOrderId,
-        status: nextStatus,
-        note: _statusNoteForUpdate(nextStatus),
-      );
-      await _loadTrips();
-      if (!mounted) return;
-      if (nextStatus == TripStatus.delivered &&
-          updatedTrip.status == TripStatus.delivered) {
-        _pingCounterTimer?.cancel();
-        _trackingService.stop();
-        setState(() {
-          _activeTrip = null;
-          _trackingEnabled = false;
-          _pingCount = 0;
-        });
-      } else if (nextStatus == TripStatus.delivered &&
-          updatedTrip.isAwaitingAdminApproval) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Permintaan selesai dikirim. Menunggu approval admin.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } on DeliveryOrderException catch (err) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _updatingStatus = false);
-      }
-    }
-  }
-
-  Future<void> _openDeliveryCompletion(DeliveryTrip trip) async {
+  Future<void> _openDeliveryCompletion(
+    DeliveryTrip trip, {
+    List<String> initialSelectedSuratJalanRefs = const [],
+  }) async {
     final sessionToken = widget.session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
@@ -1123,6 +1094,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             builder: (_) => DeliveryCompletionPage(
               trip: trip,
               customerRecipients: _recipientsForCustomer(trip.customerRef),
+              initialSelectedSuratJalanRefs: initialSelectedSuratJalanRefs,
             ),
           ),
         );
@@ -1217,7 +1189,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            void submit() {
+            Future<void> submit() async {
               final odometer = _parseOdometerInput(odometerController.text);
               if (odometer == null || odometer <= 0) {
                 setDialogState(
@@ -1232,7 +1204,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 );
                 return;
               }
-              Navigator.of(context).pop(
+              await _popDialogAfterKeyboardDismiss<_TripClosureSubmitResult>(
+                context,
                 _TripClosureSubmitResult(
                   odometerKm: odometer,
                   note: noteController.text.trim(),
@@ -1240,62 +1213,64 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return MobileInputVisibilityRoot(
-              child: AlertDialog(
-                title: const Text('Tutup Trip'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Odometer kendaraan terakhir: ${_formatKm(currentOdometer)} km',
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.65),
-                        ),
+            return AlertDialog(
+              title: const Text('Tutup Trip'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Odometer kendaraan terakhir: ${_formatKm(currentOdometer)} km',
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: odometerController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false,
-                        ),
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: InputDecoration(
-                          labelText: 'Odometer Akhir Trip',
-                          suffixText: 'km',
-                          errorText: errorText,
-                        ),
-                        onSubmitted: (_) => submit(),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: odometerController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: noteController,
-                        minLines: 2,
-                        maxLines: 4,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Catatan',
-                          hintText: 'Opsional',
-                        ),
+                      scrollPadding: _keyboardAwareScrollPadding(context),
+                      decoration: InputDecoration(
+                        labelText: 'Odometer Akhir Trip',
+                        suffixText: 'km',
+                        errorText: errorText,
                       ),
-                    ],
-                  ),
+                      onSubmitted: (_) => unawaited(submit()),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      minLines: 2,
+                      maxLines: 4,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
+                      decoration: const InputDecoration(
+                        labelText: 'Catatan',
+                        hintText: 'Opsional',
+                      ),
+                    ),
+                  ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Batal'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: submit,
-                    icon: const Icon(Icons.lock_clock_rounded),
-                    label: const Text('Ajukan Tutup Trip'),
-                  ),
-                ],
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => unawaited(
+                    _popDialogAfterKeyboardDismiss<_TripClosureSubmitResult>(
+                      context,
+                    ),
+                  ),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => unawaited(submit()),
+                  icon: const Icon(Icons.lock_clock_rounded),
+                  label: const Text('Ajukan Tutup Trip'),
+                ),
+              ],
             );
           },
         );
@@ -1370,7 +1345,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            void submit() {
+            Future<void> submit() async {
               final locationText = locationController.text.trim();
               final description = descriptionController.text.trim();
               final odometer = _parseOdometerInput(odometerController.text);
@@ -1390,7 +1365,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 );
                 return;
               }
-              Navigator.of(context).pop(
+              await _popDialogAfterKeyboardDismiss<_IncidentReportSubmitResult>(
+                context,
                 _IncidentReportSubmitResult(
                   incidentType: incidentType,
                   urgency: urgency,
@@ -1401,129 +1377,128 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return MobileInputVisibilityRoot(
-              child: AlertDialog(
-                title: Text('Lapor Insiden ${trip.doNumber}'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (errorText != null) ...[
-                        Text(
-                          errorText!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      DropdownButtonFormField<String>(
-                        initialValue: incidentType,
-                        decoration: const InputDecoration(
-                          labelText: 'Tipe Insiden',
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'OTHER',
-                            child: Text('Lainnya'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'ENGINE_TROUBLE',
-                            child: Text('Mesin bermasalah'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'BLOWOUT_TIRE',
-                            child: Text('Ban pecah'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'ACCIDENT_MINOR',
-                            child: Text('Kecelakaan ringan'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'ACCIDENT_MAJOR',
-                            child: Text('Kecelakaan berat'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDialogState(() => incidentType = value);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: urgency,
-                        decoration: const InputDecoration(labelText: 'Urgensi'),
-                        items: const [
-                          DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
-                          DropdownMenuItem(
-                            value: 'MEDIUM',
-                            child: Text('Sedang'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'HIGH',
-                            child: Text('Tinggi'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDialogState(() => urgency = value);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: locationController,
-                        minLines: 1,
-                        maxLines: 3,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Lokasi Insiden',
-                          hintText: 'Koordinat / nama jalan / lokasi kejadian',
+            return AlertDialog(
+              title: Text('Lapor Insiden ${trip.doNumber}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (errorText != null) ...[
+                      Text(
+                        errorText!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: odometerController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false,
-                        ),
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Odometer Saat Insiden',
-                          suffixText: 'km',
-                        ),
-                        onSubmitted: (_) => submit(),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: descriptionController,
-                        minLines: 4,
-                        maxLines: 6,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Kronologi',
-                          hintText:
-                              'Jelaskan kejadian dan kondisi kendaraan/barang',
-                        ),
-                      ),
                     ],
-                  ),
+                    DropdownButtonFormField<String>(
+                      initialValue: incidentType,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipe Insiden',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'OTHER',
+                          child: Text('Lainnya'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ENGINE_TROUBLE',
+                          child: Text('Mesin bermasalah'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'BLOWOUT_TIRE',
+                          child: Text('Ban pecah'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ACCIDENT_MINOR',
+                          child: Text('Kecelakaan ringan'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ACCIDENT_MAJOR',
+                          child: Text('Kecelakaan berat'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => incidentType = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: urgency,
+                      decoration: const InputDecoration(labelText: 'Urgensi'),
+                      items: const [
+                        DropdownMenuItem(value: 'LOW', child: Text('Rendah')),
+                        DropdownMenuItem(
+                          value: 'MEDIUM',
+                          child: Text('Sedang'),
+                        ),
+                        DropdownMenuItem(value: 'HIGH', child: Text('Tinggi')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => urgency = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: locationController,
+                      minLines: 1,
+                      maxLines: 3,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
+                      decoration: const InputDecoration(
+                        labelText: 'Lokasi Insiden',
+                        hintText: 'Koordinat / nama jalan / lokasi kejadian',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: odometerController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
+                      ),
+                      scrollPadding: _keyboardAwareScrollPadding(context),
+                      decoration: const InputDecoration(
+                        labelText: 'Odometer Saat Insiden',
+                        suffixText: 'km',
+                      ),
+                      onSubmitted: (_) => unawaited(submit()),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descriptionController,
+                      minLines: 4,
+                      maxLines: 6,
+                      scrollPadding: _keyboardAwareScrollPadding(context),
+                      decoration: const InputDecoration(
+                        labelText: 'Kronologi',
+                        hintText:
+                            'Jelaskan kejadian dan kondisi kendaraan/barang',
+                      ),
+                    ),
+                  ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Batal'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: submit,
-                    icon: const Icon(Icons.report_problem_outlined),
-                    label: const Text('Kirim Laporan'),
-                  ),
-                ],
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => unawaited(
+                    _popDialogAfterKeyboardDismiss<_IncidentReportSubmitResult>(
+                      context,
+                    ),
+                  ),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => unawaited(submit()),
+                  icon: const Icon(Icons.report_problem_outlined),
+                  label: const Text('Kirim Laporan'),
+                ),
+              ],
             );
           },
         );
@@ -1620,13 +1595,24 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            void removeCostRow(int index) {
+            Future<void> removeCostRow(int index) async {
+              if (index < 0 || index >= costRows.length) return;
+              final confirmed = await showMobileActionConfirmation(
+                context,
+                title: 'Hapus biaya ini?',
+                message:
+                    'Baris biaya driver ini akan dihapus dari draft penyelesaian insiden. Data belum dikirim sebelum kamu menekan Kirim ke Admin.',
+                confirmLabel: 'Hapus Biaya',
+                icon: Icons.delete_outline_rounded,
+                destructive: true,
+              );
+              if (!context.mounted || !confirmed) return;
               final removed = costRows.removeAt(index);
               removed.dispose();
               setDialogState(() {});
             }
 
-            void submit() {
+            Future<void> submit() async {
               final note = noteController.text.trim();
               if (note.isEmpty) {
                 setDialogState(
@@ -1668,7 +1654,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 );
               }
 
-              Navigator.of(context).pop(
+              await _popDialogAfterKeyboardDismiss<
+                _IncidentResolutionSubmitResult
+              >(
+                context,
                 _IncidentResolutionSubmitResult(
                   note: note,
                   locationText: locationController.text.trim(),
@@ -1678,118 +1667,116 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               );
             }
 
-            return MobileInputVisibilityRoot(
-              child: AlertDialog(
-                title: Text('Ajukan Selesai ${incident.incidentNumber}'),
-                content: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 460),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+            return AlertDialog(
+              title: Text('Ajukan Selesai ${incident.incidentNumber}'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${trip.doNumber} | ${trip.vehiclePlate}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      if (errorText != null) ...[
                         Text(
-                          '${trip.doNumber} | ${trip.vehiclePlate}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 12),
-                        if (errorText != null) ...[
-                          Text(
-                            errorText!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        TextField(
-                          controller: noteController,
-                          minLines: 3,
-                          maxLines: 5,
-                          scrollPadding: _keyboardAwareScrollPadding(context),
-                          decoration: const InputDecoration(
-                            labelText: 'Catatan Penyelesaian',
-                            hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                          errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: locationController,
-                          minLines: 1,
-                          maxLines: 3,
-                          scrollPadding: _keyboardAwareScrollPadding(context),
-                          decoration: const InputDecoration(
-                            labelText: 'Lokasi Akhir',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: odometerController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: false,
-                          ),
-                          scrollPadding: _keyboardAwareScrollPadding(context),
-                          decoration: const InputDecoration(
-                            labelText: 'Odometer Akhir',
-                            suffixText: 'km',
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Biaya Driver',
-                                style: TextStyle(fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: addCostRow,
-                              icon: const Icon(Icons.add_rounded),
-                              label: const Text('Tambah'),
-                            ),
-                          ],
-                        ),
-                        if (costRows.isEmpty)
-                          Text(
-                            'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.58),
-                              fontSize: 12.5,
-                            ),
-                          ),
-                        for (
-                          var index = 0;
-                          index < costRows.length;
-                          index++
-                        ) ...[
-                          const SizedBox(height: 10),
-                          _IncidentCostInputCard(
-                            key: ObjectKey(costRows[index]),
-                            row: costRows[index],
-                            index: index,
-                            onRemove: () => removeCostRow(index),
-                          ),
-                        ],
                       ],
-                    ),
+                      TextField(
+                        controller: noteController,
+                        minLines: 3,
+                        maxLines: 5,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Catatan Penyelesaian',
+                          hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: locationController,
+                        minLines: 1,
+                        maxLines: 3,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Lokasi Akhir',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: odometerController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Odometer Akhir',
+                          suffixText: 'km',
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Biaya Driver',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: addCostRow,
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Tambah'),
+                          ),
+                        ],
+                      ),
+                      if (costRows.isEmpty)
+                        Text(
+                          'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.58),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      for (var index = 0; index < costRows.length; index++) ...[
+                        const SizedBox(height: 10),
+                        _IncidentCostInputCard(
+                          key: ObjectKey(costRows[index]),
+                          row: costRows[index],
+                          index: index,
+                          onRemove: () => unawaited(removeCostRow(index)),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Batal'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: submit,
-                    icon: const Icon(Icons.task_alt_rounded),
-                    label: const Text('Kirim ke Admin'),
-                  ),
-                ],
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => unawaited(
+                    _popDialogAfterKeyboardDismiss<
+                      _IncidentResolutionSubmitResult
+                    >(context),
+                  ),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => unawaited(submit()),
+                  icon: const Icon(Icons.task_alt_rounded),
+                  label: const Text('Kirim ke Admin'),
+                ),
+              ],
             );
           },
         );
@@ -1865,6 +1852,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return 'start';
   }
 
+  String? get _activeActionMessage {
+    if (_submittingManifest) return 'Menyimpan SJ dan barang...';
+    if (_updatingBatchStatus) return 'Mengupdate status SJ...';
+    if (_updatingStatus) return 'Mengirim update trip...';
+    if (_reportingIncident) return 'Mengirim laporan insiden...';
+    if (_submittingIncidentResolution) {
+      return 'Mengirim penyelesaian insiden...';
+    }
+    return null;
+  }
+
   Future<void> _confirmLogout() async {
     final lockedTrip = _trips.firstWhereOrNull(
       (trip) =>
@@ -1916,6 +1914,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 (accessNotice.warningAcknowledgedAt == null ||
                     accessNotice.warningAcknowledgedAt!.isEmpty)));
     final blockingNotice = hasBlockingNotice ? accessNotice : null;
+    final actionMessage = _activeActionMessage;
 
     return Scaffold(
       appBar: AppBar(
@@ -2063,22 +2062,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     ),
                     const SizedBox(height: 12),
                     _TripStatusActionsCard(
-                      trip: _selectedTrip!,
-                      showBatchSection:
-                          _selectedTrip!.shipperReferenceCount > 1,
-                      batchButtonLabel: _batchStatusButtonLabel(
-                        _nextBatchSuratJalanStatus(_selectedTrip!),
-                      ),
-                      batchHelperText: _batchStatusHelperText(_selectedTrip!),
-                      batchEnabled: _canBatchUpdateSuratJalanStatus(
-                        _selectedTrip!,
-                      ),
-                      batchBusy: _updatingBatchStatus,
-                      onBatchPressed: () =>
-                          unawaited(_openBatchSuratJalanStatus(_selectedTrip!)),
-                      onAdvancePressed: !_canAdvanceTrip(_selectedTrip!)
-                          ? null
-                          : () => unawaited(_advanceStatus()),
+                      buttonLabel: 'Update Status SJ',
+                      helperText: _suratJalanStatusHelperText(_selectedTrip!),
+                      enabled: _canUpdateSuratJalanStatus(_selectedTrip!),
+                      busy: _updatingBatchStatus,
+                      onPressed: () =>
+                          unawaited(_openSuratJalanStatus(_selectedTrip!)),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -2147,23 +2136,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       location: _latestLocation,
                       pingCount: _pingCount,
                     ),
-                    if (_activeTrip == null ||
-                        _activeTrip!.deliveryOrderId ==
-                            _selectedTrip!.deliveryOrderId) ...[
-                      const SizedBox(height: 12),
-                      _AdvanceButton(
-                        status: _selectedTrip!.status,
-                        awaitingAdminApproval:
-                            _selectedTrip!.hasBlockingAdminApproval ||
-                            (_selectedTrip!.isAwaitingAdminApproval &&
-                                !_selectedTrip!.canRequestMoreFinalization),
-                        onPressed: !_canAdvanceTrip(_selectedTrip!)
-                            ? null
-                            : (_updatingStatus
-                                  ? null
-                                  : () => unawaited(_advanceStatus())),
-                      ),
-                    ],
                     if (_selectedTrip!.status == TripStatus.delivered &&
                         !_selectedTrip!.isAwaitingAdminApproval &&
                         !_selectedTrip!.isTripClosedByAdmin) ...[
@@ -2301,6 +2273,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 ),
               ),
             ),
+          if (actionMessage != null)
+            MobileActionOverlay(message: actionMessage),
         ],
       ),
     );
@@ -2455,6 +2429,16 @@ final _dateOnlyPattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
 
 EdgeInsets _keyboardAwareScrollPadding(BuildContext context) {
   return const EdgeInsets.fromLTRB(20, 20, 20, 120);
+}
+
+Future<void> _popDialogAfterKeyboardDismiss<T extends Object?>(
+  BuildContext context, [
+  T? result,
+]) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await Future<void>.delayed(const Duration(milliseconds: 150));
+  if (!context.mounted) return;
+  Navigator.of(context).pop<T>(result);
 }
 
 DateTime _toJakartaDateTime(DateTime value) {
@@ -2730,6 +2714,16 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
   );
 
   return document.save();
+}
+
+class _SuratJalanStatusSelection {
+  const _SuratJalanStatusSelection({
+    required this.status,
+    required this.targetSuratJalanRefs,
+  });
+
+  final TripStatus status;
+  final List<String> targetSuratJalanRefs;
 }
 
 String _incidentStatusLabel(String status) {
@@ -3516,7 +3510,7 @@ class _TripListCard extends StatelessWidget {
                     color: scheme.primary,
                     size: 16,
                   ),
-                _StatusChip(status: trip.status),
+                _StatusChip(status: trip.status, prefix: 'Trip'),
               ],
             ),
             const SizedBox(height: 6),
@@ -3718,16 +3712,20 @@ class _ManifestSummaryCard extends StatelessWidget {
                 ),
               )
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Column(
                 children: shipperRefs
-                    .map(
-                      (shipperRef) => Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
+                    .map((shipperRef) {
+                      final status =
+                          shipperRef.tripStatus?.trim().isNotEmpty == true
+                          ? shipperRef.tripStatus!.trim()
+                          : deliveryStatusApiValue(trip.status);
+                      final targetLabel = shipperRef.targetLabel.trim();
+                      final pickupAddress =
+                          shipperRef.pickupAddress?.trim() ?? '';
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: scheme.surface,
                           borderRadius: BorderRadius.circular(12),
@@ -3736,21 +3734,41 @@ class _ManifestSummaryCard extends StatelessWidget {
                           ),
                         ),
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              shipperRef.referenceNumber,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  shipperRef.referenceNumber,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                _SuratJalanStatusChip(status: status),
+                              ],
                             ),
-                            if (shipperRef.pickupAddress?.trim().isNotEmpty ==
-                                true) ...[
+                            if (targetLabel.isNotEmpty &&
+                                targetLabel != '-') ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                targetLabel,
+                                style: TextStyle(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.72,
+                                  ),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            if (pickupAddress.isNotEmpty) ...[
                               const SizedBox(height: 3),
                               Text(
-                                shipperRef.pickupAddress!.trim(),
+                                pickupAddress,
                                 style: TextStyle(
                                   color: scheme.onSurface.withValues(
                                     alpha: 0.58,
@@ -3762,8 +3780,8 @@ class _ManifestSummaryCard extends StatelessWidget {
                             ],
                           ],
                         ),
-                      ),
-                    )
+                      );
+                    })
                     .toList(growable: false),
               ),
             const SizedBox(height: 10),
@@ -3786,24 +3804,18 @@ class _ManifestSummaryCard extends StatelessWidget {
 
 class _TripStatusActionsCard extends StatelessWidget {
   const _TripStatusActionsCard({
-    required this.trip,
-    required this.showBatchSection,
-    required this.batchButtonLabel,
-    required this.batchHelperText,
-    required this.batchEnabled,
-    required this.batchBusy,
-    required this.onAdvancePressed,
-    required this.onBatchPressed,
+    required this.buttonLabel,
+    required this.helperText,
+    required this.enabled,
+    required this.busy,
+    required this.onPressed,
   });
 
-  final DeliveryTrip trip;
-  final bool showBatchSection;
-  final String batchButtonLabel;
-  final String batchHelperText;
-  final bool batchEnabled;
-  final bool batchBusy;
-  final VoidCallback? onAdvancePressed;
-  final VoidCallback onBatchPressed;
+  final String buttonLabel;
+  final String helperText;
+  final bool enabled;
+  final bool busy;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -3820,69 +3832,44 @@ class _TripStatusActionsCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Aksi Status',
+              'Update Status SJ',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 4),
             Text(
-              'Status trip utama dan status SJ batch dipisah.',
+              'Pilih status tujuan dan SJ yang akan diupdate.',
               style: helperStyle,
             ),
-            const SizedBox(height: 14),
-            const Text(
-              'Status Trip',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            ),
-            const SizedBox(height: 4),
-            Text('Mengubah progres utama trip.', style: helperStyle),
-            const SizedBox(height: 8),
-            _AdvanceButton(
-              status: trip.status,
-              awaitingAdminApproval:
-                  trip.hasBlockingAdminApproval ||
-                  (trip.isAwaitingAdminApproval &&
-                      !trip.canRequestMoreFinalization),
-              onPressed: onAdvancePressed,
-            ),
-            if (showBatchSection) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Status SJ (Batch)',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Mengubah SJ yang dipilih, bukan status trip utama.',
-                style: helperStyle,
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: batchEnabled ? onBatchPressed : null,
-                  icon: batchBusy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.sync_alt_rounded),
-                  label: Text(batchButtonLabel),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: enabled ? onPressed : null,
+                icon: busy
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.onPrimary,
+                        ),
+                      )
+                    : const Icon(Icons.sync_alt_rounded),
+                label: Text(buttonLabel),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(batchHelperText, style: helperStyle),
-            ],
+            ),
+            const SizedBox(height: 6),
+            Text(helperText, style: helperStyle),
           ],
         ),
       ),
@@ -4171,7 +4158,7 @@ class _TripDetailCard extends StatelessWidget {
                     fontSize: 15,
                   ),
                 ),
-                _StatusChip(status: trip.status),
+                _StatusChip(status: trip.status, prefix: 'Trip'),
               ],
             ),
             const SizedBox(height: 8),
@@ -4587,51 +4574,6 @@ class _StatMini extends StatelessWidget {
 }
 
 // ── Buttons ────────────────────────────────────────────────
-class _AdvanceButton extends StatelessWidget {
-  const _AdvanceButton({
-    required this.status,
-    required this.onPressed,
-    this.awaitingAdminApproval = false,
-  });
-  final TripStatus status;
-  final VoidCallback? onPressed;
-  final bool awaitingAdminApproval;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = awaitingAdminApproval
-        ? 'Tunggu approval'
-        : switch (status) {
-            TripStatus.assigned => 'Ke pickup',
-            TripStatus.headingToPickup => 'Mulai kirim',
-            TripStatus.onDelivery => 'Tandai Tiba',
-            TripStatus.arrived => 'Ajukan Selesai',
-            TripStatus.partialHold => 'Ajukan Selesai',
-            TripStatus.delivered => 'Trip selesai',
-          };
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.tonalIcon(
-        onPressed: onPressed,
-        icon: Icon(
-          status == TripStatus.delivered
-              ? Icons.check_circle_rounded
-              : Icons.flag_circle_rounded,
-          size: 18,
-        ),
-        label: Text(label),
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Status chip ────────────────────────────────────────────
 class _CloseTripButton extends StatelessWidget {
   const _CloseTripButton({required this.onPressed});
@@ -4658,21 +4600,56 @@ class _CloseTripButton extends StatelessWidget {
   }
 }
 
+Color _deliveryStatusColor(String status, ColorScheme scheme) {
+  return switch (status.trim().toUpperCase()) {
+    'CREATED' => const Color(0xFF64748B),
+    'HEADING_TO_PICKUP' => const Color(0xFF2563EB),
+    'ON_DELIVERY' => scheme.primary,
+    'ARRIVED' => const Color(0xFFB45309),
+    'PARTIAL_HOLD' => const Color(0xFFB45309),
+    'DELIVERED' => const Color(0xFF15803D),
+    'CANCELLED' => const Color(0xFFB91C1C),
+    _ => scheme.onSurface.withValues(alpha: 0.68),
+  };
+}
+
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, this.prefix});
   final TripStatus status;
+  final String? prefix;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final (label, color) = switch (status) {
-      TripStatus.assigned => ('Siap', const Color(0xFF64748B)),
-      TripStatus.headingToPickup => ('Pickup', const Color(0xFF2563EB)),
-      TripStatus.onDelivery => ('Kirim', scheme.primary),
-      TripStatus.arrived => ('Tiba', const Color(0xFFB45309)),
-      TripStatus.partialHold => ('Hold', const Color(0xFFB45309)),
-      TripStatus.delivered => ('Selesai', const Color(0xFF15803D)),
-    };
+    final apiStatus = deliveryStatusApiValue(status);
+    final color = _deliveryStatusColor(apiStatus, scheme);
+    final statusLabel = deliveryStatusLabel(apiStatus);
+    final label = prefix == null ? statusLabel : '$prefix: $statusLabel';
+    return _StatusPill(label: label, color: color);
+  }
+}
+
+class _SuratJalanStatusChip extends StatelessWidget {
+  const _SuratJalanStatusChip({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = _deliveryStatusColor(status, scheme);
+    return _StatusPill(label: deliveryStatusLabel(status), color: color);
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(

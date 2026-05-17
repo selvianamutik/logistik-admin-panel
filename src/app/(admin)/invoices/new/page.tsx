@@ -439,7 +439,19 @@ export default function NewNotaPage() {
         });
     }, [buildCalculatedRow]);
 
-    const applyCustomerFromInvoiceRows = (nextRows: NotaItemRow[]) => {
+    const applyCustomerDefaults = (selectedCustomer: Customer) => {
+        setBillingMode(normalizeFreightNotaBillingMode(selectedCustomer.defaultFreightNotaBillingMode));
+        setPph23Enabled(selectedCustomer.defaultPph23Enabled === true);
+        setPph23RatePercent(
+            typeof selectedCustomer.defaultPph23RatePercent === 'number'
+                ? selectedCustomer.defaultPph23RatePercent
+                : DEFAULT_PPH23_RATE_PERCENT
+        );
+        setPph23BaseMode(selectedCustomer.defaultPph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM');
+    };
+
+    const applyCustomerFromInvoiceRows = (nextRows: NotaItemRow[]): { ok: boolean; billingMode: FreightNotaBillingMode } => {
+        let effectiveBillingMode = billingMode;
         if (!customerRef) {
             const rowCustomers: Array<[string, string]> = Array.from(
                 new Map(
@@ -450,12 +462,17 @@ export default function NewNotaPage() {
             );
             if (rowCustomers.length > 1) {
                 addToast('error', 'DO ini punya SJ dengan customer invoice berbeda. Pilih customer invoice dulu.');
-                return false;
+                return { ok: false, billingMode: effectiveBillingMode };
             }
             if (rowCustomers.length === 1) {
                 const [nextCustomerRef, nextCustomerName] = rowCustomers[0];
                 setCustomerRef(nextCustomerRef);
                 setCustomerName(nextCustomerName);
+                const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
+                if (selectedCustomer) {
+                    effectiveBillingMode = normalizeFreightNotaBillingMode(selectedCustomer.defaultFreightNotaBillingMode);
+                    applyCustomerDefaults(selectedCustomer);
+                }
             }
         } else if (!customerName) {
             const selectedCustomerName = customers.find(customer => customer._id === customerRef)?.name || '';
@@ -463,7 +480,7 @@ export default function NewNotaPage() {
                 setCustomerName(selectedCustomerName);
             }
         }
-        return true;
+        return { ok: true, billingMode: effectiveBillingMode };
     };
 
     const openDORowSelector = (doId: string) => {
@@ -478,17 +495,25 @@ export default function NewNotaPage() {
             return;
         }
 
-        if (!applyCustomerFromInvoiceRows(nextRows)) {
+        const customerApplication = applyCustomerFromInvoiceRows(nextRows);
+        if (!customerApplication.ok) {
             return;
         }
 
         const groupKeys = [...new Set(nextRows.map(getInvoiceRowSjGroupKey))];
         setPendingDoSelection({
             deliveryOrder,
-            rows: nextRows.map(row => buildCalculatedRow(row)),
+            rows: nextRows.map(row => buildCalculatedRow(row, customerApplication.billingMode)),
             selectedGroupKeys: groupKeys.length === 1 ? groupKeys : [],
         });
     };
+
+    useEffect(() => {
+        setPendingDoSelection(previous => previous ? ({
+            ...previous,
+            rows: previous.rows.map(row => buildCalculatedRow(row)),
+        }) : previous);
+    }, [buildCalculatedRow]);
 
     const togglePendingSjGroup = (groupKey: string) => {
         setPendingDoSelection(previous => {

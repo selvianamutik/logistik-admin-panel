@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
+import 'mobile_action_feedback.dart';
 import 'mobile_input_visibility.dart';
 import 'mobile_unit_selector_field.dart';
 
@@ -166,7 +167,26 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
-  void _removeGroup(String groupId) {
+  Future<void> _removeGroup(String groupId) async {
+    final group = _groups.firstWhere(
+      (entry) => entry.id == groupId,
+      orElse: () => _groups.first,
+    );
+    final hasExistingCargo = group.items.any(
+      (item) => item.sourceCargoItemId.trim().isNotEmpty,
+    );
+    final confirmed = await showMobileActionConfirmation(
+      context,
+      title: 'Hapus SJ ini?',
+      message: hasExistingCargo
+          ? 'SJ dan barang yang sudah tercatat di dalamnya akan ditandai hapus saat kamu menekan Simpan. Data belum dikirim sebelum disimpan.'
+          : 'Draft SJ dan barang di dalamnya akan hilang dari layar ini.',
+      confirmLabel: 'Hapus SJ',
+      icon: Icons.delete_outline_rounded,
+      destructive: true,
+    );
+    if (!mounted || !confirmed) return;
+
     setState(() {
       final nextGroups = _groups.where((group) => group.id != groupId).toList();
       _groups = nextGroups.isNotEmpty
@@ -214,7 +234,31 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
-  void _removeItem(String groupId, String itemId) {
+  Future<void> _removeItem(String groupId, String itemId) async {
+    _ManifestItemDraft? targetItem;
+    for (final group in _groups) {
+      if (group.id != groupId) continue;
+      for (final item in group.items) {
+        if (item.id == itemId) {
+          targetItem = item;
+          break;
+        }
+      }
+    }
+    final isExistingCargo =
+        targetItem?.sourceCargoItemId.trim().isNotEmpty == true;
+    final confirmed = await showMobileActionConfirmation(
+      context,
+      title: 'Hapus barang ini?',
+      message: isExistingCargo
+          ? 'Barang yang sudah tercatat akan ditandai hapus saat kamu menekan Simpan. Data belum dikirim sebelum disimpan.'
+          : 'Draft barang ini akan dihapus dari SJ.',
+      confirmLabel: 'Hapus Barang',
+      icon: Icons.remove_circle_outline_rounded,
+      destructive: true,
+    );
+    if (!mounted || !confirmed) return;
+
     setState(() {
       _groups = _groups
           .map((group) {

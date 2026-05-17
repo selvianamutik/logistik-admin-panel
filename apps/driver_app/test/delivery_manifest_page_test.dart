@@ -537,6 +537,17 @@ void main() {
       expect(find.text('Hapus SJ'), findsAtLeastNWidgets(1));
       await tester.tap(find.text('Hapus SJ').first);
       await tester.pumpAndSettle();
+      expect(find.text('Hapus SJ ini?'), findsOneWidget);
+      expect(find.textContaining('ditandai hapus'), findsOneWidget);
+
+      await tester.tap(find.text('Batal'));
+      await tester.pumpAndSettle();
+      expect(find.text('SJ-A'), findsWidgets);
+
+      await tester.tap(find.text('Hapus SJ').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Hapus SJ'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Simpan SJ & Barang'));
       await tester.pumpAndSettle();
 

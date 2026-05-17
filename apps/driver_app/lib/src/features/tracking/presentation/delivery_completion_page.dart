@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
+import 'mobile_action_feedback.dart';
 import 'mobile_input_visibility.dart';
 import 'mobile_unit_selector_field.dart';
 
@@ -12,10 +13,12 @@ class DeliveryCompletionPage extends StatefulWidget {
     super.key,
     required this.trip,
     required this.customerRecipients,
+    this.initialSelectedSuratJalanRefs = const [],
   });
 
   final DeliveryTrip trip;
   final List<CustomerRecipientOption> customerRecipients;
+  final List<String> initialSelectedSuratJalanRefs;
 
   @override
   State<DeliveryCompletionPage> createState() => _DeliveryCompletionPageState();
@@ -43,6 +46,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
     _selectedShipperReferenceValues = _initialSelectedReferenceValues(
       widget.trip,
       _cargoDrafts,
+      widget.initialSelectedSuratJalanRefs,
     );
     _dropDrafts = _normalizeDropDraftsForSelectedReferences(
       _dropDrafts,
@@ -152,6 +156,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   void _updateDrop(
     String draftId, {
     String? stopType,
+    String? deliveryOrderItemRef,
+    List<String>? deliveryOrderItemRefs,
     String? locationName,
     String? locationAddress,
     String? qtyKoli,
@@ -165,58 +171,116 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   }) {
     setState(() {
       _dropDrafts = _dropDrafts
-          .map(
-            (draft) => draft.id == draftId
-                ? draft.copyWith(
-                    stopType: stopType,
-                    locationName: locationName,
-                    locationAddress: locationAddress,
-                    qtyKoli: qtyKoli,
-                    weightInputValue: weightInputValue,
-                    weightInputUnit: weightInputUnit,
-                    volumeInputValue: volumeInputValue,
-                    volumeInputUnit: volumeInputUnit,
-                    shipperReferenceNumber: shipperReferenceNumber,
-                    shipperReferenceKey: shipperReferenceKey,
-                    note: note,
+          .map((draft) {
+            if (draft.id != draftId) return draft;
+            final selectedItem =
+                _findCargoDraftByItemRef(
+                  _cargoDrafts,
+                  deliveryOrderItemRef ?? draft.deliveryOrderItemRef,
+                ) ??
+                _resolvedSingleCargoDraftForDrop(draft, _cargoDrafts);
+            final nextQty = qtyKoli ?? draft.qtyKoli;
+            final nextWeightUnit = weightInputUnit ?? draft.weightInputUnit;
+            final nextWeightInputValue =
+                qtyKoli != null && weightInputValue == null
+                ? _autoWeightInputValueForQty(
+                    draft: draft,
+                    cargo: selectedItem,
+                    nextQtyKoli: nextQty,
+                    nextWeightUnit: nextWeightUnit,
                   )
-                : draft,
-          )
+                : weightInputValue;
+
+            return draft.copyWith(
+              stopType: stopType,
+              deliveryOrderItemRef: deliveryOrderItemRef,
+              deliveryOrderItemRefs: deliveryOrderItemRefs,
+              locationName: locationName,
+              locationAddress: locationAddress,
+              qtyKoli: qtyKoli,
+              weightInputValue: nextWeightInputValue,
+              weightInputUnit: weightInputUnit,
+              volumeInputValue: volumeInputValue,
+              volumeInputUnit: volumeInputUnit,
+              shipperReferenceNumber: shipperReferenceNumber,
+              shipperReferenceKey: shipperReferenceKey,
+              note: note,
+            );
+          })
           .toList(growable: false);
     });
   }
 
   void _addDropPoint() {
     setState(() {
-      _dropDrafts = [..._dropDrafts, _ActualDropDraft.create()];
+      _dropDrafts = [
+        ..._dropDrafts,
+        _createNextDropDraftForSelectedCargo(
+          _selectedCargoDrafts,
+          _selectedDropDrafts,
+          _selectedShipperReferences,
+        ),
+      ];
     });
   }
 
-  void _removeDropPoint(String draftId) {
+  Future<void> _removeDropPoint(String draftId) async {
+    final confirmed = await showMobileActionConfirmation(
+      context,
+      title: 'Hapus titik drop?',
+      message:
+          'Qty, berat, volume, dan catatan di titik ini akan hilang dari draft finalisasi. Data belum dikirim sebelum kamu menekan Ajukan Selesai.',
+      confirmLabel: 'Hapus Titik',
+      icon: Icons.delete_outline_rounded,
+      destructive: true,
+    );
+    if (!mounted || !confirmed) return;
+
     setState(() {
       final next = _dropDrafts.where((draft) => draft.id != draftId).toList();
       _dropDrafts = next.isNotEmpty ? next : [_ActualDropDraft.create()];
     });
   }
 
-  void _selectDropReference(String draftId, String optionValue) {
-    final reference = _findShipperReferenceByOptionValue(
-      widget.trip.shipperReferences,
+  void _selectDropCargoTarget(String draftId, String optionValue) {
+    final cargo = _findCargoDraftByOptionValue(
+      _selectedCargoDrafts,
       optionValue,
     );
+    final reference = cargo != null
+        ? null
+        : _findShipperReferenceByOptionValue(
+            widget.trip.shipperReferences,
+            optionValue,
+          );
 
     setState(() {
       _dropDrafts = _dropDrafts
           .map((draft) {
             if (draft.id != draftId) return draft;
+            if (cargo != null) {
+              final currentItemRefs = _normalizedDropItemRefs(draft);
+              return _applyCargoDraftToDrop(
+                draft,
+                cargo,
+                _dropDrafts,
+                forceValues:
+                    currentItemRefs.isEmpty ||
+                    !currentItemRefs.contains(cargo.itemId),
+              );
+            }
             if (reference == null) {
               return draft.copyWith(
+                deliveryOrderItemRef: '',
+                deliveryOrderItemRefs: const [],
                 shipperReferenceNumber: '',
                 shipperReferenceKey: '',
               );
             }
 
             return draft.copyWith(
+              deliveryOrderItemRef: '',
+              deliveryOrderItemRefs: const [],
               shipperReferenceNumber: reference.referenceNumber,
               shipperReferenceKey: reference.key ?? '',
             );
@@ -264,23 +328,21 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
               _applySingleReferenceToBlankDrop(draft, selectedReferences),
         )
         .toList(growable: false);
-    final actualItems = _selectedCargoDrafts
-        .map(
-          (draft) => DriverActualCargoInput(
-            deliveryOrderItemRef: draft.itemId,
-            actualQtyKoli: draft.qtyKoliValue,
-            actualWeightInputValue: draft.weightInputValueNumber,
-            actualWeightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
-            actualVolumeInputValue: draft.volumeInputValueNumber,
-            actualVolumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
-          ),
-        )
-        .toList(growable: false);
+    final actualItems = _buildSubmissionActualItems(
+      _selectedCargoDrafts,
+      submissionDropDrafts,
+    );
 
     final actualDropPoints = submissionDropDrafts
-        .map(
-          (draft) => DriverActualDropPointInput(
+        .map((draft) {
+          final itemRefs = _dropItemRefsForSubmission(
+            draft,
+            _selectedCargoDrafts,
+          );
+          return DriverActualDropPointInput(
             stopType: _normalizeDropStopType(draft.stopType),
+            deliveryOrderItemRef: itemRefs.length == 1 ? itemRefs.first : null,
+            deliveryOrderItemRefs: itemRefs,
             shipperReferenceNumber:
                 draft.shipperReferenceNumber.trim().isNotEmpty
                 ? draft.shipperReferenceNumber.trim()
@@ -304,8 +366,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
             volumeInputValue: draft.volumeInputValueNumber,
             volumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
             note: draft.note.trim().isNotEmpty ? draft.note.trim() : null,
-          ),
-        )
+          );
+        })
         .toList(growable: false);
 
     setState(() => _submitting = true);
@@ -343,21 +405,27 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
       return 'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.';
     }
 
+    final itemSpecificDropRefs = selectedDropDrafts
+        .map((drop) => _dropItemRefsForSubmission(drop, selectedCargoDrafts))
+        .where((refs) => refs.length == 1)
+        .expand((refs) => refs)
+        .toSet();
     for (final draft in selectedCargoDrafts) {
+      final derivedFromItemDrop = itemSpecificDropRefs.contains(draft.itemId);
       final qty = draft.qtyKoliValue;
       final weight = draft.weightInputValueNumber;
       final volume = draft.volumeInputValueNumber;
       final hasActualValue = qty > 0 || weight > 0 || volume > 0;
-      if (!hasActualValue) {
+      if (!hasActualValue && !derivedFromItemDrop) {
         return 'Semua barang harus punya realisasi aktual.';
       }
-      if (draft.requireQty && qty <= 0) {
+      if (!derivedFromItemDrop && draft.requireQty && qty <= 0) {
         return 'Qty aktual wajib diisi untuk barang yang punya target koli.';
       }
-      if (draft.requireWeight && weight <= 0) {
+      if (!derivedFromItemDrop && draft.requireWeight && weight <= 0) {
         return 'Berat aktual wajib diisi untuk barang yang punya target berat.';
       }
-      if (draft.requireVolume && volume <= 0) {
+      if (!derivedFromItemDrop && draft.requireVolume && volume <= 0) {
         return 'Volume aktual wajib diisi untuk barang yang punya target volume.';
       }
     }
@@ -380,19 +448,37 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
       }
     }
 
-    final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
-    final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
+    final ambiguityMessage = _getAmbiguousActualDropMappingMessage(
+      selectedDropDrafts,
+      selectedCargoDrafts,
+    );
+    if (ambiguityMessage != null) {
+      return ambiguityMessage;
+    }
+
+    final normalizedDropDrafts = selectedDropDrafts
+        .map(
+          (draft) =>
+              _applySingleReferenceToBlankDrop(draft, selectedReferences),
+        )
+        .toList(growable: false);
+    final actualItems = _buildSubmissionActualItems(
+      selectedCargoDrafts,
+      normalizedDropDrafts,
+    );
+    final cargoTotals = _summarizeActualItemInputs(actualItems);
+    final dropTotals = _summarizeBillableDropDrafts(normalizedDropDrafts);
     if (cargoTotals.qtyKoli > 0 &&
         (dropTotals.qtyKoli - cargoTotals.qtyKoli).abs() > 0.01) {
-      return 'Total qty titik drop harus sama dengan qty aktual muatan.';
+      return 'Total qty titik drop terkirim harus sama dengan qty aktual muatan.';
     }
     if (cargoTotals.weightKg > 0 &&
         (dropTotals.weightKg - cargoTotals.weightKg).abs() > 0.01) {
-      return 'Total berat titik drop harus sama dengan berat aktual muatan.';
+      return 'Total berat titik drop terkirim harus sama dengan berat aktual muatan.';
     }
     if (cargoTotals.volumeM3 > 0 &&
         (dropTotals.volumeM3 - cargoTotals.volumeM3).abs() > 0.001) {
-      return 'Total volume titik drop harus sama dengan volume aktual muatan.';
+      return 'Total volume titik drop terkirim harus sama dengan volume aktual muatan.';
     }
 
     return null;
@@ -423,11 +509,21 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final selectedReferences = _selectedShipperReferences;
     final selectedCargoDrafts = _selectedCargoDrafts;
     final selectedDropDrafts = _selectedDropDrafts;
+    final cargoSections = _groupCargoDraftsBySelectedReferences(
+      selectedCargoDrafts,
+      selectedReferences,
+    );
     final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
-    final dropTotals = _summarizeDropDrafts(selectedDropDrafts);
+    final dropTotals = _summarizeBillableDropDrafts(selectedDropDrafts);
     final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
+    final usesDetailedDrop =
+        selectedDropDrafts.length > 1 ||
+        selectedDropDrafts.any(
+          (draft) => _normalizeDropStopType(draft.stopType) != 'DROP',
+        );
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -476,23 +572,27 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                           '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
                     ),
                     const SizedBox(height: 12),
-                    ...selectedCargoDrafts.map(
-                      (draft) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ActualCargoCard(
-                          key: ValueKey(draft.itemId),
-                          draft: draft,
-                          onChanged: _updateCargo,
-                        ),
+                    ...cargoSections.map(
+                      (section) => _ActualCargoSection(
+                        key: ValueKey('cargo-section-${section.key}'),
+                        section: section,
+                        showHeader: hasMultiTargetDefault,
+                        onChanged: _updateCargo,
                       ),
                     ),
                     const SizedBox(height: 8),
                     _TotalsCard(
-                      title: 'Qty Drop',
+                      title: 'Qty Drop Terkirim',
                       qtyLabel: _formatMetric(dropTotals.qtyKoli),
                       weightLabel: '${_formatMetric(dropTotals.weightKg)} kg',
                       volumeLabel:
                           '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                    ),
+                    const SizedBox(height: 12),
+                    _DropWorkflowCard(
+                      cargoCount: selectedCargoDrafts.length,
+                      dropCount: selectedDropDrafts.length,
+                      usesDetailedDrop: usesDetailedDrop,
                     ),
                     const SizedBox(height: 12),
                     ...selectedDropDrafts.asMap().entries.map(
@@ -502,12 +602,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                           key: ValueKey(entry.value.id),
                           index: entry.key + 1,
                           draft: entry.value,
-                          shipperReferences: widget.trip.shipperReferences,
+                          shipperReferences: selectedReferences,
                           customerRecipients: widget.customerRecipients,
                           cargoDrafts: selectedCargoDrafts,
                           showRemove: selectedDropDrafts.length > 1,
                           onChanged: _updateDrop,
-                          onReferenceChanged: _selectDropReference,
+                          onCargoTargetChanged: _selectDropCargoTarget,
                           onRecipientChanged: _selectRecipient,
                           onRemove: _removeDropPoint,
                         ),
@@ -594,6 +694,20 @@ class _ActualCargoTotals {
   final double volumeM3;
 }
 
+class _ActualCargoSectionData {
+  const _ActualCargoSectionData({
+    required this.key,
+    required this.label,
+    required this.targetLabel,
+    required this.drafts,
+  });
+
+  final String key;
+  final String label;
+  final String targetLabel;
+  final List<_ActualCargoDraft> drafts;
+}
+
 class _ActualCargoDraft {
   const _ActualCargoDraft({
     required this.itemId,
@@ -655,6 +769,8 @@ class _ActualDropDraft {
   const _ActualDropDraft({
     required this.id,
     required this.stopType,
+    required this.deliveryOrderItemRef,
+    required this.deliveryOrderItemRefs,
     required this.shipperReferenceNumber,
     required this.shipperReferenceKey,
     required this.originLocationName,
@@ -671,6 +787,8 @@ class _ActualDropDraft {
 
   final String id;
   final String stopType;
+  final String deliveryOrderItemRef;
+  final List<String> deliveryOrderItemRefs;
   final String shipperReferenceNumber;
   final String shipperReferenceKey;
   final String originLocationName;
@@ -690,6 +808,8 @@ class _ActualDropDraft {
 
   factory _ActualDropDraft.create({
     String stopType = 'DROP',
+    String deliveryOrderItemRef = '',
+    List<String> deliveryOrderItemRefs = const [],
     String shipperReferenceNumber = '',
     String shipperReferenceKey = '',
     String originLocationName = '',
@@ -706,6 +826,8 @@ class _ActualDropDraft {
     return _ActualDropDraft(
       id: UniqueKey().toString(),
       stopType: stopType,
+      deliveryOrderItemRef: deliveryOrderItemRef,
+      deliveryOrderItemRefs: deliveryOrderItemRefs,
       shipperReferenceNumber: shipperReferenceNumber,
       shipperReferenceKey: shipperReferenceKey,
       originLocationName: originLocationName,
@@ -723,6 +845,8 @@ class _ActualDropDraft {
 
   _ActualDropDraft copyWith({
     String? stopType,
+    String? deliveryOrderItemRef,
+    List<String>? deliveryOrderItemRefs,
     String? shipperReferenceNumber,
     String? shipperReferenceKey,
     String? originLocationName,
@@ -739,6 +863,9 @@ class _ActualDropDraft {
     return _ActualDropDraft(
       id: id,
       stopType: stopType ?? this.stopType,
+      deliveryOrderItemRef: deliveryOrderItemRef ?? this.deliveryOrderItemRef,
+      deliveryOrderItemRefs:
+          deliveryOrderItemRefs ?? this.deliveryOrderItemRefs,
       shipperReferenceNumber:
           shipperReferenceNumber ?? this.shipperReferenceNumber,
       shipperReferenceKey: shipperReferenceKey ?? this.shipperReferenceKey,
@@ -762,30 +889,42 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
     for (final item in trip.pendingActualCargoItems)
       item.deliveryOrderItemRef: item,
   };
+  final holdContinuationByItemId = _holdContinuationTotalsByItemId(trip);
   return trip.cargoItems
       .map((item) {
         final pending = pendingById[item.id];
+        final holdContinuation = pending == null
+            ? holdContinuationByItemId[item.id]
+            : null;
         final defaultWeightUnit =
             (pending?.actualWeightInputUnit ??
+                    holdContinuation?.weightInputUnit ??
                     item.actualWeightInputUnit ??
                     item.weightInputUnit ??
                     'KG')
                 .toUpperCase();
         final defaultVolumeUnit =
             (pending?.actualVolumeInputUnit ??
+                    holdContinuation?.volumeInputUnit ??
                     item.actualVolumeInputUnit ??
                     item.volumeInputUnit ??
                     'M3')
                 .toUpperCase();
         final defaultQty =
-            pending?.actualQtyKoli ?? item.actualQtyKoli ?? item.qtyKoli ?? 0;
+            pending?.actualQtyKoli ??
+            holdContinuation?.qtyKoliValue ??
+            item.actualQtyKoli ??
+            item.qtyKoli ??
+            0;
         final defaultWeightInput =
             pending?.actualWeightInputValue ??
+            holdContinuation?.weightInputValueNumber ??
             item.actualWeightInputValue ??
             item.weightInputValue ??
             (item.weightKg ?? 0);
         final defaultVolumeInput =
             pending?.actualVolumeInputValue ??
+            holdContinuation?.volumeInputValueNumber ??
             item.actualVolumeInputValue ??
             item.volumeInputValue ??
             (item.volumeM3 ?? 0);
@@ -824,6 +963,8 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         .map(
           (point) => _ActualDropDraft.create(
             stopType: point.stopType,
+            deliveryOrderItemRef: point.deliveryOrderItemRef ?? '',
+            deliveryOrderItemRefs: point.deliveryOrderItemRefs,
             shipperReferenceNumber: point.shipperReferenceNumber ?? '',
             shipperReferenceKey: point.shipperReferenceKey ?? '',
             originLocationName: point.originLocationName ?? '',
@@ -853,6 +994,14 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         .toList(growable: false);
   }
 
+  final holdContinuationDrafts = _buildHoldContinuationDropDrafts(
+    trip,
+    cargoDrafts,
+  );
+  if (holdContinuationDrafts.isNotEmpty) {
+    return holdContinuationDrafts;
+  }
+
   final totals = _summarizeCargoDrafts(cargoDrafts);
   return [
     _ActualDropDraft.create(
@@ -863,10 +1012,244 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
   ];
 }
 
-Set<String> _initialSelectedReferenceValues(
+Map<String, _ActualDropDraft> _holdContinuationTotalsByItemId(
+  DeliveryTrip trip,
+) {
+  if (!_hasHoldContinuationContext(trip)) return const {};
+
+  final totalsByItemId = <String, _ActualDropDraft>{};
+  for (final point in trip.actualDropPoints) {
+    if (!_isHoldContinuationStopType(point.stopType)) continue;
+    final itemRefs = _deliveryActualDropPointItemRefs(point, trip.cargoItems);
+    if (itemRefs.length != 1) continue;
+    final itemRef = itemRefs.first;
+    final current = totalsByItemId[itemRef];
+    totalsByItemId[itemRef] = _sumDropDraftValues(
+      current,
+      _actualDropPointToDraft(point, deliveryOrderItemRef: itemRef),
+    );
+  }
+  return totalsByItemId;
+}
+
+List<_ActualDropDraft> _buildHoldContinuationDropDrafts(
   DeliveryTrip trip,
   List<_ActualCargoDraft> cargoDrafts,
 ) {
+  if (!_hasHoldContinuationContext(trip)) return const [];
+
+  final drafts = <_ActualDropDraft>[];
+  for (final point in trip.actualDropPoints) {
+    if (!_isHoldContinuationStopType(point.stopType)) continue;
+    final itemRefs = _deliveryActualDropPointItemRefs(point, trip.cargoItems);
+    if (itemRefs.length != 1) continue;
+    final cargo = _findCargoDraftByItemRef(cargoDrafts, itemRefs.first);
+    if (cargo == null) continue;
+    final destination = _defaultContinuationDestination(trip, point, cargo);
+    drafts.add(
+      _ActualDropDraft.create(
+        stopType: 'DROP',
+        deliveryOrderItemRef: cargo.itemId,
+        deliveryOrderItemRefs: [cargo.itemId],
+        shipperReferenceNumber: point.shipperReferenceNumber ?? '',
+        shipperReferenceKey: point.shipperReferenceKey ?? '',
+        originLocationName: point.locationName,
+        originLocationAddress: point.locationAddress ?? '',
+        locationName: destination.$1,
+        locationAddress: destination.$2,
+        qtyKoli: _formatMetric(point.qtyKoli),
+        weightInputValue: _formatMetric(
+          point.weightInputValue,
+          fractionDigits: (point.weightInputUnit ?? 'KG').toUpperCase() == 'TON'
+              ? 3
+              : 2,
+        ),
+        weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
+        volumeInputValue: _formatMetric(
+          point.volumeInputValue,
+          fractionDigits:
+              (point.volumeInputUnit ?? 'M3').toUpperCase() == 'LITER' ? 0 : 3,
+        ),
+        volumeInputUnit: (point.volumeInputUnit ?? 'M3').toUpperCase(),
+        note: 'Lanjutan hold dikirim',
+      ),
+    );
+  }
+
+  return drafts;
+}
+
+bool _hasHoldContinuationContext(DeliveryTrip trip) {
+  if (trip.actualDropPoints.isEmpty) return false;
+  return trip.status == TripStatus.partialHold ||
+      trip.shipperReferences.any(
+        (reference) =>
+            (reference.tripStatus ?? '').trim().toUpperCase() == 'PARTIAL_HOLD',
+      );
+}
+
+bool _isHoldContinuationStopType(String value) {
+  final normalized = _normalizeDropStopType(value);
+  return normalized == 'HOLD' || normalized == 'TRANSIT';
+}
+
+List<String> _deliveryActualDropPointItemRefs(
+  DeliveryActualDropPoint point,
+  List<DeliveryCargoItem> cargoItems,
+) {
+  final seen = <String>{};
+  final refs = <String>[];
+  void addRef(String? value) {
+    final trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty || !seen.add(trimmed)) return;
+    refs.add(trimmed);
+  }
+
+  addRef(point.deliveryOrderItemRef);
+  for (final value in point.deliveryOrderItemRefs) {
+    addRef(value);
+  }
+  if (refs.isNotEmpty) return refs;
+
+  final matchingItems = cargoItems
+      .where((item) {
+        final pointKey = (point.shipperReferenceKey ?? '').trim();
+        final pointNumber = (point.shipperReferenceNumber ?? '')
+            .trim()
+            .toUpperCase();
+        return (pointKey.isNotEmpty &&
+                item.shipperReferenceKey?.trim() == pointKey) ||
+            (pointNumber.isNotEmpty &&
+                item.shipperReferenceNumber?.trim().toUpperCase() ==
+                    pointNumber);
+      })
+      .toList(growable: false);
+  if (matchingItems.length == 1) {
+    return [matchingItems.first.id];
+  }
+  return const [];
+}
+
+_ActualDropDraft _actualDropPointToDraft(
+  DeliveryActualDropPoint point, {
+  required String deliveryOrderItemRef,
+}) {
+  return _ActualDropDraft.create(
+    deliveryOrderItemRef: deliveryOrderItemRef,
+    deliveryOrderItemRefs: [deliveryOrderItemRef],
+    qtyKoli: _formatMetric(point.qtyKoli),
+    weightInputValue: _formatMetric(
+      point.weightInputValue,
+      fractionDigits: (point.weightInputUnit ?? 'KG').toUpperCase() == 'TON'
+          ? 3
+          : 2,
+    ),
+    weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
+    volumeInputValue: _formatMetric(
+      point.volumeInputValue,
+      fractionDigits: (point.volumeInputUnit ?? 'M3').toUpperCase() == 'LITER'
+          ? 0
+          : 3,
+    ),
+    volumeInputUnit: (point.volumeInputUnit ?? 'M3').toUpperCase(),
+  );
+}
+
+_ActualDropDraft _sumDropDraftValues(
+  _ActualDropDraft? current,
+  _ActualDropDraft next,
+) {
+  if (current == null) return next;
+  final weightUnit = _normalizeWeightUnit(current.weightInputUnit);
+  final volumeUnit = _normalizeVolumeUnit(current.volumeInputUnit);
+  final weightKg =
+      _convertWeightToKg(
+        current.weightInputValueNumber,
+        current.weightInputUnit,
+      ) +
+      _convertWeightToKg(next.weightInputValueNumber, next.weightInputUnit);
+  final volumeM3 =
+      _convertVolumeToM3(
+        current.volumeInputValueNumber,
+        current.volumeInputUnit,
+      ) +
+      _convertVolumeToM3(next.volumeInputValueNumber, next.volumeInputUnit);
+  return current.copyWith(
+    qtyKoli: _formatMetric(current.qtyKoliValue + next.qtyKoliValue),
+    weightInputValue: _formatMetric(
+      _convertKgToWeightInputValue(weightKg, weightUnit),
+      fractionDigits: weightUnit == 'TON' ? 3 : 2,
+    ),
+    weightInputUnit: weightUnit,
+    volumeInputValue: _formatMetric(
+      _convertM3ToVolumeInputValue(volumeM3, volumeUnit),
+      fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
+    ),
+    volumeInputUnit: volumeUnit,
+  );
+}
+
+(String, String) _defaultContinuationDestination(
+  DeliveryTrip trip,
+  DeliveryActualDropPoint point,
+  _ActualCargoDraft cargo,
+) {
+  DeliveryShipperReference? matchingReference;
+  for (final reference in trip.shipperReferences) {
+    final pointKey = (point.shipperReferenceKey ?? '').trim();
+    final pointNumber = (point.shipperReferenceNumber ?? '')
+        .trim()
+        .toUpperCase();
+    final matches =
+        (pointKey.isNotEmpty && reference.key?.trim() == pointKey) ||
+        (pointNumber.isNotEmpty &&
+            reference.referenceNumber.trim().toUpperCase() == pointNumber);
+    if (matches) {
+      matchingReference = reference;
+      break;
+    }
+  }
+  final locationName = matchingReference?.targetLabel.trim() == '-'
+      ? ''
+      : matchingReference?.targetLabel.trim() ??
+            (trip.receiverName ?? '').trim();
+  final locationAddress =
+      (matchingReference?.receiverAddress ?? trip.receiverAddress ?? '').trim();
+  if (locationName.isNotEmpty || locationAddress.isNotEmpty) {
+    return (locationName, locationAddress);
+  }
+  final cargoReferenceNumber = cargo.shipperReferenceNumber.trim();
+  return (
+    cargoReferenceNumber.isNotEmpty
+        ? 'Tujuan SJ $cargoReferenceNumber'
+        : 'Tujuan Invoice',
+    '',
+  );
+}
+
+Set<String> _initialSelectedReferenceValues(
+  DeliveryTrip trip,
+  List<_ActualCargoDraft> cargoDrafts,
+  List<String> initialSelectedSuratJalanRefs,
+) {
+  final requestedRefs = initialSelectedSuratJalanRefs
+      .map(_normalizeSuratJalanRefCandidate)
+      .where((value) => value.isNotEmpty)
+      .toSet();
+  if (requestedRefs.isNotEmpty) {
+    final requestedValues = trip.shipperReferences
+        .where(trip.canRequestFinalizationForReference)
+        .where(
+          (reference) => _suratJalanRefCandidates(
+            trip,
+            reference,
+          ).any(requestedRefs.contains),
+        )
+        .map(_shipperReferenceOptionValue)
+        .toSet();
+    if (requestedValues.isNotEmpty) return requestedValues;
+  }
+
   final referencesWithCargo = trip.shipperReferences
       .where(trip.canRequestFinalizationForReference)
       .where(
@@ -912,6 +1295,67 @@ List<_ActualCargoDraft> _cargoDraftsForSelectedReferences(
         ),
       )
       .toList(growable: false);
+}
+
+List<_ActualCargoSectionData> _groupCargoDraftsBySelectedReferences(
+  List<_ActualCargoDraft> drafts,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  if (drafts.isEmpty) return const [];
+  if (selectedReferences.isEmpty) {
+    return [
+      _ActualCargoSectionData(
+        key: 'manual',
+        label: 'Tanpa SJ',
+        targetLabel: '',
+        drafts: drafts,
+      ),
+    ];
+  }
+
+  final usedItemIds = <String>{};
+  final sections = <_ActualCargoSectionData>[];
+  for (final reference in selectedReferences) {
+    final sectionDrafts = drafts
+        .where((draft) => _cargoDraftMatchesReference(draft, reference))
+        .toList(growable: false);
+    if (sectionDrafts.isEmpty) continue;
+    usedItemIds.addAll(sectionDrafts.map((draft) => draft.itemId));
+    sections.add(
+      _ActualCargoSectionData(
+        key: _shipperReferenceOptionValue(reference),
+        label: reference.referenceNumber,
+        targetLabel: reference.targetLabel,
+        drafts: sectionDrafts,
+      ),
+    );
+  }
+
+  final unmatchedDrafts = drafts
+      .where((draft) => !usedItemIds.contains(draft.itemId))
+      .toList(growable: false);
+  if (unmatchedDrafts.isNotEmpty) {
+    sections.add(
+      _ActualCargoSectionData(
+        key: 'unmatched',
+        label: 'Tanpa SJ',
+        targetLabel: '',
+        drafts: unmatchedDrafts,
+      ),
+    );
+  }
+
+  if (sections.isEmpty) {
+    return [
+      _ActualCargoSectionData(
+        key: 'all',
+        label: selectedReferences.first.referenceNumber,
+        targetLabel: selectedReferences.first.targetLabel,
+        drafts: drafts,
+      ),
+    ];
+  }
+  return sections;
 }
 
 List<_ActualDropDraft> _dropDraftsForSelectedReferences(
@@ -961,7 +1405,8 @@ List<_ActualDropDraft> _normalizeDropDraftsForSelectedReferences(
 
   if (selectedReferences.length == 1 &&
       nextDrafts.length == 1 &&
-      _dropDraftHasNoReference(nextDrafts.first)) {
+      _dropDraftHasNoReference(nextDrafts.first) &&
+      !_dropDraftHasItemSelection(nextDrafts.first)) {
     nextDrafts = [
       nextDrafts.first.copyWith(
         qtyKoli: _formatMetric(totals.qtyKoli),
@@ -1070,6 +1515,27 @@ String _suratJalanDocumentIdForReference(
   return '${trip.deliveryOrderId}:$suffix';
 }
 
+String _normalizeSuratJalanRefCandidate(String value) =>
+    value.trim().toUpperCase();
+
+Set<String> _suratJalanRefCandidates(
+  DeliveryTrip trip,
+  DeliveryShipperReference reference,
+) {
+  final documentId = _suratJalanDocumentIdForReference(trip, reference);
+  final key = (reference.key ?? '').trim();
+  final number = reference.referenceNumber.trim();
+  return {
+    if (documentId.isNotEmpty) _normalizeSuratJalanRefCandidate(documentId),
+    if (key.isNotEmpty) _normalizeSuratJalanRefCandidate(key),
+    if (key.isNotEmpty)
+      _normalizeSuratJalanRefCandidate('${trip.deliveryOrderId}:$key'),
+    if (number.isNotEmpty) _normalizeSuratJalanRefCandidate(number),
+    if (number.isNotEmpty)
+      _normalizeSuratJalanRefCandidate('${trip.deliveryOrderId}:$number'),
+  };
+}
+
 String _defaultPodReceiverName(
   DeliveryTrip trip,
   List<DeliveryShipperReference> selectedReferences,
@@ -1150,10 +1616,117 @@ _ActualCargoTotals _summarizeDropDrafts(List<_ActualDropDraft> drafts) {
   );
 }
 
+_ActualCargoTotals _summarizeBillableDropDrafts(
+  List<_ActualDropDraft> drafts,
+) => _summarizeDropDrafts(
+  drafts
+      .where((draft) => _isBillableDropType(draft.stopType))
+      .toList(growable: false),
+);
+
+_ActualCargoTotals _summarizeActualItemInputs(
+  List<DriverActualCargoInput> items,
+) {
+  double qtyKoli = 0;
+  double weightKg = 0;
+  double volumeM3 = 0;
+  for (final item in items) {
+    qtyKoli += item.actualQtyKoli;
+    weightKg += _convertWeightToKg(
+      item.actualWeightInputValue,
+      item.actualWeightInputUnit,
+    );
+    volumeM3 += _convertVolumeToM3(
+      item.actualVolumeInputValue,
+      item.actualVolumeInputUnit,
+    );
+  }
+  return _ActualCargoTotals(
+    qtyKoli: qtyKoli,
+    weightKg: weightKg,
+    volumeM3: volumeM3,
+  );
+}
+
+List<DriverActualCargoInput> _buildSubmissionActualItems(
+  List<_ActualCargoDraft> cargoDrafts,
+  List<_ActualDropDraft> dropDrafts,
+) {
+  final itemSpecificRefs = dropDrafts
+      .map((drop) => _dropItemRefsForSubmission(drop, cargoDrafts))
+      .where((refs) => refs.length == 1)
+      .expand((refs) => refs)
+      .toSet();
+
+  return cargoDrafts
+      .map((draft) {
+        final weightUnit = _normalizeWeightUnit(draft.weightInputUnit);
+        final volumeUnit = _normalizeVolumeUnit(draft.volumeInputUnit);
+        if (!itemSpecificRefs.contains(draft.itemId)) {
+          return _actualInputFromCargoDraft(draft);
+        }
+
+        final billableDrops = dropDrafts.where((drop) {
+          final itemRefs = _dropItemRefsForSubmission(drop, cargoDrafts);
+          return itemRefs.length == 1 &&
+              itemRefs.first == draft.itemId &&
+              _isBillableDropType(drop.stopType);
+        });
+        double qtyKoli = 0;
+        double weightKg = 0;
+        double volumeM3 = 0;
+        for (final drop in billableDrops) {
+          qtyKoli += drop.qtyKoliValue;
+          weightKg += _convertWeightToKg(
+            drop.weightInputValueNumber,
+            drop.weightInputUnit,
+          );
+          volumeM3 += _convertVolumeToM3(
+            drop.volumeInputValueNumber,
+            drop.volumeInputUnit,
+          );
+        }
+        return DriverActualCargoInput(
+          deliveryOrderItemRef: draft.itemId,
+          actualQtyKoli: qtyKoli,
+          actualWeightInputValue: _convertKgToWeightInputValue(
+            weightKg,
+            weightUnit,
+          ),
+          actualWeightInputUnit: weightUnit,
+          actualVolumeInputValue: _convertM3ToVolumeInputValue(
+            volumeM3,
+            volumeUnit,
+          ),
+          actualVolumeInputUnit: volumeUnit,
+        );
+      })
+      .toList(growable: false);
+}
+
+DriverActualCargoInput _actualInputFromCargoDraft(_ActualCargoDraft draft) {
+  return DriverActualCargoInput(
+    deliveryOrderItemRef: draft.itemId,
+    actualQtyKoli: draft.qtyKoliValue,
+    actualWeightInputValue: draft.weightInputValueNumber,
+    actualWeightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
+    actualVolumeInputValue: draft.volumeInputValueNumber,
+    actualVolumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
+  );
+}
+
 List<_ActualCargoDraft> _cargoDraftsForDrop(
   _ActualDropDraft drop,
   List<_ActualCargoDraft> drafts,
 ) {
+  final itemRefs = _normalizedDropItemRefs(drop);
+  if (itemRefs.isNotEmpty) {
+    final itemRefSet = itemRefs.toSet();
+    return drafts
+        .where((draft) => itemRefSet.contains(draft.itemId))
+        .toList(growable: false);
+  }
+
   final referenceKey = drop.shipperReferenceKey.trim();
   final referenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
   if (referenceKey.isEmpty && referenceNumber.isEmpty) return drafts;
@@ -1170,21 +1743,256 @@ List<_ActualCargoDraft> _cargoDraftsForDrop(
       .toList(growable: false);
 }
 
-String _summarizeCargoDescriptions(List<_ActualCargoDraft> drafts) {
+List<String> _normalizedDropItemRefs(_ActualDropDraft draft) {
   final seen = <String>{};
-  final descriptions = <String>[];
-  for (final draft in drafts) {
-    final description = draft.description.trim();
-    if (description.isEmpty || seen.contains(description.toLowerCase())) {
-      continue;
-    }
-    seen.add(description.toLowerCase());
-    descriptions.add(description);
+  final values = <String>[];
+  void addRef(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || !seen.add(trimmed)) return;
+    values.add(trimmed);
   }
 
-  if (descriptions.isEmpty) return 'Belum ada barang';
-  if (descriptions.length <= 3) return descriptions.join(', ');
-  return '${descriptions.take(3).join(', ')} +${descriptions.length - 3} barang';
+  addRef(draft.deliveryOrderItemRef);
+  for (final value in draft.deliveryOrderItemRefs) {
+    addRef(value);
+  }
+  return values;
+}
+
+List<String> _dropItemRefsForSubmission(
+  _ActualDropDraft draft,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  final explicitRefs = _normalizedDropItemRefs(draft);
+  if (explicitRefs.isNotEmpty) return explicitRefs;
+  final resolvedCargo = _resolvedSingleCargoDraftForDrop(draft, cargoDrafts);
+  return resolvedCargo == null ? const [] : [resolvedCargo.itemId];
+}
+
+_ActualCargoDraft? _resolvedSingleCargoDraftForDrop(
+  _ActualDropDraft draft,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  final explicitRefs = _normalizedDropItemRefs(draft);
+  if (explicitRefs.length == 1) {
+    return _findCargoDraftByItemRef(cargoDrafts, explicitRefs.first);
+  }
+  if (explicitRefs.length > 1) return null;
+
+  final matchingItems = cargoDrafts
+      .where((cargo) => _dropDraftMatchesCargo(draft, cargo))
+      .toList(growable: false);
+  if (matchingItems.length != 1) return null;
+  return matchingItems.first;
+}
+
+bool _dropDraftHasItemSelection(_ActualDropDraft draft) =>
+    _normalizedDropItemRefs(draft).isNotEmpty;
+
+_ActualCargoDraft? _findCargoDraftByItemRef(
+  List<_ActualCargoDraft> drafts,
+  String? itemRef,
+) {
+  final normalized = (itemRef ?? '').trim();
+  if (normalized.isEmpty) return null;
+  for (final draft in drafts) {
+    if (draft.itemId == normalized) return draft;
+  }
+  return null;
+}
+
+String _dropCargoItemOptionValue(_ActualCargoDraft draft) =>
+    'item:${draft.itemId}';
+
+_ActualCargoDraft? _findCargoDraftByOptionValue(
+  List<_ActualCargoDraft> drafts,
+  String optionValue,
+) {
+  if (!optionValue.startsWith('item:')) return null;
+  final itemRef = optionValue.substring('item:'.length).trim();
+  return _findCargoDraftByItemRef(drafts, itemRef);
+}
+
+_ActualDropDraft _createNextDropDraftForSelectedCargo(
+  List<_ActualCargoDraft> selectedCargoDrafts,
+  List<_ActualDropDraft> selectedDropDrafts,
+  List<DeliveryShipperReference> selectedReferences,
+) {
+  final base = _ActualDropDraft.create();
+  final targetReference = selectedReferences.length == 1
+      ? selectedReferences.first
+      : null;
+  final baseWithTarget = targetReference == null
+      ? base
+      : base.copyWith(
+          shipperReferenceNumber: targetReference.referenceNumber,
+          shipperReferenceKey: targetReference.key ?? '',
+          locationName: targetReference.targetLabel == '-'
+              ? ''
+              : targetReference.targetLabel,
+          locationAddress: targetReference.receiverAddress ?? '',
+        );
+  if (selectedCargoDrafts.isEmpty) return baseWithTarget;
+
+  final selectedCargo = selectedCargoDrafts.firstWhere(
+    (cargo) => _hasActualDropItemValues(
+      _remainingDropValuesForCargoItem(
+        cargo,
+        selectedDropDrafts,
+        excludeDraftId: baseWithTarget.id,
+      ),
+    ),
+    orElse: () => selectedCargoDrafts.first,
+  );
+  return _applyCargoDraftToDrop(
+    baseWithTarget,
+    selectedCargo,
+    selectedDropDrafts,
+    forceValues: true,
+  );
+}
+
+_ActualDropDraft _applyCargoDraftToDrop(
+  _ActualDropDraft draft,
+  _ActualCargoDraft cargo,
+  List<_ActualDropDraft> allDrafts, {
+  required bool forceValues,
+}) {
+  final remaining = _remainingDropValuesForCargoItem(
+    cargo,
+    allDrafts,
+    excludeDraftId: draft.id,
+  );
+  String valueOrCurrent(String current, String next) {
+    if (forceValues || current.trim().isEmpty) return next;
+    return current;
+  }
+
+  return draft.copyWith(
+    deliveryOrderItemRef: cargo.itemId,
+    deliveryOrderItemRefs: [cargo.itemId],
+    shipperReferenceNumber: cargo.shipperReferenceNumber,
+    shipperReferenceKey: cargo.shipperReferenceKey,
+    qtyKoli: valueOrCurrent(draft.qtyKoli, remaining.qtyKoli),
+    weightInputValue: valueOrCurrent(
+      draft.weightInputValue,
+      remaining.weightInputValue,
+    ),
+    weightInputUnit: remaining.weightInputUnit,
+    volumeInputValue: valueOrCurrent(
+      draft.volumeInputValue,
+      remaining.volumeInputValue,
+    ),
+    volumeInputUnit: remaining.volumeInputUnit,
+  );
+}
+
+_ActualDropDraft _remainingDropValuesForCargoItem(
+  _ActualCargoDraft cargo,
+  List<_ActualDropDraft> allDrafts, {
+  required String excludeDraftId,
+}) {
+  double usedQtyKoli = 0;
+  double usedWeightKg = 0;
+  double usedVolumeM3 = 0;
+  for (final draft in allDrafts) {
+    if (draft.id == excludeDraftId) continue;
+    final itemRefs = _normalizedDropItemRefs(draft);
+    if (itemRefs.length != 1 || itemRefs.first != cargo.itemId) continue;
+    usedQtyKoli += draft.qtyKoliValue;
+    usedWeightKg += _convertWeightToKg(
+      draft.weightInputValueNumber,
+      draft.weightInputUnit,
+    );
+    usedVolumeM3 += _convertVolumeToM3(
+      draft.volumeInputValueNumber,
+      draft.volumeInputUnit,
+    );
+  }
+
+  final weightUnit = _normalizeWeightUnit(cargo.weightInputUnit);
+  final volumeUnit = _normalizeVolumeUnit(cargo.volumeInputUnit);
+  final remainingQtyKoli = (cargo.qtyKoliValue - usedQtyKoli)
+      .clamp(0, double.infinity)
+      .toDouble();
+  final remainingWeightKg =
+      (_convertWeightToKg(cargo.weightInputValueNumber, weightUnit) -
+              usedWeightKg)
+          .clamp(0, double.infinity)
+          .toDouble();
+  final remainingVolumeM3 =
+      (_convertVolumeToM3(cargo.volumeInputValueNumber, volumeUnit) -
+              usedVolumeM3)
+          .clamp(0, double.infinity)
+          .toDouble();
+  return _ActualDropDraft.create(
+    qtyKoli: _formatMetric(remainingQtyKoli),
+    weightInputValue: _formatMetric(
+      _convertKgToWeightInputValue(remainingWeightKg, weightUnit),
+      fractionDigits: weightUnit == 'TON' ? 3 : 2,
+    ),
+    weightInputUnit: weightUnit,
+    volumeInputValue: _formatMetric(
+      _convertM3ToVolumeInputValue(remainingVolumeM3, volumeUnit),
+      fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
+    ),
+    volumeInputUnit: volumeUnit,
+  );
+}
+
+bool _hasActualDropItemValues(_ActualDropDraft draft) =>
+    draft.qtyKoliValue > 0 ||
+    draft.weightInputValueNumber > 0 ||
+    draft.volumeInputValueNumber > 0;
+
+String? _autoWeightInputValueForQty({
+  required _ActualDropDraft draft,
+  required _ActualCargoDraft? cargo,
+  required String nextQtyKoli,
+  required String nextWeightUnit,
+}) {
+  if (cargo == null) return null;
+  final qtyKoli = _parseDouble(nextQtyKoli);
+  final basisQtyKoli = cargo.qtyKoliValue;
+  final basisWeightKg = _convertWeightToKg(
+    cargo.weightInputValueNumber,
+    cargo.weightInputUnit,
+  );
+  if (qtyKoli <= 0 || basisQtyKoli <= 0 || basisWeightKg <= 0) {
+    return '';
+  }
+
+  final currentQtyKoli = draft.qtyKoliValue;
+  final currentWeightKg = _convertWeightToKg(
+    draft.weightInputValueNumber,
+    draft.weightInputUnit,
+  );
+  final previousAutoWeightKg = currentQtyKoli > 0
+      ? basisWeightKg * currentQtyKoli / basisQtyKoli
+      : 0;
+  final shouldRefresh =
+      currentWeightKg <= 0 ||
+      previousAutoWeightKg <= 0 ||
+      (currentWeightKg - previousAutoWeightKg).abs() <= 0.01;
+  if (!shouldRefresh) return null;
+
+  final nextWeightKg = basisWeightKg * qtyKoli / basisQtyKoli;
+  final normalizedUnit = _normalizeWeightUnit(nextWeightUnit);
+  return _formatMetric(
+    _convertKgToWeightInputValue(nextWeightKg, normalizedUnit),
+    fractionDigits: normalizedUnit == 'TON' ? 3 : 2,
+  );
+}
+
+String _formatCargoDraftValues(_ActualCargoDraft draft) {
+  final parts = <String>[
+    if (draft.qtyKoliValue > 0) '${_formatMetric(draft.qtyKoliValue)} koli',
+    if (draft.weightInputValueNumber > 0)
+      '${_formatMetric(draft.weightInputValueNumber, fractionDigits: _normalizeWeightUnit(draft.weightInputUnit) == 'TON' ? 3 : 2)} ${_normalizeWeightUnit(draft.weightInputUnit)}',
+    if (draft.volumeInputValueNumber > 0)
+      '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
+  ];
+  return parts.isEmpty ? 'Belum diisi' : parts.join(' / ');
 }
 
 String _shipperReferenceOptionValue(DeliveryShipperReference reference) {
@@ -1224,6 +2032,65 @@ List<DropdownMenuItem<String>> _buildUniqueShipperReferenceItems(
   return items;
 }
 
+List<DropdownMenuItem<String>> _buildDropCargoTargetItems(
+  List<DeliveryShipperReference> references,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  final items = <DropdownMenuItem<String>>[
+    const DropdownMenuItem(value: '', child: Text('Semua / manual')),
+  ];
+  items.addAll(
+    _buildUniqueShipperReferenceItems(references).map(
+      (item) => DropdownMenuItem<String>(
+        value: item.value,
+        child: Text(
+          '${_dropdownItemLabel(item.child)} - semua barang',
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ),
+  );
+
+  final seenItemRefs = <String>{};
+  for (final draft in cargoDrafts) {
+    if (!seenItemRefs.add(draft.itemId)) continue;
+    final sjLabel = draft.shipperReferenceNumber.trim().isEmpty
+        ? 'Tanpa SJ'
+        : draft.shipperReferenceNumber.trim();
+    final description = draft.description.trim().isEmpty
+        ? 'Barang'
+        : draft.description.trim();
+    items.add(
+      DropdownMenuItem(
+        value: _dropCargoItemOptionValue(draft),
+        child: Text('$sjLabel - $description', overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+  return items;
+}
+
+String _dropdownItemLabel(Widget child) {
+  if (child is Text) {
+    final data = child.data?.trim();
+    if (data != null && data.isNotEmpty) return data;
+  }
+  return 'SJ';
+}
+
+String _resolveDropCargoTargetOptionValue(
+  _ActualDropDraft drop,
+  List<DeliveryShipperReference> references,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  final itemRefs = _normalizedDropItemRefs(drop);
+  if (itemRefs.length == 1 &&
+      cargoDrafts.any((draft) => draft.itemId == itemRefs.first)) {
+    return 'item:${itemRefs.first}';
+  }
+  return _resolveDropReferenceOptionValue(drop, references);
+}
+
 String _resolveDropReferenceOptionValue(
   _ActualDropDraft drop,
   List<DeliveryShipperReference> references,
@@ -1240,6 +2107,77 @@ String _resolveDropReferenceOptionValue(
     }
   }
   return '';
+}
+
+String? _getAmbiguousActualDropMappingMessage(
+  List<_ActualDropDraft> drops,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  if (drops.length <= 1 || cargoDrafts.length <= 1) return null;
+
+  final groups = <String, List<_ActualCargoDraft>>{};
+  for (final cargo in cargoDrafts) {
+    final key = _cargoDraftReferenceGroupKey(cargo);
+    groups.putIfAbsent(key, () => []).add(cargo);
+  }
+
+  for (final entry in groups.entries) {
+    final groupItems = entry.value;
+    if (groupItems.length <= 1) continue;
+
+    final groupDrops = drops
+        .where(
+          (drop) =>
+              groupItems.any((cargo) => _dropDraftMatchesCargo(drop, cargo)),
+        )
+        .toList(growable: false);
+    final hasBillable = groupDrops.any(
+      (drop) => _isBillableDropType(drop.stopType),
+    );
+    final hasNonBillable = groupDrops.any(
+      (drop) => _isNonBillableDropType(drop.stopType),
+    );
+    if (!hasBillable || !hasNonBillable) continue;
+
+    final hasAmbiguousDrop = groupDrops.any((drop) {
+      if (_dropDraftHasItemSelection(drop)) return false;
+      final matchedItems = groupItems
+          .where((cargo) => _dropDraftMatchesCargo(drop, cargo))
+          .length;
+      return matchedItems > 1;
+    });
+    if (!hasAmbiguousDrop) continue;
+
+    final groupLabel = groupItems.first.shipperReferenceNumber.trim().isEmpty
+        ? 'SJ ini'
+        : 'SJ ${groupItems.first.shipperReferenceNumber.trim()}';
+    return '$groupLabel punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan invoice per barang tidak salah.';
+  }
+
+  return null;
+}
+
+String _cargoDraftReferenceGroupKey(_ActualCargoDraft cargo) {
+  final key = cargo.shipperReferenceKey.trim();
+  if (key.isNotEmpty) return 'key:$key';
+  final number = cargo.shipperReferenceNumber.trim().toUpperCase();
+  if (number.isNotEmpty) return 'number:$number';
+  return 'TANPA-SJ';
+}
+
+bool _dropDraftMatchesCargo(_ActualDropDraft drop, _ActualCargoDraft cargo) {
+  final itemRefs = _normalizedDropItemRefs(drop);
+  if (itemRefs.isNotEmpty) return itemRefs.contains(cargo.itemId);
+
+  final dropReferenceKey = drop.shipperReferenceKey.trim();
+  final dropReferenceNumber = drop.shipperReferenceNumber.trim().toUpperCase();
+  if (dropReferenceKey.isEmpty && dropReferenceNumber.isEmpty) return true;
+
+  return (dropReferenceKey.isNotEmpty &&
+          dropReferenceKey == cargo.shipperReferenceKey.trim()) ||
+      (dropReferenceNumber.isNotEmpty &&
+          dropReferenceNumber ==
+              cargo.shipperReferenceNumber.trim().toUpperCase());
 }
 
 String _resolveRecipientOptionValue(
@@ -1281,6 +2219,16 @@ double _convertVolumeToM3(double value, String unit) {
   }
 }
 
+double _convertKgToWeightInputValue(double weightKg, String unit) {
+  if (weightKg <= 0) return 0;
+  return unit.toUpperCase() == 'TON' ? weightKg / 1000 : weightKg;
+}
+
+double _convertM3ToVolumeInputValue(double volumeM3, String unit) {
+  if (volumeM3 <= 0) return 0;
+  return unit.toUpperCase() == 'LITER' ? volumeM3 * 1000 : volumeM3;
+}
+
 String _normalizeWeightUnit(String value) {
   final normalized = value.trim().toUpperCase();
   return normalized == 'TON' ? 'TON' : 'KG';
@@ -1299,10 +2247,19 @@ String _normalizeDropStopType(String value) {
   final normalized = value.trim().toUpperCase();
   return switch (normalized) {
     'HOLD' => 'HOLD',
+    'TRANSIT' => 'TRANSIT',
     'EXTRA_DROP' => 'EXTRA_DROP',
+    'RETURN' => 'RETURN',
     _ => 'DROP',
   };
 }
+
+bool _isBillableDropType(String value) {
+  final normalized = _normalizeDropStopType(value);
+  return normalized == 'DROP' || normalized == 'EXTRA_DROP';
+}
+
+bool _isNonBillableDropType(String value) => !_isBillableDropType(value);
 
 String _formatMetric(double? value, {int fractionDigits = 2}) {
   if (value == null || value <= 0) return '';
@@ -1430,7 +2387,7 @@ String _shipperReferenceSubtitle(
   final parts = [
     reference.targetLabel,
     if ((reference.tripStatus ?? '').trim().isNotEmpty)
-      reference.tripStatus!.trim(),
+      deliveryStatusLabel(reference.tripStatus!.trim()),
     if (pending) 'Menunggu approval admin',
   ].where((value) => value.trim().isNotEmpty && value.trim() != '-');
   return parts.isEmpty ? 'Belum ada tujuan' : parts.join(' | ');
@@ -1531,6 +2488,48 @@ class _TotalsCard extends StatelessWidget {
   }
 }
 
+class _DropWorkflowCard extends StatelessWidget {
+  const _DropWorkflowCard({
+    required this.cargoCount,
+    required this.dropCount,
+    required this.usesDetailedDrop,
+  });
+
+  final int cargoCount;
+  final int dropCount;
+  final bool usesDetailedDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tentukan Realisasi Titik Drop',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              usesDetailedDrop
+                  ? '$dropCount titik drop aktif untuk $cargoCount item. Barang tiap titik harus jelas sebelum diajukan.'
+                  : '$cargoCount item akan turun di satu titik. Tambahkan titik hanya untuk multi-drop, hold, return, atau transit.',
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.62),
+                height: 1.4,
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MetricItem extends StatelessWidget {
   const _MetricItem({required this.label, required this.value});
 
@@ -1554,6 +2553,75 @@ class _MetricItem extends StatelessWidget {
         Text(
           value,
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActualCargoSection extends StatelessWidget {
+  const _ActualCargoSection({
+    super.key,
+    required this.section,
+    required this.showHeader,
+    required this.onChanged,
+  });
+
+  final _ActualCargoSectionData section;
+  final bool showHeader;
+  final void Function(
+    String cargoId, {
+    String? qtyKoli,
+    String? weightInputValue,
+    String? weightInputUnit,
+    String? volumeInputValue,
+    String? volumeInputUnit,
+  })
+  onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final targetLabel = section.targetLabel.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showHeader) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.description_outlined,
+                  size: 16,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    targetLabel.isEmpty
+                        ? section.label
+                        : '${section.label} | $targetLabel',
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.72),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        ...section.drafts.map(
+          (draft) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _ActualCargoCard(
+              key: ValueKey(draft.itemId),
+              draft: draft,
+              onChanged: onChanged,
+            ),
+          ),
         ),
       ],
     );
@@ -1590,6 +2658,19 @@ class _ActualCargoCard extends StatelessWidget {
               draft.description,
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
+            if (draft.shipperReferenceNumber.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'SJ ${draft.shipperReferenceNumber.trim()}',
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.62),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             _SyncedTextFormField(
               value: draft.qtyKoli,
@@ -1718,7 +2799,7 @@ class _ActualDropCard extends StatelessWidget {
     required this.cargoDrafts,
     required this.showRemove,
     required this.onChanged,
-    required this.onReferenceChanged,
+    required this.onCargoTargetChanged,
     required this.onRecipientChanged,
     required this.onRemove,
   });
@@ -1732,6 +2813,10 @@ class _ActualDropCard extends StatelessWidget {
   final void Function(
     String draftId, {
     String? stopType,
+    String? deliveryOrderItemRef,
+    List<String>? deliveryOrderItemRefs,
+    String? shipperReferenceNumber,
+    String? shipperReferenceKey,
     String? locationName,
     String? locationAddress,
     String? qtyKoli,
@@ -1742,28 +2827,30 @@ class _ActualDropCard extends StatelessWidget {
     String? note,
   })
   onChanged;
-  final void Function(String draftId, String optionValue) onReferenceChanged;
+  final void Function(String draftId, String optionValue) onCargoTargetChanged;
   final void Function(String draftId, String recipientId) onRecipientChanged;
   final void Function(String draftId) onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final selectedReferenceValue = _resolveDropReferenceOptionValue(
+    final selectedCargoTargetValue = _resolveDropCargoTargetOptionValue(
       draft,
       shipperReferences,
+      cargoDrafts,
     );
-    final referenceItems = _buildUniqueShipperReferenceItems(shipperReferences);
-    final resolvedReferenceValue =
-        referenceItems.any((item) => item.value == selectedReferenceValue)
-        ? selectedReferenceValue
+    final cargoTargetItems = _buildDropCargoTargetItems(
+      shipperReferences,
+      cargoDrafts,
+    );
+    final resolvedCargoTargetValue =
+        cargoTargetItems.any((item) => item.value == selectedCargoTargetValue)
+        ? selectedCargoTargetValue
         : '';
     final selectedRecipientValue = _resolveRecipientOptionValue(
       draft,
       customerRecipients,
     );
-    final cargoSummary = _summarizeCargoDescriptions(
-      _cargoDraftsForDrop(draft, cargoDrafts),
-    );
+    final selectedDropCargoDrafts = _cargoDraftsForDrop(draft, cargoDrafts);
 
     return Card(
       child: Padding(
@@ -1802,49 +2889,30 @@ class _ActualDropCard extends StatelessWidget {
                   value: 'EXTRA_DROP',
                   child: Text('Drop Tambahan'),
                 ),
+                DropdownMenuItem(value: 'RETURN', child: Text('Retur')),
+                DropdownMenuItem(value: 'TRANSIT', child: Text('Transit')),
               ],
               onChanged: (value) =>
                   onChanged(draft.id, stopType: value ?? 'DROP'),
             ),
             const SizedBox(height: 12),
-            if (shipperReferences.isNotEmpty) ...[
+            if (shipperReferences.isNotEmpty || cargoDrafts.length > 1) ...[
               DropdownButtonFormField<String>(
-                key: ValueKey('drop-ref-${draft.id}-$resolvedReferenceValue'),
-                initialValue: resolvedReferenceValue,
+                key: ValueKey(
+                  'drop-target-${draft.id}-$resolvedCargoTargetValue',
+                ),
+                initialValue: resolvedCargoTargetValue,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'No. SJ / Barang'),
-                items: [
-                  const DropdownMenuItem(
-                    value: '',
-                    child: Text('Semua / manual'),
-                  ),
-                  ...referenceItems,
-                ],
-                onChanged: (value) => onReferenceChanged(draft.id, value ?? ''),
+                decoration: const InputDecoration(labelText: 'Tentukan Barang'),
+                items: cargoTargetItems,
+                onChanged: (value) =>
+                    onCargoTargetChanged(draft.id, value ?? ''),
               ),
               const SizedBox(height: 8),
-              Text(
-                'Barang: $cargoSummary',
-                style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.65),
-                  fontSize: 12,
-                  height: 1.35,
-                ),
-              ),
+              _DropCargoAllocationSummary(cargoDrafts: selectedDropCargoDrafts),
               const SizedBox(height: 12),
             ] else ...[
-              Text(
-                'Barang: $cargoSummary',
-                style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.65),
-                  fontSize: 12,
-                  height: 1.35,
-                ),
-              ),
+              _DropCargoAllocationSummary(cargoDrafts: selectedDropCargoDrafts),
               const SizedBox(height: 12),
             ],
             if (customerRecipients.isNotEmpty) ...[
@@ -1998,6 +3066,87 @@ class _ActualDropCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DropCargoAllocationSummary extends StatelessWidget {
+  const _DropCargoAllocationSummary({required this.cargoDrafts});
+
+  final List<_ActualCargoDraft> cargoDrafts;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (cargoDrafts.isEmpty) {
+      return Text(
+        'Belum ada barang dialokasikan.',
+        style: TextStyle(
+          color: scheme.onSurface.withValues(alpha: 0.62),
+          fontSize: 12,
+          height: 1.35,
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Alokasi Barang Titik Ini',
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final entry in cargoDrafts.indexed) ...[
+            if (entry.$1 > 0) const Divider(height: 14),
+            _DropCargoAllocationRow(cargo: entry.$2),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DropCargoAllocationRow extends StatelessWidget {
+  const _DropCargoAllocationRow({required this.cargo});
+
+  final _ActualCargoDraft cargo;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sjNumber = cargo.shipperReferenceNumber.trim().isEmpty
+        ? 'Tanpa SJ'
+        : cargo.shipperReferenceNumber.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          cargo.description.trim().isEmpty ? 'Barang' : cargo.description,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '$sjNumber | ${_formatCargoDraftValues(cargo)}',
+          style: TextStyle(
+            color: scheme.onSurface.withValues(alpha: 0.62),
+            fontSize: 11.5,
+            height: 1.35,
+          ),
+        ),
+      ],
     );
   }
 }

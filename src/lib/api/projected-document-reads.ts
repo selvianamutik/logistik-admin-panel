@@ -242,13 +242,19 @@ function mergeSuratJalanDocumentWithLiveCargo(
         (liveDocument.holdCargo?.qtyKoli || 0) > 0 ||
         (liveDocument.holdCargo?.weightKg || 0) > 0 ||
         (liveDocument.holdCargo?.volumeM3 || 0) > 0;
+    const resolvedTripStatus =
+        shouldPreserveDraftStatus
+            ? document.tripStatus
+            : document.tripStatus === 'CREATED' && liveDocument.tripStatus && liveDocument.tripStatus !== 'CREATED'
+                ? liveDocument.tripStatus
+                : document.tripStatus || liveDocument.tripStatus;
 
     return {
         ...document,
         pickupAddress: liveHasHoldCargo
             ? liveDocument.pickupAddress || document.pickupAddress
             : document.pickupAddress || liveDocument.pickupAddress,
-        tripStatus: shouldPreserveDraftStatus ? document.tripStatus : liveDocument.tripStatus,
+        tripStatus: resolvedTripStatus,
         itemCount: liveDocument.itemCount,
         cargoSummary: liveDocument.cargoSummary,
         billableCargo: liveDocument.billableCargo,
