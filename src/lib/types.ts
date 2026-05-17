@@ -577,6 +577,10 @@ export interface DriverVoucherItem {
   category: string;
   description: string;
   amount: number;
+  relatedIncidentRef?: string;
+  relatedIncidentSettlementLineRef?: string;
+  linkedExpenseRef?: string;
+  source?: 'MANUAL' | 'INCIDENT';
 }
 
 // ── Order ──
@@ -1407,6 +1411,12 @@ export interface Incident {
   attachmentUrls?: string[];
   assignedToUserRef?: string;
   assignedToUserName?: string;
+  pendingDriverResolutionRequestedAt?: string;
+  pendingDriverResolutionRequestedBy?: string;
+  pendingDriverResolutionRequestedByName?: string;
+  pendingDriverResolutionNote?: string;
+  pendingDriverResolutionCostCount?: number;
+  pendingDriverResolutionAmount?: number;
 }
 
 export interface IncidentActionLog {
@@ -1466,6 +1476,7 @@ export interface IncidentSettlementLine {
   note?: string;
   status: IncidentSettlementLineStatus;
   linkedExpenseRef?: string;
+  linkedDriverVoucherItemRef?: string;
   linkedExpenseDate?: string;
   linkedExpenseAmount?: number;
   linkedExpenseCategoryRef?: string;

@@ -136,7 +136,7 @@ void main() {
   });
 
   group('DriverIncident', () {
-    test('allows adding draft costs before admin review', () {
+    test('blocks duplicate resolution while draft cost waits for admin review', () {
       const incident = DriverIncident(
         id: 'incident-1',
         incidentNumber: 'INC-001',
@@ -160,7 +160,7 @@ void main() {
 
       expect(incident.hasSubmittedResolution, isTrue);
       expect(incident.hasReviewedResolution, isFalse);
-      expect(incident.canSubmitResolution, isTrue);
+      expect(incident.canSubmitResolution, isFalse);
     });
 
     test('blocks driver resolution after admin has reviewed a cost line', () {

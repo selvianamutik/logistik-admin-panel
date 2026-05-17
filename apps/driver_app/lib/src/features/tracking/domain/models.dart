@@ -460,6 +460,7 @@ class DriverIncident {
     required this.locationText,
     this.odometer,
     this.dateTime,
+    this.pendingDriverResolutionRequestedAt,
     this.settlementLines = const [],
   });
 
@@ -474,9 +475,11 @@ class DriverIncident {
   final String locationText;
   final double? odometer;
   final String? dateTime;
+  final String? pendingDriverResolutionRequestedAt;
   final List<DriverIncidentSettlementLine> settlementLines;
 
   bool get hasSubmittedResolution =>
+      pendingDriverResolutionRequestedAt?.trim().isNotEmpty == true ||
       settlementLines.any((line) => line.status != 'VOID');
 
   bool get hasReviewedResolution => settlementLines.any(
@@ -484,7 +487,7 @@ class DriverIncident {
   );
 
   bool get canSubmitResolution =>
-      status != 'RESOLVED' && status != 'CLOSED' && !hasReviewedResolution;
+      status != 'RESOLVED' && status != 'CLOSED' && !hasSubmittedResolution;
 
   int get draftCostCount =>
       settlementLines.where((line) => line.status == 'DRAFT').length;

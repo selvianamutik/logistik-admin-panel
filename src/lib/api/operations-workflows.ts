@@ -369,7 +369,19 @@ export async function handleIncidentStatusUpdate(
     }
 
     const timestamp = new Date().toISOString();
-    await updateDocument(id, { status });
+    await updateDocument(id, {
+        status,
+        ...(status === 'RESOLVED' || status === 'CLOSED'
+            ? {
+                pendingDriverResolutionRequestedAt: null,
+                pendingDriverResolutionRequestedBy: null,
+                pendingDriverResolutionRequestedByName: null,
+                pendingDriverResolutionNote: null,
+                pendingDriverResolutionCostCount: null,
+                pendingDriverResolutionAmount: null,
+            }
+            : {}),
+    }, 'incident');
     await createDocument({
         _id: crypto.randomUUID(),
         _type: 'incidentActionLog',
@@ -665,6 +677,25 @@ export async function handleIncidentSettlementLineStatusUpdate(
             ...sanitizePatchSet(patch),
             ...unsetPatch,
         });
+        if (existing.status === 'DRAFT' && status !== 'DRAFT' && (existing.note || '').includes('Diajukan driver')) {
+            const remainingDriverDraftLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
+                incidentRef: existing.incidentRef,
+            })).filter(line =>
+                line._id !== id &&
+                line.status === 'DRAFT' &&
+                (line.note || '').includes('Diajukan driver')
+            );
+            if (remainingDriverDraftLines.length === 0) {
+                await updateDocument(existing.incidentRef, {
+                    pendingDriverResolutionRequestedAt: null,
+                    pendingDriverResolutionRequestedBy: null,
+                    pendingDriverResolutionRequestedByName: null,
+                    pendingDriverResolutionNote: null,
+                    pendingDriverResolutionCostCount: null,
+                    pendingDriverResolutionAmount: null,
+                }, 'incident');
+            }
+        }
         await createDocument({
             _id: crypto.randomUUID(),
             _type: 'incidentActionLog',

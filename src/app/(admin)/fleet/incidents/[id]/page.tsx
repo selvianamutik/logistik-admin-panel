@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { CheckCircle2, Pencil, Plus, Printer, ReceiptText, Save, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Pencil, Plus, Printer, ReceiptText, Save, Trash2, XCircle } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
@@ -123,11 +123,25 @@ export default function IncidentDetailPage() {
     const availableStatuses = incident ? getAvailableIncidentStatusesForContext(incident.status, lines) : [];
     const lineCategories = getIncidentSettlementCategoryOptions(lineForm.lineType);
     const incidentClosed = incident?.status === 'CLOSED';
+    const pendingDriverReviewLines = useMemo(
+        () => lines.filter(line => line.status === 'DRAFT' && (line.note || '').includes('Diajukan driver')),
+        [lines]
+    );
+    const hasPendingDriverResolution = Boolean(
+        incident?.pendingDriverResolutionRequestedAt ||
+        pendingDriverReviewLines.length > 0
+    );
 
     const resetLineModal = () => {
         setShowLineModal(false);
         setEditingLine(null);
         setLineForm(createDefaultIncidentSettlementForm());
+    };
+
+    const openStatusModal = () => {
+        setNewStatus(availableStatuses[0] || '');
+        setActionNote('');
+        setShowStatusModal(true);
     };
 
     const openLineModal = (line?: IncidentSettlementLine) => {
@@ -307,11 +321,27 @@ export default function IncidentDetailPage() {
                     </h1>
                 </div>
                 <div className="page-actions">
-                    {canManageIncident && availableStatuses.length > 0 && <button className="btn btn-primary" onClick={() => setShowStatusModal(true)}><Save size={16} /> Ubah Status</button>}
+                    {canManageIncident && availableStatuses.length > 0 && <button className="btn btn-primary" onClick={openStatusModal}><Save size={16} /> Ubah Status</button>}
                     {canManageIncident && !incidentClosed && <button className="btn btn-secondary" onClick={() => openLineModal()}><Plus size={16} /> Tambah Detail Biaya</button>}
                     <button className="btn btn-secondary" onClick={handlePrint}><Printer size={16} /> Print</button>
                 </div>
             </div>
+
+            {hasPendingDriverResolution && (
+                <div className="card" style={{ marginBottom: '1rem', borderColor: 'var(--color-warning)', background: 'rgba(245, 158, 11, 0.08)' }}>
+                    <div className="card-body" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <AlertTriangle size={20} style={{ color: 'var(--color-warning)', flex: '0 0 auto' }} />
+                        <div style={{ flex: '1 1 240px' }}>
+                            <div className="font-semibold">Menunggu review admin dari pengajuan driver</div>
+                            <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
+                                {incident.pendingDriverResolutionRequestedByName || incident.driverName || 'Driver'} mengajukan penyelesaian insiden
+                                {incident.pendingDriverResolutionAmount ? ` dengan biaya ${formatCurrency(incident.pendingDriverResolutionAmount)}` : ''}
+                                {pendingDriverReviewLines.length > 0 ? `. ${pendingDriverReviewLines.length} detail biaya masih draft dan perlu di-approve / void.` : '. Tidak ada biaya draft, lanjutkan review status insiden.'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="detail-grid">
                 <div className="card"><div className="card-header"><span className="card-header-title">Detail Insiden</span></div><div className="card-body">
@@ -352,7 +382,7 @@ export default function IncidentDetailPage() {
                             <td className="text-muted">{formatDate(line.date)}</td>
                             <td><span className={`badge badge-${INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.color}`}>{INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.label}</span></td>
                             <td>{INCIDENT_SETTLEMENT_CATEGORY_MAP[line.category] || line.category}</td>
-                            <td><div className="font-semibold">{line.description}</div>{line.note && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>{line.note}</div>}{line.linkedExpenseRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.25rem' }}>Expense {line.linkedExpenseRef}</div>}</td>
+                            <td><div className="font-semibold">{line.description}</div>{line.note && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>{line.note}</div>}{line.linkedExpenseRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.25rem' }}>Expense {line.linkedExpenseRef}</div>}{line.linkedDriverVoucherItemRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.15rem' }}>Masuk biaya lain-lain uang jalan</div>}</td>
                             <td><div>{line.payeeName || '-'}</div>{line.recipientType && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>{INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP[line.recipientType] || line.recipientType}</div>}</td>
                             <td><span className={`badge badge-${INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.color}`}>{INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.label}</span></td>
                             <td className="font-semibold">{formatCurrency(line.amount)}</td>
@@ -373,7 +403,7 @@ export default function IncidentDetailPage() {
 
             <div className="card mt-6"><div className="card-header"><span className="card-header-title">Timeline Penanganan</span></div><div className="card-body"><div className="timeline">{logs.map((item, idx) => <div key={item._id} className="timeline-item"><div className={`timeline-dot ${idx === logs.length - 1 ? 'active' : ''}`} /><div className="timeline-content"><div className="timeline-title">{item.note}</div><div className="timeline-meta">{formatDateTime(item.timestamp)} {item.userName ? `oleh ${item.userName}` : ''}</div></div></div>)}</div></div></div>
 
-            {showStatusModal && <div className="modal-overlay" onClick={() => { if (!savingStatus) setShowStatusModal(false); }}><div className="modal" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Ubah Status Insiden</h3></div><div className="modal-body"><div className="form-group"><label className="form-label">Status Baru</label><select className="form-select" value={newStatus} onChange={event => setNewStatus(event.target.value)}><option value="">Pilih</option>{availableStatuses.map(status => <option key={status} value={status}>{INCIDENT_STATUS_MAP[status]?.label}</option>)}</select></div><div className="form-group"><label className="form-label">Catatan <span className="required">*</span></label><textarea className="form-textarea" rows={3} value={actionNote} onChange={event => setActionNote(event.target.value)} placeholder="Jelaskan tindakan yang dilakukan..." /></div></div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={savingStatus}>Batal</button><button className="btn btn-primary" onClick={handleIncidentStatusSave} disabled={savingStatus}><Save size={16} /> {savingStatus ? 'Menyimpan...' : 'Simpan'}</button></div></div></div>}
+            {showStatusModal && <div className="modal-overlay" onClick={() => { if (!savingStatus) setShowStatusModal(false); }}><div className="modal" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Ubah Status Insiden</h3></div><div className="modal-body"><div className="form-group"><label className="form-label">Status Baru</label><select className="form-select" value={newStatus} onChange={event => setNewStatus(event.target.value)}>{availableStatuses.map(status => <option key={status} value={status}>{INCIDENT_STATUS_MAP[status]?.label}</option>)}</select></div><div className="form-group"><label className="form-label">Catatan <span className="required">*</span></label><textarea className="form-textarea" rows={3} value={actionNote} onChange={event => setActionNote(event.target.value)} placeholder="Jelaskan tindakan yang dilakukan..." /></div></div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={savingStatus}>Batal</button><button className="btn btn-primary" onClick={handleIncidentStatusSave} disabled={savingStatus || !newStatus || !actionNote.trim()}><Save size={16} /> {savingStatus ? 'Menyimpan...' : 'Simpan'}</button></div></div></div>}
 
             {showLineModal && <div className="modal-overlay" onClick={() => { if (!savingLine) resetLineModal(); }}><div className="modal" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">{editingLine ? 'Edit Detail Insiden' : 'Tambah Detail Insiden'}</h3></div><div className="modal-body">
                 <div className="form-row"><div className="form-group"><label className="form-label">Tipe Detail</label><select className="form-select" value={lineForm.lineType} onChange={event => setLineType(event.target.value as IncidentSettlementLineType)}>{TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={lineForm.date} onChange={event => setLineForm(prev => ({ ...prev, date: event.target.value }))} /></div></div>

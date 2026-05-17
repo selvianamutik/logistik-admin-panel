@@ -7,7 +7,7 @@ import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
     buildIncidentsQuery,
@@ -19,7 +19,15 @@ import {
 } from '@/lib/fleet-queue-page-support';
 import { formatDateTime, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, getShipperReferenceCount, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
+import type { Incident, Vehicle, DeliveryOrder, IncidentSettlementLine } from '@/lib/types';
+
+function isDriverSubmittedDraftLine(line: IncidentSettlementLine) {
+    return line.status === 'DRAFT' && (line.note || '').includes('Diajukan driver');
+}
+
+function hasPendingDriverIncidentReview(incident: Incident, lines: IncidentSettlementLine[]) {
+    return Boolean(incident.pendingDriverResolutionRequestedAt) || lines.some(isDriverSubmittedDraftLine);
+}
 
 export default function IncidentsPage() {
     const router = useRouter();
@@ -37,6 +45,8 @@ export default function IncidentsPage() {
     const [openIncidentCount, setOpenIncidentCount] = useState(0);
     const [progressIncidentCount, setProgressIncidentCount] = useState(0);
     const [resolvedIncidentCount, setResolvedIncidentCount] = useState(0);
+    const [pendingDriverReviewCount, setPendingDriverReviewCount] = useState(0);
+    const [incidentSettlementLines, setIncidentSettlementLines] = useState<IncidentSettlementLine[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [prefillApplied, setPrefillApplied] = useState(false);
@@ -102,6 +112,28 @@ export default function IncidentsPage() {
                 fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat insiden'),
                 fetchAllMatchingIncidents(),
             ]);
+            const matchingIncidentIds = matchingIncidents.map(item => item._id).filter(Boolean);
+            const currentIncidentIds = (listPayload.data || []).map(item => item._id).filter(Boolean);
+            const [matchingLineRows, currentLineRows] = await Promise.all([
+                matchingIncidentIds.length > 0
+                    ? fetchAllAdminCollectionData<IncidentSettlementLine>(
+                        `/api/data?entity=incident-settlement-lines&filter=${encodeURIComponent(JSON.stringify({ incidentRef: matchingIncidentIds }))}`,
+                        'Gagal memuat detail biaya insiden'
+                    )
+                    : Promise.resolve([]),
+                currentIncidentIds.length > 0
+                    ? fetchAllAdminCollectionData<IncidentSettlementLine>(
+                        `/api/data?entity=incident-settlement-lines&filter=${encodeURIComponent(JSON.stringify({ incidentRef: currentIncidentIds }))}`,
+                        'Gagal memuat detail biaya insiden'
+                    )
+                    : Promise.resolve([]),
+            ]);
+            const matchingLinesByIncident = matchingLineRows.reduce<Map<string, IncidentSettlementLine[]>>((map, line) => {
+                const current = map.get(line.incidentRef) || [];
+                current.push(line);
+                map.set(line.incidentRef, current);
+                return map;
+            }, new Map<string, IncidentSettlementLine[]>());
 
             const nextCounts = matchingIncidents.reduce(
                 (totals, incident) => {
@@ -112,18 +144,23 @@ export default function IncidentsPage() {
                     } else if (incident.status === 'RESOLVED') {
                         totals.resolved += 1;
                     }
+                    if (hasPendingDriverIncidentReview(incident, matchingLinesByIncident.get(incident._id) || [])) {
+                        totals.pendingDriverReview += 1;
+                    }
                     return totals;
                 },
-                { open: 0, inProgress: 0, resolved: 0 }
+                { open: 0, inProgress: 0, resolved: 0, pendingDriverReview: 0 }
             );
 
             setItems(listPayload.data || []);
             setFilteredTotalIncidents(listPayload.meta?.total || 0);
             setVehicles((vehiclePayload || []).filter(vehicle => vehicle.status !== 'SOLD'));
             setDos(doPayload || []);
+            setIncidentSettlementLines(currentLineRows);
             setOpenIncidentCount(nextCounts.open);
             setProgressIncidentCount(nextCounts.inProgress);
             setResolvedIncidentCount(nextCounts.resolved);
+            setPendingDriverReviewCount(nextCounts.pendingDriverReview);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
         } finally {
@@ -134,6 +171,13 @@ export default function IncidentsPage() {
     useEffect(() => {
         void loadIncidents();
     }, [loadIncidents]);
+
+    const linesByIncident = incidentSettlementLines.reduce<Map<string, IncidentSettlementLine[]>>((map, line) => {
+        const current = map.get(line.incidentRef) || [];
+        current.push(line);
+        map.set(line.incidentRef, current);
+        return map;
+    }, new Map<string, IncidentSettlementLine[]>());
 
     useEffect(() => {
         if (loading || prefillApplied) {
@@ -264,6 +308,7 @@ export default function IncidentsPage() {
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Terbuka</div><div className="kpi-value">{openIncidentCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Ditangani</div><div className="kpi-value">{progressIncidentCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Review Driver</div><div className="kpi-value">{pendingDriverReviewCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon success"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Selesai</div><div className="kpi-value">{resolvedIncidentCount}</div></div></div>
             </div>
 
@@ -290,7 +335,9 @@ export default function IncidentsPage() {
                         <tbody>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalIncidents === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
-                                    items.map(item => (
+                                    items.map(item => {
+                                        const pendingDriverReview = hasPendingDriverIncidentReview(item, linesByIncident.get(item._id) || []);
+                                        return (
                                         <tr key={item._id}>
                                             <td><Link href={`/fleet/incidents/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.incidentNumber}</Link></td>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(item.dateTime)}</td>
@@ -300,11 +347,11 @@ export default function IncidentsPage() {
                                             <td>{INCIDENT_TYPE_MAP[item.incidentType] || item.incidentType}</td>
                                             <td>{item.locationText}</td>
                                             <td><span className={`badge badge-${URGENCY_MAP[item.urgency]?.color}`}>{URGENCY_MAP[item.urgency]?.label}</span></td>
-                                            <td><span className={`badge badge-${INCIDENT_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {INCIDENT_STATUS_MAP[item.status]?.label}</span></td>
+                                            <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><span className={`badge badge-${INCIDENT_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {INCIDENT_STATUS_MAP[item.status]?.label}</span>{pendingDriverReview && <span className="badge badge-warning">Review Driver</span>}</div></td>
                                             <td>{getIncidentNextAction(item)}</td>
                                             <td><button className="table-action-btn" onClick={() => router.push(`/fleet/incidents/${item._id}`)}><Eye size={14} /> Lihat</button></td>
                                         </tr>
-                                    ))}
+                                    )})}
                         </tbody>
                     </table>
                 </div>
@@ -314,16 +361,21 @@ export default function IncidentsPage() {
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Tidak ada insiden</div>
                             </div>
-                        ) : items.map(item => (
+                        ) : items.map(item => {
+                            const pendingDriverReview = hasPendingDriverIncidentReview(item, linesByIncident.get(item._id) || []);
+                            return (
                             <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{item.incidentNumber}</div>
                                         <div className="mobile-record-subtitle">{item.vehiclePlate || '-'} / {formatDateTime(item.dateTime)}</div>
                                     </div>
-                                    <span className={`badge badge-${INCIDENT_STATUS_MAP[item.status]?.color}`}>
-                                        <span className="badge-dot" /> {INCIDENT_STATUS_MAP[item.status]?.label}
-                                    </span>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                        <span className={`badge badge-${INCIDENT_STATUS_MAP[item.status]?.color}`}>
+                                            <span className="badge-dot" /> {INCIDENT_STATUS_MAP[item.status]?.label}
+                                        </span>
+                                        {pendingDriverReview && <span className="badge badge-warning">Review Driver</span>}
+                                    </div>
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
@@ -362,7 +414,7 @@ export default function IncidentsPage() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                        )})}
                     </div>
                 )}
                 {filteredTotalIncidents > 0 && (

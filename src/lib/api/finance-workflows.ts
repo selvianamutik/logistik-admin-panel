@@ -37,6 +37,8 @@ import type {
     CustomerReceipt,
     DeliveryOrder,
     DeliveryOrderItem,
+    DriverVoucher,
+    DriverVoucherItem,
     Expense,
     ExpenseCategory,
     FreightNota,
@@ -79,6 +81,7 @@ import {
     type ReceivableDoc,
     type ReceivableSnapshot,
 } from './finance-workflow-support';
+import { computeDriverVoucherTotals, getDriverVoucherIssuedAmount } from './driver-workflow-support';
 import {
     postBankTransferJournal,
     postCustomerOverpaymentRefundJournal,
@@ -382,6 +385,105 @@ function sanitizePatchSet(input: Record<string, unknown>) {
     return Object.fromEntries(
         Object.entries(input).filter(([, value]) => value !== undefined)
     );
+}
+
+function mapIncidentSettlementCategoryToVoucherCategory(category?: string) {
+    switch (category) {
+        case 'TOWING':
+            return 'Towing / Evakuasi';
+        case 'REPAIR':
+        case 'SPAREPART':
+        case 'TIRE':
+            return 'Perbaikan Darurat Trip';
+        case 'ACCOMMODATION':
+            return 'Menginap Driver';
+        case 'CARGO_HANDLING':
+            return 'Bongkar Muat';
+        default:
+            return 'Lain-lain Trip';
+    }
+}
+
+async function findVoucherForIncidentDeliveryOrder(incident?: { relatedDeliveryOrderRef?: string }) {
+    const relatedDeliveryOrderRef = normalizeOptionalText(incident?.relatedDeliveryOrderRef);
+    if (!relatedDeliveryOrderRef) {
+        return null;
+    }
+    const vouchers = await listDocumentsByFilter<DriverVoucher>('driverVoucher', {
+        deliveryOrderRef: relatedDeliveryOrderRef,
+    });
+    return vouchers
+        .filter(voucher => voucher.status !== 'SETTLED')
+        .sort((left, right) => `${right.issuedDate || ''}-${right._id}`.localeCompare(`${left.issuedDate || ''}-${left._id}`))[0] ||
+        null;
+}
+
+async function syncIncidentSettlementLineToDriverVoucherItem(params: {
+    voucher: DriverVoucher;
+    incident: { _id: string; incidentNumber?: string; relatedDeliveryOrderRef?: string };
+    line: {
+        _id: string;
+        category?: string;
+        date?: string;
+        amount?: number;
+        description?: string;
+        note?: string;
+        linkedDriverVoucherItemRef?: string;
+    };
+    expenseId: string;
+    expenseDate: string;
+}) {
+    if (params.line.linkedDriverVoucherItemRef) {
+        return params.line.linkedDriverVoucherItemRef;
+    }
+    const existingItems = await listDocumentsByFilter<DriverVoucherItem>('driverVoucherItem', {
+        voucherRef: params.voucher._id,
+    });
+    const existingLinkedItem = existingItems.find(item =>
+        item.relatedIncidentSettlementLineRef === params.line._id ||
+        item.linkedExpenseRef === params.expenseId
+    );
+    if (existingLinkedItem) {
+        return existingLinkedItem._id;
+    }
+
+    const voucherItemId = crypto.randomUUID();
+    const amount = Math.max(normalizeCurrencyNumber(params.line.amount ?? 0), 0);
+    const itemDoc: DriverVoucherItem = {
+        _id: voucherItemId,
+        _type: 'driverVoucherItem',
+        voucherRef: params.voucher._id,
+        expenseDate: params.expenseDate || params.line.date || getBusinessDateValue(),
+        category: mapIncidentSettlementCategoryToVoucherCategory(params.line.category),
+        description: [
+            params.incident.incidentNumber ? `Insiden ${params.incident.incidentNumber}` : 'Insiden driver',
+            normalizeOptionalText(params.line.description),
+        ].filter(Boolean).join(' - '),
+        amount,
+        relatedIncidentRef: params.incident._id,
+        relatedIncidentSettlementLineRef: params.line._id,
+        linkedExpenseRef: params.expenseId,
+        source: 'INCIDENT',
+    };
+    await createDocument(itemDoc as unknown as { _type: string; [key: string]: unknown });
+
+    const nextOperationalSpent = existingItems.reduce(
+        (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
+        0
+    ) + amount;
+    const nextTotals = computeDriverVoucherTotals(
+        getDriverVoucherIssuedAmount(params.voucher),
+        nextOperationalSpent,
+        normalizeNumber(params.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
+    );
+    await updateDocument(params.voucher._id, {
+        totalSpent: nextTotals.totalSpent,
+        totalClaimAmount: nextTotals.totalClaimAmount,
+        balance: nextTotals.balance,
+        updatedAt: new Date().toISOString(),
+    }, 'driverVoucher');
+
+    return voucherItemId;
 }
 
 function parseOptionalStrictNotaRowNumber(
@@ -1905,12 +2007,18 @@ export async function handleExpenseCreate(
         typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
     const boronganRef =
         typeof data.boronganRef === 'string' && data.boronganRef ? data.boronganRef : undefined;
-    const voucherRef =
+    let voucherRef =
         typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     const linkedWorkflowRefs = [relatedIncidentRef, relatedMaintenanceRef, boronganRef, voucherRef].filter(Boolean);
-    if (linkedWorkflowRefs.length > 1) {
+    const isIncidentVoucherExpense =
+        Boolean(relatedIncidentSettlementLineRef && relatedIncidentRef && voucherRef) &&
+        !relatedMaintenanceRef &&
+        !boronganRef;
+    if (linkedWorkflowRefs.length > 1 && !isIncidentVoucherExpense) {
         return NextResponse.json(
-            { error: 'Pengeluaran hanya boleh dikaitkan ke satu workflow: insiden, maintenance, slip borongan, atau bon trip' },
+            { error: 'Pengeluaran hanya boleh dikaitkan ke satu workflow: insiden, maintenance, slip borongan, atau bon trip. Pengecualian hanya biaya insiden yang otomatis masuk ke uang jalan trip terkait.' },
             { status: 409 }
         );
     }
@@ -1940,6 +2048,9 @@ export async function handleExpenseCreate(
             note?: string;
             payeeName?: string;
             linkedExpenseRef?: string;
+            linkedDriverVoucherItemRef?: string;
+            category?: string;
+            date?: string;
         }
         | null = null;
     if (relatedIncidentSettlementLineRef) {
@@ -1953,6 +2064,9 @@ export async function handleExpenseCreate(
             note?: string;
             payeeName?: string;
             linkedExpenseRef?: string;
+            linkedDriverVoucherItemRef?: string;
+            category?: string;
+            date?: string;
         }>(relatedIncidentSettlementLineRef, 'incidentSettlementLine');
         if (!incidentSettlementLine) {
             return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
@@ -1999,8 +2113,11 @@ export async function handleExpenseCreate(
     let linkedIncident:
         | {
             _id: string;
+            incidentNumber?: string;
             vehicleRef?: string;
             vehiclePlate?: string;
+            relatedDeliveryOrderRef?: string;
+            relatedDONumber?: string;
         }
         | null = null;
     let linkedMaintenance:
@@ -2011,7 +2128,14 @@ export async function handleExpenseCreate(
         }
         | null = null;
     if (relatedIncidentRef) {
-        const incident = await getDocumentById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedIncidentRef, 'incident');
+        const incident = await getDocumentById<{
+            _id: string;
+            incidentNumber?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+            relatedDeliveryOrderRef?: string;
+            relatedDONumber?: string;
+        }>(relatedIncidentRef, 'incident');
         if (!incident) {
             return NextResponse.json({ error: 'Insiden terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
@@ -2025,6 +2149,12 @@ export async function handleExpenseCreate(
             }
             relatedVehicleRef = incident.vehicleRef;
             relatedVehiclePlate = incident.vehiclePlate || relatedVehiclePlate;
+        }
+        if (incidentSettlementLine && !voucherRef && !selectedAccountRef) {
+            const incidentVoucher = await findVoucherForIncidentDeliveryOrder(incident);
+            if (incidentVoucher) {
+                voucherRef = incidentVoucher._id;
+            }
         }
     }
 
@@ -2061,16 +2191,53 @@ export async function handleExpenseCreate(
     let linkedVoucher:
         | {
             _id: string;
+            deliveryOrderRef?: string;
+            status?: string;
             vehicleRef?: string;
             vehiclePlate?: string;
+            driverFeeAmount?: number;
+            totalIssuedAmount?: number;
+            cashGiven?: number;
         }
         | null = null;
     if (voucherRef) {
-        const voucher = await getDocumentById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(voucherRef, 'driverVoucher');
+        const voucher = await getDocumentById<{
+            _id: string;
+            deliveryOrderRef?: string;
+            status?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+            driverFeeAmount?: number;
+            totalIssuedAmount?: number;
+            cashGiven?: number;
+        }>(voucherRef, 'driverVoucher');
         if (!voucher) {
             return NextResponse.json({ error: 'Bon trip terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
+        if (incidentSettlementLine && voucher.status === 'SETTLED') {
+            return NextResponse.json(
+                { error: 'Bon trip yang sudah settle tidak bisa menerima biaya insiden baru.' },
+                { status: 409 }
+            );
+        }
+        if (
+            incidentSettlementLine &&
+            linkedIncident?.relatedDeliveryOrderRef &&
+            voucher.deliveryOrderRef &&
+            voucher.deliveryOrderRef !== linkedIncident.relatedDeliveryOrderRef
+        ) {
+            return NextResponse.json(
+                { error: 'Bon trip tidak cocok dengan DO pada insiden terkait' },
+                { status: 409 }
+            );
+        }
         linkedVoucher = voucher;
+        if (incidentSettlementLine && selectedAccountRef) {
+            return NextResponse.json(
+                { error: 'Biaya insiden yang dibayar dari rekening/kas diposting sebagai pengeluaran langsung. Kosongkan rekening jika biaya ini berasal dari uang jalan trip.' },
+                { status: 409 }
+            );
+        }
         if (voucher.vehicleRef) {
             if (relatedVehicleRef && voucher.vehicleRef !== relatedVehicleRef) {
                 return NextResponse.json(
@@ -2137,11 +2304,11 @@ export async function handleExpenseCreate(
         relatedIncidentRef,
         relatedIncidentSettlementLineRef,
         relatedMaintenanceRef,
+        relatedDeliveryOrderRef: linkedIncident?.relatedDeliveryOrderRef,
+        relatedDeliveryOrderNumber: linkedIncident?.relatedDONumber,
         boronganRef,
         voucherRef,
     };
-    const selectedAccountRef =
-        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     const expenseAuditSummary = buildExpenseAuditSummary({
         amount,
         categoryName: category.name,
@@ -2166,9 +2333,19 @@ export async function handleExpenseCreate(
         if (linkedBorongan) await updateDocument(linkedBorongan._id, { updatedAt: now }, 'driverBorongan');
         if (incidentSettlementLine) {
             const lineRef = relatedIncidentSettlementLineRef as string;
+            const linkedDriverVoucherItemRef = linkedIncident && linkedVoucher
+                ? await syncIncidentSettlementLineToDriverVoucherItem({
+                    voucher: linkedVoucher as DriverVoucher,
+                    incident: linkedIncident,
+                    line: incidentSettlementLine,
+                    expenseId,
+                    expenseDate,
+                })
+                : undefined;
             await updateDocument(lineRef, sanitizePatchSet({
                 status: 'POSTED',
                 linkedExpenseRef: expenseId,
+                linkedDriverVoucherItemRef,
                 linkedExpenseDate: expenseDate,
                 linkedExpenseAmount: amount,
                 linkedExpenseCategoryRef: categoryRef,
@@ -2190,7 +2367,9 @@ export async function handleExpenseCreate(
                 userName: session.name,
             });
         }
-        await postExpenseJournal(session, expenseDoc as Expense, null);
+        if (!(incidentSettlementLine && linkedVoucher)) {
+            await postExpenseJournal(session, expenseDoc as Expense, null);
+        }
         await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
         if (incidentSettlementLine) {
             await addAuditLog(
@@ -2267,9 +2446,19 @@ export async function handleExpenseCreate(
         if (linkedBoronganForAttempt) await updateDocument(linkedBoronganForAttempt._id, { updatedAt: now }, 'driverBorongan');
         if (incidentSettlementLine && typeof relatedIncidentSettlementLineRef === 'string') {
             const lineRef = relatedIncidentSettlementLineRef;
+            const linkedDriverVoucherItemRef = linkedIncident && linkedVoucher
+                ? await syncIncidentSettlementLineToDriverVoucherItem({
+                    voucher: linkedVoucher as DriverVoucher,
+                    incident: linkedIncident,
+                    line: incidentSettlementLine,
+                    expenseId,
+                    expenseDate,
+                })
+                : undefined;
             await updateDocument(lineRef, sanitizePatchSet({
                 status: 'POSTED',
                 linkedExpenseRef: expenseId,
+                linkedDriverVoucherItemRef,
                 linkedExpenseDate: expenseDate,
                 linkedExpenseAmount: amount,
                 linkedExpenseCategoryRef: categoryRef,
@@ -2291,7 +2480,9 @@ export async function handleExpenseCreate(
                 userName: session.name,
             });
         }
-        await postExpenseJournal(session, expenseDoc as Expense, bankAcc);
+        if (!(incidentSettlementLine && linkedVoucher)) {
+            await postExpenseJournal(session, expenseDoc as Expense, bankAcc);
+        }
         await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummaryWithBank);
         if (incidentSettlementLine) {
             await addAuditLog(

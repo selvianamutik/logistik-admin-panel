@@ -715,6 +715,8 @@ class DeliveryOrderService {
       locationText: (json['locationText'] as String?)?.trim() ?? '',
       odometer: _toDouble(json['odometer']),
       dateTime: (json['dateTime'] as String?)?.trim(),
+      pendingDriverResolutionRequestedAt:
+          (json['pendingDriverResolutionRequestedAt'] as String?)?.trim(),
       settlementLines: _mapIncidentSettlementLines(json['settlementLines']),
     );
   }

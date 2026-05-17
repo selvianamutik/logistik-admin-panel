@@ -689,6 +689,52 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
     }, 'driver');
 }
 
+function isDeliveryOrderTrackingOpen(deliveryOrder: Pick<DeliveryOrder, 'trackingState'>) {
+    return deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED';
+}
+
+function buildDeliveryOrderTrackingStopPatch(deliveryOrder: Pick<DeliveryOrder, 'trackingState'>, timestamp: string) {
+    return isDeliveryOrderTrackingOpen(deliveryOrder)
+        ? {
+            trackingState: 'STOPPED',
+            trackingStoppedAt: timestamp,
+        }
+        : {};
+}
+
+async function writeWorkflowTrackingStopLog(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    deliveryOrder: Pick<DeliveryOrder, '_id' | 'doNumber' | 'trackingState' | 'driverRef'>,
+    timestamp: string,
+    note: string
+) {
+    try {
+        await releaseDriverTrackingLockIfOwned(deliveryOrder.driverRef, deliveryOrder._id, timestamp);
+    } catch (error) {
+        console.warn('Failed to release driver tracking lock from workflow', error);
+    }
+
+    if (!isDeliveryOrderTrackingOpen(deliveryOrder)) {
+        return;
+    }
+
+    try {
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: deliveryOrder._id,
+            status: 'STOPPED',
+            note,
+            timestamp,
+            userRef: session._id,
+            userName: session.name,
+        });
+    } catch (error) {
+        console.warn('Failed to write workflow tracking stop log', error);
+    }
+}
+
 function buildOrderItemDraftDocument(
     orderRef: string,
     item: NormalizedOrderItemInput,
@@ -5178,6 +5224,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             data.closeTripOnApprove === true &&
             status === 'DELIVERED' &&
             aggregatedTripStatus === 'DELIVERED';
+        const shouldStopTrackingAfterBatch = aggregatedTripStatus === 'DELIVERED' || aggregatedTripStatus === 'CANCELLED';
         const closureFields: Record<string, unknown> = {};
         if (shouldCloseTripOnApprove) {
             odometerResult = await applyTripClosureOdometerUpdates({
@@ -5229,8 +5276,19 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                     cargoFinalizedByName: session.name,
                 }
                 : {}),
+            ...(shouldStopTrackingAfterBatch
+                ? buildDeliveryOrderTrackingStopPatch(deliveryOrder, timestamp)
+                : {}),
             ...closureFields,
         }, 'deliveryOrder');
+        if (shouldStopTrackingAfterBatch) {
+            await writeWorkflowTrackingStopLog(
+                session,
+                deliveryOrder,
+                timestamp,
+                `Tracking dihentikan otomatis karena status SJ terkumpul menjadi ${aggregatedTripStatus}.`
+            );
+        }
 
         if (linkedVoucherPatch) {
             await updateDocument(linkedVoucherPatch._id, {
@@ -7361,12 +7419,21 @@ export async function handleDeliveryOrderTripClosureSet(
                 ? {
                     ...clearLegacyPendingDriverRequestFields(),
                     pendingDriverRequests: nextPendingDriverRequests,
+                    ...buildDeliveryOrderTrackingStopPatch(deliveryOrder, timestamp),
                 }
                 : {}),
         };
         await updateDocument(id, {
             ...closureFields,
         }, 'deliveryOrder');
+        if (closed) {
+            await writeWorkflowTrackingStopLog(
+                session,
+                deliveryOrder,
+                timestamp,
+                `Tracking dihentikan otomatis karena trip ${deliveryOrder.doNumber || id} ditutup admin.`
+            );
+        }
 
         const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');
         if (tripRecord) {

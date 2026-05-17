@@ -286,8 +286,18 @@ export async function PATCH(request: Request) {
         }
 
         const now = new Date().toISOString();
+        const pendingDriverResolutionPatch = {
+            pendingDriverResolutionRequestedAt: now,
+            pendingDriverResolutionRequestedBy: auth.session._id,
+            pendingDriverResolutionRequestedByName: auth.session.name,
+            pendingDriverResolutionNote: resolutionNote,
+            pendingDriverResolutionCostCount: normalizedCosts.length,
+            pendingDriverResolutionAmount: normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0),
+        };
         if (incident.status === 'OPEN') {
-            await updateDocument<Incident>(incident._id, { status: 'IN_PROGRESS' }, 'incident');
+            await updateDocument<Incident>(incident._id, { status: 'IN_PROGRESS', ...pendingDriverResolutionPatch }, 'incident');
+        } else {
+            await updateDocument<Incident>(incident._id, pendingDriverResolutionPatch, 'incident');
         }
 
         const locationText = typeof parsedBody.data.resolutionLocationText === 'string'
@@ -352,8 +362,8 @@ export async function PATCH(request: Request) {
         return jsonNoStore({
             data: {
                 incident: incident.status === 'OPEN'
-                    ? { ...incident, status: 'IN_PROGRESS' as const }
-                    : incident,
+                    ? { ...incident, status: 'IN_PROGRESS' as const, ...pendingDriverResolutionPatch }
+                    : { ...incident, ...pendingDriverResolutionPatch },
                 settlementLines: createdLines,
             },
         });

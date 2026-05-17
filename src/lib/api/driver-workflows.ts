@@ -825,7 +825,17 @@ async function getDriverVoucherState(voucherId: string) {
         return { error: NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 }) };
     }
 
-    const items = (await listDocumentsByFilter<Array<{ _id: string; _rev?: string; category: string; description?: string; amount: number; expenseDate?: string }>[number]>(
+    const items = (await listDocumentsByFilter<Array<{
+        _id: string;
+        _rev?: string;
+        category: string;
+        description?: string;
+        amount: number;
+        expenseDate?: string;
+        linkedExpenseRef?: string;
+        relatedIncidentSettlementLineRef?: string;
+        source?: string;
+    }>[number]>(
         'driverVoucherItem',
         { voucherRef: voucherId }
     )).sort((left, right) => String(left.expenseDate || '').localeCompare(String(right.expenseDate || '')));
@@ -2007,6 +2017,9 @@ export async function handleDriverVoucherSettlement(
     const existingVoucherTransactions = await listDocumentsByFilter<VoucherBankTransaction>('bankTransaction', { relatedVoucherRef: voucherId });
 
     for (const item of state.items) {
+        if (item.linkedExpenseRef) {
+            continue;
+        }
         const expenseCategory = resolveExpenseCategory(expenseCategories, item.category);
         if (!expenseCategory) {
             return NextResponse.json(

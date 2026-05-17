@@ -468,6 +468,45 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return '${trip.deliveryOrderId}:$suffix';
   }
 
+  bool _suratJalanBatchRefMatches(
+    DeliveryTrip trip,
+    DeliveryShipperReference reference,
+    String candidateRef,
+  ) {
+    final normalized = candidateRef.trim();
+    if (normalized.isEmpty) return false;
+    final documentId = reference.documentId?.trim();
+    final key = reference.key?.trim();
+    final number = reference.referenceNumber.trim();
+    final candidates = <String>{
+      _suratJalanRefForBatch(trip, reference),
+      if (documentId != null && documentId.isNotEmpty) documentId,
+      if (key != null && key.isNotEmpty) '${trip.deliveryOrderId}:$key',
+      if (number.isNotEmpty) '${trip.deliveryOrderId}:$number',
+      if (key != null && key.isNotEmpty) key,
+      if (number.isNotEmpty) number,
+    };
+    return candidates.contains(normalized);
+  }
+
+  String _selectedSuratJalanText(
+    DeliveryTrip trip,
+    List<String> targetSuratJalanRefs,
+  ) {
+    final selected = trip.shipperReferences
+        .where(
+          (reference) => targetSuratJalanRefs.any(
+            (ref) => _suratJalanBatchRefMatches(trip, reference, ref),
+          ),
+        )
+        .map((reference) => reference.referenceNumber)
+        .where((value) => value.trim().isNotEmpty)
+        .toList(growable: false);
+    if (selected.isEmpty) return '${targetSuratJalanRefs.length} SJ';
+    if (selected.length <= 3) return selected.join(', ');
+    return '${selected.take(3).join(', ')} +${selected.length - 3} SJ';
+  }
+
   String _suratJalanStatusDistributionText(DeliveryTrip trip) {
     if (trip.shipperReferences.isEmpty) {
       return deliveryStatusLabel(_statusApiValue(trip.status));
@@ -880,6 +919,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
     setState(() => _updatingBatchStatus = true);
     try {
+      final selectedText = _selectedSuratJalanText(
+        trip,
+        result.targetSuratJalanRefs,
+      );
+      final targetLabel = _apiStatusLabel(_statusApiValue(result.status));
       await _deliveryOrderService.updateBatchSuratJalanStatus(
         sessionToken: sessionToken,
         deliveryOrderId: trip.deliveryOrderId,
@@ -889,10 +933,16 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
+      final refreshedTrip = _trips.firstWhereOrNull(
+        (item) => item.deliveryOrderId == trip.deliveryOrderId,
+      );
+      final distribution = refreshedTrip == null
+          ? ''
+          : ' Status sekarang: ${_suratJalanStatusDistributionText(refreshedTrip)}.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${result.targetSuratJalanRefs.length} SJ berhasil diupdate.',
+            '$selectedText berhasil dipindah ke $targetLabel.$distribution',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -3844,7 +3894,7 @@ class _TripStatusActionsCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: enabled ? onPressed : null,
+                onPressed: enabled && !busy ? onPressed : null,
                 icon: busy
                     ? SizedBox(
                         width: 16,
