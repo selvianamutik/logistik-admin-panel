@@ -1646,6 +1646,7 @@ function mapRowToDocument(docType: SupportedDocType, row: RelationalRow) {
         _type: docType,
         _createdAt: row.document_created_at || undefined,
         _updatedAt: row.document_updated_at || undefined,
+        _rev: row.document_updated_at || undefined,
     };
 
     for (const [field, column] of Object.entries(config.fieldMap)) {
