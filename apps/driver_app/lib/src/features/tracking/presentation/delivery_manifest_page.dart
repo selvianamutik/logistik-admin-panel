@@ -36,6 +36,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _inputVisibilityKey = GlobalKey();
+  final _draftVisibilityKeys = <String, GlobalKey>{};
   bool _submitting = false;
   bool _inputVisibilityScheduled = false;
   late List<_ManifestGroupDraft> _groups;
@@ -52,6 +53,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   void dispose() {
     FocusManager.instance.removeListener(_scheduleFocusedInputVisibility);
     WidgetsBinding.instance.removeObserver(this);
+    _draftVisibilityKeys.clear();
     super.dispose();
   }
 
@@ -157,14 +159,14 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   }
 
   void _addGroup() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final group = _ManifestGroupDraft.create(
+      widget.pickupStops.isNotEmpty ? widget.pickupStops.first.key : '',
+    );
     setState(() {
-      _groups = [
-        ..._groups,
-        _ManifestGroupDraft.create(
-          widget.pickupStops.isNotEmpty ? widget.pickupStops.first.key : '',
-        ),
-      ];
+      _groups = [..._groups, group];
     });
+    _scheduleDraftVisibility(_groupVisibilityKey(group.id));
   }
 
   Future<void> _removeGroup(String groupId) async {
@@ -221,17 +223,18 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   }
 
   void _addItem(String groupId) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final item = _ManifestItemDraft.create();
     setState(() {
       _groups = _groups
           .map(
             (group) => group.id == groupId
-                ? group.copyWith(
-                    items: [...group.items, _ManifestItemDraft.create()],
-                  )
+                ? group.copyWith(items: [...group.items, item])
                 : group,
           )
           .toList(growable: false);
     });
+    _scheduleDraftVisibility(_itemVisibilityKey(item.id));
   }
 
   Future<void> _removeItem(String groupId, String itemId) async {
@@ -614,6 +617,28 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
+  GlobalKey _groupVisibilityKey(String groupId) =>
+      _draftVisibilityKeys.putIfAbsent('group:$groupId', () => GlobalKey());
+
+  GlobalKey _itemVisibilityKey(String itemId) =>
+      _draftVisibilityKeys.putIfAbsent('item:$itemId', () => GlobalKey());
+
+  void _scheduleDraftVisibility(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final draftContext = key.currentContext;
+      if (draftContext == null || !draftContext.mounted) return;
+
+      Scrollable.ensureVisible(
+        draftContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: 0.08,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -653,6 +678,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                       const SizedBox(height: 16),
                       ..._groups.map(
                         (group) => Padding(
+                          key: _groupVisibilityKey(group.id),
                           padding: const EdgeInsets.only(bottom: 14),
                           child: _ManifestGroupCard(
                             key: ValueKey(group.id),
@@ -669,6 +695,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                             onRemoveGroup: _groups.length > 1
                                 ? _removeGroup
                                 : null,
+                            itemVisibilityKeyFor: _itemVisibilityKey,
                           ),
                         ),
                       ),
@@ -936,6 +963,7 @@ class _ManifestGroupCard extends StatelessWidget {
     required this.onAddItem,
     required this.onRemoveItem,
     required this.onRemoveGroup,
+    required this.itemVisibilityKeyFor,
   });
 
   final _ManifestGroupDraft group;
@@ -965,6 +993,7 @@ class _ManifestGroupCard extends StatelessWidget {
   final void Function(String groupId) onAddItem;
   final void Function(String groupId, String itemId) onRemoveItem;
   final void Function(String groupId)? onRemoveGroup;
+  final GlobalKey Function(String itemId) itemVisibilityKeyFor;
 
   @override
   Widget build(BuildContext context) {
@@ -979,20 +1008,21 @@ class _ManifestGroupCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  'SJ Pengirim',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
+                Expanded(
+                  child: Text(
+                    'SJ Pengirim',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 if (onRemoveGroup != null)
-                  TextButton.icon(
+                  IconButton(
                     onPressed: () => onRemoveGroup!(group.id),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: const Text('Hapus SJ'),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    tooltip: 'Hapus SJ',
                   ),
               ],
             ),
@@ -1019,6 +1049,7 @@ class _ManifestGroupCard extends StatelessWidget {
             if (allowsDirectCargoInput) ...[
               ...group.items.map(
                 (item) => Padding(
+                  key: itemVisibilityKeyFor(item.id),
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _ManifestItemCard(
                     key: ValueKey(item.id),

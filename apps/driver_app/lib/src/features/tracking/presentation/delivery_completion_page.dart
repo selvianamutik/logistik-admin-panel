@@ -27,6 +27,7 @@ class DeliveryCompletionPage extends StatefulWidget {
 class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
     with WidgetsBindingObserver {
   final _inputVisibilityKey = GlobalKey();
+  final _dropVisibilityKeys = <String, GlobalKey>{};
   final _noteController = TextEditingController();
   late final TextEditingController _podReceiverNameController;
   late final TextEditingController _podReceivedDateController;
@@ -65,6 +66,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   void dispose() {
     FocusManager.instance.removeListener(_scheduleFocusedInputVisibility);
     WidgetsBinding.instance.removeObserver(this);
+    _dropVisibilityKeys.clear();
     _noteController.dispose();
     _podReceiverNameController.dispose();
     _podReceivedDateController.dispose();
@@ -212,16 +214,16 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   }
 
   void _addDropPoint() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final draft = _createNextDropDraftForSelectedCargo(
+      _selectedCargoDrafts,
+      _selectedDropDrafts,
+      _selectedShipperReferences,
+    );
     setState(() {
-      _dropDrafts = [
-        ..._dropDrafts,
-        _createNextDropDraftForSelectedCargo(
-          _selectedCargoDrafts,
-          _selectedDropDrafts,
-          _selectedShipperReferences,
-        ),
-      ];
+      _dropDrafts = [..._dropDrafts, draft];
     });
+    _scheduleDraftVisibility(_dropVisibilityKey(draft.id));
   }
 
   Future<void> _removeDropPoint(String draftId) async {
@@ -506,6 +508,25 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
     });
   }
 
+  GlobalKey _dropVisibilityKey(String draftId) =>
+      _dropVisibilityKeys.putIfAbsent(draftId, () => GlobalKey());
+
+  void _scheduleDraftVisibility(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final draftContext = key.currentContext;
+      if (draftContext == null || !draftContext.mounted) return;
+
+      Scrollable.ensureVisible(
+        draftContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: 0.08,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -597,6 +618,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     const SizedBox(height: 12),
                     ...selectedDropDrafts.asMap().entries.map(
                       (entry) => Padding(
+                        key: _dropVisibilityKey(entry.value.id),
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _ActualDropCard(
                           key: ValueKey(entry.value.id),

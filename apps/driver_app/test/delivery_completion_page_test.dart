@@ -871,8 +871,8 @@ void main() {
       await tester.tap(addDropButton);
       await tester.pumpAndSettle();
 
-      expect(find.text('Titik Drop 1'), findsOneWidget);
-      expect(find.text('Titik Drop 2'), findsOneWidget);
+      expect(find.text('Titik Drop 1', skipOffstage: false), findsOneWidget);
+      expect(find.text('Titik Drop 2', skipOffstage: false), findsOneWidget);
 
       await tester.scrollUntilVisible(
         find.text('Titik Drop 2'),
@@ -886,15 +886,15 @@ void main() {
 
       await tester.tap(find.text('Batal'));
       await tester.pumpAndSettle();
-      expect(find.text('Titik Drop 2'), findsOneWidget);
+      expect(find.text('Titik Drop 2', skipOffstage: false), findsOneWidget);
 
       await tester.tap(find.byIcon(Icons.delete_outline_rounded).last);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Hapus Titik'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Titik Drop 1'), findsOneWidget);
-      expect(find.text('Titik Drop 2'), findsNothing);
+      expect(find.text('Titik Drop 1', skipOffstage: false), findsOneWidget);
+      expect(find.text('Titik Drop 2', skipOffstage: false), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -942,6 +942,68 @@ void main() {
       expect(
         find.widgetWithText(FilledButton, 'Ajukan Selesai'),
         findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps added drop point reachable while keyboard is open', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: singleTargetTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+
+      final addDropButton = find.widgetWithText(
+        OutlinedButton,
+        'Tambah Titik Drop',
+        skipOffstage: false,
+      );
+      await tester.scrollUntilVisible(
+        addDropButton,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
+      await tester.pumpAndSettle();
+
+      final usableBottom =
+          tester.view.physicalSize.height - tester.view.viewInsets.bottom;
+      final secondDropTitle = find.text('Titik Drop 2', skipOffstage: false);
+      expect(secondDropTitle, findsOneWidget);
+      expect(tester.getRect(secondDropTitle).center.dy, lessThan(usableBottom));
+
+      final locationFields = find.widgetWithText(
+        TextFormField,
+        'Nama Lokasi',
+        skipOffstage: false,
+      );
+      expect(locationFields, findsAtLeastNWidgets(1));
+      await tester.enterText(locationFields.last, 'Gudang Hold');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(locationFields.last).controller?.text,
+        'Gudang Hold',
+      );
+      expect(
+        tester.getRect(locationFields.last).center.dy,
+        lessThan(usableBottom),
       );
       expect(tester.takeException(), isNull);
     });

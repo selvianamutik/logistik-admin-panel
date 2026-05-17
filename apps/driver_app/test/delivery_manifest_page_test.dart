@@ -298,6 +298,133 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('keeps added SJ and cargo reachable while keyboard is open', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: [],
+                          allowsDirectCargoInput: true,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'No. SJ Pengirim').first,
+        'sj-a',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Deskripsi Barang').first,
+        'Barang A',
+      );
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+
+      final addSjButton = find.widgetWithText(
+        OutlinedButton,
+        'Tambah SJ',
+        skipOffstage: false,
+      );
+      final usableBottom =
+          tester.view.physicalSize.height - tester.view.viewInsets.bottom;
+      final addItemButtons = find.widgetWithText(
+        OutlinedButton,
+        'Tambah Barang di SJ Ini',
+        skipOffstage: false,
+      );
+      await tester.scrollUntilVisible(
+        addItemButtons.last,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      tester.widget<OutlinedButton>(addItemButtons.last).onPressed?.call();
+      await tester.pumpAndSettle();
+
+      final descriptionFields = find.widgetWithText(
+        TextFormField,
+        'Deskripsi Barang',
+        skipOffstage: false,
+      );
+      expect(descriptionFields, findsNWidgets(2));
+      await tester.enterText(descriptionFields.last, 'Barang A2');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(descriptionFields.last).controller?.text,
+        'Barang A2',
+      );
+      expect(
+        tester.getRect(descriptionFields.last).center.dy,
+        lessThan(usableBottom),
+      );
+
+      await tester.scrollUntilVisible(
+        addSjButton,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      tester.widget<OutlinedButton>(addSjButton).onPressed?.call();
+      await tester.pumpAndSettle();
+
+      final sjFields = find.widgetWithText(
+        TextFormField,
+        'No. SJ Pengirim',
+        skipOffstage: false,
+      );
+      expect(sjFields, findsNWidgets(2));
+      expect(tester.getRect(sjFields.last).center.dy, lessThan(usableBottom));
+      await tester.enterText(sjFields.last, 'sj-b');
+
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Simpan SJ & Barang'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(
+        capturedResult!.shipperReferences.map(
+          (reference) => reference.referenceNumber,
+        ),
+        ['SJ-A', 'SJ-B'],
+      );
+      expect(capturedResult!.cargoItems.map((item) => item.description), [
+        'Barang A',
+        'Barang A2',
+      ]);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets(
       'keeps focused cargo input visible when viewport shrinks without insets',
       (tester) async {
@@ -534,8 +661,9 @@ void main() {
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Hapus SJ'), findsAtLeastNWidgets(1));
-      await tester.tap(find.text('Hapus SJ').first);
+      final removeSjButtons = find.byTooltip('Hapus SJ');
+      expect(removeSjButtons, findsAtLeastNWidgets(1));
+      await tester.tap(removeSjButtons.first);
       await tester.pumpAndSettle();
       expect(find.text('Hapus SJ ini?'), findsOneWidget);
       expect(find.textContaining('ditandai hapus'), findsOneWidget);
@@ -544,7 +672,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('SJ-A'), findsWidgets);
 
-      await tester.tap(find.text('Hapus SJ').first);
+      await tester.tap(removeSjButtons.first);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Hapus SJ'));
       await tester.pumpAndSettle();
