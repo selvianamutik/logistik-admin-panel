@@ -13,6 +13,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 import {
     ensureCashAccount,
     isMutationConflictError,
@@ -1007,6 +1008,9 @@ export async function GET(request: Request) {
         }
 
         if (id) {
+            if (entity === 'delivery-orders') {
+                clearRelationalReadCache();
+            }
             let item =
                 entity === 'freight-notas'
                     ? await getFreightNotaById(id)

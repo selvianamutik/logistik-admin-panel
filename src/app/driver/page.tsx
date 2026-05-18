@@ -162,7 +162,7 @@ function getDriverIncidentStatusLabel(status: Incident['status']) {
 }
 
 function isDriverIncidentActiveForReport(incident: DriverIncidentRecord) {
-    return incident.status !== 'RESOLVED' && incident.status !== 'CLOSED';
+    return incident.status !== 'CLOSED';
 }
 
 function hasDriverIncidentSubmittedResolution(incident: DriverIncidentRecord) {
@@ -3709,7 +3709,9 @@ export default function DriverPortalPage() {
                         const activeIncidentReportBlockMessage = activeIncidentForReport
                             ? isDriverIncidentWaitingResolutionReview(activeIncidentForReport)
                                 ? `Lapor insiden baru tersedia setelah pengajuan ${activeIncidentLabel} direview admin.`
-                                : `Lapor insiden baru tersedia setelah ${activeIncidentLabel} diselesaikan admin.`
+                                : activeIncidentForReport.status === 'RESOLVED'
+                                    ? `Lapor insiden baru tersedia setelah ${activeIncidentLabel} ditutup admin.`
+                                    : `Lapor insiden baru tersedia setelah ${activeIncidentLabel} diselesaikan admin.`
                             : '';
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'

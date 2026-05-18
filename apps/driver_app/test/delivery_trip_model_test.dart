@@ -197,7 +197,7 @@ void main() {
       expect(incident.blocksNewIncidentReport, isTrue);
     });
 
-    test('allows a new incident report after admin resolves the incident', () {
+    test('blocks new incident report until admin closes the incident', () {
       const resolvedIncident = DriverIncident(
         id: 'incident-3',
         incidentNumber: 'INC-003',
@@ -221,7 +221,7 @@ void main() {
         locationText: 'Gudang',
       );
 
-      expect(resolvedIncident.blocksNewIncidentReport, isFalse);
+      expect(resolvedIncident.blocksNewIncidentReport, isTrue);
       expect(closedIncident.blocksNewIncidentReport, isFalse);
     });
   });

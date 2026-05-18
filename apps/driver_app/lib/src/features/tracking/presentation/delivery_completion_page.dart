@@ -3196,6 +3196,8 @@ class _SyncedTextFormField extends StatefulWidget {
 
 class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
   late final TextEditingController _controller;
+  String? _pendingControllerValue;
+  bool _controllerSyncScheduled = false;
 
   @override
   void initState() {
@@ -3208,10 +3210,23 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
     super.didUpdateWidget(oldWidget);
     if (widget.value == _controller.text) return;
 
-    _controller.value = TextEditingValue(
-      text: widget.value,
-      selection: TextSelection.collapsed(offset: widget.value.length),
-    );
+    _pendingControllerValue = widget.value;
+    if (_controllerSyncScheduled) return;
+
+    _controllerSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _controllerSyncScheduled = false;
+      if (!mounted) return;
+      final nextValue = _pendingControllerValue;
+      _pendingControllerValue = null;
+      if (nextValue == null || nextValue != widget.value) return;
+      if (nextValue == _controller.text) return;
+
+      _controller.value = TextEditingValue(
+        text: nextValue,
+        selection: TextSelection.collapsed(offset: nextValue.length),
+      );
+    });
   }
 
   @override

@@ -4,6 +4,7 @@ import { extractRefId } from '@/lib/api/data-helpers';
 import { handleIncidentCreate } from '@/lib/api/operations-workflows';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 import type { DeliveryOrder, Incident, IncidentActionLog, IncidentSettlementCategory, IncidentSettlementLine } from '@/lib/types';
 
 const DRIVER_ALLOWED_COST_CATEGORIES = new Set<IncidentSettlementCategory>([
@@ -43,7 +44,7 @@ function todayDateInput() {
 }
 
 function isTripIncidentActive(incident: Pick<Incident, 'status'>) {
-    return incident.status !== 'RESOLVED' && incident.status !== 'CLOSED';
+    return incident.status !== 'CLOSED';
 }
 
 async function ensureDriverIncidentAccess(incidentRef: string, driverId: string) {
@@ -168,6 +169,7 @@ export async function POST(request: Request) {
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Trip/SJ ini bukan milik driver yang login.' }, { status: 403 });
         }
+        clearRelationalReadCache();
         const activeIncident = (await listDocumentsByFilter<Incident>('incident', {
             relatedDeliveryOrderRef,
         })).find(isTripIncidentActive);

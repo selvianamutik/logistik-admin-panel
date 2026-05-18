@@ -1621,8 +1621,13 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     final waitingAdmin = activeIncidents.any(
       (incident) => incident.isWaitingResolutionReview,
     );
+    final waitingClose = activeIncidents.any(
+      (incident) => incident.status == 'RESOLVED',
+    );
     return waitingAdmin
         ? 'Laporan baru tersedia setelah pengajuan $incidentNumber direview admin.'
+        : waitingClose
+        ? 'Laporan baru tersedia setelah $incidentNumber ditutup admin.'
         : 'Selesaikan $incidentNumber sebelum membuat laporan insiden baru.';
   }
 

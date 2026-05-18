@@ -1009,6 +1009,98 @@ void main() {
     });
 
     testWidgets(
+      'selects customer recipient for added drop point without hiding the form',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: const DeliveryCompletionPage(
+              trip: multiTargetTrip,
+              customerRecipients: [
+                CustomerRecipientOption(
+                  id: 'recipient-alpha',
+                  customerRef: 'customer-1',
+                  label: 'Alpha Site',
+                  receiverName: 'Admin Alpha',
+                  receiverAddress: 'Jl. Alpha',
+                  receiverCompany: 'PT Alpha',
+                ),
+                CustomerRecipientOption(
+                  id: 'recipient-beta',
+                  customerRef: 'customer-1',
+                  label: 'Beta Site',
+                  receiverName: 'Admin Beta',
+                  receiverAddress: 'Jl. Beta',
+                  receiverCompany: 'PT Beta',
+                ),
+              ],
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        final addDropButton = find.widgetWithText(
+          OutlinedButton,
+          'Tambah Titik Drop',
+          skipOffstage: false,
+        );
+        await tester.scrollUntilVisible(
+          addDropButton,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
+        await tester.pumpAndSettle();
+
+        final recipientDropdown = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<String> &&
+              widget.decoration.labelText == 'Master Tujuan Customer',
+          description: 'Master Tujuan Customer dropdown',
+          skipOffstage: false,
+        );
+        await tester.scrollUntilVisible(
+          recipientDropdown.last,
+          420,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(recipientDropdown.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Beta Site - PT Beta').last);
+        await tester.pumpAndSettle();
+
+        final locationFields = find.widgetWithText(
+          TextFormField,
+          'Nama Lokasi',
+          skipOffstage: false,
+        );
+        final addressFields = find.widgetWithText(
+          TextFormField,
+          'Alamat Lokasi',
+          skipOffstage: false,
+        );
+
+        expect(find.text('Ajukan Selesai'), findsWidgets);
+        expect(
+          tester.widget<TextFormField>(locationFields.last).controller?.text,
+          'PT Beta',
+        );
+        expect(
+          tester.widget<TextFormField>(addressFields.last).controller?.text,
+          'Jl. Beta',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'keeps focused actual input visible when viewport shrinks without insets',
       (tester) async {
         tester.view.physicalSize = const Size(360, 900);
