@@ -1619,10 +1619,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     final incidentNumber = activeIncidents.first.incidentNumber;
     final waitingAdmin = activeIncidents.any(
-      (incident) => incident.hasSubmittedResolution,
+      (incident) => incident.isWaitingResolutionReview,
     );
     return waitingAdmin
-        ? 'Laporan baru tersedia setelah $incidentNumber ditutup admin.'
+        ? 'Laporan baru tersedia setelah pengajuan $incidentNumber direview admin.'
         : 'Selesaikan $incidentNumber sebelum membuat laporan insiden baru.';
   }
 
@@ -4078,7 +4078,14 @@ class _DriverIncidentCard extends StatelessWidget {
                         incident.hasSubmittedResolution) ...[
                       const SizedBox(height: 10),
                       Text(
-                        'Penyelesaian sudah diajukan. Menunggu review admin.',
+                        incident.isWaitingResolutionReview
+                            ? 'Penyelesaian sudah diajukan. Menunggu review admin.'
+                            : incident.status == 'RESOLVED' ||
+                                  incident.status == 'CLOSED'
+                            ? 'Penyelesaian sudah disetujui admin.'
+                            : incident.hasPostedResolution
+                            ? 'Biaya insiden sudah masuk uang jalan. Tunggu admin menyelesaikan status insiden.'
+                            : 'Pengajuan penyelesaian sudah direview admin. Tunggu admin menyelesaikan status insiden.',
                         style: TextStyle(
                           color: scheme.onSurface.withValues(alpha: 0.62),
                           fontSize: 12.5,

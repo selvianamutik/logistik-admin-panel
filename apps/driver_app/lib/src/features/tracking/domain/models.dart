@@ -486,10 +486,17 @@ class DriverIncident {
     (line) => line.status != 'VOID' && line.status != 'DRAFT',
   );
 
+  bool get hasPostedResolution =>
+      settlementLines.any((line) => line.status == 'POSTED');
+
+  bool get isWaitingResolutionReview =>
+      hasSubmittedResolution && !hasReviewedResolution;
+
   bool get canSubmitResolution =>
       status != 'RESOLVED' && status != 'CLOSED' && !hasSubmittedResolution;
 
-  bool get blocksNewIncidentReport => status != 'CLOSED';
+  bool get blocksNewIncidentReport =>
+      status != 'RESOLVED' && status != 'CLOSED';
 
   int get draftCostCount =>
       settlementLines.where((line) => line.status == 'DRAFT').length;

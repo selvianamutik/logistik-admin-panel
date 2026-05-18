@@ -361,7 +361,7 @@ export async function handleIncidentStatusUpdate(
         if (pendingSettlement) {
             return NextResponse.json(
                 {
-                    error: 'Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau di-void.',
+                    error: 'Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau ditolak.',
                 },
                 { status: 409 }
             );
@@ -577,7 +577,7 @@ export async function handleIncidentSettlementLineDelete(
     }
     if (incident.status === 'CLOSED') {
         return NextResponse.json(
-            { error: 'Detail settlement pada insiden yang sudah ditutup tidak boleh dihapus. Gunakan void jika perlu menutup data lama.' },
+            { error: 'Detail settlement pada insiden yang sudah ditutup tidak boleh dihapus. Gunakan status ditolak jika perlu menutup data lama.' },
             { status: 409 }
         );
     }
@@ -663,7 +663,7 @@ export async function handleIncidentSettlementLineStatusUpdate(
 
     const actionNote =
         status === 'VOID'
-            ? `Detail insiden di-void: ${formatIncidentSettlementLabel(existing)}`
+            ? `Detail insiden ditolak: ${formatIncidentSettlementLabel(existing)}`
             : status === 'POSTED'
                 ? `Recovery insiden ditandai diterima: ${formatIncidentSettlementLabel(existing)}`
                 : `Status detail insiden diubah ke ${status}: ${formatIncidentSettlementLabel(existing)}`;

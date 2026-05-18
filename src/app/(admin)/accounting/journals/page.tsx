@@ -234,7 +234,7 @@ export default function JournalEntriesPage() {
   };
 
   const handleVoidManualJournal = async (entry: JournalEntry) => {
-    if (!window.confirm(`Void jurnal manual ${entry.entryNumber}? Jurnal tidak dihapus, hanya dibatalkan dari perhitungan laporan.`)) {
+    if (!window.confirm(`Batalkan jurnal manual ${entry.entryNumber}? Jurnal tidak dihapus, hanya dibatalkan dari perhitungan laporan.`)) {
       return;
     }
     setVoidingId(entry._id);
@@ -250,13 +250,13 @@ export default function JournalEntriesPage() {
       });
       const payload = await res.json();
       if (!res.ok) {
-        addToast("error", payload.error || "Gagal void jurnal");
+        addToast("error", payload.error || "Gagal membatalkan jurnal");
         return;
       }
       addToast("success", "Jurnal manual dibatalkan");
       await load();
     } catch {
-      addToast("error", "Gagal void jurnal");
+      addToast("error", "Gagal membatalkan jurnal");
     } finally {
       setVoidingId(null);
     }
@@ -298,7 +298,7 @@ export default function JournalEntriesPage() {
               onChange={event => setStatusFilter(event.target.value as JournalStatusFilter)}
             >
               <option value="POSTED">Posted ({postedCount})</option>
-              <option value="VOID">Void ({voidCount})</option>
+              <option value="VOID">Dibatalkan ({voidCount})</option>
               <option value="ALL">Semua Jurnal ({entries.length})</option>
             </select>
           </div>
@@ -323,7 +323,7 @@ export default function JournalEntriesPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                       <p style={{ fontWeight: 700, color: "var(--color-gray-900)" }}>{entry.entryNumber}</p>
                       <span className={`badge badge-${isVoid ? "danger" : "success"}`}>
-                        {isVoid ? "Void" : "Posted"}
+                        {isVoid ? "Dibatalkan" : "Posted"}
                       </span>
                       {isManual && <span className="badge badge-info">Manual</span>}
                     </div>
@@ -351,7 +351,7 @@ export default function JournalEntriesPage() {
                         onClick={() => handleVoidManualJournal(entry)}
                         disabled={voidingId === entry._id}
                       >
-                        <RotateCcw size={14} /> {voidingId === entry._id ? "Memproses..." : "Void"}
+                        <RotateCcw size={14} /> {voidingId === entry._id ? "Memproses..." : "Batalkan"}
                       </button>
                     )}
                   </div>

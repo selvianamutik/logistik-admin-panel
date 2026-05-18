@@ -398,7 +398,7 @@ export const INCIDENT_SETTLEMENT_STATUS_MAP: Record<string, { label: string; col
     DRAFT: { label: 'Draft', color: 'gray' },
     APPROVED: { label: 'Disetujui', color: 'info' },
     POSTED: { label: 'Tercatat', color: 'success' },
-    VOID: { label: 'Void', color: 'danger' },
+    VOID: { label: 'Ditolak', color: 'danger' },
 };
 
 export const INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP: Record<string, string> = {

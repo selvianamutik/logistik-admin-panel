@@ -298,6 +298,7 @@ async function makeIncidentCycle(params: {
     adminCookie: string;
     deliveryOrderId: string;
     expenseCategoryRef: string;
+    bankAccountRef: string;
     idx: number;
     category: string;
     amount: number;
@@ -371,12 +372,14 @@ async function makeIncidentCycle(params: {
             relatedIncidentRef: incident._id,
             relatedIncidentSettlementLineRef: line._id,
             relatedIncidentSettlementLineRevision: approvedLineRevision,
+            bankAccountRef: params.bankAccountRef,
             note: `Post incident ${params.idx} ke uang jalan`,
             description: `Audit expense incident ${params.idx}`,
             privacyLevel: 'internal',
         },
     });
     assert(expense.data?._id, `expense incident ${params.idx} tidak dibuat admin`);
+    assert(!expense.data.bankAccountRef, `expense incident ${params.idx} tidak boleh menjadi pengeluaran bank langsung saat bon trip tersedia`);
 
     const postedLine = (await requestJson<ApiResponse<AnyDoc>>(
         `/api/data?entity=incident-settlement-lines&id=${encodeURIComponent(line._id)}`,
@@ -653,6 +656,7 @@ async function main() {
         adminCookie,
         deliveryOrderId: state.firstDoId,
         expenseCategoryRef: expenseCategory._id,
+        bankAccountRef: bank._id,
         idx: 1,
         category: 'REPAIR',
         amount: 21000,
@@ -662,6 +666,7 @@ async function main() {
         adminCookie,
         deliveryOrderId: state.firstDoId,
         expenseCategoryRef: expenseCategory._id,
+        bankAccountRef: bank._id,
         idx: 2,
         category: 'OTHER',
         amount: 32000,

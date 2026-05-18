@@ -229,7 +229,7 @@ export async function handleManualJournalVoid(
         return NextResponse.json({ error: 'Hanya jurnal manual yang boleh dibatalkan dari halaman ini' }, { status: 409 });
     }
     if (entry.status === 'VOID') {
-        return NextResponse.json({ error: 'Jurnal sudah void' }, { status: 409 });
+        return NextResponse.json({ error: 'Jurnal sudah dibatalkan' }, { status: 409 });
     }
 
     const activeDuplicates = await listDocumentsByFilter<JournalEntry>('journalEntry', {
@@ -238,7 +238,7 @@ export async function handleManualJournalVoid(
         sourceEvent: entry.sourceEvent || 'POST',
     });
     if (activeDuplicates.filter(item => item.status !== 'VOID').length > 1) {
-        return NextResponse.json({ error: 'Ada lebih dari satu jurnal manual aktif untuk referensi ini. Audit dulu sebelum void.' }, { status: 409 });
+        return NextResponse.json({ error: 'Ada lebih dari satu jurnal manual aktif untuk referensi ini. Audit dulu sebelum dibatalkan.' }, { status: 409 });
     }
 
     const updated = await updateDocument(id, {

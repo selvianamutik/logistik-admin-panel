@@ -297,11 +297,11 @@ export default function IncidentDetailPage() {
     const renderActions = (line: IncidentSettlementLine) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {canManageIncident && !incidentClosed && canEditIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openLineModal(line)}><Pencil size={14} /> Edit</button>}
-            {canManageIncident && !incidentClosed && line.status === 'DRAFT' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'APPROVED')}><CheckCircle2 size={14} /> Approve</button>}
+            {canManageIncident && !incidentClosed && line.status === 'DRAFT' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'APPROVED')}><CheckCircle2 size={14} /> Setujui</button>}
             {canManageIncident && !incidentClosed && line.status === 'APPROVED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'DRAFT')}><XCircle size={14} /> Draft</button>}
             {canCreateExpense && canPostIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openExpenseModal(line)}><ReceiptText size={14} /> Post Expense</button>}
             {canManageIncident && canMarkIncidentRecoveryPosted(line) && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'POSTED')}><CheckCircle2 size={14} /> Tandai Diterima</button>}
-            {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Void</button>}
+            {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Tolak</button>}
             {canManageIncident && !incidentClosed && canDeleteIncidentSettlementLine(line) && <button className="table-action-btn danger" onClick={() => void deleteLine(line)}><Trash2 size={14} /> Hapus</button>}
         </div>
     );
@@ -336,7 +336,7 @@ export default function IncidentDetailPage() {
                             <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
                                 {incident.pendingDriverResolutionRequestedByName || incident.driverName || 'Driver'} mengajukan penyelesaian insiden
                                 {incident.pendingDriverResolutionAmount ? ` dengan biaya ${formatCurrency(incident.pendingDriverResolutionAmount)}` : ''}
-                                {pendingDriverReviewLines.length > 0 ? `. ${pendingDriverReviewLines.length} detail biaya masih draft dan perlu di-approve / void.` : '. Tidak ada biaya draft, lanjutkan review status insiden.'}
+                                {pendingDriverReviewLines.length > 0 ? `. ${pendingDriverReviewLines.length} detail biaya masih draft dan perlu disetujui / ditolak.` : '. Tidak ada biaya draft, lanjutkan review status insiden.'}
                             </div>
                         </div>
                     </div>
@@ -370,7 +370,7 @@ export default function IncidentDetailPage() {
                 <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>Recovery baru mengurangi exposure ketika statusnya sudah ditandai diterima.</div>
                 {incident.status === 'RESOLVED' && hasPendingSettlement && (
                     <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--color-warning)' }}>
-                        Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau di-void.
+                        Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau ditolak.
                     </div>
                 )}
             </div></div>

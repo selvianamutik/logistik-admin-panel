@@ -162,12 +162,37 @@ function getDriverIncidentStatusLabel(status: Incident['status']) {
 }
 
 function isDriverIncidentActiveForReport(incident: DriverIncidentRecord) {
-    return incident.status !== 'CLOSED';
+    return incident.status !== 'RESOLVED' && incident.status !== 'CLOSED';
 }
 
 function hasDriverIncidentSubmittedResolution(incident: DriverIncidentRecord) {
     return Boolean(incident.pendingDriverResolutionRequestedAt?.trim()) ||
         (incident.settlementLines || []).some(line => line.status !== 'VOID');
+}
+
+function hasDriverIncidentReviewedResolution(incident: DriverIncidentRecord) {
+    return (incident.settlementLines || []).some(line => line.status !== 'VOID' && line.status !== 'DRAFT');
+}
+
+function hasDriverIncidentPostedResolution(incident: DriverIncidentRecord) {
+    return (incident.settlementLines || []).some(line => line.status === 'POSTED');
+}
+
+function isDriverIncidentWaitingResolutionReview(incident: DriverIncidentRecord) {
+    return hasDriverIncidentSubmittedResolution(incident) && !hasDriverIncidentReviewedResolution(incident);
+}
+
+function getDriverIncidentResolutionHint(incident: DriverIncidentRecord) {
+    if (isDriverIncidentWaitingResolutionReview(incident)) {
+        return 'Penyelesaian sudah diajukan. Menunggu review admin.';
+    }
+    if (incident.status === 'RESOLVED' || incident.status === 'CLOSED') {
+        return 'Penyelesaian sudah disetujui admin.';
+    }
+    if (hasDriverIncidentPostedResolution(incident)) {
+        return 'Biaya insiden sudah masuk uang jalan. Tunggu admin menyelesaikan status insiden.';
+    }
+    return 'Pengajuan penyelesaian sudah direview admin. Tunggu admin menyelesaikan status insiden.';
 }
 
 function canDriverSubmitIncidentResolution(incident: DriverIncidentRecord) {
@@ -3678,9 +3703,14 @@ export default function DriverPortalPage() {
                             cargoItemCount > 0 &&
                             !item.tripClosedByAdminAt;
                         const relatedIncidents = driverIncidentsByOrder.get(item._id) || [];
-                        const activeIncidentBlocksReport = relatedIncidents.some(isDriverIncidentActiveForReport);
-                        const activeIncidentLabel =
-                            relatedIncidents.find(isDriverIncidentActiveForReport)?.incidentNumber || 'insiden aktif';
+                        const activeIncidentForReport = relatedIncidents.find(isDriverIncidentActiveForReport);
+                        const activeIncidentBlocksReport = Boolean(activeIncidentForReport);
+                        const activeIncidentLabel = activeIncidentForReport?.incidentNumber || 'insiden aktif';
+                        const activeIncidentReportBlockMessage = activeIncidentForReport
+                            ? isDriverIncidentWaitingResolutionReview(activeIncidentForReport)
+                                ? `Lapor insiden baru tersedia setelah pengajuan ${activeIncidentLabel} direview admin.`
+                                : `Lapor insiden baru tersedia setelah ${activeIncidentLabel} diselesaikan admin.`
+                            : '';
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`
@@ -3760,7 +3790,7 @@ export default function DriverPortalPage() {
                                     {relatedIncidents.length > 0 && (
                                         <div className="driver-pending-request" style={{ borderColor: 'rgba(245, 158, 11, 0.35)', background: '#fffbeb' }}>
                                             <div className="driver-pending-request-title">
-                                                Insiden Aktif
+                                                {activeIncidentBlocksReport ? 'Insiden Aktif' : 'Riwayat Insiden'}
                                             </div>
                                             {relatedIncidents.map(incident => {
                                                 const pendingDraftCosts = (incident.settlementLines || []).filter(line => line.status === 'DRAFT').length;
@@ -3787,7 +3817,7 @@ export default function DriverPortalPage() {
                                                         </div>
                                                         {!canDriverSubmitIncidentResolution(incident) && hasDriverIncidentSubmittedResolution(incident) && (
                                                             <div className="text-muted text-sm">
-                                                                Penyelesaian sudah diajukan. Menunggu review admin.
+                                                                {getDriverIncidentResolutionHint(incident)}
                                                             </div>
                                                         )}
                                                     </div>
@@ -4037,7 +4067,7 @@ export default function DriverPortalPage() {
 
                                         {activeIncidentBlocksReport ? (
                                             <span className="text-muted text-sm" style={{ alignSelf: 'center' }}>
-                                                Lapor insiden baru tersedia setelah {activeIncidentLabel} ditutup admin.
+                                                {activeIncidentReportBlockMessage}
                                             </span>
                                         ) : (
                                             <button

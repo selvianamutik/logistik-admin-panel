@@ -1516,7 +1516,7 @@ export async function handleInvoiceAdjustmentUpdate(
         return NextResponse.json({ error: 'Adjustment tidak ditemukan' }, { status: 404 });
     }
     if (adjustment.status === 'VOID') {
-        return NextResponse.json({ error: 'Adjustment yang sudah dihapus/void tidak bisa diedit' }, { status: 409 });
+        return NextResponse.json({ error: 'Adjustment yang sudah dihapus tidak bisa diedit' }, { status: 409 });
     }
 
     const invoiceRef = normalizeText(adjustment.invoiceRef);
@@ -1608,7 +1608,7 @@ async function finalizeInvoiceAdjustmentDelete(
         return NextResponse.json({ error: 'Adjustment tidak ditemukan' }, { status: 404 });
     }
     if (adjustment.status === 'VOID') {
-        return NextResponse.json({ error: 'Adjustment sudah dihapus/void' }, { status: 409 });
+        return NextResponse.json({ error: 'Adjustment sudah dihapus' }, { status: 409 });
     }
 
     const invoiceRef = normalizeText(adjustment.invoiceRef);
@@ -1649,7 +1649,7 @@ export async function handleInvoiceAdjustmentVoid(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    return finalizeInvoiceAdjustmentDelete(session, data, addAuditLog, 'UPDATE', 'di-void');
+    return finalizeInvoiceAdjustmentDelete(session, data, addAuditLog, 'UPDATE', 'dihapus');
 }
 
 export async function handleInvoiceAdjustmentDelete(
@@ -2009,7 +2009,7 @@ export async function handleExpenseCreate(
         typeof data.boronganRef === 'string' && data.boronganRef ? data.boronganRef : undefined;
     let voucherRef =
         typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
-    const selectedAccountRef =
+    let selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     const linkedWorkflowRefs = [relatedIncidentRef, relatedMaintenanceRef, boronganRef, voucherRef].filter(Boolean);
     const isIncidentVoucherExpense =
@@ -2150,10 +2150,11 @@ export async function handleExpenseCreate(
             relatedVehicleRef = incident.vehicleRef;
             relatedVehiclePlate = incident.vehiclePlate || relatedVehiclePlate;
         }
-        if (incidentSettlementLine && !voucherRef && !selectedAccountRef) {
+        if (incidentSettlementLine && !voucherRef) {
             const incidentVoucher = await findVoucherForIncidentDeliveryOrder(incident);
             if (incidentVoucher) {
                 voucherRef = incidentVoucher._id;
+                selectedAccountRef = undefined;
             }
         }
     }
@@ -2233,10 +2234,7 @@ export async function handleExpenseCreate(
         }
         linkedVoucher = voucher;
         if (incidentSettlementLine && selectedAccountRef) {
-            return NextResponse.json(
-                { error: 'Biaya insiden yang dibayar dari rekening/kas diposting sebagai pengeluaran langsung. Kosongkan rekening jika biaya ini berasal dari uang jalan trip.' },
-                { status: 409 }
-            );
+            selectedAccountRef = undefined;
         }
         if (voucher.vehicleRef) {
             if (relatedVehicleRef && voucher.vehicleRef !== relatedVehicleRef) {
@@ -4290,7 +4288,7 @@ export async function handleFreightNotaTaxInvoiceUpdate(
         return NextResponse.json({ error: 'No faktur pajak hanya tersedia untuk invoice ongkos' }, { status: 409 });
     }
     if (snapshot.doc.status === 'VOID') {
-        return NextResponse.json({ error: 'Invoice yang sudah void tidak bisa diubah' }, { status: 409 });
+        return NextResponse.json({ error: 'Invoice yang sudah dibatalkan tidak bisa diubah' }, { status: 409 });
     }
 
     const taxInvoiceNumber = normalizeOptionalText(data.taxInvoiceNumber);
@@ -4416,6 +4414,6 @@ export async function handleFreightNotaDelete(
         throw error;
     }
 
-    await addAuditLog(session, 'DELETE', 'freight-notas', id, `Voided invoice ${nota.notaNumber || id}`);
+    await addAuditLog(session, 'DELETE', 'freight-notas', id, `Invoice ${nota.notaNumber || id} dibatalkan`);
     return NextResponse.json({ success: true });
 }

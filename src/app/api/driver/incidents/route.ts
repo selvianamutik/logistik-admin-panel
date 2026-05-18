@@ -43,7 +43,7 @@ function todayDateInput() {
 }
 
 function isTripIncidentActive(incident: Pick<Incident, 'status'>) {
-    return incident.status !== 'CLOSED';
+    return incident.status !== 'RESOLVED' && incident.status !== 'CLOSED';
 }
 
 async function ensureDriverIncidentAccess(incidentRef: string, driverId: string) {
