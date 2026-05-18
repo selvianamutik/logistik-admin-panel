@@ -21,7 +21,40 @@ type ApiResponse<T> = {
     error?: string;
 };
 
-type AnyDoc = Record<string, any>;
+type AnyDoc = Record<string, unknown> & {
+    _id: string;
+    _rev?: string;
+    amount?: number;
+    category?: string;
+    customerName?: string;
+    driverRef?: string;
+    driverSuratJalanRecords?: AnyDoc[];
+    doNumber?: string;
+    incident?: AnyDoc;
+    linkedDriverVoucherItemRef?: string;
+    linkedExpenseRef?: string;
+    name?: string;
+    orderItemQtyKoli?: number;
+    orderItemVolumeInputUnit?: string;
+    orderItemVolumeInputValue?: number;
+    orderItemVolumeM3?: number;
+    orderItemWeight?: number;
+    orderItemWeightInputUnit?: string;
+    orderItemWeightInputValue?: number;
+    relatedIncidentRef?: string;
+    relatedIncidentSettlementLineRef?: string;
+    serviceName?: string;
+    settlementLines?: AnyDoc[];
+    shippedQtyKoli?: number;
+    shippedVolume?: number;
+    shippedWeight?: number;
+    status?: string;
+    suratJalanNumber?: string;
+    totalSpent?: number;
+    tripStatus?: string;
+    updatedCount?: number;
+    vehicleRef?: string;
+};
 
 const suffix = Date.now().toString().slice(-7);
 const state: Record<string, string> = {};
@@ -351,9 +384,10 @@ async function makeIncidentCycle(params: {
     )).data;
     assert(postedLine?.status === 'POSTED', `line incident ${params.idx} tidak menjadi POSTED`);
     assert(postedLine.linkedExpenseRef === expense.data._id, `line incident ${params.idx} tidak link ke expense`);
-    assert(text(postedLine.linkedDriverVoucherItemRef), `line incident ${params.idx} tidak link ke item uang jalan`);
+    const linkedDriverVoucherItemRef = text(postedLine.linkedDriverVoucherItemRef);
+    assert(linkedDriverVoucherItemRef, `line incident ${params.idx} tidak link ke item uang jalan`);
 
-    const voucherItem = await getDocumentById<AnyDoc>(postedLine.linkedDriverVoucherItemRef, 'driverVoucherItem');
+    const voucherItem = await getDocumentById<AnyDoc>(linkedDriverVoucherItemRef, 'driverVoucherItem');
     assert(voucherItem?.amount === params.amount, `voucher item incident ${params.idx} nominal mismatch`);
     assert(voucherItem.relatedIncidentRef === incident._id, `voucher item incident ${params.idx} tidak link incident`);
     assert(voucherItem.relatedIncidentSettlementLineRef === line._id, `voucher item incident ${params.idx} tidak link settlement line`);
