@@ -42,6 +42,10 @@ function todayDateInput() {
     return getBusinessDateValue();
 }
 
+function isTripIncidentActive(incident: Pick<Incident, 'status'>) {
+    return incident.status !== 'CLOSED';
+}
+
 async function ensureDriverIncidentAccess(incidentRef: string, driverId: string) {
     const incident = await getDocumentById<Incident>(incidentRef, 'incident');
     if (!incident) {
@@ -163,6 +167,18 @@ export async function POST(request: Request) {
         }
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Trip/SJ ini bukan milik driver yang login.' }, { status: 403 });
+        }
+        const activeIncident = (await listDocumentsByFilter<Incident>('incident', {
+            relatedDeliveryOrderRef,
+        })).find(isTripIncidentActive);
+        if (activeIncident) {
+            const label = activeIncident.incidentNumber || 'insiden aktif';
+            return jsonNoStore(
+                {
+                    error: `Trip ini masih punya ${label}. Selesaikan dan tunggu admin menutup insiden tersebut sebelum membuat laporan baru.`,
+                },
+                { status: 409 }
+            );
         }
 
         return await handleIncidentCreate(

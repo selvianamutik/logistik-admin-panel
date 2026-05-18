@@ -1606,6 +1606,26 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         .toList(growable: false);
   }
 
+  List<DriverIncident> _activeIncidentsForTrip(DeliveryTrip trip) {
+    return _incidentsForTrip(trip)
+        .where((incident) => incident.blocksNewIncidentReport)
+        .toList(growable: false);
+  }
+
+  String? _incidentReportBlockMessage(DeliveryTrip trip) {
+    final activeIncidents = _activeIncidentsForTrip(trip);
+    if (activeIncidents.isEmpty) {
+      return null;
+    }
+    final incidentNumber = activeIncidents.first.incidentNumber;
+    final waitingAdmin = activeIncidents.any(
+      (incident) => incident.hasSubmittedResolution,
+    );
+    return waitingAdmin
+        ? 'Laporan baru tersedia setelah $incidentNumber ditutup admin.'
+        : 'Selesaikan $incidentNumber sebelum membuat laporan insiden baru.';
+  }
+
   Future<void> _openIncidentResolution(
     DeliveryTrip trip,
     DriverIncident incident,
@@ -2120,30 +2140,39 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                           unawaited(_openSuratJalanStatus(_selectedTrip!)),
                     ),
                     const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _reportingIncident
-                            ? null
-                            : () => unawaited(
-                                _openIncidentReport(_selectedTrip!),
-                              ),
-                        icon: _reportingIncident
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                    if (_incidentReportBlockMessage(_selectedTrip!) !=
+                        null) ...[
+                      _ErrorBanner(
+                        icon: Icons.report_problem_outlined,
+                        message: _incidentReportBlockMessage(_selectedTrip!)!,
+                        isWarning: true,
+                      ),
+                    ] else ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _reportingIncident
+                              ? null
+                              : () => unawaited(
+                                  _openIncidentReport(_selectedTrip!),
                                 ),
-                              )
-                            : const Icon(Icons.report_problem_outlined),
-                        label: Text(
-                          _reportingIncident
-                              ? 'Mengirim laporan...'
-                              : 'Lapor Insiden',
+                          icon: _reportingIncident
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.report_problem_outlined),
+                          label: Text(
+                            _reportingIncident
+                                ? 'Mengirim laporan...'
+                                : 'Lapor Insiden',
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 12),
                     if (_locationError != null) ...[
                       _ErrorBanner(

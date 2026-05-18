@@ -489,6 +489,8 @@ class DriverIncident {
   bool get canSubmitResolution =>
       status != 'RESOLVED' && status != 'CLOSED' && !hasSubmittedResolution;
 
+  bool get blocksNewIncidentReport => status != 'CLOSED';
+
   int get draftCostCount =>
       settlementLines.where((line) => line.status == 'DRAFT').length;
 }

@@ -161,6 +161,21 @@ function getDriverIncidentStatusLabel(status: Incident['status']) {
     return 'Ditutup';
 }
 
+function isDriverIncidentActiveForReport(incident: DriverIncidentRecord) {
+    return incident.status !== 'CLOSED';
+}
+
+function hasDriverIncidentSubmittedResolution(incident: DriverIncidentRecord) {
+    return Boolean(incident.pendingDriverResolutionRequestedAt?.trim()) ||
+        (incident.settlementLines || []).some(line => line.status !== 'VOID');
+}
+
+function canDriverSubmitIncidentResolution(incident: DriverIncidentRecord) {
+    return incident.status !== 'RESOLVED' &&
+        incident.status !== 'CLOSED' &&
+        !hasDriverIncidentSubmittedResolution(incident);
+}
+
 function buildCompletionDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
     return `${draftKey}${COMPLETION_DROP_ITEM_VALUE_SEPARATOR}${deliveryOrderItemRef}`;
 }
@@ -3663,6 +3678,9 @@ export default function DriverPortalPage() {
                             cargoItemCount > 0 &&
                             !item.tripClosedByAdminAt;
                         const relatedIncidents = driverIncidentsByOrder.get(item._id) || [];
+                        const activeIncidentBlocksReport = relatedIncidents.some(isDriverIncidentActiveForReport);
+                        const activeIncidentLabel =
+                            relatedIncidents.find(isDriverIncidentActiveForReport)?.incidentNumber || 'insiden aktif';
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`
@@ -3753,7 +3771,7 @@ export default function DriverPortalPage() {
                                                                 <strong>{incident.incidentNumber}</strong>
                                                                 <span className="text-muted text-sm"> | {getDriverIncidentStatusLabel(incident.status)}</span>
                                                             </div>
-                                                            {incident.status !== 'RESOLVED' && (
+                                                            {canDriverSubmitIncidentResolution(incident) && (
                                                                 <button
                                                                     className="btn btn-secondary btn-sm"
                                                                     onClick={() => openIncidentCompletionModal(incident)}
@@ -3767,6 +3785,11 @@ export default function DriverPortalPage() {
                                                             {incident.locationText || '-'} | {incident.description || '-'}
                                                             {pendingDraftCosts > 0 ? ` | ${pendingDraftCosts} biaya draft menunggu admin` : ''}
                                                         </div>
+                                                        {!canDriverSubmitIncidentResolution(incident) && hasDriverIncidentSubmittedResolution(incident) && (
+                                                            <div className="text-muted text-sm">
+                                                                Penyelesaian sudah diajukan. Menunggu review admin.
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
@@ -4012,13 +4035,19 @@ export default function DriverPortalPage() {
                                             </button>
                                         )}
 
-                                        <button
-                                            className="btn btn-secondary btn-sm"
-                                            onClick={() => openIncidentModal(item)}
-                                            disabled={isActionInFlight || item.status === 'CANCELLED'}
-                                        >
-                                            <AlertTriangle size={15} /> Lapor Insiden
-                                        </button>
+                                        {activeIncidentBlocksReport ? (
+                                            <span className="text-muted text-sm" style={{ alignSelf: 'center' }}>
+                                                Lapor insiden baru tersedia setelah {activeIncidentLabel} ditutup admin.
+                                            </span>
+                                        ) : (
+                                            <button
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => openIncidentModal(item)}
+                                                disabled={isActionInFlight || item.status === 'CANCELLED'}
+                                            >
+                                                <AlertTriangle size={15} /> Lapor Insiden
+                                            </button>
+                                        )}
 
                                         {mapsUrl && (
                                             <a className="btn btn-secondary btn-sm" href={mapsUrl} target="_blank" rel="noreferrer">

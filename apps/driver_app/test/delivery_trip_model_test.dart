@@ -161,6 +161,7 @@ void main() {
       expect(incident.hasSubmittedResolution, isTrue);
       expect(incident.hasReviewedResolution, isFalse);
       expect(incident.canSubmitResolution, isFalse);
+      expect(incident.blocksNewIncidentReport, isTrue);
     });
 
     test('blocks driver resolution after admin has reviewed a cost line', () {
@@ -188,6 +189,35 @@ void main() {
       expect(incident.hasSubmittedResolution, isTrue);
       expect(incident.hasReviewedResolution, isTrue);
       expect(incident.canSubmitResolution, isFalse);
+      expect(incident.blocksNewIncidentReport, isTrue);
+    });
+
+    test('allows a new incident report only after admin closes the incident', () {
+      const resolvedIncident = DriverIncident(
+        id: 'incident-3',
+        incidentNumber: 'INC-003',
+        status: 'RESOLVED',
+        incidentType: 'OTHER',
+        urgency: 'LOW',
+        relatedDeliveryOrderRef: 'do-3',
+        relatedDONumber: 'DO-003',
+        description: 'Sudah selesai tapi belum ditutup admin',
+        locationText: 'Gudang',
+      );
+      const closedIncident = DriverIncident(
+        id: 'incident-4',
+        incidentNumber: 'INC-004',
+        status: 'CLOSED',
+        incidentType: 'OTHER',
+        urgency: 'LOW',
+        relatedDeliveryOrderRef: 'do-4',
+        relatedDONumber: 'DO-004',
+        description: 'Sudah ditutup',
+        locationText: 'Gudang',
+      );
+
+      expect(resolvedIncident.blocksNewIncidentReport, isTrue);
+      expect(closedIncident.blocksNewIncidentReport, isFalse);
     });
   });
 }

@@ -241,16 +241,27 @@ async function cleanupIncident(incidentId?: string) {
 async function main() {
     const adminCookie = await loginAdmin();
     let createdIncidentId = '';
+    let createdFollowupIncidentId = '';
 
     try {
         auditStep('ambil kandidat DO dan akun driver');
-        const [deliveryOrderResponse, usersResponse] = await Promise.all([
+        const [deliveryOrderResponse, usersResponse, incidentsResponse] = await Promise.all([
             requestJson<{ data: DeliveryOrderLike[] }>('/api/data?entity=delivery-orders', adminCookie),
             requestJson<{ data: UserLike[] }>('/api/data?entity=users', adminCookie),
+            requestJson<{ data: IncidentLike[] }>('/api/data?entity=incidents&pageSize=1000', adminCookie),
         ]);
         const users = Array.isArray(usersResponse.data) ? usersResponse.data : [];
+        const activeIncidentDeliveryOrderRefs = new Set(
+            (incidentsResponse.data || [])
+                .filter(incident => incident.status !== 'CLOSED')
+                .map(incident => normalizeText(incident.relatedDeliveryOrderRef))
+                .filter(Boolean)
+        );
         const candidate = (deliveryOrderResponse.data || [])
-            .filter(deliveryOrder => normalizeText(deliveryOrder.driverRef))
+            .filter(deliveryOrder =>
+                normalizeText(deliveryOrder.driverRef) &&
+                !activeIncidentDeliveryOrderRefs.has(deliveryOrder._id)
+            )
             .map(deliveryOrder => ({
                 deliveryOrder,
                 driverUser: users.find(user =>
@@ -285,6 +296,16 @@ async function main() {
             incident.relatedDeliveryOrderRef === candidate.deliveryOrder._id,
             'Incident driver harus terhubung ke DO yang dipilih'
         );
+
+        auditStep('driver tidak boleh membuat laporan insiden baru saat incident aktif belum ditutup');
+        await driverRequest('POST', driverToken, '/api/driver/incidents', {
+            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            incidentType: 'OTHER',
+            urgency: 'LOW',
+            locationText: `Duplicate active incident ${AUDIT_SUFFIX}`,
+            odometer: 12346,
+            description: 'Duplicate incident harus ditolak',
+        }, { expectStatus: 409 });
 
         auditStep('driver list melihat incident dan submit penyelesaian dengan biaya draft');
         const incidentList = await driverRequest<IncidentLike[]>('GET', driverToken, '/api/driver/incidents');
@@ -374,6 +395,15 @@ async function main() {
         });
         assert(resolvedIncident.data?.status === 'RESOLVED', 'Admin gagal mengubah incident ke RESOLVED');
 
+        await driverRequest('POST', driverToken, '/api/driver/incidents', {
+            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            incidentType: 'OTHER',
+            urgency: 'LOW',
+            locationText: `Duplicate resolved incident ${AUDIT_SUFFIX}`,
+            odometer: 12450,
+            description: 'Incident RESOLVED tapi belum CLOSED harus tetap menahan laporan baru',
+        }, { expectStatus: 409 });
+
         const resolvedDetail = await requestJson<{ data: IncidentLike }>(
             `/api/data?entity=incidents&id=${encodeURIComponent(createdIncidentId)}`,
             adminCookie
@@ -389,10 +419,53 @@ async function main() {
             },
         }, { expectStatus: 409 });
 
+        auditStep('setelah incident ditutup admin, driver boleh membuat laporan insiden baru untuk DO yang sama');
+        const approvedLineAfterCloseGuard = await requestJson<{ data: IncidentSettlementLineLike }>(
+            `/api/data?entity=incident-settlement-lines&id=${encodeURIComponent(createdLine._id)}`,
+            adminCookie
+        );
+        const voidLine = await postData<IncidentSettlementLineLike>(adminCookie, {
+            entity: 'incident-settlement-lines',
+            action: 'set-status',
+            data: {
+                id: createdLine._id,
+                revision: approvedLineAfterCloseGuard.data?._rev || '',
+                status: 'VOID',
+            },
+        });
+        assert(voidLine.data?.status === 'VOID', 'Biaya incident tidak bisa di-void untuk menutup incident audit');
+        const closableIncidentDetail = await requestJson<{ data: IncidentLike }>(
+            `/api/data?entity=incidents&id=${encodeURIComponent(createdIncidentId)}`,
+            adminCookie
+        );
+        const closedIncident = await postData<IncidentLike>(adminCookie, {
+            entity: 'incidents',
+            action: 'set-status',
+            data: {
+                id: createdIncidentId,
+                revision: closableIncidentDetail.data?._rev || '',
+                status: 'CLOSED',
+                note: 'Audit admin close setelah biaya void',
+            },
+        });
+        assert(closedIncident.data?.status === 'CLOSED', 'Admin gagal menutup incident setelah settlement void');
+
+        const followupIncident = await driverRequest<IncidentLike>('POST', driverToken, '/api/driver/incidents', {
+            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            incidentType: 'OTHER',
+            urgency: 'LOW',
+            locationText: `Follow up incident after close ${AUDIT_SUFFIX}`,
+            odometer: 12500,
+            description: 'Incident baru setelah incident lama ditutup admin',
+        });
+        assert(followupIncident.data?._id, 'Driver harus bisa membuat incident baru setelah incident lama CLOSED');
+        createdFollowupIncidentId = followupIncident.data._id;
+
         console.log(
-            `Driver incident audit OK: ${incident.incidentNumber || createdIncidentId} create, submit draft cost, admin approve, duplicate guard, dan close guard valid.`
+            `Driver incident audit OK: ${incident.incidentNumber || createdIncidentId} create, active duplicate report guard, submit draft cost, admin approve, duplicate guard, close guard, dan reopen report after CLOSED valid.`
         );
     } finally {
+        await cleanupIncident(createdFollowupIncidentId);
         await cleanupIncident(createdIncidentId);
     }
 }
