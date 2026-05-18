@@ -879,6 +879,7 @@ class DeliveryOrderService {
                 ?.trim(),
             shipperReferenceNumber: (item['shipperReferenceNumber'] as String?)
                 ?.trim(),
+            customerProductRef: _readRefId(item['customerProductRef']),
             qtyKoli: _toDouble(
               item['orderItemQtyKoli'] ?? item['shippedQtyKoli'],
             ),

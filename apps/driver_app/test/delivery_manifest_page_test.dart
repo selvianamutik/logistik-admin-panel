@@ -29,6 +29,32 @@ void main() {
         pickupLabel: 'Gudang B',
       ),
     ];
+    const customerProducts = [
+      CustomerProductOption(
+        id: 'product-a',
+        customerRef: 'customer-1',
+        code: 'PRD-A',
+        name: 'Besi Beton',
+        description: 'Besi Beton SNI',
+        defaultQtyKoli: 2,
+        defaultWeightInputValue: 40,
+        defaultWeightInputUnit: 'KG',
+        defaultVolumeInputValue: 1.5,
+        defaultVolumeInputUnit: 'M3',
+      ),
+      CustomerProductOption(
+        id: 'product-b',
+        customerRef: 'customer-1',
+        code: 'PRD-B',
+        name: 'Semen Zak',
+        description: 'Semen Zak 40 Kg',
+        defaultQtyKoli: 2,
+        defaultWeightInputValue: 40,
+        defaultWeightInputUnit: 'KG',
+        defaultVolume: 1.2,
+        defaultVolumeInputUnit: 'LITER',
+      ),
+    ];
 
     testWidgets('submits SJ only when direct cargo input is disabled', (
       tester,
@@ -488,6 +514,222 @@ void main() {
         'Barang A',
         'Barang A2',
       ]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('selects master product in added SJ without popping the page', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: customerProducts,
+                          allowsDirectCargoInput: true,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'No. SJ Pengirim').first,
+        'sj-a',
+      );
+
+      final addSjButton = find.widgetWithText(
+        OutlinedButton,
+        'Tambah SJ',
+        skipOffstage: false,
+      );
+      await tester.scrollUntilVisible(
+        addSjButton,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      tester.widget<OutlinedButton>(addSjButton).onPressed?.call();
+      await tester.pumpAndSettle();
+
+      final sjFields = find.widgetWithText(
+        TextFormField,
+        'No. SJ Pengirim',
+        skipOffstage: false,
+      );
+      await tester.enterText(sjFields.last, 'sj-b');
+
+      final productPrompts = find.text(
+        'Pilih master barang',
+        skipOffstage: false,
+      );
+      await tester.scrollUntilVisible(
+        productPrompts.last,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(productPrompts.last);
+      await tester.pumpAndSettle();
+      expect(find.text('Pilih Barang Customer'), findsOneWidget);
+
+      await tester.tap(find.text('PRD-B - Semen Zak'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNull);
+      expect(find.text('Simpan SJ & Barang'), findsOneWidget);
+      expect(find.text('PRD-B - Semen Zak'), findsOneWidget);
+
+      final descriptionFields = find.widgetWithText(
+        TextFormField,
+        'Deskripsi Barang',
+        skipOffstage: false,
+      );
+      final koliFields = find.widgetWithText(
+        TextFormField,
+        'Koli',
+        skipOffstage: false,
+      );
+      final weightFields = find.widgetWithText(
+        TextFormField,
+        'Berat',
+        skipOffstage: false,
+      );
+      final volumeFields = find.widgetWithText(
+        TextFormField,
+        'Volume',
+        skipOffstage: false,
+      );
+
+      expect(
+        tester.widget<TextFormField>(descriptionFields.last).controller?.text,
+        'Semen Zak 40 Kg',
+      );
+      expect(
+        tester.widget<TextFormField>(koliFields.last).controller?.text,
+        '2',
+      );
+      expect(
+        tester.widget<TextFormField>(weightFields.last).controller?.text,
+        '80',
+      );
+      expect(tester.widget<TextFormField>(weightFields.last).enabled, isFalse);
+      expect(
+        tester.widget<TextFormField>(volumeFields.last).controller?.text,
+        '1200',
+      );
+
+      await tester.enterText(koliFields.last, '3');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(weightFields.last).controller?.text,
+        '120',
+      );
+      expect(tester.widget<TextFormField>(weightFields.last).enabled, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps existing cargo master product selected and locked', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: customerProducts,
+                          allowsDirectCargoInput: true,
+                          initialShipperReferences: [
+                            DeliveryShipperReference(
+                              key: 'ref-a',
+                              referenceNumber: 'SJ-A',
+                            ),
+                          ],
+                          existingCargoItems: [
+                            DeliveryCargoItem(
+                              id: 'cargo-a',
+                              description: 'Besi Beton SNI',
+                              shipperReferenceKey: 'ref-a',
+                              shipperReferenceNumber: 'SJ-A',
+                              customerProductRef: 'product-a',
+                              qtyKoli: 2,
+                              weightInputValue: 80,
+                              weightInputUnit: 'KG',
+                              volumeInputValue: 1.5,
+                              volumeInputUnit: 'M3',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PRD-A - Besi Beton'), findsOneWidget);
+      final koliField = find.widgetWithText(TextFormField, 'Koli');
+      final weightField = find.widgetWithText(TextFormField, 'Berat');
+      expect(tester.widget<TextFormField>(weightField).enabled, isFalse);
+
+      await tester.enterText(koliField, '3');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextFormField>(weightField).controller?.text, '120');
+
+      await tester.tap(find.text('Simpan SJ & Barang'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(
+        capturedResult!.updatedCargoItems.single.deliveryOrderItemId,
+        'cargo-a',
+      );
+      expect(
+        capturedResult!.updatedCargoItems.single.cargoItem.customerProductRef,
+        'product-a',
+      );
+      expect(capturedResult!.updatedCargoItems.single.cargoItem.qtyKoli, 3);
+      expect(
+        capturedResult!.updatedCargoItems.single.cargoItem.weightInputValue,
+        120,
+      );
+      expect(capturedResult!.deletedCargoItemIds, isEmpty);
       expect(tester.takeException(), isNull);
     });
 

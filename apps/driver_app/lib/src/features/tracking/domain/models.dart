@@ -109,6 +109,7 @@ class DeliveryCargoItem {
     this.pickupAddress,
     this.shipperReferenceKey,
     this.shipperReferenceNumber,
+    this.customerProductRef,
     this.qtyKoli,
     this.weightKg,
     this.volumeM3,
@@ -129,6 +130,7 @@ class DeliveryCargoItem {
   final String? pickupAddress;
   final String? shipperReferenceKey;
   final String? shipperReferenceNumber;
+  final String? customerProductRef;
   final double? qtyKoli;
   final double? weightKg;
   final double? volumeM3;

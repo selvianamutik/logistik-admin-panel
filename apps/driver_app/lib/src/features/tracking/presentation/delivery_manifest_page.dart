@@ -328,7 +328,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           const CustomerProductOption(id: '', customerRef: '', name: ''),
     );
     if (selectedProduct.id.isEmpty) {
-      _updateItem(groupId, itemId, customerProductRef: '', description: '');
+      _updateItem(groupId, itemId, customerProductRef: '');
       return;
     }
 
@@ -346,6 +346,14 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
             nextWeightUnit,
           )
         : 0.0;
+    final nextVolumeUnit = (selectedProduct.defaultVolumeInputUnit ?? 'M3')
+        .toUpperCase();
+    final nextVolumeValue =
+        selectedProduct.defaultVolumeInputValue ??
+        _convertM3ToVolumeInputValue(
+          selectedProduct.defaultVolume ?? 0,
+          nextVolumeUnit,
+        );
 
     _updateItem(
       groupId,
@@ -355,12 +363,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       qtyKoli: _formatNumber(nextQty),
       weightInputValue: _formatNumber(nextWeightValue),
       weightInputUnit: nextWeightUnit,
-      volumeInputValue: _formatNumber(
-        selectedProduct.defaultVolumeInputValue ??
-            selectedProduct.defaultVolume,
-      ),
-      volumeInputUnit: (selectedProduct.defaultVolumeInputUnit ?? 'M3')
-          .toUpperCase(),
+      volumeInputValue: _formatNumber(nextVolumeValue),
+      volumeInputUnit: nextVolumeUnit,
     );
   }
 
@@ -407,7 +411,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
 
     final nextQty = patched.qtyKoliValue;
     final nextWeightUnit = patched.weightInputUnit.toUpperCase();
-    final weightPerKoliKg = _productWeightPerKoliKg(selectedProduct);
+    final weightPerKoliKg = _productWeightBasisPerKoliKg(item, selectedProduct);
     if (nextQty <= 0 || weightPerKoliKg <= 0) {
       return patched.copyWith(weightInputValue: '');
     }
@@ -446,12 +450,32 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     return product.defaultWeight ?? 0;
   }
 
+  double _productWeightBasisPerKoliKg(
+    _ManifestItemDraft currentItem,
+    CustomerProductOption product,
+  ) {
+    final productWeightPerKoliKg = _productWeightPerKoliKg(product);
+    if (productWeightPerKoliKg > 0) return productWeightPerKoliKg;
+
+    final currentQty = currentItem.qtyKoliValue;
+    final currentWeightKg = _convertWeightToKg(
+      currentItem.weightInputValueNumber,
+      currentItem.weightInputUnit,
+    );
+    if (currentQty <= 0 || currentWeightKg <= 0) return 0;
+    return currentWeightKg / currentQty;
+  }
+
   double _convertWeightToKg(double value, String unit) {
     return unit.toUpperCase() == 'TON' ? value * 1000 : value;
   }
 
   double _convertKgToWeightInputValue(double valueKg, String unit) {
     return unit.toUpperCase() == 'TON' ? valueKg / 1000 : valueKg;
+  }
+
+  double _convertM3ToVolumeInputValue(double valueM3, String unit) {
+    return unit.toUpperCase() == 'LITER' ? valueM3 * 1000 : valueM3;
   }
 
   Future<void> _submit() async {
@@ -862,7 +886,7 @@ class _ManifestItemDraft {
     return _ManifestItemDraft(
       id: '',
       sourceCargoItemId: item.id,
-      customerProductRef: '',
+      customerProductRef: (item.customerProductRef ?? '').trim(),
       description: item.description,
       qtyKoli: _formatDraftNumber(item.qtyKoli),
       weightInputValue: _formatDraftNumber(
@@ -1230,6 +1254,300 @@ String? _pickupStopSubtitle(DeliveryPickupStop stop) {
   return address;
 }
 
+List<CustomerProductOption> _dedupeCustomerProducts(
+  List<CustomerProductOption> products,
+) {
+  final seenIds = <String>{};
+  final result = <CustomerProductOption>[];
+  for (final product in products) {
+    final id = product.id.trim();
+    if (id.isEmpty || !seenIds.add(id)) continue;
+    result.add(product);
+  }
+  return result;
+}
+
+CustomerProductOption? _findCustomerProductById(
+  List<CustomerProductOption> products,
+  String value,
+) {
+  final selectedId = value.trim();
+  if (selectedId.isEmpty) return null;
+  for (final product in products) {
+    if (product.id == selectedId) return product;
+  }
+  return null;
+}
+
+class _CustomerProductSelectorField extends StatelessWidget {
+  const _CustomerProductSelectorField({
+    super.key,
+    required this.value,
+    required this.customerProducts,
+    required this.onChanged,
+  });
+
+  final String value;
+  final List<CustomerProductOption> customerProducts;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedProduct = _findCustomerProductById(customerProducts, value);
+
+    if (customerProducts.isEmpty) {
+      return InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Barang Customer',
+          enabled: false,
+        ),
+        child: Text(
+          'Belum ada master barang',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: Theme.of(context).disabledColor,
+          ),
+        ),
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _openPicker(context),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Barang Customer',
+          helperText: selectedProduct == null
+              ? 'Pilih dari master barang atau isi manual.'
+              : _customerProductSubtitle(selectedProduct),
+          helperMaxLines: 3,
+          suffixIcon: const Icon(Icons.expand_more_rounded),
+        ),
+        child: Text(
+          selectedProduct?.displayLabel ?? 'Pilih master barang',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: selectedProduct == null
+                ? Theme.of(context).hintColor
+                : Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPicker(BuildContext context) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final selectedId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _CustomerProductPickerSheet(
+        customerProducts: customerProducts,
+        selectedProductId: value,
+      ),
+    );
+    if (selectedId == null || selectedId == value) return;
+    onChanged(selectedId);
+  }
+}
+
+class _CustomerProductPickerSheet extends StatefulWidget {
+  const _CustomerProductPickerSheet({
+    required this.customerProducts,
+    required this.selectedProductId,
+  });
+
+  final List<CustomerProductOption> customerProducts;
+  final String selectedProductId;
+
+  @override
+  State<_CustomerProductPickerSheet> createState() =>
+      _CustomerProductPickerSheetState();
+}
+
+class _CustomerProductPickerSheetState
+    extends State<_CustomerProductPickerSheet> {
+  late final TextEditingController _searchController;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final normalizedQuery = _query.trim().toLowerCase();
+    final filteredProducts = normalizedQuery.isEmpty
+        ? widget.customerProducts
+        : widget.customerProducts
+              .where(
+                (product) => _customerProductSearchText(
+                  product,
+                ).contains(normalizedQuery),
+              )
+              .toList(growable: false);
+    final selectedId = widget.selectedProductId.trim();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: FractionallySizedBox(
+        heightFactor: 0.86,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Pilih Barang Customer',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Tutup',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    labelText: 'Cari master barang',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: filteredProducts.length + 1,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.edit_note_rounded),
+                          title: const Text('Tanpa master barang'),
+                          subtitle: const Text(
+                            'Isi deskripsi, koli, berat, dan volume manual.',
+                          ),
+                          trailing: selectedId.isEmpty
+                              ? const Icon(Icons.check_rounded)
+                              : null,
+                          onTap: () => Navigator.of(context).pop(''),
+                        );
+                      }
+
+                      final product = filteredProducts[index - 1];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.inventory_2_outlined,
+                          color: scheme.primary,
+                        ),
+                        title: Text(product.displayLabel),
+                        subtitle: _customerProductSubtitle(product) == null
+                            ? null
+                            : Text(_customerProductSubtitle(product)!),
+                        trailing: product.id == selectedId
+                            ? const Icon(Icons.check_rounded)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(product.id),
+                      );
+                    },
+                  ),
+                ),
+                if (filteredProducts.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Master barang tidak ditemukan.',
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.64),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _customerProductSearchText(CustomerProductOption product) {
+  return [
+    product.code,
+    product.name,
+    product.description,
+    _customerProductMetrics(product),
+  ].whereType<String>().join(' ').toLowerCase();
+}
+
+String? _customerProductSubtitle(CustomerProductOption product) {
+  final description = (product.description ?? '').trim();
+  final metrics = _customerProductMetrics(product);
+  final parts = <String>[];
+  if (description.isNotEmpty && description != product.name.trim()) {
+    parts.add(description);
+  }
+  if (metrics != null) {
+    parts.add(metrics);
+  }
+  if (parts.isEmpty) return null;
+  return parts.join('\n');
+}
+
+String? _customerProductMetrics(CustomerProductOption product) {
+  final parts = <String>[];
+  final qty = _formatDraftNumber(product.defaultQtyKoli);
+  if (qty.isNotEmpty) {
+    parts.add('Koli $qty');
+  }
+
+  final weightValue = product.defaultWeightInputValue ?? product.defaultWeight;
+  final weight = _formatDraftNumber(weightValue);
+  if (weight.isNotEmpty) {
+    parts.add(
+      'Berat $weight ${(product.defaultWeightInputUnit ?? 'KG').toUpperCase()}',
+    );
+  }
+
+  final volumeValue = product.defaultVolumeInputValue ?? product.defaultVolume;
+  final volume = _formatDraftNumber(volumeValue);
+  if (volume.isNotEmpty) {
+    parts.add(
+      'Volume $volume '
+      '${(product.defaultVolumeInputUnit ?? 'M3').toUpperCase()}',
+    );
+  }
+
+  if (parts.isEmpty) return null;
+  return parts.join(' | ');
+}
+
 class _ManifestItemCard extends StatelessWidget {
   const _ManifestItemCard({
     super.key,
@@ -1258,10 +1576,7 @@ class _ManifestItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final selectedProductValue =
-        customerProducts.any((product) => product.id == item.customerProductRef)
-        ? item.customerProductRef
-        : null;
+    final customerProductOptions = _dedupeCustomerProducts(customerProducts);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1291,26 +1606,13 @@ class _ManifestItemCard extends StatelessWidget {
                 ),
             ],
           ),
-          if (customerProducts.isNotEmpty) ...[
-            DropdownButtonFormField<String>(
-              key: ValueKey('product-${item.id}'),
-              isExpanded: true,
-              initialValue: selectedProductValue,
-              decoration: const InputDecoration(
-                labelText: 'Master Barang Customer',
-              ),
-              items: customerProducts
-                  .map(
-                    (product) => DropdownMenuItem(
-                      value: product.id,
-                      child: Text(product.displayLabel),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: onProductSelected,
-            ),
-            const SizedBox(height: 12),
-          ],
+          _CustomerProductSelectorField(
+            key: ValueKey('productSelector-${item.id}'),
+            value: item.customerProductRef,
+            customerProducts: customerProductOptions,
+            onChanged: onProductSelected,
+          ),
+          const SizedBox(height: 12),
           _SyncedTextFormField(
             value: item.description,
             decoration: const InputDecoration(
@@ -1452,6 +1754,8 @@ class _SyncedTextFormField extends StatefulWidget {
 
 class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
   late final TextEditingController _controller;
+  String? _pendingControllerValue;
+  bool _controllerSyncScheduled = false;
 
   @override
   void initState() {
@@ -1464,10 +1768,23 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
     super.didUpdateWidget(oldWidget);
     if (widget.value == _controller.text) return;
 
-    _controller.value = TextEditingValue(
-      text: widget.value,
-      selection: TextSelection.collapsed(offset: widget.value.length),
-    );
+    _pendingControllerValue = widget.value;
+    if (_controllerSyncScheduled) return;
+
+    _controllerSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _controllerSyncScheduled = false;
+      if (!mounted) return;
+      final nextValue = _pendingControllerValue;
+      _pendingControllerValue = null;
+      if (nextValue == null || nextValue != widget.value) return;
+      if (nextValue == _controller.text) return;
+
+      _controller.value = TextEditingValue(
+        text: nextValue,
+        selection: TextSelection.collapsed(offset: nextValue.length),
+      );
+    });
   }
 
   @override
