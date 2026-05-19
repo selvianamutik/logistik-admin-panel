@@ -732,6 +732,7 @@ class DeliveryOrderService {
             category: (item['category'] as String?)?.trim() ?? 'OTHER',
             amount: _toDouble(item['amount']) ?? 0,
             description: (item['description'] as String?)?.trim() ?? '',
+            isDriverSubmitted: item['driverSubmitted'] == true,
           ),
         )
         .where((line) => line.id.isNotEmpty)

@@ -112,7 +112,12 @@ export async function GET(request: Request) {
             });
             return {
                 ...incident,
-                settlementLines: settlementLines.sort((a, b) => (b.createdAt || b.date || '').localeCompare(a.createdAt || a.date || '')),
+                settlementLines: settlementLines
+                    .sort((a, b) => (b.createdAt || b.date || '').localeCompare(a.createdAt || a.date || ''))
+                    .map(line => ({
+                        ...line,
+                        driverSubmitted: line.createdBy === auth.session._id,
+                    })),
             };
         }));
 

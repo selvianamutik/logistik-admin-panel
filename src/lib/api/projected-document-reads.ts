@@ -1,4 +1,5 @@
 import { getAllDocuments, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 import { isPlainObject } from '@/lib/api/data-helpers';
 import { getDeliveryOrderTripCashLink } from '@/lib/api/data-query-support';
 import { registerApiReadCacheInvalidator } from '@/lib/api/read-cache';
@@ -96,10 +97,12 @@ function cloneProjectedListResult<T extends ProjectedListReadResult>(value: T): 
 function shouldCacheProjectedListResult(entity: ProjectedEntity, id?: string | null) {
     return !id && (
         entity === 'trips' ||
-        entity === 'surat-jalan' ||
-        entity === 'surat-jalan-items' ||
         entity === 'trip-tracking'
     );
+}
+
+function shouldBypassProjectedSourceCache(entity: ProjectedEntity) {
+    return entity === 'surat-jalan' || entity === 'surat-jalan-items';
 }
 
 function getProjectedListResultCacheKey(params: ProjectedListParams) {
@@ -525,8 +528,14 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
             : id && entity === 'surat-jalan-detail'
                 ? await loadProjectedSourceDataForDeliveryOrder(parseSuratJalanDocumentId(id).tripRef)
                 : null;
+    const bypassProjectedSourceCache = shouldBypassProjectedSourceCache(entity);
+    if (bypassProjectedSourceCache) {
+        clearRelationalReadCache();
+    }
     const { derivedDeliveryOrders, allTripRecords, allSuratJalanRecords, allSuratJalanItemRecords, allDeliveryOrderItems, allTrackingLogs, allDriverVouchers } =
-        detailSourceData || await loadProjectedSourceData();
+        detailSourceData || (bypassProjectedSourceCache
+            ? await loadProjectedSourceDataUncached()
+            : await loadProjectedSourceData());
     const filterObj = parseProjectedFilter(filter || null);
     const realTrips = allTripRecords.map(mapTripRecordToTrip);
     const realTripById = new Map(realTrips.map(item => [item._id, item] as const));

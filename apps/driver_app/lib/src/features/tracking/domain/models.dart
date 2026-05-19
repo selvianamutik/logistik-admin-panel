@@ -495,14 +495,20 @@ class DriverIncident {
 
   bool get hasSubmittedResolution =>
       hasPendingDriverResolutionRequest ||
-      settlementLines.any((line) => line.status != 'VOID');
+      settlementLines.any(
+        (line) => line.isDriverSubmitted && line.status != 'VOID',
+      );
 
   bool get hasReviewedResolution => settlementLines.any(
-    (line) => line.status != 'VOID' && line.status != 'DRAFT',
+    (line) =>
+        line.isDriverSubmitted &&
+        line.status != 'VOID' &&
+        line.status != 'DRAFT',
   );
 
-  bool get hasPostedResolution =>
-      settlementLines.any((line) => line.status == 'POSTED');
+  bool get hasPostedResolution => settlementLines.any(
+    (line) => line.isDriverSubmitted && line.status == 'POSTED',
+  );
 
   bool get isWaitingResolutionReview =>
       hasSubmittedResolution && !hasReviewedResolution;
@@ -531,6 +537,7 @@ class DriverIncidentSettlementLine {
     required this.category,
     required this.amount,
     required this.description,
+    this.isDriverSubmitted = false,
   });
 
   final String id;
@@ -538,6 +545,7 @@ class DriverIncidentSettlementLine {
   final String category;
   final double amount;
   final String description;
+  final bool isDriverSubmitted;
 }
 
 class DriverIncidentCostInput {

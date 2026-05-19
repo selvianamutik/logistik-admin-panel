@@ -1265,7 +1265,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     );
     final odometerController = TextEditingController(
       text: trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0
-          ? trip.tripEndOdometerKm!.round().toString()
+          ? _formatWholeNumberInput(trip.tripEndOdometerKm)
           : '',
     );
     final noteController = TextEditingController();
@@ -1416,9 +1416,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     );
     final odometerController = TextEditingController(
       text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
-          ? trip.tripEndOdometerKm!.round().toString()
+          ? _formatWholeNumberInput(trip.tripEndOdometerKm)
           : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
-          ? trip.vehicleLastOdometer!.round().toString()
+          ? _formatWholeNumberInput(trip.vehicleLastOdometer)
           : '',
     );
     final descriptionController = TextEditingController();
@@ -1685,11 +1685,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     );
     final odometerController = TextEditingController(
       text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
-          ? trip.tripEndOdometerKm!.round().toString()
+          ? _formatWholeNumberInput(trip.tripEndOdometerKm)
           : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
-          ? trip.vehicleLastOdometer!.round().toString()
+          ? _formatWholeNumberInput(trip.vehicleLastOdometer)
           : (incident.odometer != null && incident.odometer! > 0)
-          ? incident.odometer!.round().toString()
+          ? _formatWholeNumberInput(incident.odometer)
           : '',
     );
     final isAddingCostOnly =
@@ -2555,22 +2555,18 @@ class _TripClosureSubmitResult {
 }
 
 double? _parseOdometerInput(String value) {
-  final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
-  if (normalized.isEmpty) return null;
-  final parsed = double.tryParse(normalized);
-  return parsed == null || parsed.isNaN || parsed.isInfinite ? null : parsed;
+  final parsed = parseMobileNumberInput(value);
+  if (value.trim().isEmpty) return null;
+  return parsed.isNaN || parsed.isInfinite ? null : parsed;
 }
 
 double _parseCurrencyInput(String value) {
-  final normalized = value
-      .trim()
-      .replaceAll(RegExp(r'[^0-9,.-]'), '')
-      .replaceAll('.', '')
-      .replaceAll(',', '.');
-  if (normalized.isEmpty) return 0;
-  final parsed = double.tryParse(normalized);
-  return parsed == null || parsed.isNaN || parsed.isInfinite ? 0 : parsed;
+  final parsed = parseMobileNumberInput(value);
+  return parsed.isNaN || parsed.isInfinite ? 0 : parsed;
 }
+
+String _formatWholeNumberInput(num? value) =>
+    formatMobileNumberValue(value?.roundToDouble(), fractionDigits: 0);
 
 const _jakartaUtcOffset = Duration(hours: 7);
 final _dateOnlyPattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');

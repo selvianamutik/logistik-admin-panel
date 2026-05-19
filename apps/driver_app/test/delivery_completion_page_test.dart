@@ -1091,17 +1091,17 @@ void main() {
       expect(tester.widget<TextFormField>(actualQtyField).enabled, isFalse);
       expect(
         tester.widget<TextFormField>(actualWeightField).controller?.text,
-        '1.23457',
+        '1,23457',
       );
 
-      await tester.enterText(actualWeightField, '1.234567');
+      await tester.enterText(actualWeightField, '1,234567');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(actualWeightField).controller?.text,
-        '1.23456',
+        '1,23456',
       );
 
-      await tester.enterText(actualVolumeField, '12.3');
+      await tester.enterText(actualVolumeField, '12,3');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(actualVolumeField).controller?.text,
@@ -1120,11 +1120,11 @@ void main() {
         scrollable: completionScrollable(),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(dropQtyField.first, '1.234');
+      await tester.enterText(dropQtyField.first, '1,234');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(dropQtyField.first).controller?.text,
-        '1.23',
+        '1,23',
       );
     });
 

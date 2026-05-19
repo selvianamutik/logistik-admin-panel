@@ -2689,8 +2689,7 @@ String _resolveRecipientOptionValue(
   return '';
 }
 
-double _parseDouble(String raw) =>
-    double.tryParse(raw.replaceAll(',', '.')) ?? 0;
+double _parseDouble(String raw) => parseMobileNumberInput(raw);
 
 double _convertWeightToKg(double value, String unit) {
   if (value <= 0) return 0;
@@ -2765,11 +2764,7 @@ bool _isBillableDropType(String value) {
 bool _isNonBillableDropType(String value) => !_isBillableDropType(value);
 
 String _formatMetric(double? value, {int fractionDigits = 2}) {
-  if (value == null || value <= 0) return '';
-  final rounded = value.toStringAsFixed(fractionDigits);
-  return rounded.contains('.')
-      ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
-      : rounded;
+  return formatMobileNumberValue(value, fractionDigits: fractionDigits);
 }
 
 String _formatMetricWithUnit(

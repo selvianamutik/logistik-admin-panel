@@ -263,11 +263,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.widget<TextFormField>(koliField).controller?.text, '125');
 
-      await tester.enterText(weightField, '123.456');
+      await tester.enterText(weightField, '123,456');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(weightField).controller?.text,
-        '123.45',
+        '123,45',
       );
 
       await tester.tap(unitSelectors.first);
@@ -276,21 +276,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(weightField).controller?.text,
-        '0.12345',
+        '0,12345',
       );
 
-      await tester.enterText(weightField, '1.234567');
+      await tester.enterText(weightField, '1,234567');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(weightField).controller?.text,
-        '1.23456',
+        '1,23456',
       );
 
-      await tester.enterText(volumeField, '1.2345');
+      await tester.enterText(volumeField, '1,2345');
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(volumeField).controller?.text,
-        '1.234',
+        '1,234',
       );
 
       await tester.tap(unitSelectors.at(1));
@@ -299,10 +299,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextFormField>(volumeField).controller?.text,
-        '1234',
+        '1.234',
       );
 
-      await tester.enterText(volumeField, '12.3');
+      await tester.enterText(volumeField, '12,3');
       await tester.pumpAndSettle();
       expect(tester.widget<TextFormField>(volumeField).controller?.text, '123');
     });
@@ -703,7 +703,7 @@ void main() {
       expect(tester.widget<TextFormField>(weightFields.last).enabled, isFalse);
       expect(
         tester.widget<TextFormField>(volumeFields.last).controller?.text,
-        '1200',
+        '1.200',
       );
 
       await tester.enterText(koliFields.last, '3');
@@ -1066,6 +1066,66 @@ void main() {
         capturedResult!.updatedCargoItems.single.deliveryOrderItemId,
         'cargo-b',
       );
+    });
+
+    testWidgets('warns before leaving with unsaved manifest changes', (
+      tester,
+    ) async {
+      DeliveryManifestSubmitResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    capturedResult = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const DeliveryManifestPage(
+                          title: 'Kelola SJ & Barang',
+                          submitLabel: 'Simpan SJ & Barang',
+                          pickupStops: pickupStops,
+                          customerProducts: [],
+                          allowsDirectCargoInput: true,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'No. SJ Pengirim'),
+        'sj-draft',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Perubahan belum disimpan'), findsOneWidget);
+      expect(find.textContaining('membuang perubahan SJ'), findsOneWidget);
+
+      await tester.tap(find.text('Tetap Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kelola SJ & Barang'), findsOneWidget);
+      expect(capturedResult, isNull);
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Keluar'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Open'), findsOneWidget);
+      expect(capturedResult, isNull);
     });
   });
 }

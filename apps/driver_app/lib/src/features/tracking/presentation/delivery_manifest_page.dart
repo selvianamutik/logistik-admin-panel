@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -41,6 +43,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   final _draftVisibilityKeys = <String, GlobalKey>{};
   bool _submitting = false;
   bool _inputVisibilityScheduled = false;
+  late String _initialDraftFingerprint;
   late List<_ManifestGroupDraft> _groups;
 
   @override
@@ -49,6 +52,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     WidgetsBinding.instance.addObserver(this);
     FocusManager.instance.addListener(_scheduleFocusedInputVisibility);
     _groups = _buildInitialGroups();
+    _initialDraftFingerprint = _draftFingerprint(_groups);
   }
 
   @override
@@ -362,10 +366,16 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       itemId,
       customerProductRef: selectedProduct.id,
       description: (selectedProduct.description ?? selectedProduct.name).trim(),
-      qtyKoli: _formatNumber(nextQty),
-      weightInputValue: _formatNumber(nextWeightValue),
+      qtyKoli: _formatNumber(nextQty, fractionDigits: 0),
+      weightInputValue: _formatNumber(
+        nextWeightValue,
+        fractionDigits: mobileWeightInputFractionDigits(nextWeightUnit),
+      ),
       weightInputUnit: nextWeightUnit,
-      volumeInputValue: _formatNumber(nextVolumeValue),
+      volumeInputValue: _formatNumber(
+        nextVolumeValue,
+        fractionDigits: mobileVolumeInputFractionDigits(nextVolumeUnit),
+      ),
       volumeInputUnit: nextVolumeUnit,
     );
   }
@@ -407,6 +417,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         weightInputValue: currentWeightKg > 0
             ? _formatNumber(
                 _convertKgToWeightInputValue(currentWeightKg, weightInputUnit),
+                fractionDigits: mobileWeightInputFractionDigits(
+                  weightInputUnit,
+                ),
               )
             : '',
       );
@@ -421,6 +434,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         volumeInputValue: currentVolumeM3 > 0
             ? _formatNumber(
                 _convertM3ToVolumeInputValue(currentVolumeM3, volumeInputUnit),
+                fractionDigits: mobileVolumeInputFractionDigits(
+                  volumeInputUnit,
+                ),
               )
             : '',
       );
@@ -449,6 +465,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     return patched.copyWith(
       weightInputValue: _formatNumber(
         _convertKgToWeightInputValue(weightPerKoliKg * nextQty, nextWeightUnit),
+        fractionDigits: mobileWeightInputFractionDigits(nextWeightUnit),
       ),
       weightInputUnit: nextWeightUnit,
     );
@@ -654,15 +671,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     );
   }
 
-  String _formatNumber(double? value) {
-    if (value == null || value <= 0) return '';
-    if (value == value.roundToDouble()) {
-      return value.toInt().toString();
-    }
-    return value
-        .toStringAsFixed(5)
-        .replaceFirst(RegExp(r'0+$'), '')
-        .replaceFirst(RegExp(r'\.$'), '');
+  String _formatNumber(double? value, {int fractionDigits = 5}) {
+    return formatMobileNumberValue(value, fractionDigits: fractionDigits);
   }
 
   void _scheduleFocusedInputVisibility() {
@@ -703,100 +713,154 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
+  bool get _hasUnsavedChanges =>
+      _draftFingerprint(_groups) != _initialDraftFingerprint;
+
+  String _draftFingerprint(List<_ManifestGroupDraft> groups) {
+    return jsonEncode(
+      groups
+          .map(
+            (group) => {
+              'referenceKey': group.referenceKey.trim(),
+              'pickupStopKey': group.pickupStopKey.trim(),
+              'shipperReferenceNumber': group.shipperReferenceNumber.trim(),
+              'items': group.items
+                  .map(
+                    (item) => {
+                      'sourceCargoItemId': item.sourceCargoItemId.trim(),
+                      'customerProductRef': item.customerProductRef.trim(),
+                      'description': item.description.trim(),
+                      'qtyKoli': item.qtyKoli.trim(),
+                      'weightInputValue': item.weightInputValue.trim(),
+                      'weightInputUnit': item.weightInputUnit.trim(),
+                      'volumeInputValue': item.volumeInputValue.trim(),
+                      'volumeInputUnit': item.volumeInputUnit.trim(),
+                    },
+                  )
+                  .toList(growable: false),
+            },
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> _confirmLeaveWithUnsavedChanges() async {
+    final shouldLeave = await showMobileActionConfirmation(
+      context,
+      title: 'Perubahan belum disimpan',
+      message:
+          'Keluar sekarang akan membuang perubahan SJ dan barang yang belum disimpan.',
+      cancelLabel: 'Tetap Edit',
+      confirmLabel: 'Keluar',
+      icon: Icons.warning_amber_rounded,
+      destructive: true,
+    );
+    if (!mounted || !shouldLeave) return;
+
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(title: Text(widget.title)),
-      body: SafeArea(
-        child: KeyedSubtree(
-          key: _inputVisibilityKey,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    children: [
-                      if (widget.existingCargoItems.isNotEmpty) ...[
+    return PopScope(
+      canPop: _submitting || !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || _submitting || !_hasUnsavedChanges) return;
+        _confirmLeaveWithUnsavedChanges();
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(title: Text(widget.title)),
+        body: SafeArea(
+          child: KeyedSubtree(
+            key: _inputVisibilityKey,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      children: [
+                        if (widget.existingCargoItems.isNotEmpty) ...[
+                          _InfoCard(
+                            title: 'Muatan saat ini',
+                            message:
+                                '${widget.existingCargoItems.length} barang sudah tercatat. Tambahan dari halaman ini akan ditambahkan ke DO yang sama.',
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         _InfoCard(
-                          title: 'Muatan saat ini',
-                          message:
-                              '${widget.existingCargoItems.length} barang sudah tercatat. Tambahan dari halaman ini akan ditambahkan ke DO yang sama.',
+                          title: widget.allowsDirectCargoInput
+                              ? 'Kelola SJ dan barang'
+                              : 'Kelola SJ',
+                          message: widget.allowsDirectCargoInput
+                              ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
+                              : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
                         ),
-                        const SizedBox(height: 12),
-                      ],
-                      _InfoCard(
-                        title: widget.allowsDirectCargoInput
-                            ? 'Kelola SJ dan barang'
-                            : 'Kelola SJ',
-                        message: widget.allowsDirectCargoInput
-                            ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
-                            : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
-                      ),
-                      const SizedBox(height: 16),
-                      ..._groups.map(
-                        (group) => Padding(
-                          key: _groupVisibilityKey(group.id),
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _ManifestGroupCard(
-                            key: ValueKey(group.id),
-                            group: group,
-                            pickupStops: widget.pickupStops,
-                            customerProducts: widget.customerProducts,
-                            allowsDirectCargoInput:
-                                widget.allowsDirectCargoInput,
-                            onGroupChanged: _updateGroup,
-                            onItemChanged: _updateItem,
-                            onProductSelected: _applyCustomerProduct,
-                            onAddItem: _addItem,
-                            onRemoveItem: _removeItem,
-                            onRemoveGroup: _groups.length > 1
-                                ? _removeGroup
-                                : null,
-                            itemVisibilityKeyFor: _itemVisibilityKey,
+                        const SizedBox(height: 16),
+                        ..._groups.map(
+                          (group) => Padding(
+                            key: _groupVisibilityKey(group.id),
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: _ManifestGroupCard(
+                              key: ValueKey(group.id),
+                              group: group,
+                              pickupStops: widget.pickupStops,
+                              customerProducts: widget.customerProducts,
+                              allowsDirectCargoInput:
+                                  widget.allowsDirectCargoInput,
+                              onGroupChanged: _updateGroup,
+                              onItemChanged: _updateItem,
+                              onProductSelected: _applyCustomerProduct,
+                              onAddItem: _addItem,
+                              onRemoveItem: _removeItem,
+                              onRemoveGroup: _groups.length > 1
+                                  ? _removeGroup
+                                  : null,
+                              itemVisibilityKeyFor: _itemVisibilityKey,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      OutlinedButton.icon(
-                        onPressed: _submitting ? null : _addGroup,
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('Tambah SJ'),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        OutlinedButton.icon(
+                          onPressed: _submitting ? null : _addGroup,
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('Tambah SJ'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: Padding(
-                    key: const ValueKey('submit-bar'),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _submitting ? null : _submit,
-                        icon: _submitting
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: scheme.onPrimary,
-                                ),
-                              )
-                            : const Icon(Icons.save_rounded),
-                        label: Text(widget.submitLabel),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: Padding(
+                      key: const ValueKey('submit-bar'),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _submitting ? null : _submit,
+                          icon: _submitting
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: scheme.onPrimary,
+                                  ),
+                                )
+                              : const Icon(Icons.save_rounded),
+                          label: Text(widget.submitLabel),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -917,20 +981,24 @@ class _ManifestItemDraft {
   }
 
   factory _ManifestItemDraft.fromCargoItem(DeliveryCargoItem item) {
+    final weightUnit = (item.weightInputUnit ?? 'KG').toUpperCase();
+    final volumeUnit = (item.volumeInputUnit ?? 'M3').toUpperCase();
     return _ManifestItemDraft(
       id: '',
       sourceCargoItemId: item.id,
       customerProductRef: (item.customerProductRef ?? '').trim(),
       description: item.description,
-      qtyKoli: _formatDraftNumber(item.qtyKoli),
+      qtyKoli: _formatDraftNumber(item.qtyKoli, fractionDigits: 0),
       weightInputValue: _formatDraftNumber(
         item.weightInputValue ?? item.weightKg,
+        fractionDigits: mobileWeightInputFractionDigits(weightUnit),
       ),
-      weightInputUnit: (item.weightInputUnit ?? 'KG').toUpperCase(),
+      weightInputUnit: weightUnit,
       volumeInputValue: _formatDraftNumber(
         item.volumeInputValue ?? item.volumeM3,
+        fractionDigits: mobileVolumeInputFractionDigits(volumeUnit),
       ),
-      volumeInputUnit: (item.volumeInputUnit ?? 'M3').toUpperCase(),
+      volumeInputUnit: volumeUnit,
     )._withId();
   }
 
@@ -965,11 +1033,9 @@ class _ManifestItemDraft {
       qtyKoliValue > 0 &&
       weightInputValueNumber > 0;
 
-  double get qtyKoliValue => double.tryParse(qtyKoli.replaceAll(',', '.')) ?? 0;
-  double get weightInputValueNumber =>
-      double.tryParse(weightInputValue.replaceAll(',', '.')) ?? 0;
-  double get volumeInputValueNumber =>
-      double.tryParse(volumeInputValue.replaceAll(',', '.')) ?? 0;
+  double get qtyKoliValue => parseMobileNumberInput(qtyKoli);
+  double get weightInputValueNumber => parseMobileNumberInput(weightInputValue);
+  double get volumeInputValueNumber => parseMobileNumberInput(volumeInputValue);
 
   _ManifestItemDraft copyWith({
     String? customerProductRef,
@@ -994,15 +1060,8 @@ class _ManifestItemDraft {
   }
 }
 
-String _formatDraftNumber(double? value) {
-  if (value == null || value <= 0) return '';
-  if (value == value.roundToDouble()) {
-    return value.toInt().toString();
-  }
-  return value
-      .toStringAsFixed(5)
-      .replaceFirst(RegExp(r'0+$'), '')
-      .replaceFirst(RegExp(r'\.$'), '');
+String _formatDraftNumber(double? value, {int fractionDigits = 5}) {
+  return formatMobileNumberValue(value, fractionDigits: fractionDigits);
 }
 
 String _normalizeWeightUnit(String value) {

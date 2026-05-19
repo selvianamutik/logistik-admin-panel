@@ -20,6 +20,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 
 import {
     assertIsoDate,
@@ -117,17 +118,20 @@ async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string;
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
+        clearRelationalReadCache();
         const persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
         if (persistedTripRecord) {
             return;
         }
         try {
             await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
+            clearRelationalReadCache();
             return;
         } catch (error) {
             if (!isMutationConflictError(error)) {
                 throw error;
             }
+            clearRelationalReadCache();
         }
         await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
     }
@@ -8958,6 +8962,36 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
                 continue;
             }
             await deleteDocument(existingRecord._id, 'suratJalan');
+        }
+        const latestDeliveryOrderForRecords = (updatedDeliveryOrder || deliveryOrderForSyncedRecords) as DeliveryOrder;
+        const latestSyncedRecords = mapDeliveryOrderToSuratJalanRecords(
+            {
+                ...deliveryOrderForSyncedRecords,
+                ...latestDeliveryOrderForRecords,
+                shipperReferences: nextShipperReferences,
+                actualDropPoints: nextActualDropPoints as DeliveryOrder['actualDropPoints'],
+            },
+            deliveryOrderItemsForSyncedRecords
+        );
+        const persistedRecordsAfterSync = await listDocumentsByFilter<{ _id: string }>('suratJalan', { tripRef: id });
+        const persistedRecordIdsAfterSync = new Set(persistedRecordsAfterSync.map(record => record._id));
+        for (const record of latestSyncedRecords) {
+            if (persistedRecordIdsAfterSync.has(record._id)) {
+                continue;
+            }
+            const isNewReferenceRecord = addedSuratJalanRecordIds.has(record._id);
+            await createDocument({
+                ...record,
+                tripStatus: isNewReferenceRecord ? 'CREATED' : record.tripStatus,
+                ...(isNewReferenceRecord
+                    ? {
+                        billableCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                        holdCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                        returnCargo: { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
+                    }
+                    : {}),
+            });
+            persistedRecordIdsAfterSync.add(record._id);
         }
         if ((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'PARTIAL_HOLD') && nextShipperReferences.length > previousReferences.length) {
             const tripRecord = await getDocumentById<{ _id: string }>(id, 'trip');

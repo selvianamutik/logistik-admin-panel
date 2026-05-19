@@ -189,6 +189,7 @@ void main() {
             category: 'REPAIR',
             amount: 100000,
             description: 'Tambal ban',
+            isDriverSubmitted: true,
           ),
         ],
       );
@@ -202,7 +203,7 @@ void main() {
       expect(incident.blocksNewIncidentReport, isTrue);
     });
 
-    test('blocks driver resolution after admin has reviewed a cost line', () {
+    test('allows driver resolution when admin-only cost line exists', () {
       const incident = DriverIncident(
         id: 'incident-2',
         incidentNumber: 'INC-002',
@@ -224,14 +225,49 @@ void main() {
         ],
       );
 
-      expect(incident.hasSubmittedResolution, isTrue);
-      expect(incident.hasReviewedResolution, isTrue);
+      expect(incident.hasSubmittedResolution, isFalse);
+      expect(incident.hasReviewedResolution, isFalse);
       expect(incident.isWaitingResolutionReview, isFalse);
-      expect(incident.canSubmitResolution, isFalse);
+      expect(incident.canSubmitResolution, isTrue);
       expect(incident.canAddResolutionCost, isFalse);
-      expect(incident.canOpenResolutionForm, isFalse);
+      expect(incident.canOpenResolutionForm, isTrue);
       expect(incident.blocksNewIncidentReport, isTrue);
     });
+
+    test(
+      'blocks driver resolution after driver-submitted line is reviewed',
+      () {
+        const incident = DriverIncident(
+          id: 'incident-2b',
+          incidentNumber: 'INC-002B',
+          status: 'IN_PROGRESS',
+          incidentType: 'OTHER',
+          urgency: 'LOW',
+          relatedDeliveryOrderRef: 'do-2',
+          relatedDONumber: 'DO-002',
+          description: 'Kerusakan',
+          locationText: 'Gudang',
+          settlementLines: [
+            DriverIncidentSettlementLine(
+              id: 'line-2b',
+              status: 'APPROVED',
+              category: 'REPAIR',
+              amount: 150000,
+              description: 'Perbaikan',
+              isDriverSubmitted: true,
+            ),
+          ],
+        );
+
+        expect(incident.hasSubmittedResolution, isTrue);
+        expect(incident.hasReviewedResolution, isTrue);
+        expect(incident.isWaitingResolutionReview, isFalse);
+        expect(incident.canSubmitResolution, isFalse);
+        expect(incident.canAddResolutionCost, isFalse);
+        expect(incident.canOpenResolutionForm, isFalse);
+        expect(incident.blocksNewIncidentReport, isTrue);
+      },
+    );
 
     test('blocks new incident report until admin closes the incident', () {
       const resolvedIncident = DriverIncident(
