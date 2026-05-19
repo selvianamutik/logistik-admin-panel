@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_action_feedback.dart';
 import 'mobile_input_visibility.dart';
+import 'mobile_numeric_input_formatter.dart';
 import 'mobile_unit_selector_field.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
@@ -386,7 +388,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       return item;
     }
 
-    final patched = item.copyWith(
+    var patched = item.copyWith(
       customerProductRef: customerProductRef,
       description: description,
       qtyKoli: qtyKoli,
@@ -395,6 +397,34 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       volumeInputValue: volumeInputValue,
       volumeInputUnit: volumeInputUnit,
     );
+
+    if (weightInputUnit != null && weightInputValue == null) {
+      final currentWeightKg = _convertWeightToKg(
+        item.weightInputValueNumber,
+        item.weightInputUnit,
+      );
+      patched = patched.copyWith(
+        weightInputValue: currentWeightKg > 0
+            ? _formatNumber(
+                _convertKgToWeightInputValue(currentWeightKg, weightInputUnit),
+              )
+            : '',
+      );
+    }
+
+    if (volumeInputUnit != null && volumeInputValue == null) {
+      final currentVolumeM3 = _convertVolumeToM3(
+        item.volumeInputValueNumber,
+        item.volumeInputUnit,
+      );
+      patched = patched.copyWith(
+        volumeInputValue: currentVolumeM3 > 0
+            ? _formatNumber(
+                _convertM3ToVolumeInputValue(currentVolumeM3, volumeInputUnit),
+              )
+            : '',
+      );
+    }
 
     if (qtyKoli == null && weightInputUnit == null) {
       return patched;
@@ -472,6 +502,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
 
   double _convertKgToWeightInputValue(double valueKg, String unit) {
     return unit.toUpperCase() == 'TON' ? valueKg / 1000 : valueKg;
+  }
+
+  double _convertVolumeToM3(double value, String unit) {
+    return unit.toUpperCase() == 'LITER' ? value / 1000 : value;
   }
 
   double _convertM3ToVolumeInputValue(double valueM3, String unit) {
@@ -1627,20 +1661,21 @@ class _ManifestItemCard extends StatelessWidget {
               Widget qtyField() {
                 return _SyncedTextFormField(
                   value: item.qtyKoli,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                  keyboardType: mobileNumberKeyboardType(0),
+                  inputFormatters: mobileNumberInputFormatters(0),
                   decoration: const InputDecoration(labelText: 'Koli'),
                   onChanged: (value) => onChanged(qtyKoli: value),
                 );
               }
 
               Widget weightField() {
+                final fractionDigits = mobileWeightInputFractionDigits(
+                  item.weightInputUnit,
+                );
                 return _SyncedTextFormField(
                   value: item.weightInputValue,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                  keyboardType: mobileNumberKeyboardType(fractionDigits),
+                  inputFormatters: mobileNumberInputFormatters(fractionDigits),
                   decoration: const InputDecoration(labelText: 'Berat'),
                   enabled: !item.isWeightLocked,
                   onChanged: (value) => onChanged(weightInputValue: value),
@@ -1684,11 +1719,13 @@ class _ManifestItemCard extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               Widget volumeField() {
+                final fractionDigits = mobileVolumeInputFractionDigits(
+                  item.volumeInputUnit,
+                );
                 return _SyncedTextFormField(
                   value: item.volumeInputValue,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                  keyboardType: mobileNumberKeyboardType(fractionDigits),
+                  inputFormatters: mobileNumberInputFormatters(fractionDigits),
                   decoration: const InputDecoration(labelText: 'Volume'),
                   onChanged: (value) => onChanged(volumeInputValue: value),
                 );
@@ -1735,6 +1772,7 @@ class _SyncedTextFormField extends StatefulWidget {
     required this.decoration,
     required this.onChanged,
     this.keyboardType,
+    this.inputFormatters,
     this.textCapitalization = TextCapitalization.none,
     this.validator,
     this.enabled = true,
@@ -1744,6 +1782,7 @@ class _SyncedTextFormField extends StatefulWidget {
   final InputDecoration decoration;
   final ValueChanged<String> onChanged;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
   final TextCapitalization textCapitalization;
   final FormFieldValidator<String>? validator;
   final bool enabled;
@@ -1798,6 +1837,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
     return TextFormField(
       controller: _controller,
       keyboardType: widget.keyboardType,
+      inputFormatters: widget.inputFormatters,
       textCapitalization: widget.textCapitalization,
       decoration: widget.decoration,
       enabled: widget.enabled,

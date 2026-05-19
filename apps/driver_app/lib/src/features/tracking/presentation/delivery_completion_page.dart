@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_action_feedback.dart';
 import 'mobile_input_visibility.dart';
+import 'mobile_numeric_input_formatter.dart';
 import 'mobile_unit_selector_field.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
@@ -140,17 +142,53 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   }) {
     setState(() {
       _cargoDrafts = _cargoDrafts
-          .map(
-            (draft) => draft.itemId == cargoId
-                ? draft.copyWith(
-                    qtyKoli: qtyKoli,
-                    weightInputValue: weightInputValue,
-                    weightInputUnit: weightInputUnit,
-                    volumeInputValue: volumeInputValue,
-                    volumeInputUnit: volumeInputUnit,
+          .map((draft) {
+            if (draft.itemId != cargoId) return draft;
+            final nextWeightUnit = weightInputUnit == null
+                ? draft.weightInputUnit
+                : _normalizeWeightUnit(weightInputUnit);
+            final nextVolumeUnit = volumeInputUnit == null
+                ? draft.volumeInputUnit
+                : _normalizeVolumeUnit(volumeInputUnit);
+            final convertedWeightValue =
+                weightInputUnit != null && weightInputValue == null
+                ? _formatMetric(
+                    _convertKgToWeightInputValue(
+                      _convertWeightToKg(
+                        draft.weightInputValueNumber,
+                        draft.weightInputUnit,
+                      ),
+                      nextWeightUnit,
+                    ),
+                    fractionDigits: mobileWeightInputFractionDigits(
+                      nextWeightUnit,
+                    ),
                   )
-                : draft,
-          )
+                : weightInputValue;
+            final convertedVolumeValue =
+                volumeInputUnit != null && volumeInputValue == null
+                ? _formatMetric(
+                    _convertM3ToVolumeInputValue(
+                      _convertVolumeToM3(
+                        draft.volumeInputValueNumber,
+                        draft.volumeInputUnit,
+                      ),
+                      nextVolumeUnit,
+                    ),
+                    fractionDigits: mobileVolumeInputFractionDigits(
+                      nextVolumeUnit,
+                    ),
+                  )
+                : volumeInputValue;
+
+            return draft.copyWith(
+              qtyKoli: qtyKoli,
+              weightInputValue: convertedWeightValue,
+              weightInputUnit: weightInputUnit,
+              volumeInputValue: convertedVolumeValue,
+              volumeInputUnit: volumeInputUnit,
+            );
+          })
           .toList(growable: false);
     });
   }
@@ -183,6 +221,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                 _resolvedSingleCargoDraftForDrop(draft, _cargoDrafts);
             final nextQty = qtyKoli ?? draft.qtyKoli;
             final nextWeightUnit = weightInputUnit ?? draft.weightInputUnit;
+            final nextVolumeUnit = volumeInputUnit ?? draft.volumeInputUnit;
             final nextWeightInputValue =
                 qtyKoli != null && weightInputValue == null
                 ? _autoWeightInputValueForQty(
@@ -191,7 +230,35 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     nextQtyKoli: nextQty,
                     nextWeightUnit: nextWeightUnit,
                   )
+                : weightInputUnit != null && weightInputValue == null
+                ? _formatMetric(
+                    _convertKgToWeightInputValue(
+                      _convertWeightToKg(
+                        draft.weightInputValueNumber,
+                        draft.weightInputUnit,
+                      ),
+                      nextWeightUnit,
+                    ),
+                    fractionDigits: mobileWeightInputFractionDigits(
+                      nextWeightUnit,
+                    ),
+                  )
                 : weightInputValue;
+            final nextVolumeInputValue =
+                volumeInputUnit != null && volumeInputValue == null
+                ? _formatMetric(
+                    _convertM3ToVolumeInputValue(
+                      _convertVolumeToM3(
+                        draft.volumeInputValueNumber,
+                        draft.volumeInputUnit,
+                      ),
+                      nextVolumeUnit,
+                    ),
+                    fractionDigits: mobileVolumeInputFractionDigits(
+                      nextVolumeUnit,
+                    ),
+                  )
+                : volumeInputValue;
 
             return draft.copyWith(
               stopType: stopType,
@@ -202,7 +269,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
               qtyKoli: qtyKoli,
               weightInputValue: nextWeightInputValue,
               weightInputUnit: weightInputUnit,
-              volumeInputValue: volumeInputValue,
+              volumeInputValue: nextVolumeInputValue,
               volumeInputUnit: volumeInputUnit,
               shipperReferenceNumber: shipperReferenceNumber,
               shipperReferenceKey: shipperReferenceKey,
@@ -963,7 +1030,7 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
           qtyKoli: _formatMetric(defaultQty),
           weightInputValue: _formatMetric(
             defaultWeightInput,
-            fractionDigits: defaultWeightUnit == 'TON' ? 3 : 2,
+            fractionDigits: mobileWeightInputFractionDigits(defaultWeightUnit),
           ),
           weightInputUnit: defaultWeightUnit,
           volumeInputValue: _formatMetric(
@@ -996,10 +1063,9 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
             qtyKoli: _formatMetric(point.qtyKoli),
             weightInputValue: _formatMetric(
               point.weightInputValue,
-              fractionDigits:
-                  (point.weightInputUnit ?? 'KG').toUpperCase() == 'TON'
-                  ? 3
-                  : 2,
+              fractionDigits: mobileWeightInputFractionDigits(
+                point.weightInputUnit ?? 'KG',
+              ),
             ),
             weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
             volumeInputValue: _formatMetric(
@@ -1082,9 +1148,9 @@ List<_ActualDropDraft> _buildHoldContinuationDropDrafts(
         qtyKoli: _formatMetric(point.qtyKoli),
         weightInputValue: _formatMetric(
           point.weightInputValue,
-          fractionDigits: (point.weightInputUnit ?? 'KG').toUpperCase() == 'TON'
-              ? 3
-              : 2,
+          fractionDigits: mobileWeightInputFractionDigits(
+            point.weightInputUnit ?? 'KG',
+          ),
         ),
         weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
         volumeInputValue: _formatMetric(
@@ -1162,9 +1228,9 @@ _ActualDropDraft _actualDropPointToDraft(
     qtyKoli: _formatMetric(point.qtyKoli),
     weightInputValue: _formatMetric(
       point.weightInputValue,
-      fractionDigits: (point.weightInputUnit ?? 'KG').toUpperCase() == 'TON'
-          ? 3
-          : 2,
+      fractionDigits: mobileWeightInputFractionDigits(
+        point.weightInputUnit ?? 'KG',
+      ),
     ),
     weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
     volumeInputValue: _formatMetric(
@@ -1200,7 +1266,7 @@ _ActualDropDraft _sumDropDraftValues(
     qtyKoli: _formatMetric(current.qtyKoliValue + next.qtyKoliValue),
     weightInputValue: _formatMetric(
       _convertKgToWeightInputValue(weightKg, weightUnit),
-      fractionDigits: weightUnit == 'TON' ? 3 : 2,
+      fractionDigits: mobileWeightInputFractionDigits(weightUnit),
     ),
     weightInputUnit: weightUnit,
     volumeInputValue: _formatMetric(
@@ -1951,7 +2017,7 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
     qtyKoli: _formatMetric(remainingQtyKoli),
     weightInputValue: _formatMetric(
       _convertKgToWeightInputValue(remainingWeightKg, weightUnit),
-      fractionDigits: weightUnit == 'TON' ? 3 : 2,
+      fractionDigits: mobileWeightInputFractionDigits(weightUnit),
     ),
     weightInputUnit: weightUnit,
     volumeInputValue: _formatMetric(
@@ -2002,7 +2068,7 @@ String? _autoWeightInputValueForQty({
   final normalizedUnit = _normalizeWeightUnit(nextWeightUnit);
   return _formatMetric(
     _convertKgToWeightInputValue(nextWeightKg, normalizedUnit),
-    fractionDigits: normalizedUnit == 'TON' ? 3 : 2,
+    fractionDigits: mobileWeightInputFractionDigits(normalizedUnit),
   );
 }
 
@@ -2010,7 +2076,7 @@ String _formatCargoDraftValues(_ActualCargoDraft draft) {
   final parts = <String>[
     if (draft.qtyKoliValue > 0) '${_formatMetric(draft.qtyKoliValue)} koli',
     if (draft.weightInputValueNumber > 0)
-      '${_formatMetric(draft.weightInputValueNumber, fractionDigits: _normalizeWeightUnit(draft.weightInputUnit) == 'TON' ? 3 : 2)} ${_normalizeWeightUnit(draft.weightInputUnit)}',
+      '${_formatMetric(draft.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(draft.weightInputUnit))} ${_normalizeWeightUnit(draft.weightInputUnit)}',
     if (draft.volumeInputValueNumber > 0)
       '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
   ];
@@ -2709,22 +2775,27 @@ class _ActualCargoCard extends StatelessWidget {
             const SizedBox(height: 12),
             _SyncedTextFormField(
               value: draft.qtyKoli,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
+              keyboardType: mobileNumberKeyboardType(2),
+              inputFormatters: mobileNumberInputFormatters(2),
               decoration: InputDecoration(
                 labelText: draft.requireQty ? 'Qty Aktual *' : 'Qty Aktual',
+                enabled: draft.requireQty,
               ),
+              enabled: draft.requireQty,
               onChanged: (value) => onChanged(draft.itemId, qtyKoli: value),
             ),
             const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
                 Widget weightField() {
+                  final fractionDigits = mobileWeightInputFractionDigits(
+                    draft.weightInputUnit,
+                  );
                   return _SyncedTextFormField(
                     value: draft.weightInputValue,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                    keyboardType: mobileNumberKeyboardType(fractionDigits),
+                    inputFormatters: mobileNumberInputFormatters(
+                      fractionDigits,
                     ),
                     decoration: InputDecoration(
                       labelText: draft.requireWeight
@@ -2771,10 +2842,14 @@ class _ActualCargoCard extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 Widget volumeField() {
+                  final fractionDigits = mobileVolumeInputFractionDigits(
+                    draft.volumeInputUnit,
+                  );
                   return _SyncedTextFormField(
                     value: draft.volumeInputValue,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                    keyboardType: mobileNumberKeyboardType(fractionDigits),
+                    inputFormatters: mobileNumberInputFormatters(
+                      fractionDigits,
                     ),
                     decoration: InputDecoration(
                       labelText: draft.requireVolume
@@ -2983,9 +3058,8 @@ class _ActualDropCard extends StatelessWidget {
             const SizedBox(height: 12),
             _SyncedTextFormField(
               value: draft.qtyKoli,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
+              keyboardType: mobileNumberKeyboardType(2),
+              inputFormatters: mobileNumberInputFormatters(2),
               decoration: const InputDecoration(labelText: 'Qty Drop'),
               onChanged: (value) => onChanged(draft.id, qtyKoli: value),
             ),
@@ -2993,10 +3067,14 @@ class _ActualDropCard extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 Widget weightField() {
+                  final fractionDigits = mobileWeightInputFractionDigits(
+                    draft.weightInputUnit,
+                  );
                   return _SyncedTextFormField(
                     value: draft.weightInputValue,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                    keyboardType: mobileNumberKeyboardType(fractionDigits),
+                    inputFormatters: mobileNumberInputFormatters(
+                      fractionDigits,
                     ),
                     decoration: const InputDecoration(labelText: 'Berat Drop'),
                     onChanged: (value) =>
@@ -3039,10 +3117,14 @@ class _ActualDropCard extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 Widget volumeField() {
+                  final fractionDigits = mobileVolumeInputFractionDigits(
+                    draft.volumeInputUnit,
+                  );
                   return _SyncedTextFormField(
                     value: draft.volumeInputValue,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                    keyboardType: mobileNumberKeyboardType(fractionDigits),
+                    inputFormatters: mobileNumberInputFormatters(
+                      fractionDigits,
                     ),
                     decoration: const InputDecoration(labelText: 'Volume Drop'),
                     onChanged: (value) =>
@@ -3183,16 +3265,20 @@ class _SyncedTextFormField extends StatefulWidget {
     required this.decoration,
     required this.onChanged,
     this.keyboardType,
+    this.inputFormatters,
     this.minLines,
     this.maxLines = 1,
+    this.enabled = true,
   });
 
   final String value;
   final InputDecoration decoration;
   final ValueChanged<String> onChanged;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
   final int? minLines;
   final int? maxLines;
+  final bool enabled;
 
   @override
   State<_SyncedTextFormField> createState() => _SyncedTextFormFieldState();
@@ -3244,9 +3330,11 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
     return TextFormField(
       controller: _controller,
       keyboardType: widget.keyboardType,
+      inputFormatters: widget.inputFormatters,
       minLines: widget.minLines,
       maxLines: widget.maxLines,
       decoration: widget.decoration,
+      enabled: widget.enabled,
       scrollPadding: _mobileInputScrollPadding,
       onChanged: widget.onChanged,
     );

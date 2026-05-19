@@ -28,7 +28,7 @@ class MobileUnitSelectorField extends StatelessWidget {
           .map(
             (option) => DropdownMenuItem<String>(
               value: option,
-              child: Text(option, overflow: TextOverflow.ellipsis),
+              child: Text(_unitLabel(option), overflow: TextOverflow.ellipsis),
             ),
           )
           .toList(growable: false),
@@ -41,4 +41,15 @@ class MobileUnitSelectorField extends StatelessWidget {
           : null,
     );
   }
+}
+
+String _unitLabel(String option) {
+  return switch (option.trim().toUpperCase()) {
+    'KG' => 'Kg',
+    'TON' => 'Ton',
+    'M3' => 'm3',
+    'LITER' => 'Liter',
+    'KL' => 'KL',
+    _ => option,
+  };
 }

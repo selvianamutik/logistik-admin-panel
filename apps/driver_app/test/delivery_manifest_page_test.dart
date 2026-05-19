@@ -221,7 +221,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(unitSelector);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('TON').last);
+      await tester.tap(find.text('Ton').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Simpan SJ & Barang'));
       await tester.pumpAndSettle();
@@ -233,9 +233,78 @@ void main() {
       expect(capturedResult!.cargoItems.length, 1);
       expect(capturedResult!.cargoItems.first.description, 'Keramik 40x40');
       expect(capturedResult!.cargoItems.first.qtyKoli, 12);
-      expect(capturedResult!.cargoItems.first.weightInputValue, 850);
+      expect(capturedResult!.cargoItems.first.weightInputValue, 0.85);
       expect(capturedResult!.cargoItems.first.weightInputUnit, 'TON');
       expect(capturedResult!.cargoItems.first.shipperReferenceNumber, 'SJ-002');
+    });
+
+    testWidgets('matches admin numeric rules for cargo inputs', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryManifestPage(
+            title: 'Kelola SJ & Barang',
+            submitLabel: 'Simpan SJ & Barang',
+            pickupStops: pickupStops,
+            customerProducts: [],
+            allowsDirectCargoInput: true,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final koliField = find.widgetWithText(TextFormField, 'Koli');
+      final weightField = find.widgetWithText(TextFormField, 'Berat');
+      final volumeField = find.widgetWithText(TextFormField, 'Volume');
+      final unitSelectors = find.byType(MobileUnitSelectorField);
+
+      await tester.enterText(koliField, '12.5');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextFormField>(koliField).controller?.text, '125');
+
+      await tester.enterText(weightField, '123.456');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(weightField).controller?.text,
+        '123.45',
+      );
+
+      await tester.tap(unitSelectors.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ton').last);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(weightField).controller?.text,
+        '0.12345',
+      );
+
+      await tester.enterText(weightField, '1.234567');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(weightField).controller?.text,
+        '1.23456',
+      );
+
+      await tester.enterText(volumeField, '1.2345');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(volumeField).controller?.text,
+        '1.234',
+      );
+
+      await tester.tap(unitSelectors.at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Liter').last);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(volumeField).controller?.text,
+        '1234',
+      );
+
+      await tester.enterText(volumeField, '12.3');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextFormField>(volumeField).controller?.text, '123');
     });
 
     testWidgets(

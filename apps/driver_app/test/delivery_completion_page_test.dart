@@ -83,6 +83,38 @@ void main() {
       ],
     );
 
+    const weightOnlyTrip = DeliveryTrip(
+      deliveryOrderId: 'do-weight-only',
+      doNumber: 'DO-WEIGHT',
+      vehiclePlate: 'L 5678 AA',
+      originLabel: 'Gudang A',
+      destinationLabel: 'Surabaya',
+      customerName: 'PT Contoh',
+      status: TripStatus.arrived,
+      etdLabel: 'Tanggal DO 2026-04-18',
+      statusNote: 'Driver sudah tiba',
+      allowsDirectCargoInput: true,
+      shipperReferences: [
+        DeliveryShipperReference(
+          referenceNumber: 'SJ-WEIGHT',
+          receiverCompany: 'PT Penerima',
+          receiverAddress: 'Jl. Raya 2',
+        ),
+      ],
+      cargoItems: [
+        DeliveryCargoItem(
+          id: 'item-weight-only',
+          description: 'Besi Curah',
+          shipperReferenceNumber: 'SJ-WEIGHT',
+          qtyKoli: 0,
+          weightInputValue: 1.234567,
+          weightInputUnit: 'TON',
+          volumeInputValue: 12.3,
+          volumeInputUnit: 'LITER',
+        ),
+      ],
+    );
+
     testWidgets('submits actual cargo and drop for single target trip', (
       tester,
     ) async {
@@ -977,6 +1009,76 @@ void main() {
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('matches admin numeric and lock rules on completion form', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: weightOnlyTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final actualQtyField = find.widgetWithText(
+        TextFormField,
+        'Qty Aktual',
+        skipOffstage: false,
+      );
+      final actualWeightField = find.widgetWithText(
+        TextFormField,
+        'Berat Aktual *',
+        skipOffstage: false,
+      );
+      final actualVolumeField = find.widgetWithText(
+        TextFormField,
+        'Volume Aktual *',
+        skipOffstage: false,
+      );
+
+      expect(tester.widget<TextFormField>(actualQtyField).enabled, isFalse);
+      expect(
+        tester.widget<TextFormField>(actualWeightField).controller?.text,
+        '1.23457',
+      );
+
+      await tester.enterText(actualWeightField, '1.234567');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(actualWeightField).controller?.text,
+        '1.23456',
+      );
+
+      await tester.enterText(actualVolumeField, '12.3');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(actualVolumeField).controller?.text,
+        '123',
+      );
+
+      final dropQtyField = find.widgetWithText(
+        TextFormField,
+        'Qty Drop',
+        skipOffstage: false,
+      );
+      await tester.scrollUntilVisible(
+        dropQtyField.first,
+        260,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(dropQtyField.first, '1.234');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextFormField>(dropQtyField.first).controller?.text,
+        '1.23',
+      );
     });
 
     testWidgets('keeps added drop point reachable while keyboard is open', (

@@ -16,6 +16,7 @@ import '../domain/models.dart';
 import 'delivery_completion_page.dart';
 import 'delivery_manifest_page.dart';
 import 'mobile_action_feedback.dart';
+import 'mobile_numeric_input_formatter.dart';
 
 enum _DriverHomeSection { trips, vouchers }
 
@@ -1281,9 +1282,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     const SizedBox(height: 14),
                     TextField(
                       controller: odometerController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
-                      ),
+                      keyboardType: mobileNumberKeyboardType(0),
+                      inputFormatters: mobileNumberInputFormatters(0),
                       scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: InputDecoration(
                         labelText: 'Odometer Akhir Trip',
@@ -1509,9 +1509,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                     const SizedBox(height: 12),
                     TextField(
                       controller: odometerController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
-                      ),
+                      keyboardType: mobileNumberKeyboardType(0),
+                      inputFormatters: mobileNumberInputFormatters(0),
                       scrollPadding: _keyboardAwareScrollPadding(context),
                       decoration: const InputDecoration(
                         labelText: 'Odometer Saat Insiden',
@@ -1789,9 +1788,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       const SizedBox(height: 12),
                       TextField(
                         controller: odometerController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false,
-                        ),
+                        keyboardType: mobileNumberKeyboardType(0),
+                        inputFormatters: mobileNumberInputFormatters(0),
                         scrollPadding: _keyboardAwareScrollPadding(context),
                         decoration: const InputDecoration(
                           labelText: 'Odometer Akhir',
@@ -4186,7 +4184,8 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
           const SizedBox(height: 10),
           TextField(
             controller: widget.row.amount,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: mobileNumberKeyboardType(0),
+            inputFormatters: mobileNumberInputFormatters(0),
             scrollPadding: _keyboardAwareScrollPadding(context),
             decoration: const InputDecoration(
               labelText: 'Nominal',
