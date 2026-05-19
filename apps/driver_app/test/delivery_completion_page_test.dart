@@ -115,6 +115,56 @@ void main() {
       ],
     );
 
+    Finder completionScrollable() {
+      final stepList = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListView &&
+            (widget.key?.toString().contains('completion-step-scroll-') ??
+                false),
+        description: 'completion step list view',
+      );
+      return find
+          .descendant(
+            of: stepList,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Scrollable &&
+                  widget.axisDirection == AxisDirection.down,
+              description: 'completion step scrollable',
+            ),
+          )
+          .first;
+    }
+
+    Future<void> openCompletionStep(WidgetTester tester, String label) async {
+      final stepName = switch (label) {
+        'SJ & POD' => 'setup',
+        'Titik Drop' => 'drop',
+        'Aktual Barang' => 'cargo',
+        'Kirim' => 'review',
+        _ => throw ArgumentError('Unknown completion step: $label'),
+      };
+      final chip = find.byKey(ValueKey('completion-step-chip-$stepName'));
+      await tester.ensureVisible(chip);
+      await tester.tap(chip, warnIfMissed: false);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openDropStep(WidgetTester tester) =>
+        openCompletionStep(tester, 'Titik Drop');
+
+    Future<void> openCargoStep(WidgetTester tester) =>
+        openCompletionStep(tester, 'Aktual Barang');
+
+    Future<void> openReviewStep(WidgetTester tester) =>
+        openCompletionStep(tester, 'Kirim');
+
+    Future<void> submitCompletion(WidgetTester tester) async {
+      await openReviewStep(tester);
+      await tester.tap(find.byIcon(Icons.check_circle_rounded));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('submits actual cargo and drop for single target trip', (
       tester,
     ) async {
@@ -147,6 +197,7 @@ void main() {
 
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
+      await openDropStep(tester);
 
       final locationField = find.byWidgetPredicate(
         (widget) =>
@@ -155,13 +206,12 @@ void main() {
         description: 'Nama Lokasi TextField',
         skipOffstage: false,
       );
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+      await tester.drag(completionScrollable(), const Offset(0, -900));
       await tester.pumpAndSettle();
       await tester.enterText(locationField.first, 'PT Penerima');
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.check_circle_rounded));
-      await tester.pumpAndSettle();
+      await submitCompletion(tester);
 
       expect(result, isNotNull);
       expect(result!.actualItems, hasLength(1));
@@ -188,14 +238,13 @@ void main() {
       );
 
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
-      await tester.pumpAndSettle();
+      await openDropStep(tester);
 
       final typeDropdown = find.byWidgetPredicate(
         (widget) =>
             widget is DropdownButtonFormField<String> &&
-            widget.decoration.labelText == 'Tipe',
-        description: 'Tipe dropdown',
+            widget.decoration.labelText == 'Tipe Titik',
+        description: 'Tipe Titik dropdown',
         skipOffstage: false,
       );
       await tester.ensureVisible(typeDropdown.first);
@@ -242,8 +291,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -700));
-      await tester.pumpAndSettle();
+      await openDropStep(tester);
 
       expect(find.text('Tentukan Realisasi Titik Drop'), findsOneWidget);
       expect(find.text('Alokasi Barang Titik Ini'), findsOneWidget);
@@ -276,12 +324,14 @@ void main() {
         expect(sj010Tile.value, isTrue);
         expect(sj011Tile.value, isFalse);
 
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
+        await openCargoStep(tester);
+        await tester.drag(completionScrollable(), const Offset(0, -450));
         await tester.pumpAndSettle();
 
         expect(find.text('Beras'), findsOneWidget);
         expect(find.text('Semen'), findsNothing);
 
+        await openDropStep(tester);
         final dropReferenceDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
@@ -294,7 +344,7 @@ void main() {
         await tester.scrollUntilVisible(
           dropReferenceDropdown,
           300,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         await tester.pumpAndSettle();
         await tester.tap(dropReferenceDropdown.first);
@@ -338,8 +388,9 @@ void main() {
 
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
+        await openDropStep(tester);
 
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await tester.drag(completionScrollable(), const Offset(0, -900));
         await tester.pumpAndSettle();
         await tester.enterText(
           find.widgetWithText(TextFormField, 'Nama Lokasi').first,
@@ -374,7 +425,7 @@ void main() {
         await tester.scrollUntilVisible(
           addDropButton,
           240,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
         await tester.pumpAndSettle();
@@ -382,8 +433,8 @@ void main() {
         final typeDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == 'Tipe',
-          description: 'Tipe dropdown',
+              widget.decoration.labelText == 'Tipe Titik',
+          description: 'Tipe Titik dropdown',
           skipOffstage: false,
         );
         await tester.ensureVisible(typeDropdown.last);
@@ -392,8 +443,7 @@ void main() {
         await tester.tap(find.text('Hold / Inap').last);
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.check_circle_rounded));
-        await tester.pumpAndSettle();
+        await submitCompletion(tester);
 
         expect(result, isNotNull);
         expect(result!.actualItems, hasLength(1));
@@ -481,13 +531,14 @@ void main() {
 
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await openDropStep(tester);
+        await tester.drag(completionScrollable(), const Offset(0, -900));
         await tester.pumpAndSettle();
         final locationField = find.widgetWithText(TextFormField, 'Nama Lokasi');
         await tester.scrollUntilVisible(
           locationField,
           300,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         await tester.enterText(locationField.first, 'PT Penerima');
         await tester.pumpAndSettle();
@@ -499,7 +550,7 @@ void main() {
           description: 'Tentukan Barang dropdown',
           skipOffstage: false,
         );
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, 420));
+        await tester.drag(completionScrollable(), const Offset(0, 420));
         await tester.pumpAndSettle();
         await tester.tap(cargoTargetDropdown.first);
         await tester.pumpAndSettle();
@@ -513,7 +564,7 @@ void main() {
         await tester.scrollUntilVisible(
           addDropButton,
           240,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
         await tester.pumpAndSettle();
@@ -521,8 +572,8 @@ void main() {
         final typeDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == 'Tipe',
-          description: 'Tipe dropdown',
+              widget.decoration.labelText == 'Tipe Titik',
+          description: 'Tipe Titik dropdown',
           skipOffstage: false,
         );
         await tester.ensureVisible(typeDropdown.last);
@@ -531,8 +582,7 @@ void main() {
         await tester.tap(find.text('Hold / Inap').last);
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.check_circle_rounded));
-        await tester.pumpAndSettle();
+        await submitCompletion(tester);
 
         expect(result, isNotNull);
         final actualByItem = {
@@ -649,8 +699,7 @@ void main() {
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.check_circle_rounded));
-      await tester.pumpAndSettle();
+      await submitCompletion(tester);
 
       expect(result, isNotNull);
       expect(result!.actualItems, hasLength(1));
@@ -738,13 +787,14 @@ void main() {
 
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+        await openDropStep(tester);
+        await tester.drag(completionScrollable(), const Offset(0, -900));
         await tester.pumpAndSettle();
         final locationField = find.widgetWithText(TextFormField, 'Nama Lokasi');
         await tester.scrollUntilVisible(
           locationField,
           300,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         await tester.enterText(locationField.first, 'PT Penerima');
         await tester.pumpAndSettle();
@@ -756,7 +806,7 @@ void main() {
         await tester.scrollUntilVisible(
           addDropButton,
           240,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
         await tester.pumpAndSettle();
@@ -764,8 +814,8 @@ void main() {
         final typeDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == 'Tipe',
-          description: 'Tipe dropdown',
+              widget.decoration.labelText == 'Tipe Titik',
+          description: 'Tipe Titik dropdown',
           skipOffstage: false,
         );
         await tester.ensureVisible(typeDropdown.last);
@@ -787,8 +837,7 @@ void main() {
         await tester.tap(find.text('SJ-MIX - semua barang').last);
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.check_circle_rounded));
-        await tester.pumpAndSettle();
+        await submitCompletion(tester);
 
         expect(result, isNull);
         expect(find.textContaining('campuran drop dan hold'), findsOneWidget);
@@ -906,7 +955,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Ajukan Selesai'), findsWidgets);
+      expect(find.text('Lanjut Titik Drop'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -922,6 +971,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
+      await openDropStep(tester);
 
       final addDropButton = find.widgetWithText(
         OutlinedButton,
@@ -930,7 +980,7 @@ void main() {
       await tester.scrollUntilVisible(
         addDropButton,
         240,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: completionScrollable(),
       );
       await tester.pumpAndSettle();
       await tester.tap(addDropButton);
@@ -942,7 +992,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.text('Titik Drop 2'),
         120,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: completionScrollable(),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.delete_outline_rounded).last);
@@ -984,6 +1034,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
+      await openCargoStep(tester);
 
       final actualKoliField = find.widgetWithText(
         TextFormField,
@@ -991,23 +1042,17 @@ void main() {
         skipOffstage: false,
       );
 
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -350));
+      await tester.drag(completionScrollable(), const Offset(0, -350));
       await tester.pumpAndSettle();
       await tester.enterText(actualKoliField.first, '8');
       await tester.pumpAndSettle();
 
       final koliWidget = tester.widget<TextFormField>(actualKoliField.first);
       expect(koliWidget.controller?.text, '8');
-      expect(
-        find.widgetWithText(FilledButton, 'Ajukan Selesai'),
-        findsOneWidget,
-      );
+      expect(find.widgetWithText(FilledButton, 'Lanjut Kirim'), findsOneWidget);
       tester.view.viewInsets = const FakeViewPadding();
       await tester.pumpAndSettle();
-      expect(
-        find.widgetWithText(FilledButton, 'Ajukan Selesai'),
-        findsOneWidget,
-      );
+      expect(find.widgetWithText(FilledButton, 'Lanjut Kirim'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -1025,6 +1070,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
+      await openCargoStep(tester);
 
       final actualQtyField = find.widgetWithText(
         TextFormField,
@@ -1067,10 +1113,11 @@ void main() {
         'Qty Drop',
         skipOffstage: false,
       );
+      await openDropStep(tester);
       await tester.scrollUntilVisible(
         dropQtyField.first,
         260,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: completionScrollable(),
       );
       await tester.pumpAndSettle();
       await tester.enterText(dropQtyField.first, '1.234');
@@ -1101,6 +1148,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
+      await openDropStep(tester);
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
       await tester.pumpAndSettle();
@@ -1113,7 +1161,7 @@ void main() {
       await tester.scrollUntilVisible(
         addDropButton,
         240,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: completionScrollable(),
       );
       tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
       await tester.pumpAndSettle();
@@ -1179,6 +1227,7 @@ void main() {
         );
 
         await tester.pumpAndSettle();
+        await openDropStep(tester);
 
         final addDropButton = find.widgetWithText(
           OutlinedButton,
@@ -1188,7 +1237,7 @@ void main() {
         await tester.scrollUntilVisible(
           addDropButton,
           240,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         tester.widget<OutlinedButton>(addDropButton).onPressed?.call();
         await tester.pumpAndSettle();
@@ -1196,14 +1245,14 @@ void main() {
         final recipientDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == 'Master Tujuan Customer',
-          description: 'Master Tujuan Customer dropdown',
+              widget.decoration.labelText == 'Tujuan Master Customer',
+          description: 'Tujuan Master Customer dropdown',
           skipOffstage: false,
         );
         await tester.scrollUntilVisible(
           recipientDropdown.last,
           420,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: completionScrollable(),
         );
         await tester.pumpAndSettle();
         await tester.tap(recipientDropdown.last);
@@ -1222,7 +1271,7 @@ void main() {
           skipOffstage: false,
         );
 
-        expect(find.text('Ajukan Selesai'), findsWidgets);
+        expect(find.text('Lanjut Aktual Barang'), findsOneWidget);
         expect(
           tester.widget<TextFormField>(locationFields.last).controller?.text,
           'PT Beta',
@@ -1254,6 +1303,7 @@ void main() {
         );
 
         await tester.pumpAndSettle();
+        await openCargoStep(tester);
 
         final actualKoliField = find.widgetWithText(
           TextFormField,
@@ -1261,7 +1311,7 @@ void main() {
           skipOffstage: false,
         );
 
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -350));
+        await tester.drag(completionScrollable(), const Offset(0, -350));
         await tester.pumpAndSettle();
         await tester.ensureVisible(actualKoliField.first);
         await tester.pumpAndSettle();
@@ -1331,8 +1381,9 @@ void main() {
       );
 
       await tester.pumpAndSettle();
+      await openCargoStep(tester);
 
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
+      await tester.drag(completionScrollable(), const Offset(0, -450));
       await tester.pumpAndSettle();
 
       expect(find.text('Barang legacy'), findsOneWidget);

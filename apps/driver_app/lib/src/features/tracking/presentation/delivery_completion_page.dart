@@ -10,6 +10,31 @@ import 'mobile_unit_selector_field.dart';
 
 const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
+enum _CompletionStep { setup, drop, cargo, review }
+
+const _completionSteps = [
+  _CompletionStep.setup,
+  _CompletionStep.drop,
+  _CompletionStep.cargo,
+  _CompletionStep.review,
+];
+
+extension _CompletionStepLabels on _CompletionStep {
+  String get label => switch (this) {
+    _CompletionStep.setup => 'SJ & POD',
+    _CompletionStep.drop => 'Titik Drop',
+    _CompletionStep.cargo => 'Aktual Barang',
+    _CompletionStep.review => 'Kirim',
+  };
+
+  String get helper => switch (this) {
+    _CompletionStep.setup => 'Pilih SJ dan POD',
+    _CompletionStep.drop => 'Realisasi drop',
+    _CompletionStep.cargo => 'Aktual barang',
+    _CompletionStep.review => 'Review akhir',
+  };
+}
+
 class DeliveryCompletionPage extends StatefulWidget {
   const DeliveryCompletionPage({
     super.key,
@@ -35,6 +60,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   late final TextEditingController _podReceivedDateController;
   bool _submitting = false;
   bool _inputVisibilityScheduled = false;
+  _CompletionStep _currentStep = _CompletionStep.setup;
   late List<_ActualCargoDraft> _cargoDrafts;
   late List<_ActualDropDraft> _dropDrafts;
   late Set<String> _selectedShipperReferenceValues;
@@ -578,6 +604,24 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   GlobalKey _dropVisibilityKey(String draftId) =>
       _dropVisibilityKeys.putIfAbsent(draftId, () => GlobalKey());
 
+  void _setCurrentStep(_CompletionStep step) {
+    if (_currentStep == step) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _currentStep = step);
+  }
+
+  void _goToPreviousStep() {
+    final index = _completionSteps.indexOf(_currentStep);
+    if (index <= 0) return;
+    _setCurrentStep(_completionSteps[index - 1]);
+  }
+
+  void _goToNextStep() {
+    final index = _completionSteps.indexOf(_currentStep);
+    if (index < 0 || index >= _completionSteps.length - 1) return;
+    _setCurrentStep(_completionSteps[index + 1]);
+  }
+
   void _scheduleDraftVisibility(GlobalKey key) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -612,6 +656,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
         selectedDropDrafts.any(
           (draft) => _normalizeDropStopType(draft.stopType) != 'DROP',
         );
+    final currentStepIndex = _completionSteps.indexOf(_currentStep);
+    final canGoBack = currentStepIndex > 0 && !_submitting;
+    final canGoNext =
+        currentStepIndex >= 0 &&
+        currentStepIndex < _completionSteps.length - 1 &&
+        !_submitting;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -621,132 +671,446 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
           key: _inputVisibilityKey,
           child: Column(
             children: [
-              Expanded(
-                child: ListView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  children: [
-                    _InfoCard(
-                      title: 'Realisasi trip',
-                      message: hasMultiTargetDefault
-                          ? 'Trip ini punya beberapa target SJ. Driver perlu isi realisasi muatan dan alokasi titik drop dengan benar.'
-                          : 'Isi realisasi muatan dan titik drop. Admin akan cross-check sebelum DO diselesaikan.',
-                    ),
-                    if (widget.trip.shipperReferences.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _BatchSuratJalanCard(
-                        references: widget.trip.shipperReferences,
-                        selectedValues: _selectedShipperReferenceValues,
-                        canRequestFinalization:
-                            widget.trip.canRequestFinalizationForReference,
-                        onChanged: _submitting
-                            ? null
-                            : _setShipperReferenceSelected,
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _PodCard(
-                      receiverController: _podReceiverNameController,
-                      dateController: _podReceivedDateController,
-                      onPickDate: _submitting ? null : _pickPodReceivedDate,
-                    ),
-                    const SizedBox(height: 16),
-                    _TotalsCard(
-                      title: 'Qty',
-                      qtyLabel: _formatMetric(cargoTotals.qtyKoli),
-                      weightLabel: '${_formatMetric(cargoTotals.weightKg)} kg',
-                      volumeLabel:
-                          '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
-                    ),
-                    const SizedBox(height: 12),
-                    ...cargoSections.map(
-                      (section) => _ActualCargoSection(
-                        key: ValueKey('cargo-section-${section.key}'),
-                        section: section,
-                        showHeader: hasMultiTargetDefault,
-                        onChanged: _updateCargo,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _TotalsCard(
-                      title: 'Qty Drop Terkirim',
-                      qtyLabel: _formatMetric(dropTotals.qtyKoli),
-                      weightLabel: '${_formatMetric(dropTotals.weightKg)} kg',
-                      volumeLabel:
-                          '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
-                    ),
-                    const SizedBox(height: 12),
-                    _DropWorkflowCard(
-                      cargoCount: selectedCargoDrafts.length,
-                      dropCount: selectedDropDrafts.length,
-                      usesDetailedDrop: usesDetailedDrop,
-                    ),
-                    const SizedBox(height: 12),
-                    ...selectedDropDrafts.asMap().entries.map(
-                      (entry) => Padding(
-                        key: _dropVisibilityKey(entry.value.id),
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ActualDropCard(
-                          key: ValueKey(entry.value.id),
-                          index: entry.key + 1,
-                          draft: entry.value,
-                          shipperReferences: selectedReferences,
-                          customerRecipients: widget.customerRecipients,
-                          cargoDrafts: selectedCargoDrafts,
-                          showRemove: selectedDropDrafts.length > 1,
-                          onChanged: _updateDrop,
-                          onCargoTargetChanged: _selectDropCargoTarget,
-                          onRecipientChanged: _selectRecipient,
-                          onRemove: _removeDropPoint,
-                        ),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _submitting ? null : _addDropPoint,
-                      icon: const Icon(Icons.add_location_alt_rounded),
-                      label: const Text('Tambah Titik Drop'),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _noteController,
-                      minLines: 2,
-                      maxLines: 4,
-                      scrollPadding: _mobileInputScrollPadding,
-                      decoration: const InputDecoration(
-                        labelText: 'Catatan Driver',
-                        hintText: 'Opsional',
-                      ),
-                    ),
-                  ],
-                ),
+              _CompletionStepHeader(
+                currentStep: _currentStep,
+                onStepSelected: _submitting ? null : _setCurrentStep,
               ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: Padding(
-                  key: const ValueKey('submit-bar'),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _submitting ? null : _submit,
-                      icon: _submitting
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.onPrimary,
-                              ),
-                            )
-                          : const Icon(Icons.check_circle_rounded),
-                      label: const Text('Ajukan Selesai'),
-                    ),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: _CompletionStepBody(
+                    key: ValueKey(_currentStep),
+                    step: _currentStep,
+                    children: switch (_currentStep) {
+                      _CompletionStep.setup => [
+                        _InfoCard(
+                          title: 'Realisasi trip',
+                          message: hasMultiTargetDefault
+                              ? 'Trip ini punya beberapa target SJ. Driver perlu isi realisasi muatan dan alokasi titik drop dengan benar.'
+                              : 'Isi realisasi muatan dan titik drop. Admin akan cross-check sebelum DO diselesaikan.',
+                        ),
+                        if (widget.trip.shipperReferences.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _BatchSuratJalanCard(
+                            references: widget.trip.shipperReferences,
+                            selectedValues: _selectedShipperReferenceValues,
+                            canRequestFinalization:
+                                widget.trip.canRequestFinalizationForReference,
+                            onChanged: _submitting
+                                ? null
+                                : _setShipperReferenceSelected,
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        _PodCard(
+                          receiverController: _podReceiverNameController,
+                          dateController: _podReceivedDateController,
+                          onPickDate: _submitting ? null : _pickPodReceivedDate,
+                        ),
+                      ],
+                      _CompletionStep.drop => [
+                        _DropWorkflowCard(
+                          cargoCount: selectedCargoDrafts.length,
+                          dropCount: selectedDropDrafts.length,
+                          usesDetailedDrop: usesDetailedDrop,
+                        ),
+                        const SizedBox(height: 12),
+                        _TotalsCard(
+                          title: 'Qty Drop Terkirim',
+                          qtyLabel: _formatMetric(dropTotals.qtyKoli),
+                          weightLabel:
+                              '${_formatMetric(dropTotals.weightKg)} kg',
+                          volumeLabel:
+                              '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                        ),
+                        const SizedBox(height: 12),
+                        ...selectedDropDrafts.asMap().entries.map(
+                          (entry) => Padding(
+                            key: _dropVisibilityKey(entry.value.id),
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _ActualDropCard(
+                              key: ValueKey(entry.value.id),
+                              index: entry.key + 1,
+                              draft: entry.value,
+                              shipperReferences: selectedReferences,
+                              customerRecipients: widget.customerRecipients,
+                              cargoDrafts: selectedCargoDrafts,
+                              showRemove: selectedDropDrafts.length > 1,
+                              onChanged: _updateDrop,
+                              onCargoTargetChanged: _selectDropCargoTarget,
+                              onRecipientChanged: _selectRecipient,
+                              onRemove: _removeDropPoint,
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _submitting ? null : _addDropPoint,
+                          icon: const Icon(Icons.add_location_alt_rounded),
+                          label: const Text('Tambah Titik Drop'),
+                        ),
+                      ],
+                      _CompletionStep.cargo => [
+                        _InfoCard(
+                          title: 'Aktual Barang SJ',
+                          message:
+                              'Langkah 2 dari 2. Isi realisasi per barang seperti tab aktual barang di admin operasional.',
+                        ),
+                        const SizedBox(height: 12),
+                        _TotalsCard(
+                          title: 'Qty',
+                          qtyLabel: _formatMetric(cargoTotals.qtyKoli),
+                          weightLabel:
+                              '${_formatMetric(cargoTotals.weightKg)} kg',
+                          volumeLabel:
+                              '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
+                        ),
+                        const SizedBox(height: 12),
+                        ...cargoSections.map(
+                          (section) => _ActualCargoSection(
+                            key: ValueKey('cargo-section-${section.key}'),
+                            section: section,
+                            showHeader: hasMultiTargetDefault,
+                            onChanged: _updateCargo,
+                          ),
+                        ),
+                      ],
+                      _CompletionStep.review => [
+                        _InfoCard(
+                          title: 'Review & Kirim',
+                          message:
+                              'Cek ringkasan aktual barang dan titik drop sebelum diajukan ke admin.',
+                        ),
+                        const SizedBox(height: 12),
+                        _TotalsCard(
+                          title: 'Qty',
+                          qtyLabel: _formatMetric(cargoTotals.qtyKoli),
+                          weightLabel:
+                              '${_formatMetric(cargoTotals.weightKg)} kg',
+                          volumeLabel:
+                              '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
+                        ),
+                        const SizedBox(height: 12),
+                        _TotalsCard(
+                          title: 'Qty Drop Terkirim',
+                          qtyLabel: _formatMetric(dropTotals.qtyKoli),
+                          weightLabel:
+                              '${_formatMetric(dropTotals.weightKg)} kg',
+                          volumeLabel:
+                              '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _noteController,
+                          minLines: 2,
+                          maxLines: 4,
+                          scrollPadding: _mobileInputScrollPadding,
+                          decoration: const InputDecoration(
+                            labelText: 'Catatan Driver',
+                            hintText: 'Opsional',
+                          ),
+                        ),
+                      ],
+                    },
                   ),
                 ),
               ),
+              _CompletionFooter(
+                currentStep: _currentStep,
+                busy: _submitting,
+                canGoBack: canGoBack,
+                canGoNext: canGoNext,
+                onBack: _goToPreviousStep,
+                onNext: _goToNextStep,
+                onSubmit: _submit,
+                scheme: scheme,
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionStepHeader extends StatelessWidget {
+  const _CompletionStepHeader({
+    required this.currentStep,
+    required this.onStepSelected,
+  });
+
+  final _CompletionStep currentStep;
+  final ValueChanged<_CompletionStep>? onStepSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final currentIndex = _completionSteps.indexOf(currentStep);
+
+    return Material(
+      color: scheme.surface,
+      elevation: 1,
+      shadowColor: scheme.shadow.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 380;
+            final chips = <Widget>[
+              for (final entry in _completionSteps.indexed)
+                _CompletionStepChip(
+                  step: entry.$2,
+                  index: entry.$1 + 1,
+                  selected: entry.$2 == currentStep,
+                  complete: entry.$1 < currentIndex,
+                  enabled: onStepSelected != null,
+                  onSelected: () => onStepSelected?.call(entry.$2),
+                ),
+            ];
+
+            if (compact) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final entry in chips.indexed) ...[
+                      if (entry.$1 > 0) const SizedBox(width: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 126),
+                        child: entry.$2,
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }
+
+            return Row(
+              children: [
+                for (final entry in chips.indexed) ...[
+                  if (entry.$1 > 0) const SizedBox(width: 8),
+                  Expanded(child: entry.$2),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionStepChip extends StatelessWidget {
+  const _CompletionStepChip({
+    required this.step,
+    required this.index,
+    required this.selected,
+    required this.complete,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final _CompletionStep step;
+  final int index;
+  final bool selected;
+  final bool complete;
+  final bool enabled;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.primaryContainer
+        : complete
+        ? scheme.secondaryContainer.withValues(alpha: 0.68)
+        : scheme.surfaceContainerHighest.withValues(alpha: 0.45);
+    final foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface.withValues(alpha: 0.76);
+
+    return InkWell(
+      key: ValueKey('completion-step-chip-${step.name}'),
+      onTap: enabled ? onSelected : null,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.42)
+                : scheme.outline.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected
+                    ? scheme.primary
+                    : complete
+                    ? scheme.secondary
+                    : scheme.surface,
+                shape: BoxShape.circle,
+              ),
+              child: complete
+                  ? Icon(Icons.check_rounded, size: 15, color: scheme.onPrimary)
+                  : Text(
+                      '$index',
+                      style: TextStyle(
+                        color: selected
+                            ? scheme.onPrimary
+                            : scheme.onSurface.withValues(alpha: 0.72),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    step.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    step.helper,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground.withValues(alpha: 0.64),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionStepBody extends StatelessWidget {
+  const _CompletionStepBody({
+    super.key,
+    required this.step,
+    required this.children,
+  });
+
+  final _CompletionStep step;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      key: ValueKey('completion-step-scroll-${step.name}'),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: children,
+    );
+  }
+}
+
+class _CompletionFooter extends StatelessWidget {
+  const _CompletionFooter({
+    required this.currentStep,
+    required this.busy,
+    required this.canGoBack,
+    required this.canGoNext,
+    required this.onBack,
+    required this.onNext,
+    required this.onSubmit,
+    required this.scheme,
+  });
+
+  final _CompletionStep currentStep;
+  final bool busy;
+  final bool canGoBack;
+  final bool canGoNext;
+  final VoidCallback onBack;
+  final VoidCallback onNext;
+  final VoidCallback onSubmit;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final isReview = currentStep == _CompletionStep.review;
+    final primaryLabel = switch (currentStep) {
+      _CompletionStep.setup => 'Lanjut Titik Drop',
+      _CompletionStep.drop => 'Lanjut Aktual Barang',
+      _CompletionStep.cargo => 'Lanjut Kirim',
+      _CompletionStep.review => 'Ajukan Selesai',
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.72)),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        child: Row(
+          children: [
+            if (canGoBack) ...[
+              Expanded(
+                flex: 4,
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : onBack,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Kembali'),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              flex: 6,
+              child: FilledButton.icon(
+                onPressed: busy
+                    ? null
+                    : (isReview
+                          ? onSubmit
+                          : canGoNext
+                          ? onNext
+                          : null),
+                icon: busy
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.onPrimary,
+                        ),
+                      )
+                    : Icon(
+                        isReview
+                            ? Icons.check_circle_rounded
+                            : Icons.arrow_forward_rounded,
+                      ),
+                label: Text(primaryLabel),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2617,7 +2981,7 @@ class _DropWorkflowCard extends StatelessWidget {
             Text(
               usesDetailedDrop
                   ? '$dropCount titik drop aktif untuk $cargoCount item. Barang tiap titik harus jelas sebelum diajukan.'
-                  : '$cargoCount item akan turun di satu titik. Tambahkan titik hanya untuk multi-drop, hold, return, atau transit.',
+                  : '$cargoCount item akan turun di satu titik. Tambahkan titik hanya untuk multi-drop atau hold/inap.',
               style: TextStyle(
                 color: scheme.onSurface.withValues(alpha: 0.62),
                 height: 1.4,
@@ -2991,7 +3355,7 @@ class _ActualDropCard extends StatelessWidget {
             DropdownButtonFormField<String>(
               initialValue: _editableDriverDropStopType(draft.stopType),
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Tipe'),
+              decoration: const InputDecoration(labelText: 'Tipe Titik'),
               items: _driverDropStopTypeItems,
               onChanged: (value) =>
                   onChanged(draft.id, stopType: value ?? 'DROP'),
@@ -3024,7 +3388,7 @@ class _ActualDropCard extends StatelessWidget {
                 initialValue: selectedRecipientValue,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Master Tujuan Customer',
+                  labelText: 'Tujuan Master Customer',
                 ),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('Isi manual')),
@@ -3168,7 +3532,9 @@ class _ActualDropCard extends StatelessWidget {
               value: draft.note,
               minLines: 2,
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Catatan Titik'),
+              decoration: const InputDecoration(
+                labelText: 'Catatan Titik Drop',
+              ),
               onChanged: (value) => onChanged(draft.id, note: value),
             ),
           ],
