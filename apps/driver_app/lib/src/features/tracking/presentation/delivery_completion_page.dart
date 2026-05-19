@@ -27,6 +27,13 @@ extension _CompletionStepLabels on _CompletionStep {
     _CompletionStep.review => 'Kirim',
   };
 
+  String get shortLabel => switch (this) {
+    _CompletionStep.setup => 'SJ',
+    _CompletionStep.drop => 'Drop',
+    _CompletionStep.cargo => 'Barang',
+    _CompletionStep.review => 'Kirim',
+  };
+
   String get helper => switch (this) {
     _CompletionStep.setup => 'Pilih SJ dan POD',
     _CompletionStep.drop => 'Realisasi drop',
@@ -718,10 +725,15 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                         _TotalsCard(
                           title: 'Qty Drop Terkirim',
                           qtyLabel: _formatMetric(dropTotals.qtyKoli),
-                          weightLabel:
-                              '${_formatMetric(dropTotals.weightKg)} kg',
-                          volumeLabel:
-                              '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                          weightLabel: _formatMetricWithUnit(
+                            dropTotals.weightKg,
+                            'kg',
+                          ),
+                          volumeLabel: _formatMetricWithUnit(
+                            dropTotals.volumeM3,
+                            'm3',
+                            fractionDigits: 3,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         ...selectedDropDrafts.asMap().entries.map(
@@ -759,10 +771,15 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                         _TotalsCard(
                           title: 'Qty',
                           qtyLabel: _formatMetric(cargoTotals.qtyKoli),
-                          weightLabel:
-                              '${_formatMetric(cargoTotals.weightKg)} kg',
-                          volumeLabel:
-                              '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
+                          weightLabel: _formatMetricWithUnit(
+                            cargoTotals.weightKg,
+                            'kg',
+                          ),
+                          volumeLabel: _formatMetricWithUnit(
+                            cargoTotals.volumeM3,
+                            'm3',
+                            fractionDigits: 3,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         ...cargoSections.map(
@@ -784,19 +801,29 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                         _TotalsCard(
                           title: 'Qty',
                           qtyLabel: _formatMetric(cargoTotals.qtyKoli),
-                          weightLabel:
-                              '${_formatMetric(cargoTotals.weightKg)} kg',
-                          volumeLabel:
-                              '${_formatMetric(cargoTotals.volumeM3, fractionDigits: 3)} m3',
+                          weightLabel: _formatMetricWithUnit(
+                            cargoTotals.weightKg,
+                            'kg',
+                          ),
+                          volumeLabel: _formatMetricWithUnit(
+                            cargoTotals.volumeM3,
+                            'm3',
+                            fractionDigits: 3,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         _TotalsCard(
                           title: 'Qty Drop Terkirim',
                           qtyLabel: _formatMetric(dropTotals.qtyKoli),
-                          weightLabel:
-                              '${_formatMetric(dropTotals.weightKg)} kg',
-                          volumeLabel:
-                              '${_formatMetric(dropTotals.volumeM3, fractionDigits: 3)} m3',
+                          weightLabel: _formatMetricWithUnit(
+                            dropTotals.weightKg,
+                            'kg',
+                          ),
+                          volumeLabel: _formatMetricWithUnit(
+                            dropTotals.volumeM3,
+                            'm3',
+                            fractionDigits: 3,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -854,7 +881,7 @@ class _CompletionStepHeader extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 380;
+            final compact = constraints.maxWidth < 420;
             final chips = <Widget>[
               for (final entry in _completionSteps.indexed)
                 _CompletionStepChip(
@@ -863,24 +890,19 @@ class _CompletionStepHeader extends StatelessWidget {
                   selected: entry.$2 == currentStep,
                   complete: entry.$1 < currentIndex,
                   enabled: onStepSelected != null,
+                  compact: compact,
                   onSelected: () => onStepSelected?.call(entry.$2),
                 ),
             ];
 
             if (compact) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final entry in chips.indexed) ...[
-                      if (entry.$1 > 0) const SizedBox(width: 8),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 126),
-                        child: entry.$2,
-                      ),
-                    ],
+              return Row(
+                children: [
+                  for (final entry in chips.indexed) ...[
+                    if (entry.$1 > 0) const SizedBox(width: 6),
+                    Expanded(child: entry.$2),
                   ],
-                ),
+                ],
               );
             }
 
@@ -906,6 +928,7 @@ class _CompletionStepChip extends StatelessWidget {
     required this.selected,
     required this.complete,
     required this.enabled,
+    required this.compact,
     required this.onSelected,
   });
 
@@ -914,6 +937,7 @@ class _CompletionStepChip extends StatelessWidget {
   final bool selected;
   final bool complete;
   final bool enabled;
+  final bool compact;
   final VoidCallback onSelected;
 
   @override
@@ -934,7 +958,10 @@ class _CompletionStepChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 10,
+          vertical: compact ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(12),
@@ -948,8 +975,8 @@ class _CompletionStepChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 24,
-              height: 24,
+              width: compact ? 22 : 24,
+              height: compact ? 22 : 24,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: selected
@@ -968,39 +995,50 @@ class _CompletionStepChip extends StatelessWidget {
                             ? scheme.onPrimary
                             : scheme.onSurface.withValues(alpha: 0.72),
                         fontWeight: FontWeight.w800,
-                        fontSize: 12,
+                        fontSize: compact ? 11 : 12,
                       ),
                     ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 6 : 8),
             Flexible(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    step.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
+              child: compact
+                  ? Text(
+                      step.shortLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          step.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          step.helper,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: foreground.withValues(alpha: 0.64),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    step.helper,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: foreground.withValues(alpha: 0.64),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -2732,6 +2770,15 @@ String _formatMetric(double? value, {int fractionDigits = 2}) {
   return rounded.contains('.')
       ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
       : rounded;
+}
+
+String _formatMetricWithUnit(
+  double? value,
+  String unit, {
+  int fractionDigits = 2,
+}) {
+  final metric = _formatMetric(value, fractionDigits: fractionDigits);
+  return metric.isEmpty ? '' : '$metric $unit';
 }
 
 class _PodCard extends StatelessWidget {
