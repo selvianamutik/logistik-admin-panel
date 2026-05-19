@@ -144,6 +144,39 @@ void main() {
       expect(result!.actualDropPoints.first.qtyKoli, 10);
     });
 
+    testWidgets('uses admin operational drop type choices', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: const DeliveryCompletionPage(
+            trip: singleTargetTrip,
+            customerRecipients: [],
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+      await tester.pumpAndSettle();
+
+      final typeDropdown = find.byWidgetPredicate(
+        (widget) =>
+            widget is DropdownButtonFormField<String> &&
+            widget.decoration.labelText == 'Tipe',
+        description: 'Tipe dropdown',
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(typeDropdown.first);
+      await tester.tap(typeDropdown.first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Drop'), findsWidgets);
+      expect(find.text('Hold / Inap'), findsWidgets);
+      expect(find.text('Drop Tambahan'), findsNothing);
+      expect(find.text('Retur'), findsNothing);
+      expect(find.text('Transit'), findsNothing);
+    });
+
     testWidgets('renders multi target helper notice', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -324,7 +357,7 @@ void main() {
         await tester.ensureVisible(typeDropdown.last);
         await tester.tap(typeDropdown.last);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Hold Gudang').last);
+        await tester.tap(find.text('Hold / Inap').last);
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.check_circle_rounded));
@@ -463,7 +496,7 @@ void main() {
         await tester.ensureVisible(typeDropdown.last);
         await tester.tap(typeDropdown.last);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Hold Gudang').last);
+        await tester.tap(find.text('Hold / Inap').last);
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.check_circle_rounded));
@@ -706,7 +739,7 @@ void main() {
         await tester.ensureVisible(typeDropdown.last);
         await tester.tap(typeDropdown.last);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Hold Gudang').last);
+        await tester.tap(find.text('Hold / Inap').last);
         await tester.pumpAndSettle();
 
         final cargoTargetDropdown = find.byWidgetPredicate(

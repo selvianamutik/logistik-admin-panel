@@ -2276,6 +2276,19 @@ String _normalizeDropStopType(String value) {
   };
 }
 
+String _editableDriverDropStopType(String value) {
+  final normalized = _normalizeDropStopType(value);
+  return switch (normalized) {
+    'HOLD' || 'TRANSIT' || 'RETURN' => 'HOLD',
+    _ => 'DROP',
+  };
+}
+
+const _driverDropStopTypeItems = [
+  DropdownMenuItem<String>(value: 'DROP', child: Text('Drop')),
+  DropdownMenuItem<String>(value: 'HOLD', child: Text('Hold / Inap')),
+];
+
 bool _isBillableDropType(String value) {
   final normalized = _normalizeDropStopType(value);
   return normalized == 'DROP' || normalized == 'EXTRA_DROP';
@@ -2901,19 +2914,10 @@ class _ActualDropCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              initialValue: _normalizeDropStopType(draft.stopType),
+              initialValue: _editableDriverDropStopType(draft.stopType),
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Tipe'),
-              items: const [
-                DropdownMenuItem(value: 'DROP', child: Text('Drop')),
-                DropdownMenuItem(value: 'HOLD', child: Text('Hold Gudang')),
-                DropdownMenuItem(
-                  value: 'EXTRA_DROP',
-                  child: Text('Drop Tambahan'),
-                ),
-                DropdownMenuItem(value: 'RETURN', child: Text('Retur')),
-                DropdownMenuItem(value: 'TRANSIT', child: Text('Transit')),
-              ],
+              items: _driverDropStopTypeItems,
               onChanged: (value) =>
                   onChanged(draft.id, stopType: value ?? 'DROP'),
             ),
