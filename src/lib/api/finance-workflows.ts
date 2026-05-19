@@ -38,7 +38,6 @@ import type {
     DeliveryOrder,
     DeliveryOrderItem,
     DriverVoucher,
-    DriverVoucherItem,
     Expense,
     ExpenseCategory,
     FreightNota,
@@ -81,7 +80,10 @@ import {
     type ReceivableDoc,
     type ReceivableSnapshot,
 } from './finance-workflow-support';
-import { computeDriverVoucherTotals, getDriverVoucherIssuedAmount } from './driver-workflow-support';
+import {
+    findVoucherForIncidentDeliveryOrder,
+    syncIncidentSettlementLineToDriverVoucherItem,
+} from './incident-voucher-linking';
 import {
     postBankTransferJournal,
     postCustomerOverpaymentRefundJournal,
@@ -385,105 +387,6 @@ function sanitizePatchSet(input: Record<string, unknown>) {
     return Object.fromEntries(
         Object.entries(input).filter(([, value]) => value !== undefined)
     );
-}
-
-function mapIncidentSettlementCategoryToVoucherCategory(category?: string) {
-    switch (category) {
-        case 'TOWING':
-            return 'Towing / Evakuasi';
-        case 'REPAIR':
-        case 'SPAREPART':
-        case 'TIRE':
-            return 'Perbaikan Darurat Trip';
-        case 'ACCOMMODATION':
-            return 'Menginap Driver';
-        case 'CARGO_HANDLING':
-            return 'Bongkar Muat';
-        default:
-            return 'Lain-lain Trip';
-    }
-}
-
-async function findVoucherForIncidentDeliveryOrder(incident?: { relatedDeliveryOrderRef?: string }) {
-    const relatedDeliveryOrderRef = normalizeOptionalText(incident?.relatedDeliveryOrderRef);
-    if (!relatedDeliveryOrderRef) {
-        return null;
-    }
-    const vouchers = await listDocumentsByFilter<DriverVoucher>('driverVoucher', {
-        deliveryOrderRef: relatedDeliveryOrderRef,
-    });
-    return vouchers
-        .filter(voucher => voucher.status !== 'SETTLED')
-        .sort((left, right) => `${right.issuedDate || ''}-${right._id}`.localeCompare(`${left.issuedDate || ''}-${left._id}`))[0] ||
-        null;
-}
-
-async function syncIncidentSettlementLineToDriverVoucherItem(params: {
-    voucher: DriverVoucher;
-    incident: { _id: string; incidentNumber?: string; relatedDeliveryOrderRef?: string };
-    line: {
-        _id: string;
-        category?: string;
-        date?: string;
-        amount?: number;
-        description?: string;
-        note?: string;
-        linkedDriverVoucherItemRef?: string;
-    };
-    expenseId: string;
-    expenseDate: string;
-}) {
-    if (params.line.linkedDriverVoucherItemRef) {
-        return params.line.linkedDriverVoucherItemRef;
-    }
-    const existingItems = await listDocumentsByFilter<DriverVoucherItem>('driverVoucherItem', {
-        voucherRef: params.voucher._id,
-    });
-    const existingLinkedItem = existingItems.find(item =>
-        item.relatedIncidentSettlementLineRef === params.line._id ||
-        item.linkedExpenseRef === params.expenseId
-    );
-    if (existingLinkedItem) {
-        return existingLinkedItem._id;
-    }
-
-    const voucherItemId = crypto.randomUUID();
-    const amount = Math.max(normalizeCurrencyNumber(params.line.amount ?? 0), 0);
-    const itemDoc: DriverVoucherItem = {
-        _id: voucherItemId,
-        _type: 'driverVoucherItem',
-        voucherRef: params.voucher._id,
-        expenseDate: params.expenseDate || params.line.date || getBusinessDateValue(),
-        category: mapIncidentSettlementCategoryToVoucherCategory(params.line.category),
-        description: [
-            params.incident.incidentNumber ? `Insiden ${params.incident.incidentNumber}` : 'Insiden driver',
-            normalizeOptionalText(params.line.description),
-        ].filter(Boolean).join(' - '),
-        amount,
-        relatedIncidentRef: params.incident._id,
-        relatedIncidentSettlementLineRef: params.line._id,
-        linkedExpenseRef: params.expenseId,
-        source: 'INCIDENT',
-    };
-    await createDocument(itemDoc as unknown as { _type: string; [key: string]: unknown });
-
-    const nextOperationalSpent = existingItems.reduce(
-        (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
-        0
-    ) + amount;
-    const nextTotals = computeDriverVoucherTotals(
-        getDriverVoucherIssuedAmount(params.voucher),
-        nextOperationalSpent,
-        normalizeNumber(params.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
-    );
-    await updateDocument(params.voucher._id, {
-        totalSpent: nextTotals.totalSpent,
-        totalClaimAmount: nextTotals.totalClaimAmount,
-        balance: nextTotals.balance,
-        updatedAt: new Date().toISOString(),
-    }, 'driverVoucher');
-
-    return voucherItemId;
 }
 
 function parseOptionalStrictNotaRowNumber(
@@ -2262,6 +2165,17 @@ export async function handleExpenseCreate(
         relatedVehiclePlate = linkedVehicle.plateNumber || relatedVehiclePlate;
     }
 
+    const shouldDeferIncidentTripExpenseToVoucher =
+        Boolean(incidentSettlementLine && linkedIncident?.relatedDeliveryOrderRef && !linkedVoucher);
+    if (shouldDeferIncidentTripExpenseToVoucher && selectedAccountRef) {
+        return NextResponse.json(
+            {
+                error: 'Bon trip belum terbit. Posting biaya insiden trip dengan rekening bank akan membuat biaya keluar dari workflow uang jalan. Terbitkan bon trip dulu, atau simpan biaya insiden tanpa rekening agar otomatis masuk biaya lain-lain uang jalan saat bon diterbitkan.',
+            },
+            { status: 409 }
+        );
+    }
+
     const hasPrivacyLevel = Object.prototype.hasOwnProperty.call(data, 'privacyLevel');
     const rawPrivacyLevel = normalizeOptionalText(data.privacyLevel);
     if (hasPrivacyLevel && rawPrivacyLevel && rawPrivacyLevel !== 'ownerOnly' && rawPrivacyLevel !== 'internal') {
@@ -2365,7 +2279,7 @@ export async function handleExpenseCreate(
                 userName: session.name,
             });
         }
-        if (!(incidentSettlementLine && linkedVoucher)) {
+        if (!(incidentSettlementLine && (linkedVoucher || shouldDeferIncidentTripExpenseToVoucher))) {
             await postExpenseJournal(session, expenseDoc as Expense, null);
         }
         await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);

@@ -18,7 +18,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
-import type { CompanyProfile, Expense } from '@/lib/types';
+import type { CompanyProfile, DriverVoucher, Expense } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -44,6 +44,7 @@ import {
     summarizeBoronganDeliveryOrderItems,
     type DriverBoronganDeliveryOrderItemSummarySource,
 } from './driver-workflow-support';
+import { syncPostedIncidentSettlementLinesToDriverVoucher } from './incident-voucher-linking';
 import {
     postDriverVoucherIssueJournal,
     postDriverVoucherSettlementJournal,
@@ -1077,7 +1078,7 @@ export async function handleDriverVoucherCreate(
             { status: 409 }
         );
     }
-    const voucherDoc = {
+    const voucherDoc: DriverVoucher = {
         _id: voucherId,
         _type: 'driverVoucher',
         issuerCompanyName: companyProfile?.name,
@@ -1113,7 +1114,7 @@ export async function handleDriverVoucherCreate(
         updateDocument(deliveryOrderRef, { updatedAt: now }, 'deliveryOrder'),
         updateDocument(driverRef, { updatedAt: now }, 'driver'),
     ]);
-    await createDocument(voucherDoc);
+    await createDocument(voucherDoc as unknown as { _type: string; [key: string]: unknown });
     await createDocument({
         _id: initialDisbursementId,
         _type: 'driverVoucherDisbursement',
@@ -1146,6 +1147,11 @@ export async function handleDriverVoucherCreate(
     if (linkedVehicle) {
         await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
     }
+    const incidentSync = await syncPostedIncidentSettlementLinesToDriverVoucher({
+        voucher: voucherDoc,
+        deliveryOrderRef,
+        issueDate,
+    });
     await postDriverVoucherIssueJournal(session, voucherDoc, issueBank);
 
     await addAuditLog(
@@ -1153,9 +1159,11 @@ export async function handleDriverVoucherCreate(
         'CREATE',
         'driver-vouchers',
         voucherId,
-        `Bon trip diterbitkan: ${bonNumber} untuk DO ${canonicalDoNumber || deliveryOrderRef}`
+        incidentSync.linkedCount > 0
+            ? `Bon trip diterbitkan: ${bonNumber} untuk DO ${canonicalDoNumber || deliveryOrderRef}; ${incidentSync.linkedCount} biaya insiden masuk biaya lain-lain`
+            : `Bon trip diterbitkan: ${bonNumber} untuk DO ${canonicalDoNumber || deliveryOrderRef}`
     );
-    return NextResponse.json({ data: voucherDoc, id: voucherId });
+    return NextResponse.json({ data: incidentSync.voucher, id: voucherId });
 }
 
 export async function handleDriverVoucherTopUp(
