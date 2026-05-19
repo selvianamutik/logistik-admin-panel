@@ -1616,18 +1616,19 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (activeIncidents.isEmpty) {
       return null;
     }
-    final incidentNumber = activeIncidents.first.incidentNumber;
-    final waitingAdmin = activeIncidents.any(
+    final waitingAdminIncident = activeIncidents.firstWhereOrNull(
       (incident) => incident.isWaitingResolutionReview,
     );
-    final waitingClose = activeIncidents.any(
+    if (waitingAdminIncident != null) {
+      return 'Laporan baru tersedia setelah pengajuan ${waitingAdminIncident.incidentNumber} direview admin.';
+    }
+    final waitingCloseIncident = activeIncidents.firstWhereOrNull(
       (incident) => incident.status == 'RESOLVED',
     );
-    return waitingAdmin
-        ? 'Laporan baru tersedia setelah pengajuan $incidentNumber direview admin.'
-        : waitingClose
-        ? 'Laporan baru tersedia setelah $incidentNumber ditutup admin.'
-        : 'Selesaikan $incidentNumber sebelum membuat laporan insiden baru.';
+    if (waitingCloseIncident != null) {
+      return 'Laporan baru tersedia setelah ${waitingCloseIncident.incidentNumber} ditutup admin.';
+    }
+    return 'Selesaikan ${activeIncidents.first.incidentNumber} sebelum membuat laporan insiden baru.';
   }
 
   Future<void> _openIncidentResolution(
@@ -1654,7 +1655,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           ? incident.odometer!.round().toString()
           : '',
     );
-    final costRows = <_IncidentCostDraftController>[];
+    final isAddingCostOnly =
+        incident.canAddResolutionCost && !incident.canSubmitResolution;
+    final costRows = <_IncidentCostDraftController>[
+      if (isAddingCostOnly) _IncidentCostDraftController(),
+    ];
 
     final result = await showDialog<_IncidentResolutionSubmitResult>(
       context: context,
@@ -1728,6 +1733,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 );
               }
 
+              if (isAddingCostOnly && costs.isEmpty) {
+                setDialogState(
+                  () => errorText =
+                      'Tambahkan minimal satu biaya baru sebelum dikirim ke admin.',
+                );
+                return;
+              }
+
               await _popDialogAfterKeyboardDismiss<
                 _IncidentResolutionSubmitResult
               >(
@@ -1742,7 +1755,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             }
 
             return AlertDialog(
-              title: Text('Ajukan Selesai ${incident.incidentNumber}'),
+              title: Text(
+                isAddingCostOnly
+                    ? 'Tambah Biaya ${incident.incidentNumber}'
+                    : 'Ajukan Selesai ${incident.incidentNumber}',
+              ),
               content: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 460),
                 child: SingleChildScrollView(
@@ -1770,9 +1787,13 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         minLines: 3,
                         maxLines: 5,
                         scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Catatan Penyelesaian',
-                          hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                        decoration: InputDecoration(
+                          labelText: isAddingCostOnly
+                              ? 'Catatan Tambahan Biaya'
+                              : 'Catatan Penyelesaian',
+                          hintText: isAddingCostOnly
+                              ? 'Jelaskan perubahan atau biaya tambahan'
+                              : 'Jelaskan tindakan yang sudah dilakukan',
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -1814,7 +1835,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       ),
                       if (costRows.isEmpty)
                         Text(
-                          'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
+                          isAddingCostOnly
+                              ? 'Tambahkan minimal satu biaya baru. Biaya tetap menunggu review admin.'
+                              : 'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
                           style: TextStyle(
                             color: Theme.of(
                               context,
@@ -1847,7 +1870,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 FilledButton.icon(
                   onPressed: () => unawaited(submit()),
                   icon: const Icon(Icons.task_alt_rounded),
-                  label: const Text('Kirim ke Admin'),
+                  label: Text(
+                    isAddingCostOnly ? 'Kirim Biaya' : 'Kirim ke Admin',
+                  ),
                 ),
               ],
             );
@@ -1880,8 +1905,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       await _loadTrips();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Penyelesaian insiden dikirim. Menunggu review admin.'),
+        SnackBar(
+          content: Text(
+            isAddingCostOnly
+                ? 'Biaya tambahan insiden dikirim. Menunggu review admin.'
+                : 'Penyelesaian insiden dikirim. Menunggu review admin.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -4049,8 +4078,19 @@ class _DriverIncidentCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 12.5),
                       ),
                     ],
-                    if (incident.canSubmitResolution) ...[
+                    if (incident.canOpenResolutionForm) ...[
                       const SizedBox(height: 10),
+                      if (incident.canAddResolutionCost) ...[
+                        Text(
+                          'Penyelesaian sudah diajukan. Tambahkan biaya baru sebelum admin review bila ada perubahan.',
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.62),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.tonalIcon(
@@ -4070,14 +4110,14 @@ class _DriverIncidentCard extends StatelessWidget {
                           label: Text(
                             busy
                                 ? 'Mengirim...'
-                                : incident.hasSubmittedResolution
+                                : incident.canAddResolutionCost
                                 ? 'Tambah Biaya Insiden'
                                 : 'Ajukan Selesai Insiden',
                           ),
                         ),
                       ),
                     ],
-                    if (!incident.canSubmitResolution &&
+                    if (!incident.canOpenResolutionForm &&
                         incident.hasSubmittedResolution) ...[
                       const SizedBox(height: 10),
                       Text(

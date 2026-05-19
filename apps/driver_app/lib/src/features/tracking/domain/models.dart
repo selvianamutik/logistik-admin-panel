@@ -480,8 +480,11 @@ class DriverIncident {
   final String? pendingDriverResolutionRequestedAt;
   final List<DriverIncidentSettlementLine> settlementLines;
 
+  bool get hasPendingDriverResolutionRequest =>
+      pendingDriverResolutionRequestedAt?.trim().isNotEmpty == true;
+
   bool get hasSubmittedResolution =>
-      pendingDriverResolutionRequestedAt?.trim().isNotEmpty == true ||
+      hasPendingDriverResolutionRequest ||
       settlementLines.any((line) => line.status != 'VOID');
 
   bool get hasReviewedResolution => settlementLines.any(
@@ -494,8 +497,16 @@ class DriverIncident {
   bool get isWaitingResolutionReview =>
       hasSubmittedResolution && !hasReviewedResolution;
 
-  bool get canSubmitResolution =>
-      status != 'RESOLVED' && status != 'CLOSED' && !hasSubmittedResolution;
+  bool get isFinalAdminStage => status == 'RESOLVED' || status == 'CLOSED';
+
+  bool get canSubmitResolution => !isFinalAdminStage && !hasSubmittedResolution;
+
+  bool get canAddResolutionCost =>
+      !isFinalAdminStage &&
+      hasPendingDriverResolutionRequest &&
+      !hasReviewedResolution;
+
+  bool get canOpenResolutionForm => canSubmitResolution || canAddResolutionCost;
 
   bool get blocksNewIncidentReport => status != 'CLOSED';
 
