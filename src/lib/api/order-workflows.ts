@@ -108,6 +108,18 @@ function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, delivery
     );
 }
 
+async function findPersistedTripRecordForDeliveryOrder(deliveryOrderId: string) {
+    const byId = await getDocumentById<{ _id: string; deliveryOrderRef?: string }>(deliveryOrderId, 'trip');
+    if (byId) {
+        return byId;
+    }
+
+    const byDeliveryOrderRef = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string }>('trip', {
+        deliveryOrderRef: deliveryOrderId,
+    });
+    return byDeliveryOrderRef.find(record => record.deliveryOrderRef === deliveryOrderId) || null;
+}
+
 async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string; _type?: unknown; orderRef?: unknown; date?: unknown }) {
     const completeDeliveryOrder =
         deliveryOrder._type === 'deliveryOrder' && typeof deliveryOrder.orderRef === 'string' && typeof deliveryOrder.date === 'string'
@@ -119,7 +131,7 @@ async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         clearRelationalReadCache();
-        const persistedTripRecord = await getDocumentById<{ _id: string }>(deliveryOrder._id, 'trip');
+        const persistedTripRecord = await findPersistedTripRecordForDeliveryOrder(deliveryOrder._id);
         if (persistedTripRecord) {
             return;
         }
@@ -132,6 +144,10 @@ async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string;
                 throw error;
             }
             clearRelationalReadCache();
+            const persistedTripRecordAfterConflict = await findPersistedTripRecordForDeliveryOrder(deliveryOrder._id);
+            if (persistedTripRecordAfterConflict) {
+                return;
+            }
         }
         await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
     }
