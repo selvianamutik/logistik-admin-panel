@@ -5,6 +5,15 @@ Update terakhir: 2026-05-19
 
 Paket ini disederhanakan untuk divisi tester. Tester cukup membuka workbook, memilih hasil `Sesuai`, `Ada Bug`, `Blocked`, atau `N/A`, lalu mengisi detail bug bila ada.
 
+## Eksekusi Codex 2026-05-19
+
+- APK release terbaru: `apps/driver_app/build/app/outputs/flutter-apk/app-release.apk`
+- Hash APK: `SHA256 8D43299B9B156B1CA70B23E1F8781068A61626E00E8C0173F76C2AF11D71BCB6`
+- Build: `flutter build apk --release --dart-define=API_BASE_URL=https://app-ten-gamma-49.vercel.app`
+- Validasi mobile/admin yang sudah diisi `Sesuai`: 38/38 baris detail di sheet `03 Mobile Admin Detail` dan `06 Mobile Admin Detail`.
+- Validasi checklist utama yang ikut evidence otomatis: `E2E-001`, `E2E-002`, `E2E-003`, `E2E-004`, `E2E-005`, `E2E-006`, dan `E2E-010`.
+- Evidence utama: `flutter analyze`, `flutter test`, install/launch APK di emulator, audit mobile manifest, batch status SJ, preservasi status SJ saat tambah SJ, approval koreksi driver, incident flow, incident sebelum voucher, conditional mobile-admin, trip closure odometer, timezone, invariant SJ, billing eligibility, nota integrity, dan order-to-nota E2E.
+
 ## Akun Tester
 
 | Aplikasi | Role / Divisi | Email | Password | Login dari |
