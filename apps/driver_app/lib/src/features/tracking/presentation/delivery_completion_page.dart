@@ -3435,7 +3435,7 @@ class _ActualDropCard extends StatelessWidget {
                 initialValue: selectedRecipientValue,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Tujuan Master Customer',
+                  labelText: 'Master Tujuan Customer',
                 ),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('Isi manual')),

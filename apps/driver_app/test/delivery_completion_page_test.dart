@@ -1245,8 +1245,8 @@ void main() {
         final recipientDropdown = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == 'Tujuan Master Customer',
-          description: 'Tujuan Master Customer dropdown',
+              widget.decoration.labelText == 'Master Tujuan Customer',
+          description: 'Master Tujuan Customer dropdown',
           skipOffstage: false,
         );
         await tester.scrollUntilVisible(

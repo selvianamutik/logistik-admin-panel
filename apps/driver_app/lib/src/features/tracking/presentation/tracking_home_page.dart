@@ -412,6 +412,22 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (trip.isShipperReferencePendingFinalization(reference)) {
       return false;
     }
+    if (!_hasRequiredTrackingForStatus(trip, nextStatus)) {
+      return false;
+    }
+    return _referenceCanMoveByStatus(trip, reference, nextStatus);
+  }
+
+  bool _hasRequiredTrackingForStatus(DeliveryTrip trip, TripStatus nextStatus) {
+    return !deliveryStatusRequiresActiveTracking(nextStatus) ||
+        trip.hasActiveTracking;
+  }
+
+  bool _referenceCanMoveByStatus(
+    DeliveryTrip trip,
+    DeliveryShipperReference reference,
+    TripStatus nextStatus,
+  ) {
     final currentStatus = _referenceStatusForBatch(trip, reference);
     return switch (nextStatus) {
       TripStatus.headingToPickup =>
@@ -433,6 +449,23 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           (reference) => _canMoveReferenceToStatus(trip, reference, nextStatus),
         )
         .toList(growable: false);
+  }
+
+  TripStatus? _trackingBlockedSuratJalanStatus(DeliveryTrip trip) {
+    if (trip.hasActiveTracking) return null;
+    const orderedStatuses = [TripStatus.onDelivery, TripStatus.arrived];
+    for (final status in orderedStatuses) {
+      if (!deliveryStatusRequiresActiveTracking(status)) continue;
+      final hasReferenceReady = trip.shipperReferences.any(
+        (reference) =>
+            !trip.isShipperReferencePendingFinalization(reference) &&
+            _referenceCanMoveByStatus(trip, reference, status),
+      );
+      if (hasReferenceReady) {
+        return status;
+      }
+    }
+    return null;
   }
 
   List<TripStatus> _availableSuratJalanStatuses(DeliveryTrip trip) {
@@ -548,6 +581,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         ? null
         : availableStatuses.first;
     if (nextStatus == null) {
+      final trackingBlockedStatus = _trackingBlockedSuratJalanStatus(trip);
+      if (trackingBlockedStatus != null) {
+        return 'Aktifkan tracking dulu sebelum memindahkan SJ ke ${_apiStatusLabel(_statusApiValue(trackingBlockedStatus))}.';
+      }
       return 'Tidak ada SJ yang bisa diupdate pada tahap ini.';
     }
     final eligibleCount = _suratJalanStatusEligibleReferences(

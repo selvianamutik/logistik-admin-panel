@@ -18,6 +18,16 @@ String deliveryStatusApiValue(TripStatus status) {
   };
 }
 
+bool deliveryStatusRequiresActiveTracking(TripStatus status) {
+  return switch (status) {
+    TripStatus.onDelivery || TripStatus.arrived => true,
+    TripStatus.assigned ||
+    TripStatus.headingToPickup ||
+    TripStatus.partialHold ||
+    TripStatus.delivered => false,
+  };
+}
+
 String deliveryStatusLabel(String status) {
   return switch (status.trim().toUpperCase()) {
     'CREATED' => 'Dibuat',
@@ -635,6 +645,8 @@ class DeliveryTrip {
 
   bool get isTripClosedByAdmin =>
       tripClosedByAdminAt?.trim().isNotEmpty == true;
+
+  bool get hasActiveTracking => trackingState?.trim().toUpperCase() == 'ACTIVE';
 
   bool get isAwaitingAdminApproval =>
       pendingDriverStatus == 'DELIVERED' || pendingDriverRequests.isNotEmpty;
