@@ -236,6 +236,10 @@ export default function TiresPage() {
         }),
         [allTireEvents, editTarget?._id, selectedVehicle]
     );
+    const visibleSlotOptions = useMemo(
+        () => editTarget ? slotOptions : slotOptions.filter(option => !option.occupied),
+        [editTarget, slotOptions]
+    );
     const occupiedSlotCount = slotOptions.filter(option => option.occupied).length;
     const availableSlotCount = slotOptions.length - occupiedSlotCount;
     const selectedVehicleLayoutSummary = useMemo(() => {
@@ -486,7 +490,7 @@ export default function TiresPage() {
             return;
         }
 
-        const preferredSlot = slotOptions.find(option => !option.disabled)?.value || slotOptions[0]?.value || '';
+        const preferredSlot = slotOptions.find(option => !option.disabled)?.value || '';
         if (!preferredSlot) {
             if (form.slotCode) {
                 setForm(prev => ({ ...prev, slotCode: '' }));
@@ -557,11 +561,19 @@ export default function TiresPage() {
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
         if (!editTarget && !form.linkedWarehouseItemRef) {
-            addToast('error', 'Pilih master barang gudang agar ban baru masuk stok gudang');
+            addToast('error', 'Pilih master barang gudang untuk referensi aset ban');
             return;
         }
-        if (editTarget && form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
-        if (editTarget && form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
+        if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
+        if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
+        if (!editTarget && form.holderType === 'INTERNAL_VEHICLE' && availableSlotCount <= 0) {
+            addToast('error', 'Kendaraan ini tidak punya slot ban kosong');
+            return;
+        }
+        if (!editTarget && form.holderType === 'INTERNAL_VEHICLE' && !slotOptions.some(option => option.value === form.slotCode && !option.occupied)) {
+            addToast('error', 'Pilih slot ban yang masih kosong');
+            return;
+        }
         if (form.totalUsedPercent < 0 || form.totalUsedPercent > 100) {
             addToast('error', 'Total pemakaian ban harus 0-100%');
             return;
@@ -580,8 +592,12 @@ export default function TiresPage() {
         setSaving(true);
         try {
             const vehicle = vehicles.find(item => item._id === form.vehicleRef);
-            const effectiveHolderType = editTarget ? form.holderType : 'WAREHOUSE';
-            const effectiveStatus = editTarget ? form.status : 'IN_WAREHOUSE';
+            const effectiveHolderType = form.holderType;
+            const effectiveStatus = editTarget
+                ? form.status
+                : effectiveHolderType === 'INTERNAL_VEHICLE'
+                    ? 'IN_USE'
+                    : 'IN_WAREHOUSE';
             const payload = {
                 ...form,
                 holderType: effectiveHolderType,
@@ -957,7 +973,7 @@ export default function TiresPage() {
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editTarget ? 'Edit Ban' : 'Catat Ban Gudang'}</h3>
+                            <h3 className="modal-title">{editTarget ? 'Edit Ban' : 'Catat Ban'}</h3>
                             <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -995,6 +1011,42 @@ export default function TiresPage() {
                                 </div>
                             </div>
 
+                            {!editTarget && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Lokasi Awal Ban</label>
+                                        <select
+                                            className="form-select"
+                                            value={form.holderType}
+                                            onChange={e => {
+                                                const nextHolderType = e.target.value as TireHolderType;
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    holderType: nextHolderType,
+                                                    status: nextHolderType === 'INTERNAL_VEHICLE' ? 'IN_USE' : 'IN_WAREHOUSE',
+                                                    vehicleRef: nextHolderType === 'INTERNAL_VEHICLE' ? prev.vehicleRef : '',
+                                                    slotCode: nextHolderType === 'INTERNAL_VEHICLE' ? prev.slotCode : '',
+                                                    externalPartyName: '',
+                                                    externalPlateNumber: '',
+                                                }));
+                                            }}
+                                            disabled={saving}
+                                        >
+                                            <option value="WAREHOUSE">Gudang Ban</option>
+                                            <option value="INTERNAL_VEHICLE">Unit</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Status Awal</label>
+                                        <input
+                                            className="form-input"
+                                            value={form.holderType === 'INTERNAL_VEHICLE' ? 'Terpasang di Unit' : 'Di Gudang Ban'}
+                                            readOnly
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Master Barang Gudang</label>
@@ -1004,7 +1056,7 @@ export default function TiresPage() {
                                         onChange={e => updateForm('linkedWarehouseItemRef', e.target.value)}
                                         disabled={saving || linkedWarehouseItemLocked}
                                     >
-                                        <option value="">{form.holderType === 'WAREHOUSE' && !editTarget ? 'Pilih master barang gudang' : 'Tidak dihubungkan'}</option>
+                                        <option value="">{!editTarget ? 'Pilih master barang gudang' : 'Tidak dihubungkan'}</option>
                                         {trackedTireItems.map(item => (
                                             <option key={item._id} value={item._id}>
                                                 {item.itemCode} - {item.name}
@@ -1012,7 +1064,9 @@ export default function TiresPage() {
                                         ))}
                                     </select>
                                     <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
-                                        Ban baru di Gudang Ban wajib dihubungkan ke master barang agar stok gudang bertambah otomatis. Harga tetap dikelola di modul inventory.
+                                        {form.holderType === 'INTERNAL_VEHICLE'
+                                            ? 'Dipakai sebagai referensi barang ban. Stok gudang tidak berubah karena ban langsung dicatat di unit.'
+                                            : 'Ban baru di Gudang Ban wajib dihubungkan ke master barang agar stok gudang bertambah otomatis. Harga tetap dikelola di modul inventory.'}
                                     </div>
                                 </div>
                                 <div className="form-group">
@@ -1103,9 +1157,11 @@ export default function TiresPage() {
                             </div>
                             ) : (
                                 <div className="info-banner" style={{ marginBottom: '1rem' }}>
-                                    <div className="info-banner-title">Dicatat ke Gudang Ban</div>
+                                    <div className="info-banner-title">{form.holderType === 'INTERNAL_VEHICLE' ? 'Dicatat Langsung ke Unit' : 'Dicatat ke Gudang Ban'}</div>
                                     <div className="info-banner-text">
-                                        Ban baru hanya masuk daftar gudang. Pasang atau ganti ban dilakukan dari detail kendaraan.
+                                        {form.holderType === 'INTERNAL_VEHICLE'
+                                            ? 'Ban baru dicatat sebagai aset yang sudah terpasang pada slot kosong. Ini tidak membuat catatan maintenance atau biaya teknisi.'
+                                            : 'Ban baru masuk daftar gudang. Pasang atau ganti ban dilakukan dari detail kendaraan.'}
                                     </div>
                                 </div>
                             )}
@@ -1176,7 +1232,8 @@ export default function TiresPage() {
                                             disabled={saving || !selectedVehicle || slotOptions.length === 0}
                                         >
                                             {!selectedVehicle && <option value="">Pilih kendaraan dulu</option>}
-                                            {slotOptions.map(option => (
+                                            {selectedVehicle && visibleSlotOptions.length === 0 && <option value="">Tidak ada slot kosong</option>}
+                                            {visibleSlotOptions.map(option => (
                                                 <option key={option.value} value={option.value} disabled={option.disabled}>
                                                     {option.label}
                                                 </option>
