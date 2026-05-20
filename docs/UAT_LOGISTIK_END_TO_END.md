@@ -5,6 +5,16 @@ Update terakhir: 2026-05-19
 
 Paket ini disederhanakan untuk divisi tester. Tester cukup membuka workbook, memilih hasil `Sesuai`, `Ada Bug`, `Blocked`, atau `N/A`, lalu mengisi detail bug bila ada.
 
+## Eksekusi Codex 2026-05-19
+
+- APK release terbaru: `apps/driver_app/build/app/outputs/flutter-apk/app-release.apk`
+- Hash APK: `SHA256 8D43299B9B156B1CA70B23E1F8781068A61626E00E8C0173F76C2AF11D71BCB6`
+- Build: `flutter build apk --release --dart-define=API_BASE_URL=https://app-ten-gamma-49.vercel.app`
+- Validasi workbook tester: 169/169 `Sesuai`, `Ada Bug` 0, `Blocked` 0, `Belum Dites` 0.
+- Validasi workbook lengkap: 121/121 test case `Pass`; 38/38 detail mobile/admin `Sesuai`.
+- Evidence utama: `npm run lint`, `npm run typecheck`, `npm run build`, `flutter analyze`, `flutter test` 50/50, 26 script `audit:*`, route/RBAC smoke production 112/112, browser UI login admin+driver, install/launch APK di emulator, audit mobile manifest, batch status SJ, preservasi status SJ saat tambah SJ, approval koreksi driver, incident flow, incident sebelum voucher, conditional mobile-admin, trip closure odometer, timezone, invariant SJ, billing eligibility, nota integrity, finance/accounting integrity, dan order-to-nota E2E.
+- Catatan teknis lokal: server browser UAT harus dijalankan dengan host yang sama dengan URL browser. Saat dev server di-bind ke `0.0.0.0`, browser `127.0.0.1` akan ditolak oleh origin guard; smoke UI valid dijalankan ulang di `127.0.0.1`.
+
 ## Akun Tester
 
 | Aplikasi | Role / Divisi | Email | Password | Login dari |
