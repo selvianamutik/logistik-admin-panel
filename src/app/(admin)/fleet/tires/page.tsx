@@ -470,6 +470,18 @@ export default function TiresPage() {
         setForm(prev => ({ ...prev, [key]: value }));
     };
 
+    const updateLinkedWarehouseItemRef = (itemRef: string) => {
+        const linkedItem = trackedTireItems.find(item => item._id === itemRef) || null;
+        setForm(prev => ({
+            ...prev,
+            linkedWarehouseItemRef: itemRef,
+            tireBrand: linkedItem?.tireBrandDefault || prev.tireBrand,
+            tireSize: linkedItem?.tireSizeDefault || prev.tireSize,
+            tireType: linkedItem?.tireTypeDefault || prev.tireType,
+            originalCost: linkedItem?.defaultPurchasePrice || prev.originalCost,
+        }));
+    };
+
     const updateInstallForm = <K extends keyof TireInstallFormState>(key: K, value: TireInstallFormState[K]) => {
         setInstallForm(prev => ({ ...prev, [key]: value }));
     };
@@ -560,10 +572,6 @@ export default function TiresPage() {
         if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
-        if (!editTarget && !form.linkedWarehouseItemRef) {
-            addToast('error', 'Pilih master barang gudang untuk referensi aset ban');
-            return;
-        }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
         if (!editTarget && form.holderType === 'INTERNAL_VEHICLE' && availableSlotCount <= 0) {
@@ -990,27 +998,6 @@ export default function TiresPage() {
                                 </div>
                             </div>
 
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Harga Ban / Original Cost</label>
-                                    <FormattedNumberInput allowDecimal={false} value={form.originalCost} onValueChange={value => updateForm('originalCost', value)} placeholder="Ketik harga ban" disabled={saving} />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Total Pemakaian (%)</label>
-                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={form.totalUsedPercent} onValueChange={value => updateForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} placeholder="0 - 100" disabled={saving || requiresUsagePercentOnExit} />
-                                </div>
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Sisa Nilai Saat Ini</label>
-                                    <input
-                                        className="form-input"
-                                        value={formatCurrency(Math.round(Number(form.originalCost || 0) * Math.max(100 - Number(form.totalUsedPercent || 0), 0) / 100))}
-                                        readOnly
-                                    />
-                                </div>
-                            </div>
-
                             {!editTarget && (
                                 <div className="form-row">
                                     <div className="form-group">
@@ -1053,10 +1040,10 @@ export default function TiresPage() {
                                     <select
                                         className="form-select"
                                         value={form.linkedWarehouseItemRef}
-                                        onChange={e => updateForm('linkedWarehouseItemRef', e.target.value)}
+                                        onChange={e => updateLinkedWarehouseItemRef(e.target.value)}
                                         disabled={saving || linkedWarehouseItemLocked}
                                     >
-                                        <option value="">{!editTarget ? 'Pilih master barang gudang' : 'Tidak dihubungkan'}</option>
+                                        <option value="">Tidak dihubungkan (ban mandiri)</option>
                                         {trackedTireItems.map(item => (
                                             <option key={item._id} value={item._id}>
                                                 {item.itemCode} - {item.name}
@@ -1065,8 +1052,8 @@ export default function TiresPage() {
                                     </select>
                                     <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
                                         {form.holderType === 'INTERNAL_VEHICLE'
-                                            ? 'Dipakai sebagai referensi barang ban. Stok gudang tidak berubah karena ban langsung dicatat di unit.'
-                                            : 'Ban baru di Gudang Ban wajib dihubungkan ke master barang agar stok gudang bertambah otomatis. Harga tetap dikelola di modul inventory.'}
+                                            ? 'Opsional. Hubungkan ke master barang hanya jika ban ini memang berasal dari stok gudang tertracking.'
+                                            : 'Opsional. Jika dihubungkan, stok gudang ban tertracking ikut tersinkron; jika kosong, ban dicatat mandiri tanpa stok master barang.'}
                                     </div>
                                 </div>
                                 <div className="form-group">
@@ -1074,6 +1061,27 @@ export default function TiresPage() {
                                     <input
                                         className="form-input"
                                         value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Ban mandiri'}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Harga Ban / Original Cost</label>
+                                    <FormattedNumberInput allowDecimal={false} value={form.originalCost} onValueChange={value => updateForm('originalCost', value)} placeholder="Ketik harga ban" disabled={saving} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Total Pemakaian (%)</label>
+                                    <FormattedNumberInput allowDecimal maxFractionDigits={2} value={form.totalUsedPercent} onValueChange={value => updateForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} placeholder="0 - 100" disabled={saving || requiresUsagePercentOnExit} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Sisa Nilai Saat Ini</label>
+                                    <input
+                                        className="form-input"
+                                        value={formatCurrency(Math.round(Number(form.originalCost || 0) * Math.max(100 - Number(form.totalUsedPercent || 0), 0) / 100))}
                                         readOnly
                                     />
                                 </div>
