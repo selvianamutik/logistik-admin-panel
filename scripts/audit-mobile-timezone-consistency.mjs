@@ -10,6 +10,10 @@ const trackingHomePath = path.join(
     appDir,
     'apps/driver_app/lib/src/features/tracking/presentation/tracking_home_page.dart'
 );
+const deliveryOrderServicePath = path.join(
+    appDir,
+    'apps/driver_app/lib/src/features/tracking/data/delivery_order_service.dart'
+);
 const completionPath = path.join(
     appDir,
     'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
@@ -21,6 +25,7 @@ const sources = {
     driverIncidentRoute: fs.readFileSync(driverIncidentRoutePath, 'utf8'),
     operationsWorkflow: fs.readFileSync(operationsWorkflowPath, 'utf8'),
     trackingHome: fs.readFileSync(trackingHomePath, 'utf8'),
+    deliveryOrderService: fs.readFileSync(deliveryOrderServicePath, 'utf8'),
     completion: fs.readFileSync(completionPath, 'utf8'),
 };
 
@@ -60,13 +65,18 @@ assertIncludes(
 );
 assertIncludes(
     sources.operationsWorkflow,
-    'getBusinessDateTimeLocalValue()',
-    'Waktu incident default backend harus memakai local business datetime Jakarta.'
+    'normalizeBusinessDateTimeForStorage(',
+    'Waktu incident backend harus dinormalisasi ke timestamp storage agar tidak bergeser saat masuk timestamptz.'
 );
 assertIncludes(
     sources.operationsWorkflow,
     'getBusinessCalendarDateParts(incidentDateTime)',
     'Nomor incident harus diperiodekan dari tanggal bisnis, bukan UTC mentah.'
+);
+assertIncludes(
+    sources.deliveryOrderService,
+    "'dateTime': DateTime.now().toUtc().toIso8601String()",
+    'Laporan incident mobile harus mengirim timestamp HP sebagai instant UTC.'
 );
 assertIncludes(
     sources.trackingHome,

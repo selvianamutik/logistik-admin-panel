@@ -71,6 +71,18 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   Timer? _noticePollTimer;
   String? _trackingDeliveryOrderId;
 
+  List<DriverTripVoucher> get _visibleDriverVouchers {
+    final vouchers = <DriverTripVoucher>[];
+    final seenKeys = <String>{};
+    for (final voucher in _driverVouchers) {
+      final key = voucher.id.trim().isNotEmpty ? voucher.id : voucher.bonNumber;
+      if (seenKeys.add(key)) {
+        vouchers.add(voucher);
+      }
+    }
+    return vouchers;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2117,7 +2129,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 _DriverSectionSwitcher(
                   activeSection: _activeSection,
                   tripCount: _trips.length + pendingTripPlans.length,
-                  voucherCount: _driverVouchers.length,
+                  voucherCount: _visibleDriverVouchers.length,
                   onChanged: (section) => setState(() {
                     _activeSection = section;
                   }),
@@ -2297,8 +2309,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   ],
                 ] else ...[
                   _SectionHeader(
-                    title: 'Uang Jalan Trip',
-                    count: _driverVouchers.length,
+                    title: 'Riwayat Bon Uang Jalan',
+                    count: _visibleDriverVouchers.length,
                   ),
                   const SizedBox(height: 10),
                   _buildVoucherList(scheme),
@@ -2466,7 +2478,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (_loadError != null) {
       return _ErrorCard(message: _loadError!, onRetry: _loadTrips);
     }
-    if (_driverVouchers.isEmpty) {
+    final vouchers = _visibleDriverVouchers;
+    if (vouchers.isEmpty) {
       return const _EmptyCard(
         title: 'Belum ada uang jalan trip',
         message:
@@ -2474,7 +2487,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
     }
     return Column(
-      children: _driverVouchers
+      children: vouchers
           .map(
             (voucher) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -2629,11 +2642,21 @@ String _textOrDash(String? value) {
 
 String _voucherDisbursementLabel(
   DriverTripVoucherDisbursement disbursement,
-  int index,
+  int topUpSequence,
 ) {
-  if (disbursement.kind == 'INITIAL') return 'Bon Pertama';
-  if (disbursement.kind == 'TOP_UP') return 'Bon ${index + 1}';
+  if (disbursement.kind == 'INITIAL') return 'Pencairan awal';
+  if (disbursement.kind == 'TOP_UP') return 'Top up ke-$topUpSequence';
   return disbursement.kind;
+}
+
+String _voucherDisbursementSummary(DriverTripVoucher voucher) {
+  final totalDisbursements = voucher.disbursements.length;
+  if (totalDisbursements == 0) return 'Detail pencairan belum tersedia';
+  final topUpCount = voucher.disbursements
+      .where((item) => item.kind == 'TOP_UP')
+      .length;
+  if (topUpCount == 0) return '1 pencairan dalam bon ini';
+  return '$totalDisbursements pencairan dalam bon ini';
 }
 
 String _voucherPdfFileName(DriverTripVoucher voucher) {
@@ -2800,18 +2823,22 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
             if (disbursements.isEmpty)
               _pdfTableRow(['-', '-', 'Belum ada riwayat bon', '-', '-', '-'])
             else
-              ...disbursements.indexed.map((entry) {
-                final index = entry.$1;
-                final item = entry.$2;
-                return _pdfTableRow([
-                  '${index + 1}',
-                  _formatDateText(item.date),
-                  _voucherDisbursementLabel(item, index),
-                  _textOrDash(item.bankAccountName),
-                  _textOrDash(item.note),
-                  _formatRupiah(item.amount),
-                ]);
-              }),
+              ...(() {
+                var topUpSequence = 0;
+                return disbursements.indexed.map((entry) {
+                  final index = entry.$1;
+                  final item = entry.$2;
+                  if (item.kind == 'TOP_UP') topUpSequence += 1;
+                  return _pdfTableRow([
+                    '${index + 1}',
+                    _formatDateText(item.date),
+                    _voucherDisbursementLabel(item, topUpSequence),
+                    _textOrDash(item.bankAccountName),
+                    _textOrDash(item.note),
+                    _formatRupiah(item.amount),
+                  ]);
+                });
+              })(),
           ],
         ),
         pw.SizedBox(height: 18),
@@ -3110,15 +3137,15 @@ class _DriverVoucherCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Uang Jalan Trip',
+                        voucher.bonNumber,
                         style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _formatDateText(voucher.issuedDate),
+                        'DO ${_textOrDash(voucher.doNumber)} | ${_formatDateText(voucher.issuedDate)}',
                         style: TextStyle(
                           color: scheme.onSurface.withValues(alpha: 0.62),
                           fontSize: 12,
@@ -3149,6 +3176,23 @@ class _DriverVoucherCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _voucherDisbursementSummary(voucher),
+                style: TextStyle(
+                  color: scheme.onSurface.withValues(alpha: 0.74),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             _VoucherInfoGrid(
               items: [
                 _VoucherInfoItem(
@@ -3467,7 +3511,7 @@ class _VoucherHistorySection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Riwayat bon',
+          'Detail pencairan bon ini',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
@@ -3477,16 +3521,18 @@ class _VoucherHistorySection extends StatelessWidget {
             style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.56)),
           )
         else
-          ...voucher.disbursements.indexed.map((entry) {
-            final index = entry.$1;
-            final item = entry.$2;
-            return _VoucherHistoryRow(
-              title: _voucherDisbursementLabel(item, index),
-              subtitle:
-                  '${_formatDateText(item.date)} | ${_textOrDash(item.bankAccountName)}',
-              amount: _formatRupiah(item.amount),
-            );
-          }),
+          ...(() {
+            var topUpSequence = 0;
+            return voucher.disbursements.map((item) {
+              if (item.kind == 'TOP_UP') topUpSequence += 1;
+              return _VoucherHistoryRow(
+                title: _voucherDisbursementLabel(item, topUpSequence),
+                subtitle:
+                    '${_formatDateText(item.date)} | ${_textOrDash(item.bankAccountName)}',
+                amount: _formatRupiah(item.amount),
+              );
+            });
+          })(),
         const SizedBox(height: 16),
         const Text(
           'Biaya lain-lain',

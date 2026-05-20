@@ -545,6 +545,8 @@ export type DriverVoucherDisbursementStatus = 'ACTIVE' | 'VOID';
 export interface DriverVoucherDisbursement {
   _id: string;
   _type: 'driverVoucherDisbursement';
+  _createdAt?: string;
+  createdAt?: string;
   voucherRef: string;
   date: string;
   amount: number;

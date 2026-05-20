@@ -58,6 +58,10 @@ function getDisbursementKindSortValue(kind: DriverVoucherDisbursement['kind']) {
     return kind === 'INITIAL' ? 0 : 1;
 }
 
+function getDisbursementCreatedAtValue(disbursement: DriverVoucherDisbursement) {
+    return disbursement._createdAt || disbursement.createdAt || '';
+}
+
 export function isActiveDriverVoucherDisbursement(disbursement: Pick<DriverVoucherDisbursement, 'status'>) {
     return disbursement.status !== 'VOID';
 }
@@ -69,6 +73,9 @@ export function sortDriverVoucherDisbursementsChronologically(disbursements: Dri
 
         const kindCompare = getDisbursementKindSortValue(a.kind) - getDisbursementKindSortValue(b.kind);
         if (kindCompare !== 0) return kindCompare;
+
+        const createdAtCompare = getDisbursementCreatedAtValue(a).localeCompare(getDisbursementCreatedAtValue(b));
+        if (createdAtCompare !== 0) return createdAtCompare;
 
         return String(a._id || '').localeCompare(String(b._id || ''));
     });

@@ -240,6 +240,7 @@ class DeliveryOrderService {
       },
       body: jsonEncode({
         'relatedDeliveryOrderRef': deliveryOrderId,
+        'dateTime': DateTime.now().toUtc().toIso8601String(),
         'incidentType': incidentType,
         'urgency': urgency,
         'locationText': locationText.trim(),
