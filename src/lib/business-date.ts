@@ -1,6 +1,7 @@
 export const BUSINESS_TIME_ZONE = 'Asia/Jakarta';
 const DATE_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATE_TIME_LOCAL_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const DATE_TIME_LOCAL_WITH_FRACTION_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/;
 
 type DatePartMap = {
     year: string;
@@ -114,6 +115,33 @@ export function getBusinessDateValue(date: Date = new Date(), timeZone: string =
 export function getBusinessDateTimeLocalValue(date: Date = new Date(), timeZone: string = BUSINESS_TIME_ZONE) {
     const parts = getBusinessDateParts(date, timeZone);
     return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function toValidIsoString(value: string | Date) {
+    const parsedDate = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString();
+}
+
+export function normalizeBusinessDateTimeForStorage(value: Date | string = new Date()) {
+    if (value instanceof Date) {
+        return toValidIsoString(value) || '';
+    }
+
+    const rawValue = value.trim();
+    if (!rawValue) {
+        return new Date().toISOString();
+    }
+
+    const localMatch = DATE_TIME_LOCAL_WITH_FRACTION_RE.exec(rawValue);
+    if (localMatch) {
+        const [, year, month, day, hour, minute, second = '00'] = localMatch;
+        return toValidIsoString(`${year}-${month}-${day}T${hour}:${minute}:${second}+07:00`) || rawValue;
+    }
+
+    const parsedDate = toValidIsoString(rawValue);
+    if (parsedDate) return parsedDate;
+
+    return rawValue;
 }
 
 export function formatBusinessDate(

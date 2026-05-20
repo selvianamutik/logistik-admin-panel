@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
-import { getBusinessCalendarDateParts, getBusinessDateTimeLocalValue } from '@/lib/business-date';
+import { getBusinessCalendarDateParts, normalizeBusinessDateTimeForStorage } from '@/lib/business-date';
 import {
     createDocument,
     deleteDocument,
@@ -272,10 +272,9 @@ export async function handleIncidentCreate(
         email?: string;
         logoUrl?: string;
     }>();
-    const incidentDateTime =
-        typeof data.dateTime === 'string' && data.dateTime
-            ? data.dateTime
-            : getBusinessDateTimeLocalValue();
+    const incidentDateTime = normalizeBusinessDateTimeForStorage(
+        typeof data.dateTime === 'string' && data.dateTime ? data.dateTime : new Date()
+    );
     try {
         assertIsoDateTime(incidentDateTime, 'Waktu insiden');
     } catch (error) {
