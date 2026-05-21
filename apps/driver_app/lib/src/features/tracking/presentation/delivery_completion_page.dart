@@ -550,6 +550,16 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
       }
     }
 
+    if (selectedDropDrafts.length > 1 && selectedCargoDrafts.length > 1) {
+      final genericDrop = selectedDropDrafts.any(
+        (draft) =>
+            _dropItemRefsForSubmission(draft, selectedCargoDrafts).length != 1,
+      );
+      if (genericDrop) {
+        return 'Untuk multi-drop, pilih barang spesifik di setiap titik agar aktual barang dihitung dari alokasi drop.';
+      }
+    }
+
     final ambiguityMessage = _getAmbiguousActualDropMappingMessage(
       selectedDropDrafts,
       selectedCargoDrafts,
@@ -587,8 +597,10 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.error,
+      message: message,
     );
   }
 
@@ -626,7 +638,51 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
   void _goToNextStep() {
     final index = _completionSteps.indexOf(_currentStep);
     if (index < 0 || index >= _completionSteps.length - 1) return;
+    if (_currentStep == _CompletionStep.drop) {
+      final validationMessage = _validateDropStepForCargo();
+      if (validationMessage != null) {
+        _showError(validationMessage);
+        return;
+      }
+    }
     _setCurrentStep(_completionSteps[index + 1]);
+  }
+
+  String? _validateDropStepForCargo() {
+    final selectedCargoDrafts = _selectedCargoDrafts;
+    final selectedDropDrafts = _selectedDropDrafts;
+    if (selectedCargoDrafts.isEmpty) {
+      return 'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.';
+    }
+    if (selectedDropDrafts.isEmpty) {
+      return 'Isi minimal satu titik realisasi drop.';
+    }
+    for (final draft in selectedDropDrafts) {
+      final locationName = draft.locationName.trim();
+      final locationAddress = draft.locationAddress.trim();
+      final hasLocation = locationName.isNotEmpty || locationAddress.isNotEmpty;
+      if (!hasLocation) {
+        return 'Nama atau alamat titik realisasi wajib diisi.';
+      }
+      if (draft.qtyKoliValue <= 0 &&
+          draft.weightInputValueNumber <= 0 &&
+          draft.volumeInputValueNumber <= 0) {
+        return 'Setiap titik realisasi harus punya qty, berat, atau volume.';
+      }
+    }
+    if (selectedDropDrafts.length > 1 && selectedCargoDrafts.length > 1) {
+      final genericDrop = selectedDropDrafts.any(
+        (draft) =>
+            _dropItemRefsForSubmission(draft, selectedCargoDrafts).length != 1,
+      );
+      if (genericDrop) {
+        return 'Untuk multi-drop, pilih barang spesifik di setiap titik agar aktual barang dihitung dari alokasi drop.';
+      }
+    }
+    return _getAmbiguousActualDropMappingMessage(
+      selectedDropDrafts,
+      selectedCargoDrafts,
+    );
   }
 
   void _scheduleDraftVisibility(GlobalKey key) {
@@ -655,7 +711,26 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
       selectedCargoDrafts,
       selectedReferences,
     );
-    final cargoTotals = _summarizeCargoDrafts(selectedCargoDrafts);
+    final normalizedDropDrafts = selectedDropDrafts
+        .map(
+          (draft) =>
+              _applySingleReferenceToBlankDrop(draft, selectedReferences),
+        )
+        .toList(growable: false);
+    final usesDropDerivedCargo = _usesDropDerivedActualCargo(
+      normalizedDropDrafts,
+      selectedCargoDrafts,
+    );
+    final derivedActualItems = _buildSubmissionActualItems(
+      selectedCargoDrafts,
+      normalizedDropDrafts,
+    );
+    final derivedActualItemByRef = {
+      for (final item in derivedActualItems) item.deliveryOrderItemRef: item,
+    };
+    final cargoTotals = usesDropDerivedCargo
+        ? _summarizeActualItemInputs(derivedActualItems)
+        : _summarizeCargoDrafts(selectedCargoDrafts);
     final dropTotals = _summarizeBillableDropDrafts(selectedDropDrafts);
     final hasMultiTargetDefault = widget.trip.shipperReferences.length > 1;
     final usesDetailedDrop =
@@ -764,8 +839,9 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                       _CompletionStep.cargo => [
                         _InfoCard(
                           title: 'Aktual Barang SJ',
-                          message:
-                              'Langkah 2 dari 2. Isi realisasi per barang seperti tab aktual barang di admin operasional.',
+                          message: usesDropDerivedCargo
+                              ? 'Aktual barang dihitung dari alokasi barang di setiap titik drop. Ubah nilai dari langkah Titik Drop.'
+                              : 'Langkah 2 dari 2. Isi realisasi per barang seperti tab aktual barang di admin operasional.',
                         ),
                         const SizedBox(height: 12),
                         _TotalsCard(
@@ -782,14 +858,26 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        ...cargoSections.map(
-                          (section) => _ActualCargoSection(
-                            key: ValueKey('cargo-section-${section.key}'),
-                            section: section,
-                            showHeader: hasMultiTargetDefault,
-                            onChanged: _updateCargo,
+                        if (usesDropDerivedCargo)
+                          ...cargoSections.map(
+                            (section) => _DerivedActualCargoSection(
+                              key: ValueKey(
+                                'derived-cargo-section-${section.key}',
+                              ),
+                              section: section,
+                              showHeader: hasMultiTargetDefault,
+                              actualItemByRef: derivedActualItemByRef,
+                            ),
+                          )
+                        else
+                          ...cargoSections.map(
+                            (section) => _ActualCargoSection(
+                              key: ValueKey('cargo-section-${section.key}'),
+                              section: section,
+                              showHeader: hasMultiTargetDefault,
+                              onChanged: _updateCargo,
+                            ),
                           ),
-                        ),
                       ],
                       _CompletionStep.review => [
                         _InfoCard(
@@ -2194,6 +2282,16 @@ List<DriverActualCargoInput> _buildSubmissionActualItems(
       .toList(growable: false);
 }
 
+bool _usesDropDerivedActualCargo(
+  List<_ActualDropDraft> dropDrafts,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  return dropDrafts.any((drop) {
+    if (!_isBillableDropType(drop.stopType)) return false;
+    return _dropItemRefsForSubmission(drop, cargoDrafts).length == 1;
+  });
+}
+
 DriverActualCargoInput _actualInputFromCargoDraft(_ActualCargoDraft draft) {
   return DriverActualCargoInput(
     deliveryOrderItemRef: draft.itemId,
@@ -2483,6 +2581,20 @@ String _formatCargoDraftValues(_ActualCargoDraft draft) {
       '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
   ];
   return parts.isEmpty ? 'Belum diisi' : parts.join(' / ');
+}
+
+String _formatActualCargoInputValues(DriverActualCargoInput input) {
+  final weightUnit = _normalizeWeightUnit(input.actualWeightInputUnit);
+  final volumeUnit = _normalizeVolumeUnit(input.actualVolumeInputUnit);
+  final parts = <String>[
+    if (input.actualQtyKoli > 0)
+      '${_formatMetric(input.actualQtyKoli)} koli',
+    if (input.actualWeightInputValue > 0)
+      '${_formatMetric(input.actualWeightInputValue, fractionDigits: mobileWeightInputFractionDigits(weightUnit))} $weightUnit',
+    if (input.actualVolumeInputValue > 0)
+      '${_formatMetric(input.actualVolumeInputValue, fractionDigits: volumeUnit == 'LITER' ? 0 : 3)} $volumeUnit',
+  ];
+  return parts.isEmpty ? 'Belum dialokasikan' : parts.join(' / ');
 }
 
 String _shipperReferenceOptionValue(DeliveryShipperReference reference) {
@@ -3131,6 +3243,151 @@ class _ActualCargoSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DerivedActualCargoSection extends StatelessWidget {
+  const _DerivedActualCargoSection({
+    super.key,
+    required this.section,
+    required this.showHeader,
+    required this.actualItemByRef,
+  });
+
+  final _ActualCargoSectionData section;
+  final bool showHeader;
+  final Map<String, DriverActualCargoInput> actualItemByRef;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final targetLabel = section.targetLabel.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showHeader) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.description_outlined,
+                  size: 16,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    targetLabel.isEmpty
+                        ? section.label
+                        : '${section.label} | $targetLabel',
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.72),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        ...section.drafts.map(
+          (draft) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _DerivedActualCargoCard(
+              key: ValueKey('derived-${draft.itemId}'),
+              draft: draft,
+              actualItem: actualItemByRef[draft.itemId],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DerivedActualCargoCard extends StatelessWidget {
+  const _DerivedActualCargoCard({
+    super.key,
+    required this.draft,
+    required this.actualItem,
+  });
+
+  final _ActualCargoDraft draft;
+  final DriverActualCargoInput? actualItem;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sjNumber = draft.shipperReferenceNumber.trim();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        draft.description,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (sjNumber.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'SJ $sjNumber',
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.62),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(actualItem == null ? 'Kosong' : 'Terisi'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Text(
+                actualItem == null
+                    ? 'Belum ada alokasi item di titik drop.'
+                    : _formatActualCargoInputValues(actualItem!),
+                style: TextStyle(
+                  color: scheme.onSurface.withValues(alpha: 0.74),
+                  fontSize: 12.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

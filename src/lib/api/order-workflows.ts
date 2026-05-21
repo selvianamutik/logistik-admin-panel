@@ -48,6 +48,7 @@ import {
     DO_STATUS_TRANSITIONS,
     DRIVER_APPROVAL_REQUESTABLE_DO_STATUSES,
     buildDriverRequestedTrackingStatus,
+    deriveActualCargoInputsFromDropPoints,
     deriveOrderStatusFromItems,
     type DeliveryOrderItemCargoSnapshot,
     normalizeOrderItemsInput,
@@ -974,6 +975,19 @@ function getActualDropTotalMismatchMessage(
         return `Total volume ${dropLabel} harus sama dengan volume aktual muatan.`;
     }
     return null;
+}
+
+function preferDerivedActualCargoInputs(
+    current: Map<string, NormalizedActualCargoInput>,
+    derived: Map<string, NormalizedActualCargoInput> | null
+) {
+    if (!derived || derived.size === 0) {
+        return current;
+    }
+    return new Map([
+        ...current,
+        ...derived,
+    ]);
 }
 
 async function computeTripOvertonageAdjustment(params: {
@@ -3129,6 +3143,10 @@ export async function handleDeliveryOrderStatusUpdate(
             } else {
                 actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
             }
+            actualCargoByDoItemId = preferDerivedActualCargoInputs(
+                actualCargoByDoItemId,
+                deriveActualCargoInputsFromDropPoints(actualDropPoints, doItems)
+            );
             const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(actualDropPoints, doItems);
             if (ambiguousDropMappingMessage) {
                 return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
@@ -4851,9 +4869,13 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                             ? pointReferenceNumbers[0]
                             : pointRecordReferenceNumbers.length === 1
                                 ? pointRecordReferenceNumbers[0]
-                                : point.shipperReferenceNumber,
+                            : point.shipperReferenceNumber,
                 };
             });
+            actualCargoByDoItemId = preferDerivedActualCargoInputs(
+                actualCargoByDoItemId,
+                deriveActualCargoInputsFromDropPoints(scopedActualDropPoints, targetedDoItems, { billableOnly: true })
+            );
 
             const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(scopedActualDropPoints, targetedDoItems);
             if (ambiguousDropMappingMessage) {
@@ -5587,7 +5609,12 @@ export async function handleDeliveryOrderDriverStatusRequest(
             pendingDriverTripEndOdometerKm = undefined;
         }
 
-        const actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, selectedDoItems);
+        let actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, selectedDoItems);
+        pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+        actualCargoByDoItemId = preferDerivedActualCargoInputs(
+            actualCargoByDoItemId,
+            deriveActualCargoInputsFromDropPoints(pendingDriverActualDropPoints, selectedDoItems, { billableOnly: true })
+        );
         pendingDriverActualCargoItems = Array.from(actualCargoByDoItemId.values()).map(item => ({
             deliveryOrderItemRef: item.deliveryOrderItemRef,
             actualQtyKoli: item.actualQtyKoli > 0 ? item.actualQtyKoli : undefined,
@@ -5596,7 +5623,6 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputValue: item.actualVolumeInputValue,
             actualVolumeInputUnit: item.actualVolumeInputUnit,
         }));
-        pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
         const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(pendingDriverActualDropPoints, doItems);
         if (ambiguousDropMappingMessage) {
             return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
@@ -6401,14 +6427,6 @@ export async function handleDeliveryOrderCreate(
             directCargoItems.reduce((sum, item) => sum + normalizeNumber(item.weight || 0), 0)
         );
         plannedShipmentWeightKgTotal = plannedWeightKg;
-        if (vehicleCapacityKg > 0 && plannedShipmentWeightKgTotal - vehicleCapacityKg > 0.00001) {
-            return NextResponse.json(
-                {
-                    error: `Muatan rencana ${plannedShipmentWeightKgTotal} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
-                },
-                { status: 409 }
-            );
-        }
         for (const item of directCargoItems) {
             selectionSummaries.push(
                 summarizeSelection({
@@ -6561,14 +6579,6 @@ export async function handleDeliveryOrderCreate(
             selectionSummaries.push(summarizeSelection(selection, item.description));
         }
 
-        if (vehicleCapacityKg > 0 && plannedShipmentWeightKgTotal - vehicleCapacityKg > 0.00001) {
-            return NextResponse.json(
-                {
-                    error: `Muatan rencana ${plannedShipmentWeightKgTotal} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
-                },
-                { status: 409 }
-            );
-        }
     }
 
     const doId = crypto.randomUUID();

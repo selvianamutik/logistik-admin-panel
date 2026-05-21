@@ -966,6 +966,110 @@ export function normalizeDeliveryActualDropPoints(
     return normalized;
 }
 
+function hasUsableDropCargo(point: Pick<DeliveryActualDropPoint, 'qtyKoli' | 'weightKg' | 'weightInputValue' | 'weightInputUnit' | 'volumeM3' | 'volumeInputValue' | 'volumeInputUnit'>) {
+    const weightKg = normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
+        ? normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 })
+        : convertWeightToKg(
+            normalizeNumber(point.weightInputValue ?? 0, {
+                maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit),
+            }),
+            point.weightInputUnit || 'KG'
+        );
+    const volumeM3 = normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
+        ? normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 })
+        : convertVolumeToM3(
+            normalizeNumber(point.volumeInputValue ?? 0, {
+                maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3,
+            }),
+            point.volumeInputUnit || 'M3'
+        );
+
+    return normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }) > 0 || weightKg > 0 || volumeM3 > 0;
+}
+
+export function deriveActualCargoInputsFromDropPoints(
+    actualDropPoints: NormalizedDeliveryActualDropPoint[] | undefined,
+    doItems: DeliveryOrderItemCargoSnapshot[],
+    options?: { billableOnly?: boolean }
+) {
+    const points = actualDropPoints || [];
+    const doItemById = new Map(doItems.map(item => [item._id, item]));
+    const derived = new Map<string, NormalizedActualCargoInput>();
+
+    const addPointToItem = (itemRef: string, point: NormalizedDeliveryActualDropPoint) => {
+        const item = doItemById.get(itemRef);
+        if (!item) {
+            return;
+        }
+        const weightInputUnit = point.weightInputUnit || readWeightInputUnit(item.actualWeightInputUnit || item.orderItemWeightInputUnit, 'KG');
+        const volumeInputUnit = point.volumeInputUnit || readVolumeInputUnit(item.actualVolumeInputUnit || item.orderItemVolumeInputUnit, 'M3');
+        const qtyKoli = roundQuantity(normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }));
+        const weightKg = normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
+            ? roundQuantity(normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }))
+            : roundQuantity(convertWeightToKg(
+                normalizeNumber(point.weightInputValue ?? 0, {
+                    maxFractionDigits: getWeightInputFractionDigits(weightInputUnit),
+                }),
+                weightInputUnit
+            ));
+        const volumeM3 = normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
+            ? roundQuantity(normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }), 3)
+            : roundQuantity(convertVolumeToM3(
+                normalizeNumber(point.volumeInputValue ?? 0, {
+                    maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+                }),
+                volumeInputUnit
+            ), 3);
+        const current = derived.get(itemRef) || {
+            deliveryOrderItemRef: itemRef,
+            actualQtyKoli: 0,
+            actualWeightKg: 0,
+            actualWeightInputUnit: weightInputUnit,
+            actualVolumeM3: 0,
+            actualVolumeInputUnit: volumeInputUnit,
+        };
+        const nextWeightKg = roundQuantity(current.actualWeightKg + weightKg);
+        const nextVolumeM3 = roundQuantity((current.actualVolumeM3 || 0) + volumeM3, 3);
+        const nextWeightUnit = current.actualWeightInputUnit || weightInputUnit;
+        const nextVolumeUnit = current.actualVolumeInputUnit || volumeInputUnit;
+        derived.set(itemRef, {
+            ...current,
+            actualQtyKoli: roundQuantity(current.actualQtyKoli + qtyKoli),
+            actualWeightKg: nextWeightKg,
+            actualWeightInputValue: nextWeightKg > 0
+                ? roundQuantity(convertKgToWeightInputValue(nextWeightKg, nextWeightUnit), getWeightInputFractionDigits(nextWeightUnit))
+                : undefined,
+            actualWeightInputUnit: nextWeightKg > 0 ? nextWeightUnit : undefined,
+            actualVolumeM3: nextVolumeM3 > 0 ? nextVolumeM3 : undefined,
+            actualVolumeInputValue: nextVolumeM3 > 0
+                ? roundQuantity(convertM3ToVolumeInputValue(nextVolumeM3, nextVolumeUnit), nextVolumeUnit === 'LITER' ? 0 : 3)
+                : undefined,
+            actualVolumeInputUnit: nextVolumeM3 > 0 ? nextVolumeUnit : undefined,
+        });
+    };
+
+    for (const point of points) {
+        if (options?.billableOnly && point.stopType !== 'DROP' && point.stopType !== 'EXTRA_DROP') {
+            continue;
+        }
+        if (!hasUsableDropCargo(point)) {
+            continue;
+        }
+        const pointItemRefs = [
+            normalizeOptionalText(point.deliveryOrderItemRef),
+            ...(Array.isArray(point.deliveryOrderItemRefs)
+                ? point.deliveryOrderItemRefs.map(ref => normalizeOptionalText(ref))
+                : []),
+        ].filter((ref): ref is string => Boolean(ref));
+        if (pointItemRefs.length !== 1) {
+            continue;
+        }
+        addPointToItem(pointItemRefs[0], point);
+    }
+
+    return derived.size > 0 ? derived : null;
+}
+
 export function summarizeSelection(selection: DeliveryOrderItemSelection, description?: string) {
     if (selection.qtyKoli <= 0) {
         const segments: string[] = [];
