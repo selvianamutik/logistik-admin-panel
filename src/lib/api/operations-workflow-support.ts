@@ -12,6 +12,7 @@ import {
     normalizeTireLayoutConfig,
     normalizeTireSlotCode,
 } from '@/lib/tire-slots';
+import type { TireType } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -46,7 +47,7 @@ export type NormalizedTireEventPayload = {
     slotLabel?: string;
     externalPartyName?: string;
     externalPlateNumber?: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     installDate: string;
@@ -68,7 +69,7 @@ const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE',
 const VEHICLE_OWNERSHIP_TYPES = new Set(['COMPANY', 'PARTNER']);
 const TIRE_HOLDER_TYPES = new Set(['INTERNAL_VEHICLE', 'EXTERNAL_VEHICLE', 'WAREHOUSE']);
 const TIRE_EVENT_STATUSES = new Set(['IN_USE', 'SPARE', 'IN_WAREHOUSE', 'LOANED_OUT', 'SCRAPPED']);
-const TIRE_TYPES = new Set(['Tubeless', 'Tube Type', 'Solid']);
+const TIRE_TYPES = new Set<TireType>(['ORI benang / nilon', 'ORI kawat / radial', 'kanisir']);
 const INCIDENT_SETTLEMENT_LINE_TYPES = new Set(['COST', 'COMPENSATION', 'RECOVERY']);
 const INCIDENT_SETTLEMENT_LINE_STATUSES = new Set(['DRAFT', 'APPROVED', 'POSTED', 'VOID']);
 const INCIDENT_SETTLEMENT_RECIPIENT_TYPES = new Set(['DRIVER', 'KERNET', 'THIRD_PARTY', 'FAMILY', 'VENDOR', 'INSURANCE', 'INTERNAL', 'OTHER']);
@@ -901,7 +902,7 @@ export async function normalizeTireEventPayload(
     const externalPartyName = normalizeOptionalText(data.externalPartyName);
     const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
     const tireType =
-        typeof data.tireType === 'string' && TIRE_TYPES.has(data.tireType)
+        typeof data.tireType === 'string' && TIRE_TYPES.has(data.tireType as TireType)
             ? data.tireType as NormalizedTireEventPayload['tireType']
             : undefined;
 

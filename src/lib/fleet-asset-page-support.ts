@@ -12,7 +12,7 @@ import {
     type TireAssetStatus,
     type TireHolderType,
 } from './tire-slots';
-import type { TireEvent, User, Driver, Vehicle } from './types';
+import type { TireEvent, TireType, User, Driver, Vehicle } from './types';
 
 export type DriverMobileAccount = Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>;
 
@@ -23,7 +23,7 @@ export type TireFormState = {
     vehicleRef: string;
     slotCode: string;
     linkedWarehouseItemRef: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     installDate: string;
@@ -59,7 +59,7 @@ export type VehicleCategoryOption = {
     vehicleCount: number;
 };
 
-export const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
+export const TIRE_TYPES = ['ORI benang / nilon', 'ORI kawat / radial', 'kanisir'] as const satisfies readonly TireType[];
 
 export function createDefaultTireForm(): TireFormState {
     return {
@@ -69,7 +69,7 @@ export function createDefaultTireForm(): TireFormState {
         vehicleRef: '',
         slotCode: '',
         linkedWarehouseItemRef: '',
-        tireType: 'Tubeless',
+        tireType: 'ORI kawat / radial',
         tireBrand: '',
         tireSize: '',
         installDate: getBusinessDateValue(),

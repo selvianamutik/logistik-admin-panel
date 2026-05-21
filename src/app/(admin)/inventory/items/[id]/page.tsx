@@ -98,7 +98,7 @@ type ItemFormState = {
   active: boolean;
 };
 
-const TIRE_TYPE_OPTIONS = ['Tubeless', 'Tube Type', 'Solid'] as const;
+const TIRE_TYPE_OPTIONS = ['ORI benang / nilon', 'ORI kawat / radial', 'kanisir'] as const;
 
 const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   itemCode: item?.itemCode || '',
@@ -109,7 +109,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   minStockQty: typeof item?.minStockQty === 'number' ? item.minStockQty : 0,
   defaultSupplierRef: item?.defaultSupplierRef || '',
   defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
-  tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
+  tireTypeDefault: item?.tireTypeDefault || 'ORI kawat / radial',
   tireBrandDefault: item?.tireBrandDefault || '',
   tireSizeDefault: item?.tireSizeDefault || '',
   notes: item?.notes || '',

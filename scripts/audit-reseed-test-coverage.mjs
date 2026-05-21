@@ -25,6 +25,8 @@ function unique(values) {
     return [...new Set(values.filter(Boolean))].sort();
 }
 
+const VALID_TIRE_TYPES = new Set(['ORI benang / nilon', 'ORI kawat / radial', 'kanisir']);
+
 function buildTireSlotCodesFromLayoutConfig(config) {
     const axleLayouts = Array.isArray(config?.axleLayouts) && config.axleLayouts.length > 0
         ? config.axleLayouts
@@ -72,6 +74,16 @@ async function main() {
     requireCondition(standaloneTires.length === 0, 'Standalone tire events are not allowed', standaloneTires.map(tire => tire._id));
     requireCondition(orphanTireHistories.length === 0, 'Orphan tire history rows are not allowed', orphanTireHistories.map(log => log._id));
     requireCondition(nonTrackedBanItems.length === 0, 'Non-tracked tire inventory items are not allowed', nonTrackedBanItems.map(item => item._id));
+    requireCondition(
+        tireItems.every(item => VALID_TIRE_TYPES.has(item.tireTypeDefault)),
+        'Tracked tire item default type must use the current tire type options',
+        tireItems.map(item => ({ _id: item._id, tireTypeDefault: item.tireTypeDefault }))
+    );
+    requireCondition(
+        tireEvents.every(tire => VALID_TIRE_TYPES.has(tire.tireType)),
+        'Tire events must use the current tire type options',
+        unique(tireEvents.map(tire => tire.tireType))
+    );
 
     for (const item of tireItems) {
         const inWarehouseCount = tireEvents.filter(tire =>

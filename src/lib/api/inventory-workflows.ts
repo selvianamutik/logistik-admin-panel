@@ -25,6 +25,7 @@ import type {
     StockMovement,
     StockMovementSourceType,
     TireEvent,
+    TireType,
     Supplier,
     WarehouseItem,
 } from '@/lib/types';
@@ -63,6 +64,8 @@ type SupplierDocument = Supplier & { _rev?: string };
 type PurchaseDocument = Purchase & { _rev?: string };
 type PurchaseItemDocument = PurchaseItem & { _rev?: string };
 type WarehouseItemDocument = WarehouseItem & { _rev?: string };
+
+const TIRE_TYPES = new Set<TireType>(['ORI benang / nilon', 'ORI kawat / radial', 'kanisir']);
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
@@ -182,7 +185,7 @@ function assertTrackedTireWarehouseItemDefaults(item: WarehouseItem) {
     if (!item.tireBrandDefault?.trim() || !item.tireSizeDefault?.trim()) {
         throw new Error(`Master ${item.itemCode || item.name || item._id} belum punya merk dan ukuran ban default`);
     }
-    if (item.tireTypeDefault !== 'Tubeless' && item.tireTypeDefault !== 'Tube Type' && item.tireTypeDefault !== 'Solid') {
+    if (!item.tireTypeDefault || !TIRE_TYPES.has(item.tireTypeDefault)) {
         throw new Error(`Master ${item.itemCode || item.name || item._id} belum punya jenis ban default yang valid`);
     }
 }
@@ -482,7 +485,7 @@ export async function handlePurchaseReceive(
                         holderType: 'WAREHOUSE',
                         status: 'IN_WAREHOUSE',
                         posisi: 'Gudang Ban',
-                        tireType: warehouseItem.tireTypeDefault || item.tireTypeDefault || 'Tubeless',
+                        tireType: warehouseItem.tireTypeDefault || item.tireTypeDefault || 'ORI kawat / radial',
                         tireBrand: warehouseItem.tireBrandDefault || item.tireBrandDefault || item.itemName || warehouseItem.name,
                         tireSize: warehouseItem.tireSizeDefault || item.tireSizeDefault || '-',
                         linkedWarehouseItemRef: warehouseItem._id,

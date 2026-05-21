@@ -1,5 +1,5 @@
 import { getBusinessDateValue } from './business-date';
-import type { TireEvent, Vehicle } from './types';
+import type { TireEvent, TireType, Vehicle } from './types';
 import {
     compareTireSlotCodes,
     formatTireSlotLabel,
@@ -15,7 +15,7 @@ export type VehicleTireFormState = {
     registeredTireId: string;
     tireCode: string;
     slotCode: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     originalCost: number;
@@ -38,7 +38,7 @@ export type NormalizedVehicleTireRow = TireEvent & {
     placementLabel: string;
 };
 
-export const VEHICLE_TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['Tubeless', 'Tube Type', 'Solid'];
+export const VEHICLE_TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['ORI benang / nilon', 'ORI kawat / radial', 'kanisir'];
 
 export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormState {
     return {
@@ -47,7 +47,7 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         registeredTireId: '',
         tireCode: '',
         slotCode,
-        tireType: 'Tubeless',
+        tireType: 'ORI kawat / radial',
         tireBrand: '',
         tireSize: '',
         originalCost: 0,
