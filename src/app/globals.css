@@ -2175,6 +2175,54 @@ tbody td {
   align-items: start;
 }
 
+.trip-sj-accordion-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.trip-sj-accordion {
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.75rem;
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.trip-sj-accordion-summary {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  background: var(--color-gray-50);
+}
+
+.trip-sj-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.trip-sj-accordion-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.trip-sj-accordion-meta {
+  display: flex;
+  gap: 0.35rem 0.8rem;
+  flex-wrap: wrap;
+  color: var(--color-gray-600);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.trip-sj-accordion-body {
+  padding: 0.85rem 1rem 1rem;
+  border-top: 1px solid var(--color-gray-200);
+  background: var(--color-white);
+}
+
 .trip-cargo-group-cell,
 .trip-cargo-table th,
 .trip-cargo-table td {
@@ -3441,6 +3489,11 @@ tbody td {
 
   .trip-cargo-group-grid {
     grid-template-columns: 1fr;
+  }
+
+  .trip-sj-accordion-summary,
+  .trip-sj-accordion-body {
+    padding: 0.85rem;
   }
 
   .page-title {

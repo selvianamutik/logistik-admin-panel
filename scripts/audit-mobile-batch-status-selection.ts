@@ -177,7 +177,7 @@ async function createAuditTrip(suffix: string) {
         masterResi: `AUD-MOB-BATCH-RESI-${suffix}`,
         date: AUDIT_DATE,
         status: 'CREATED',
-        trackingState: 'STOPPED',
+        trackingState: 'ACTIVE',
         driverRef: driverId,
         driverName: 'Audit Mobile Batch Driver',
         vehiclePlate: 'AUDIT-1',
@@ -262,7 +262,7 @@ async function runScenario(
         const targetRef = params.targetRefFactory(state.deliveryOrderId, state.sjA, mobileDocA._id, state.refAKey);
         const updateResult = await postBatchStatus(token, {
             deliveryOrderId: state.deliveryOrderId,
-            status: 'HEADING_TO_PICKUP',
+            status: 'ON_DELIVERY',
             targetSuratJalanRefs: [targetRef],
         });
         assert(updateResult.data?.updatedCount === 1, `${label}: endpoint harus update tepat 1 SJ.`);
@@ -280,7 +280,7 @@ async function runScenario(
         );
         const recordA = afterRecords.find(record => record.suratJalanNumber === state.sjA);
         const recordB = afterRecords.find(record => record.suratJalanNumber === state.sjB);
-        assert(recordA?.tripStatus === 'HEADING_TO_PICKUP', `${label}: SJ A harus HEADING_TO_PICKUP setelah update.`);
+        assert(recordA?.tripStatus === 'ON_DELIVERY', `${label}: SJ A harus ON_DELIVERY setelah update.`);
         assert(recordB?.tripStatus === 'CREATED', `${label}: SJ B harus tetap CREATED setelah update SJ A.`);
 
         const afterOrders = await getDriverOrders(token);
@@ -296,8 +296,8 @@ async function runScenario(
             })))
         );
         assert(
-            afterMobileRecords.find(record => record.suratJalanNumber === state.sjA)?.tripStatus === 'HEADING_TO_PICKUP',
-            `${label}: mobile readback SJ A harus HEADING_TO_PICKUP.`
+            afterMobileRecords.find(record => record.suratJalanNumber === state.sjA)?.tripStatus === 'ON_DELIVERY',
+            `${label}: mobile readback SJ A harus ON_DELIVERY.`
         );
         assert(
             afterMobileRecords.find(record => record.suratJalanNumber === state.sjB)?.tripStatus === 'CREATED',
@@ -305,7 +305,7 @@ async function runScenario(
         );
 
         await updateDocument(state.deliveryOrderId, { status: 'CREATED' }, 'deliveryOrder');
-        console.log(`[audit:mobile-batch-status] ${label} OK: ${state.sjA} -> HEADING_TO_PICKUP, ${state.sjB} tetap CREATED.`);
+        console.log(`[audit:mobile-batch-status] ${label} OK: ${state.sjA} -> ON_DELIVERY, ${state.sjB} tetap CREATED.`);
     } finally {
         await cleanup(state.ids, state.deliveryOrderId);
     }

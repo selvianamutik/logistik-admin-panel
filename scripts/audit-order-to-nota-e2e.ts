@@ -531,7 +531,7 @@ async function advanceDeliveryOrderToDelivered(params: {
     actualItems: Array<Record<string, unknown>>;
     actualDropPoints: Array<Record<string, unknown>>;
 }) {
-    for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+    for (const status of ['ON_DELIVERY', 'ARRIVED']) {
         await postData(params.cookieHeader, {
             entity: 'delivery-orders',
             action: 'set-status',
@@ -560,7 +560,7 @@ async function advanceDeliveryOrderToDelivered(params: {
 }
 
 async function advanceDeliveryOrderToArrived(cookieHeader: string, deliveryOrderId: string) {
-    for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+    for (const status of ['ON_DELIVERY', 'ARRIVED']) {
         await postData(cookieHeader, {
             entity: 'delivery-orders',
             action: 'set-status',
@@ -996,8 +996,8 @@ async function main() {
             action: 'set-status',
             data: {
                 id: doCancelId,
-                status: 'HEADING_TO_PICKUP',
-                note: 'Audit menuju pickup sebelum batal',
+                status: 'ON_DELIVERY',
+                note: 'Audit dalam pengiriman sebelum batal',
             },
         });
         await postData(cookieHeader, {
@@ -1265,7 +1265,7 @@ async function main() {
         const splitDocsBeforeInitial = await getSuratJalanDocuments(cookieHeader, doSplitId);
         const splitDocBeforeInitial = splitDocsBeforeInitial.find(document => document.suratJalanNumber === sjSplit);
         const splitSuratJalanRef = splitDocBeforeInitial?._id || `${doSplitId}:${sjSplit}`;
-        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+        for (const status of ['ON_DELIVERY', 'ARRIVED']) {
             await postData(cookieHeader, {
                 entity: 'delivery-orders',
                 action: 'set-surat-jalan-status-batch',
@@ -1375,7 +1375,7 @@ async function main() {
         );
 
         auditStep('finalisasi lanjutan sisa hold pada SJ split harus melepas hold dan menambah billable');
-        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+        for (const status of ['ON_DELIVERY', 'ARRIVED']) {
             await postData(cookieHeader, {
                 entity: 'delivery-orders',
                 action: 'set-surat-jalan-status-batch',
@@ -1475,7 +1475,7 @@ async function main() {
         const overDocsBeforeInitial = await getSuratJalanDocuments(cookieHeader, doOverId);
         const overDocBeforeInitial = overDocsBeforeInitial.find(document => document.suratJalanNumber === sjOver);
         const overSuratJalanRef = overDocBeforeInitial?._id || `${doOverId}:${sjOver}`;
-        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+        for (const status of ['ON_DELIVERY', 'ARRIVED']) {
             await postData(cookieHeader, {
                 entity: 'delivery-orders',
                 action: 'set-surat-jalan-status-batch',

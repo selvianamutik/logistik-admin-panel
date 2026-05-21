@@ -15,9 +15,12 @@ import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
 
 import {
     assertIsoDateTime,
+    normalizeCurrencyNumber,
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
+import { hasPermission } from '@/lib/rbac';
+import { handleGenericCreate } from './generic-workflows';
 import {
     normalizeDriverPayload,
     normalizeIncidentSettlementLinePayload,
@@ -54,6 +57,7 @@ const INCIDENT_SETTLEMENT_ALLOWED_CATEGORIES: Record<string, Set<string>> = {
 };
 const ALLOWED_INCIDENT_TYPES = new Set(['BLOWOUT_TIRE', 'ENGINE_TROUBLE', 'ACCIDENT_MINOR', 'ACCIDENT_MAJOR', 'OTHER']);
 const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
+const INCIDENT_MAINTENANCE_FOLLOW_UP_CATEGORIES = new Set(['REPAIR', 'SPAREPART', 'TIRE']);
 
 function requireIncidentSettlementRevision(
     providedRevision: unknown,
@@ -709,6 +713,259 @@ export async function handleIncidentSettlementLineStatusUpdate(
     } catch (error) {
         throw error;
     }
+}
+
+function buildIncidentSettlementFollowUpError(line: IncidentSettlementLine) {
+    if (line.lineType !== 'COST') {
+        return 'Follow-up aset atau maintenance hanya boleh dibuat dari detail biaya insiden';
+    }
+    if (line.status !== 'POSTED' || !line.linkedExpenseRef) {
+        return 'Biaya insiden harus sudah diposting sebelum membuat follow-up aset atau maintenance';
+    }
+    return '';
+}
+
+async function loadIncidentSettlementFollowUpContext(
+    data: Record<string, unknown>
+) {
+    const id = typeof data.id === 'string' ? data.id.trim() : '';
+    const revision = typeof data.revision === 'string' ? data.revision.trim() : '';
+    if (!id) {
+        return {
+            error: NextResponse.json({ error: 'Detail insiden tidak valid' }, { status: 400 }),
+        };
+    }
+
+    const line = await getDocumentById<IncidentSettlementLine>(id, 'incidentSettlementLine');
+    if (!line) {
+        return {
+            error: NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 }),
+        };
+    }
+    if (!requireIncidentSettlementRevision(revision, line._rev)) {
+        return {
+            error: NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 }),
+        };
+    }
+
+    const lineError = buildIncidentSettlementFollowUpError(line);
+    if (lineError) {
+        return {
+            error: NextResponse.json({ error: lineError }, { status: 409 }),
+        };
+    }
+
+    const incident = await getDocumentById<{
+        _id: string;
+        incidentNumber?: string;
+        vehicleRef?: string;
+        vehiclePlate?: string;
+        relatedDeliveryOrderRef?: string;
+    }>(line.incidentRef, 'incident');
+    if (!incident) {
+        return {
+            error: NextResponse.json({ error: 'Insiden terkait detail biaya tidak ditemukan' }, { status: 404 }),
+        };
+    }
+
+    return { line, incident };
+}
+
+async function readCreateResponse<T extends { _id?: string }>(response: NextResponse) {
+    if (!response.ok) {
+        return { response };
+    }
+    const payload = await response.json() as { data?: T; id?: string };
+    const id = payload.id || payload.data?._id;
+    if (!id) {
+        return {
+            response: NextResponse.json({ error: 'Dokumen follow-up gagal dibuat' }, { status: 500 }),
+        };
+    }
+    return { id, data: payload.data };
+}
+
+export async function handleIncidentSettlementLineTireFollowUpCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    if (!hasPermission(session.role, 'tires', 'create')) {
+        return NextResponse.json({ error: 'Tidak punya akses mencatat aset ban' }, { status: 403 });
+    }
+
+    const context = await loadIncidentSettlementFollowUpContext(data);
+    if ('error' in context) {
+        return context.error;
+    }
+    const { line, incident } = context;
+
+    if (line.category !== 'TIRE') {
+        return NextResponse.json({ error: 'Aset ban hanya boleh ditautkan dari biaya insiden kategori ban' }, { status: 409 });
+    }
+    if (line.linkedTireEventRef) {
+        return NextResponse.json({ error: 'Detail biaya insiden ini sudah tertaut ke aset ban' }, { status: 409 });
+    }
+
+    const linkedWarehouseItemRef = normalizeOptionalText(data.linkedWarehouseItemRef);
+    const tireCode = normalizeOptionalText(data.tireCode);
+    const tireBrand = normalizeOptionalText(data.tireBrand);
+    const tireSize = normalizeOptionalText(data.tireSize);
+    const tireType = normalizeOptionalText(data.tireType);
+    const originalCost = normalizeCurrencyNumber(data.originalCost ?? line.amount, { maxFractionDigits: 0 });
+    if (!linkedWarehouseItemRef) {
+        return NextResponse.json({ error: 'Master barang gudang ban tertracking wajib dipilih' }, { status: 400 });
+    }
+    if (!tireCode || !tireBrand || !tireSize || !tireType) {
+        return NextResponse.json({ error: 'Kode, jenis, merk, dan ukuran ban wajib diisi' }, { status: 400 });
+    }
+    if (!Number.isFinite(originalCost) || originalCost <= 0) {
+        return NextResponse.json({ error: 'Nilai awal aset ban harus lebih besar dari 0' }, { status: 400 });
+    }
+
+    const incidentLabel = incident.incidentNumber || line.incidentNumber || incident._id;
+    const notes = [
+        normalizeOptionalText(data.notes),
+        `Aset ban dicatat dari insiden ${incidentLabel}`,
+        line.description ? `Detail biaya: ${line.description}` : '',
+    ].filter(Boolean).join(' | ');
+    const createResponse = await handleGenericCreate(
+        session,
+        'tire-events',
+        'tireEvent',
+        {
+            tireCode,
+            tireType,
+            tireBrand,
+            tireSize,
+            linkedWarehouseItemRef,
+            holderType: 'WAREHOUSE',
+            status: 'IN_WAREHOUSE',
+            installDate: normalizeOptionalText(data.installDate) || line.date,
+            purchaseCost: originalCost,
+            originalCost,
+            totalUsedPercent: 0,
+            notes,
+        },
+        addAuditLog
+    );
+    const created = await readCreateResponse<{ _id?: string; tireCode?: string }>(createResponse);
+    if ('response' in created) {
+        return created.response;
+    }
+
+    const now = new Date().toISOString();
+    await updateDocument(created.id, {
+        sourceIncidentRef: incident._id,
+        sourceIncidentNumber: incidentLabel,
+        sourceIncidentSettlementLineRef: line._id,
+        sourceIncidentExpenseRef: line.linkedExpenseRef,
+    }, 'tireEvent');
+    const updatedLine = await updateDocument<IncidentSettlementLine>(line._id, {
+        linkedTireEventRef: created.id,
+        linkedTireCode: created.data?.tireCode || tireCode,
+        linkedTireWarehouseItemRef: linkedWarehouseItemRef,
+        updatedAt: now,
+        updatedBy: session._id,
+        updatedByName: session.name,
+    }, 'incidentSettlementLine');
+    const actionNote = `Aset ban ${created.data?.tireCode || tireCode} ditautkan dari ${formatIncidentSettlementLabel(line)}`;
+    await createDocument({
+        _id: crypto.randomUUID(),
+        _type: 'incidentActionLog',
+        incidentRef: line.incidentRef,
+        timestamp: now,
+        note: actionNote,
+        userRef: session._id,
+        userName: session.name,
+    });
+    await addAuditLog(session, 'UPDATE', 'incident-settlement-lines', line._id, actionNote);
+    return NextResponse.json({ data: updatedLine, tireEventRef: created.id });
+}
+
+export async function handleIncidentSettlementLineMaintenanceFollowUpCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    if (!hasPermission(session.role, 'maintenance', 'create')) {
+        return NextResponse.json({ error: 'Tidak punya akses menjadwalkan maintenance' }, { status: 403 });
+    }
+
+    const context = await loadIncidentSettlementFollowUpContext(data);
+    if ('error' in context) {
+        return context.error;
+    }
+    const { line, incident } = context;
+
+    if (!INCIDENT_MAINTENANCE_FOLLOW_UP_CATEGORIES.has(line.category)) {
+        return NextResponse.json({ error: 'Follow-up maintenance hanya tersedia untuk biaya perbaikan, sparepart, atau ban' }, { status: 409 });
+    }
+    if (line.linkedMaintenanceRef) {
+        return NextResponse.json({ error: 'Detail biaya insiden ini sudah tertaut ke maintenance' }, { status: 409 });
+    }
+    if (!incident.vehicleRef) {
+        return NextResponse.json({ error: 'Kendaraan insiden tidak tersedia untuk maintenance' }, { status: 409 });
+    }
+
+    const incidentLabel = incident.incidentNumber || line.incidentNumber || incident._id;
+    const maintenanceType = normalizeOptionalText(data.type)
+        || (line.category === 'TIRE'
+            ? 'Follow-up Ban Insiden'
+            : line.category === 'SPAREPART'
+                ? 'Follow-up Sparepart Insiden'
+                : 'Follow-up Perbaikan Insiden');
+    const notes = [
+        `Follow-up dari insiden ${incidentLabel}`,
+        line.description ? `Detail biaya: ${line.description}` : '',
+        normalizeOptionalText(data.notes),
+        'Biaya insiden sudah diposting terpisah. Jangan catat biaya yang sama dua kali saat maintenance diselesaikan.',
+    ].filter(Boolean).join(' | ');
+    const createResponse = await handleGenericCreate(
+        session,
+        'maintenances',
+        'maintenance',
+        {
+            vehicleRef: incident.vehicleRef,
+            type: maintenanceType,
+            scheduleType: 'DATE',
+            plannedDate: normalizeOptionalText(data.plannedDate) || line.date,
+            notes,
+        },
+        addAuditLog
+    );
+    const created = await readCreateResponse<{ _id?: string; type?: string }>(createResponse);
+    if ('response' in created) {
+        return created.response;
+    }
+
+    const now = new Date().toISOString();
+    await updateDocument(created.id, {
+        relatedIncidentRef: incident._id,
+        relatedIncidentNumber: incidentLabel,
+        relatedIncidentSettlementLineRef: line._id,
+        relatedIncidentExpenseRef: line.linkedExpenseRef,
+        relatedDeliveryOrderRef: incident.relatedDeliveryOrderRef,
+    }, 'maintenance');
+    const updatedLine = await updateDocument<IncidentSettlementLine>(line._id, {
+        linkedMaintenanceRef: created.id,
+        linkedMaintenanceType: created.data?.type || maintenanceType,
+        updatedAt: now,
+        updatedBy: session._id,
+        updatedByName: session.name,
+    }, 'incidentSettlementLine');
+    const actionNote = `Follow-up maintenance ${created.data?.type || maintenanceType} dibuat dari ${formatIncidentSettlementLabel(line)}`;
+    await createDocument({
+        _id: crypto.randomUUID(),
+        _type: 'incidentActionLog',
+        incidentRef: line.incidentRef,
+        timestamp: now,
+        note: actionNote,
+        userRef: session._id,
+        userName: session.name,
+    });
+    await addAuditLog(session, 'UPDATE', 'incident-settlement-lines', line._id, actionNote);
+    return NextResponse.json({ data: updatedLine, maintenanceRef: created.id });
 }
 
 export async function handleServiceDelete(

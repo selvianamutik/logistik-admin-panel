@@ -1704,6 +1704,9 @@ export async function handleGenericUpdate(
         if (Object.prototype.hasOwnProperty.call(updates, 'linkedWarehouseItemRef')) {
             nextTireDoc.linkedWarehouseItemRef = normalizeOptionalText(updates.linkedWarehouseItemRef);
         }
+        if (!normalizeOptionalText(nextTireDoc.linkedWarehouseItemRef)) {
+            return NextResponse.json({ error: 'Master barang gudang ban tertracking wajib dipilih' }, { status: 400 });
+        }
         if (nextTireDoc.linkedWarehouseItemRef) {
             try {
                 const linkedItem = await resolveTrackedTireWarehouseItem(String(nextTireDoc.linkedWarehouseItemRef));
@@ -2753,15 +2756,19 @@ export async function handleGenericCreate(
         } catch (error) {
             return buildTireEventResponseError(error, 'Data ban tidak valid');
         }
-        if (typeof data.linkedWarehouseItemRef === 'string' && data.linkedWarehouseItemRef.trim()) {
-            try {
-                const linkedItem = await resolveTrackedTireWarehouseItem(data.linkedWarehouseItemRef.trim());
-                normalizedTireEvent.linkedWarehouseItemRef = linkedItem._id;
-                normalizedTireEvent.linkedWarehouseItemCode = linkedItem.itemCode;
-                normalizedTireEvent.linkedWarehouseItemName = linkedItem.name;
-            } catch (error) {
-                return buildTireEventResponseError(error, 'Master barang gudang ban tidak valid');
-            }
+        const linkedWarehouseItemRef = typeof data.linkedWarehouseItemRef === 'string'
+            ? data.linkedWarehouseItemRef.trim()
+            : '';
+        if (!linkedWarehouseItemRef) {
+            return NextResponse.json({ error: 'Master barang gudang ban tertracking wajib dipilih' }, { status: 400 });
+        }
+        try {
+            const linkedItem = await resolveTrackedTireWarehouseItem(linkedWarehouseItemRef);
+            normalizedTireEvent.linkedWarehouseItemRef = linkedItem._id;
+            normalizedTireEvent.linkedWarehouseItemCode = linkedItem.itemCode;
+            normalizedTireEvent.linkedWarehouseItemName = linkedItem.name;
+        } catch (error) {
+            return buildTireEventResponseError(error, 'Master barang gudang ban tidak valid');
         }
         Object.assign(newDoc, normalizedTireEvent);
     }

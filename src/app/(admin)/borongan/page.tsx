@@ -135,7 +135,7 @@ export default function BoronganListPage() {
                 <div className="card-body" style={{ padding: '1rem' }}>
                     <div style={{ fontWeight: 700, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>Modul arsip</div>
                     <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                        Untuk workflow utama client yang sekarang, gunakan <strong>Uang Jalan Trip</strong> karena di sana uang jalan, biaya aktual, upah trip, dan settlement akhir sudah digabung per DO/trip.
+                        Untuk workflow utama client yang sekarang, gunakan <strong>Uang Jalan Trip</strong> karena di sana uang jalan, biaya aktual, upah trip, dan penyelesaian uang jalan sudah digabung per DO/trip.
                     </div>
                 </div>
             </div>

@@ -409,7 +409,7 @@ async function advanceDeliveryOrderToDelivered(params: {
     actualItems: Array<Record<string, unknown>>;
     actualDropPoints: Array<Record<string, unknown>>;
 }) {
-    for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+    for (const status of ['ON_DELIVERY', 'ARRIVED']) {
         await postData(params.cookieHeader, {
             entity: 'delivery-orders',
             action: 'set-status',

@@ -8,6 +8,7 @@ import SortableTableHeader, { type SortDirection } from '@/components/SortableTa
 
 import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/lib/utils';
 import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
+import { buildDriverVoucherSettlementDisplay, inferDriverVoucherDisbursementCount } from '@/lib/driver-voucher-detail-support';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminListPayload } from '@/lib/api/admin-client';
@@ -159,13 +160,13 @@ export default function DriverVouchersPage() {
                                                     <th>No. DO Internal</th>
                                                     <th>Rute</th>
                                                     <th class="r">Bon Pertama</th>
-                                                    <th class="r">Bon Tambahan</th>
+                                                    <th class="r">Total Bon Tambahan</th>
                                                     <th class="r">Total Diberikan</th>
                                                     <th class="r">Biaya Lain-lain</th>
                                                     <th class="r">Upah Borongan</th>
                                                     <th class="r">Total Klaim Trip</th>
                                                     <th class="r">Sisa Bon Operasional</th>
-                                                    <th class="r">Net Settlement Akhir</th>
+                                                    <th class="r">Penyelesaian Uang Jalan</th>
                                                     <th>Status</th>
                                                 </tr>
                                             </thead>
@@ -182,6 +183,13 @@ export default function DriverVouchersPage() {
                                                         balance,
                                                     } = getDriverVoucherFinancialSummary(v);
                                                     const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
+                                                    const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                                        balance,
+                                                        fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                                            ...v,
+                                                            topUpAmount,
+                                                        }),
+                                                    });
                                                     return `<tr>
                                                         <td class="b">${v.bonNumber}</td>
                                                         <td>${v.driverName || '-'}</td>
@@ -195,7 +203,7 @@ export default function DriverVouchersPage() {
                                                         <td class="r">${formatCurrency(driverFeeAmount)}</td>
                                                         <td class="r">${formatCurrency(totalClaimAmount)}</td>
                                                         <td class="r">${formatCurrency(operationalBalance)}</td>
-                                                        <td class="r b">${formatCurrency(balance)}</td>
+                                                        <td class="r b">${settlementDisplay.label}: ${formatCurrency(balance)}</td>
                                                         <td>${STATUS_MAP[v.status]?.label || v.status}</td>
                                                     </tr>`;
                                                 }).join('')}
@@ -273,13 +281,13 @@ export default function DriverVouchersPage() {
                                 <th>No. DO Internal</th>
                                 <th>Rute</th>
                                 <th>Bon Pertama</th>
-                                <th>Bon Tambahan</th>
+                                <th>Total Bon Tambahan</th>
                                 <th>Total Diberikan</th>
                                 <th>Biaya Lain-lain</th>
                                 <th>Upah Borongan</th>
                                 <th>Total Klaim Trip</th>
                                 <th>Sisa Bon Operasional</th>
-                                <th>Net Settlement Akhir</th>
+                                <th>Penyelesaian Uang Jalan</th>
                                 <th>Status</th>
                                 <th>Tindak Lanjut</th>
                                 <th>Aksi</th>
@@ -300,7 +308,7 @@ export default function DriverVouchersPage() {
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
-                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan settlement akhir</div>
+                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan penyelesaian uang jalan</div>
                                         </div>
                                     </td>
                                 </tr>
@@ -318,6 +326,13 @@ export default function DriverVouchersPage() {
                                         balance,
                                     } = getDriverVoucherFinancialSummary(v);
                                     const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
+                                    const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                        balance,
+                                        fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                            ...v,
+                                            topUpAmount,
+                                        }),
+                                    });
 
                                     return (
                                         <tr key={v._id}>
@@ -351,7 +366,8 @@ export default function DriverVouchersPage() {
                                                 className="font-medium"
                                                 style={{ color: balance < 0 ? '#ef4444' : balance > 0 ? '#16a34a' : undefined }}
                                             >
-                                                {formatCurrency(balance)}
+                                                <div>{formatCurrency(balance)}</div>
+                                                <div className="text-muted text-sm">{settlementDisplay.label}</div>
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
@@ -385,7 +401,7 @@ export default function DriverVouchersPage() {
                         {totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada uang jalan trip</div>
-                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan settlement akhir.</div>
+                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya lain-lain, upah borongan, dan penyelesaian uang jalan.</div>
                             </div>
                         ) : items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
@@ -400,6 +416,13 @@ export default function DriverVouchersPage() {
                                 balance,
                             } = getDriverVoucherFinancialSummary(v);
                             const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
+                            const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                balance,
+                                fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                    ...v,
+                                    topUpAmount,
+                                }),
+                            });
 
                             return (
                                 <div key={v._id} className="mobile-record-card">
@@ -427,7 +450,7 @@ export default function DriverVouchersPage() {
                                             <span className="mobile-record-value">{formatCurrency(initialCashGiven)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Bon Tambahan</span>
+                                            <span className="mobile-record-label">Total Bon Tambahan</span>
                                             <span className="mobile-record-value">{formatCurrency(topUpAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
@@ -453,7 +476,7 @@ export default function DriverVouchersPage() {
                                             </span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Net Settlement Akhir</span>
+                                            <span className="mobile-record-label">{settlementDisplay.label}</span>
                                             <span className="mobile-record-value" style={{ fontWeight: 700, color: balance < 0 ? '#ef4444' : balance > 0 ? '#16a34a' : undefined }}>
                                                 {formatCurrency(balance)}
                                             </span>

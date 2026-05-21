@@ -16,6 +16,7 @@ import type {
     Incident,
     IncidentActionLog,
     IncidentSettlementCategory,
+    IncidentExpenseRoute,
     IncidentSettlementLine,
     IncidentSettlementLineStatus,
     IncidentSettlementLineType,
@@ -114,6 +115,7 @@ export function createDefaultIncidentSettlementForm() {
 export function createDefaultIncidentExpensePostForm() {
     return {
         date: getBusinessDateValue(),
+        incidentExpenseRoute: '' as IncidentExpenseRoute | '',
         categoryRef: '',
         bankAccountRef: '',
         note: '',

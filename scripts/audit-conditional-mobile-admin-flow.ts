@@ -372,7 +372,7 @@ async function makeIncidentCycle(params: {
             relatedIncidentRef: incident._id,
             relatedIncidentSettlementLineRef: line._id,
             relatedIncidentSettlementLineRevision: approvedLineRevision,
-            bankAccountRef: params.bankAccountRef,
+            incidentExpenseRoute: 'DRIVER_VOUCHER',
             note: `Post incident ${params.idx} ke uang jalan`,
             description: `Audit expense incident ${params.idx}`,
             privacyLevel: 'internal',
@@ -380,6 +380,7 @@ async function makeIncidentCycle(params: {
     });
     assert(expense.data?._id, `expense incident ${params.idx} tidak dibuat admin`);
     assert(!expense.data.bankAccountRef, `expense incident ${params.idx} tidak boleh menjadi pengeluaran bank langsung saat bon trip tersedia`);
+    assert(expense.data.incidentExpenseRoute === 'DRIVER_VOUCHER', `expense incident ${params.idx} harus tercatat route uang jalan driver`);
 
     const postedLine = (await requestJson<ApiResponse<AnyDoc>>(
         `/api/data?entity=incident-settlement-lines&id=${encodeURIComponent(line._id)}`,
@@ -600,24 +601,6 @@ async function main() {
         speedMps: 0,
     });
 
-    const sjAHeadingResult = await driverRequest<AnyDoc>('POST', token, '/api/driver/delivery-orders/batch-status', {
-        id: state.firstDoId,
-        status: 'HEADING_TO_PICKUP',
-        targetSuratJalanRefs: [sjARef],
-        note: 'A saja heading',
-    });
-    assert(sjAHeadingResult.data?.updatedCount === 1, `SJ A heading updatedCount mismatch: ${JSON.stringify(sjAHeadingResult.data)}`);
-    let sjDocs = await getSuratJalanDocs(adminCookie, state.firstDoId);
-    assert(sjDocs.find(item => item._id === sjARef)?.tripStatus === 'HEADING_TO_PICKUP', 'SJ A tidak berubah ke HEADING_TO_PICKUP');
-    assert(sjDocs.find(item => item._id === sjBRef)?.tripStatus === 'CREATED', 'SJ B ikut berubah saat hanya SJ A dipilih');
-
-    const sjBHeadingResult = await driverRequest<AnyDoc>('POST', token, '/api/driver/delivery-orders/batch-status', {
-        id: state.firstDoId,
-        status: 'HEADING_TO_PICKUP',
-        targetSuratJalanRefs: [sjBRef],
-        note: 'B heading',
-    });
-    assert(sjBHeadingResult.data?.updatedCount === 1, `SJ B heading updatedCount mismatch: ${JSON.stringify(sjBHeadingResult.data)}`);
     const sjAOnDeliveryResult = await driverRequest<AnyDoc>('POST', token, '/api/driver/delivery-orders/batch-status', {
         id: state.firstDoId,
         status: 'ON_DELIVERY',
@@ -625,13 +608,13 @@ async function main() {
         note: 'A saja on delivery',
     });
     assert(sjAOnDeliveryResult.data?.updatedCount === 1, `SJ A on delivery updatedCount mismatch: ${JSON.stringify(sjAOnDeliveryResult.data)}`);
-    sjDocs = await getSuratJalanDocs(adminCookie, state.firstDoId);
+    let sjDocs = await getSuratJalanDocs(adminCookie, state.firstDoId);
     assert(
         sjDocs.find(item => item._id === sjARef)?.tripStatus === 'ON_DELIVERY',
         `SJ A tidak berubah ke ON_DELIVERY: ${JSON.stringify(sjDocs.map(item => ({ id: item._id, no: item.suratJalanNumber, status: item.tripStatus })))}`
     );
     assert(
-        sjDocs.find(item => item._id === sjBRef)?.tripStatus === 'HEADING_TO_PICKUP',
+        sjDocs.find(item => item._id === sjBRef)?.tripStatus === 'CREATED',
         `SJ B berubah salah saat hanya SJ A ke ON_DELIVERY: ${JSON.stringify(sjDocs.map(item => ({ id: item._id, no: item.suratJalanNumber, status: item.tripStatus })))}`
     );
 
@@ -639,7 +622,16 @@ async function main() {
     driverTrip = driverOrders.find(item => item._id === state.firstDoId);
     const mobileAfterStatus = driverTrip?.driverSuratJalanRecords || [];
     assert(mobileAfterStatus.find((item: AnyDoc) => item._id === sjARef)?.tripStatus === 'ON_DELIVERY', 'mobile readback SJ A mismatch');
-    assert(mobileAfterStatus.find((item: AnyDoc) => item._id === sjBRef)?.tripStatus === 'HEADING_TO_PICKUP', 'mobile readback SJ B mismatch');
+    assert(mobileAfterStatus.find((item: AnyDoc) => item._id === sjBRef)?.tripStatus === 'CREATED', 'mobile readback SJ B mismatch');
+
+    const sjBOnDeliveryResult = await driverRequest<AnyDoc>('POST', token, '/api/driver/delivery-orders/batch-status', {
+        id: state.firstDoId,
+        status: 'ON_DELIVERY',
+        targetSuratJalanRefs: [sjBRef],
+        note: 'B on delivery',
+    });
+    assert(sjBOnDeliveryResult.data?.updatedCount === 1, `SJ B on delivery updatedCount mismatch: ${JSON.stringify(sjBOnDeliveryResult.data)}`);
+    sjDocs = await getSuratJalanDocs(adminCookie, state.firstDoId);
 
     const earlyStop = await driverRequest<AnyDoc>('POST', token, '/api/driver/tracking', {
         action: 'stop',

@@ -75,8 +75,10 @@ import {
     buildDriverVoucherCashBreakdown,
     buildDriverVoucherDetailSummary,
     buildDriverVoucherPrintHtml,
+    buildDriverVoucherSettlementDisplay,
     DRIVER_VOUCHER_STATUS_MAP,
     getDriverVoucherDisbursementLabel,
+    inferDriverVoucherDisbursementCount,
 } from '@/lib/driver-voucher-detail-support';
 import { openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile, type PrintableCompanyProfile } from '@/lib/print';
 
@@ -117,7 +119,7 @@ type DriverIncidentCostDraft = {
 type DriverPortalError = Error & { status?: number };
 type DriverPortalSection = 'TRIPS' | 'VOUCHERS';
 type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
-type DriverBatchStatus = 'HEADING_TO_PICKUP' | 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED';
+type DriverBatchStatus = 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED';
 type DriverBatchStatusSelection = DriverBatchStatus | '';
 type CargoInputMode = 'SJ_ADD' | 'SJ_EDIT' | 'CARGO';
 type CompletionStep = 'SETUP' | 'ACTUAL';
@@ -394,7 +396,6 @@ function getNextDriverBatchStatus(status?: string): DriverBatchStatus | null {
     switch (status) {
         case 'PARTIAL_HOLD':
         case 'CREATED':
-            return 'HEADING_TO_PICKUP';
         case 'HEADING_TO_PICKUP':
             return 'ON_DELIVERY';
         case 'ON_DELIVERY':
@@ -4116,11 +4117,14 @@ export default function DriverPortalPage() {
                             const statusConfig = DRIVER_VOUCHER_STATUS_MAP[voucher.status] || { label: voucher.status || '-', cls: 'badge-gray' };
                             const statusColor = statusConfig.cls.replace('badge-', '') || 'gray';
                             const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, summary);
-                            const settlementLabel = summary.balance < 0
-                                ? 'Tambahan bayar ke supir'
-                                : summary.balance > 0
-                                    ? 'Dikembalikan ke perusahaan'
-                                    : 'Nihil';
+                            const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                balance: summary.balance,
+                                disbursements,
+                                fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                    ...voucher,
+                                    topUpAmount: summary.topUpAmount,
+                                }),
+                            });
 
                             return (
                                 <div key={voucher._id} className="card driver-trip-panel">
@@ -4156,9 +4160,9 @@ export default function DriverPortalPage() {
                                                 <div className="detail-value">{formatCurrency(summary.driverFeeAmount)}</div>
                                             </div>
                                             <div className="detail-item">
-                                                <div className="detail-label">Net Settlement</div>
+                                                <div className="detail-label">{settlementDisplay.label}</div>
                                                 <div className="detail-value">{formatCurrency(Math.abs(summary.balance))}</div>
-                                                <div className="text-muted text-sm">{settlementLabel}</div>
+                                                <div className="text-muted text-sm">{settlementDisplay.description}</div>
                                             </div>
                                             <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
                                                 <div className="detail-label">Rincian Bon</div>

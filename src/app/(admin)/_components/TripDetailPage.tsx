@@ -85,6 +85,8 @@ import {
     createDefaultDriverVoucherTopUpForm,
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
     buildDriverVoucherCashBreakdown,
+    buildDriverVoucherSettlementDisplay,
+    inferDriverVoucherDisbursementCount,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
 import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
@@ -94,7 +96,7 @@ import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRat
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
 import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
-const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
+const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
 type ShipperReferenceDraft = {
     draftKey: string;
@@ -4410,12 +4412,40 @@ export default function TripDetailPage() {
         const groups = new Map<string, {
             key: string;
             shipperReferenceNumber: string;
-            pickupStopKey: string;
-            pickupLabel: string;
-            pickupAddress: string;
+            document: SuratJalanDocument | null;
+            pickupLabels: string[];
+            pickupAddresses: string[];
             items: DeliveryOrderItem[];
         }>();
+
+        const findSuratJalanDocumentForCargoItem = (item: DeliveryOrderItem) => {
+            const customerDoNumber = doData.customerDoNumber || '';
+            const itemReferenceKey = (item.shipperReferenceKey || '').trim();
+            const itemReferenceNumber = (item.shipperReferenceNumber || customerDoNumber).trim().toUpperCase();
+            return suratJalanDocuments.find(document => {
+                const documentReferenceKey = (document.referenceKey || '').trim();
+                const documentNumber = (document.suratJalanNumber || '').trim().toUpperCase();
+                const documentRefSuffix = doData._id && document._id.startsWith(`${doData._id}:`)
+                    ? document._id.slice(`${doData._id}:`.length)
+                    : '';
+                return (
+                    (itemReferenceKey && documentReferenceKey && documentReferenceKey === itemReferenceKey) ||
+                    (itemReferenceKey && documentRefSuffix && documentRefSuffix === itemReferenceKey) ||
+                    (itemReferenceNumber && documentNumber && documentNumber === itemReferenceNumber) ||
+                    (!itemReferenceKey && !itemReferenceNumber && (documentReferenceKey === 'primary' || documentRefSuffix === 'primary' || (!documentReferenceKey && !documentNumber)))
+                );
+            }) || null;
+        };
+
+        const appendUnique = (values: string[], value: string) => {
+            const normalized = value.trim();
+            if (normalized && !values.includes(normalized)) {
+                values.push(normalized);
+            }
+        };
+
         for (const item of doItems) {
+            const document = findSuratJalanDocumentForCargoItem(item);
             const shipperReferenceNumber = item.shipperReferenceNumber?.trim() || doData.customerDoNumber || 'TANPA-SJ';
             const pickupStop = item.pickupStopKey ? pickupStopMap.get(item.pickupStopKey) : null;
             const pickupLabel = pickupStop
@@ -4424,18 +4454,25 @@ export default function TripDetailPage() {
                     ? item.pickupAddress
                     : '';
             const pickupAddress = pickupStop?.pickupAddress || item.pickupAddress || '';
-            const key = `${pickupStop?._key || item.pickupStopKey || 'tanpa-pickup'}::${shipperReferenceNumber}`;
+            const key = document?._id ||
+                (item.shipperReferenceKey ? `key:${item.shipperReferenceKey}` : `number:${shipperReferenceNumber}`);
             const current = groups.get(key);
             if (current) {
                 current.items.push(item);
+                appendUnique(current.pickupLabels, pickupLabel);
+                appendUnique(current.pickupAddresses, pickupAddress);
                 continue;
             }
+            const pickupLabels: string[] = [];
+            const pickupAddresses: string[] = [];
+            appendUnique(pickupLabels, pickupLabel);
+            appendUnique(pickupAddresses, pickupAddress);
             groups.set(key, {
                 key,
                 shipperReferenceNumber,
-                pickupStopKey: pickupStop?._key || item.pickupStopKey || '',
-                pickupLabel,
-                pickupAddress,
+                document,
+                pickupLabels,
+                pickupAddresses,
                 items: [item],
             });
         }
@@ -4468,20 +4505,18 @@ export default function TripDetailPage() {
             topUpAmount: linkedVoucherSummary.topUpAmount,
         })
         : '';
-    const linkedVoucherSettlementLabel = linkedVoucherSummary
-        ? linkedVoucherSummary.balance > 0
-            ? 'Driver mengembalikan net settlement akhir ke rekening atau kas perusahaan'
-            : linkedVoucherSummary.balance < 0
-                ? 'Perusahaan masih perlu menambah pembayaran akhir ke supir'
-                : 'Tidak ada net settlement akhir'
-        : '';
-    const linkedVoucherSettlementPrimaryLabel = linkedVoucherSummary
-        ? linkedVoucherSummary.balance > 0
-            ? 'Selesaikan & Catat Pengembalian Akhir'
-            : linkedVoucherSummary.balance < 0
-                ? 'Selesaikan & Tambah Bayar Akhir'
-                : 'Selesaikan Bon'
-        : 'Selesaikan Bon';
+    const linkedVoucherSettlementDisplay = linkedVoucher && linkedVoucherSummary
+        ? buildDriverVoucherSettlementDisplay({
+            balance: linkedVoucherSummary.balance,
+            disbursements: linkedVoucherDisbursements,
+            fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                ...linkedVoucher,
+                topUpAmount: linkedVoucherSummary.topUpAmount,
+            }),
+        })
+        : null;
+    const linkedVoucherSettlementLabel = linkedVoucherSettlementDisplay?.description || '';
+    const linkedVoucherSettlementPrimaryLabel = linkedVoucherSettlementDisplay?.primaryActionLabel || 'Selesaikan Bon';
     const linkedTripCashVoucherId = linkedVoucher?._id || linkedTripCashLink?.voucherId || '';
     const linkedTripCashBonNumber = linkedVoucher?.bonNumber || linkedTripCashLink?.bonNumber || linkedVoucherBonNumber;
     const linkedTripCashIssuedDate = linkedVoucher?.issuedDate || linkedTripCashLink?.issuedDate || '';
@@ -5329,6 +5364,105 @@ export default function TripDetailPage() {
         ...suratJalanDocuments.map(document => document._id),
         ...doItems.map(item => item._id),
     ].filter((ref): ref is string => Boolean(ref))));
+    const renderCargoItemRow = (item: DeliveryOrderItem) => {
+        const holdContinuationPickups = getItemHoldContinuationPickups(item);
+        return (
+            <tr key={item._id}>
+                <td>
+                    <div className="font-medium">
+                        {item.pickupStopKey && pickupStopMap.get(item.pickupStopKey)
+                            ? formatPickupStopDisplayName(pickupStopMap.get(item.pickupStopKey)!)
+                            : item.pickupAddress || '-'}
+                    </div>
+                    <div className="text-muted text-xs">{item.pickupAddress || pickupStopMap.get(item.pickupStopKey || '')?.pickupAddress || '-'}</div>
+                    {holdContinuationPickups.length > 0 && (
+                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
+                            Pickup tambahan hold: {holdContinuationPickups.join(', ')}
+                        </div>
+                    )}
+                </td>
+                <td>
+                    {(() => {
+                        const identity = getDeliveryOrderItemIdentity(item);
+                        return (
+                            <>
+                                <div className="font-mono text-xs text-muted">{identity.code || '-'}</div>
+                                <div className="font-medium">{identity.name || item.orderItemDescription || '-'}</div>
+                            </>
+                        );
+                    })()}
+                </td>
+                <td>
+                    <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
+                    <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
+                    <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
+                    <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                        {item.actualQtyKoli !== undefined
+                            ? `${item.actualQtyKoli} koli`
+                            : item.orderItemQtyKoli && item.orderItemQtyKoli > 0
+                                ? 'Belum final'
+                                : '-'}
+                    </div>
+                </td>
+                <td>
+                    <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
+                    <div className="font-medium">
+                        {formatCargoSummary({
+                            qtyKoli: item.orderItemQtyKoli,
+                            weightKg: item.orderItemWeight,
+                            weightInputValue: item.orderItemWeightInputValue,
+                            weightInputUnit: item.orderItemWeightInputUnit,
+                            volumeM3: item.orderItemVolumeM3,
+                            volumeInputValue: item.orderItemVolumeInputValue,
+                            volumeInputUnit: item.orderItemVolumeInputUnit,
+                        })}
+                    </div>
+                    <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
+                    <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                        {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                            ? formatCargoSummary({
+                                qtyKoli: item.actualQtyKoli,
+                                weightKg: item.actualWeightKg,
+                                weightInputValue: item.actualWeightInputValue,
+                                weightInputUnit: item.actualWeightInputUnit,
+                                volumeM3: item.actualVolumeM3,
+                                volumeInputValue: item.actualVolumeInputValue,
+                                volumeInputUnit: item.actualVolumeInputUnit,
+                            })
+                            : 'Belum final'}
+                    </div>
+                </td>
+                {canAppendCargoToDo && (
+                    <td>
+                        {isDeliveryOrderItemEditable(item) ? (
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => openCargoEditModal(item)}
+                                    disabled={Boolean(removingCargoItemId) || savingCargo}
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => void removeCargoItem(item._id, item.orderItemDescription || 'barang ini')}
+                                    disabled={Boolean(removingCargoItemId) || savingCargo}
+                                >
+                                    {removingCargoItemId === item._id ? 'Menghapus...' : 'Hapus'}
+                                </button>
+                            </div>
+                        ) : editableCargoItemMap[item._id] ? (
+                            <span className="text-muted text-sm">SJ delivered</span>
+                        ) : (
+                            <span className="text-muted text-sm">-</span>
+                        )}
+                    </td>
+                )}
+            </tr>
+        );
+    };
 
     return (
         <div>
@@ -5534,7 +5668,7 @@ export default function TripDetailPage() {
                         )}
                         {linkedTripCashBonNumber && (
                             <div className="text-muted text-sm">
-                            Trip ini sudah terhubung ke uang jalan trip {linkedTripCashBonNumber}. Armada trip dan upah trip dikunci supaya settlement tidak berubah diam-diam.
+                            Trip ini sudah terhubung ke uang jalan trip {linkedTripCashBonNumber}. Armada trip dan upah trip dikunci supaya penyelesaian uang jalan tidak berubah diam-diam.
                             </div>
                         )}
                     </div>
@@ -5626,7 +5760,7 @@ export default function TripDetailPage() {
                                         )}
                                     </div>
                                     <div className="detail-item">
-                                        <div className="detail-label">Net Settlement Akhir</div>
+                                        <div className="detail-label">{linkedVoucherSettlementDisplay?.label || 'Penyelesaian Uang Jalan'}</div>
                                         <div
                                             className="detail-value"
                                             style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}
@@ -5634,9 +5768,7 @@ export default function TripDetailPage() {
                                             {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
                                         </div>
                                         <div className="text-muted text-sm">
-                                            {linkedVoucherSummary.balance >= 0
-                                                ? 'Kembali ke perusahaan setelah biaya dan upah diperhitungkan'
-                                                : 'Tambahan bayar ke supir setelah biaya dan upah diperhitungkan'}
+                                            {linkedVoucherSettlementDisplay?.description || ''}
                                         </div>
                                     </div>
                                 </div>
@@ -5666,7 +5798,7 @@ export default function TripDetailPage() {
                                     </div>
                                 </div>
                                 <div className="text-muted text-sm">
-                                    Trip ini sudah punya uang jalan trip. Armada dan upah borongan dikunci agar settlement tidak berubah diam-diam.
+                                    Trip ini sudah punya uang jalan trip. Armada dan upah borongan dikunci agar penyelesaian uang jalan tidak berubah diam-diam.
                                 </div>
                             </div>
                         ) : (
@@ -6216,12 +6348,12 @@ export default function TripDetailPage() {
                             )}
                             {linkedTripCashBonNumber && (
                                 <div className="text-muted text-sm">
-                                    Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedTripCashBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
+                                    Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedTripCashBonNumber}. Untuk menjaga penyelesaian uang jalan tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
                                 </div>
                             )}
                             {settledVoucherNeedsManualAdjustment && (
                                 <div className="text-muted text-sm">
-                                    Bon {linkedTripCashBonNumber || linkedVoucher?.bonNumber} sudah settle. Tambahan overtonase hanya tercermin di DO ini dan tidak mengubah settlement lama secara otomatis.
+                                    Bon {linkedTripCashBonNumber || linkedVoucher?.bonNumber} sudah selesai. Tambahan overtonase hanya tercermin di DO ini dan tidak mengubah penyelesaian uang jalan lama secara otomatis.
                                 </div>
                             )}
                         </div>
@@ -6326,164 +6458,85 @@ export default function TripDetailPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
-                        {cargoGroups.length > 1 && (
-                            <div className="trip-cargo-group-list">
-                                {cargoGroups.map(group => (
-                                    <div key={group.key} className="trip-cargo-group-card">
-                                        <div className="trip-cargo-group-grid">
-                                            <div className="trip-cargo-group-cell">
-                                                <div className="detail-label">SJ Pengirim</div>
-                                                <div className="detail-value font-mono">{group.shipperReferenceNumber}</div>
-                                            </div>
-                                            <div className="trip-cargo-group-cell">
-                                                <div className="detail-label">Pickup</div>
-                                                <div className="detail-value">{group.pickupLabel || '-'}</div>
-                                                {group.pickupAddress && (
-                                                    <div className="text-muted text-sm">{group.pickupAddress}</div>
-                                                )}
-                                            </div>
-                                            <div className="trip-cargo-group-cell">
-                                                <div className="detail-label">Ringkasan</div>
-                                                <div className="detail-value">
-                                                    {formatCargoSummary({
-                                                        qtyKoli: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0), 0),
-                                                        weightKg: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0), 0),
-                                                        volumeM3: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
-                                                    })}
+                    <div className="card-body">
+                        <div className="trip-sj-accordion-list">
+                            {cargoGroups.map(group => {
+                                const statusDetails = group.document
+                                    ? getSuratJalanOperationalStatus(group.document.referenceKey)
+                                    : { status: displayTripStatus, meta: displayStatusMeta };
+                                const plannedSummary = formatCargoSummary({
+                                    qtyKoli: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0), 0),
+                                    weightKg: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0), 0),
+                                    volumeM3: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
+                                });
+                                const hasActualFinal = group.items.some(item =>
+                                    item.actualQtyKoli !== undefined ||
+                                    item.actualWeightKg !== undefined ||
+                                    item.actualVolumeM3 !== undefined
+                                );
+                                const actualSummary = hasActualFinal
+                                    ? formatCargoSummary({
+                                        qtyKoli: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? 0), 0),
+                                        weightKg: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? 0), 0),
+                                        volumeM3: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
+                                    })
+                                    : 'Belum final';
+                                const displayReferenceNumber = group.document
+                                    ? formatSuratJalanDisplayNumber(group.document.suratJalanNumber, group.document)
+                                    : group.shipperReferenceNumber;
+                                return (
+                                    <details key={group.key} className="trip-sj-accordion" open>
+                                        <summary className="trip-sj-accordion-summary">
+                                            <div className="trip-sj-accordion-title-row">
+                                                <div>
+                                                    <div className="detail-label">Surat Jalan</div>
+                                                    <div className="detail-value font-mono">{displayReferenceNumber}</div>
                                                 </div>
+                                                <span className={`badge badge-${statusDetails.meta.color}`}>
+                                                    <span className="badge-dot" /> {statusDetails.meta.label}
+                                                </span>
                                             </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    <div className="table-wrapper">
-                        <table className="trip-cargo-table">
-                            <colgroup>
-                                <col className="trip-cargo-table-sj" />
-                                <col className="trip-cargo-table-pickup" />
-                                <col className="trip-cargo-table-description" />
-                                <col className="trip-cargo-table-koli" />
-                                <col className="trip-cargo-table-summary" />
-                                {canAppendCargoToDo && <col className="trip-cargo-table-actions" />}
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th>SJ Pengirim</th>
-                                    <th>Pickup</th>
-                                    <th>Deskripsi</th>
-                                    <th>Koli</th>
-                                    <th>Muatan</th>
-                                    {canAppendCargoToDo && <th>Aksi</th>}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {doItems.map(item => {
-                                    const holdContinuationPickups = getItemHoldContinuationPickups(item);
-                                    return (
-                                    <tr key={item._id}>
-                                        <td>
-                                            <div className="font-mono">{item.shipperReferenceNumber || doData.customerDoNumber || '-'}</div>
-                                        </td>
-                                        <td>
-                                            <div className="font-medium">
-                                                {item.pickupStopKey && pickupStopMap.get(item.pickupStopKey)
-                                                    ? formatPickupStopDisplayName(pickupStopMap.get(item.pickupStopKey)!)
-                                                    : item.pickupAddress || '-'}
+                                            <div className="trip-sj-accordion-meta">
+                                                <span>{group.items.length} item</span>
+                                                <span>Rencana: {plannedSummary}</span>
+                                                <span>Aktual: {actualSummary}</span>
+                                                <span>Pickup: {group.pickupLabels.length > 0 ? group.pickupLabels.join(', ') : '-'}</span>
                                             </div>
-                                            <div className="text-muted text-xs">{item.pickupAddress || pickupStopMap.get(item.pickupStopKey || '')?.pickupAddress || '-'}</div>
-                                            {holdContinuationPickups.length > 0 && (
-                                                <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
-                                                    Pickup tambahan hold: {holdContinuationPickups.join(', ')}
+                                            {group.pickupAddresses.length > 0 && (
+                                                <div className="text-muted text-xs">
+                                                    {group.pickupAddresses.join(' | ')}
                                                 </div>
                                             )}
-                                        </td>
-                                        <td>
-                                            {(() => {
-                                                const identity = getDeliveryOrderItemIdentity(item);
-                                                return (
-                                                    <>
-                                                        <div className="font-mono text-xs text-muted">{identity.code || '-'}</div>
-                                                        <div className="font-medium">{identity.name || item.orderItemDescription || '-'}</div>
-                                                    </>
-                                                );
-                                            })()}
-                                        </td>
-                                        <td>
-                                            <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
-                                            <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
-                                            <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
-                                            <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                                {item.actualQtyKoli !== undefined
-                                                    ? `${item.actualQtyKoli} koli`
-                                                    : item.orderItemQtyKoli && item.orderItemQtyKoli > 0
-                                                        ? 'Belum final'
-                                                        : '-'}
+                                        </summary>
+                                        <div className="trip-sj-accordion-body">
+                                            <div className="table-wrapper">
+                                                <table className="trip-cargo-table">
+                                                    <colgroup>
+                                                        <col className="trip-cargo-table-pickup" />
+                                                        <col className="trip-cargo-table-description" />
+                                                        <col className="trip-cargo-table-koli" />
+                                                        <col className="trip-cargo-table-summary" />
+                                                        {canAppendCargoToDo && <col className="trip-cargo-table-actions" />}
+                                                    </colgroup>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Pickup</th>
+                                                            <th>Deskripsi</th>
+                                                            <th>Koli</th>
+                                                            <th>Muatan</th>
+                                                            {canAppendCargoToDo && <th>Aksi</th>}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {group.items.map(renderCargoItemRow)}
+                                                    </tbody>
+                                                </table>
                                             </div>
-                                        </td>
-                                        <td>
-                                            <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
-                                            <div className="font-medium">
-                                                {formatCargoSummary({
-                                                    qtyKoli: item.orderItemQtyKoli,
-                                                    weightKg: item.orderItemWeight,
-                                                    weightInputValue: item.orderItemWeightInputValue,
-                                                    weightInputUnit: item.orderItemWeightInputUnit,
-                                                    volumeM3: item.orderItemVolumeM3,
-                                                    volumeInputValue: item.orderItemVolumeInputValue,
-                                                    volumeInputUnit: item.orderItemVolumeInputUnit,
-                                                })}
-                                            </div>
-                                            <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
-                                            <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                                {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
-                                                    ? formatCargoSummary({
-                                                        qtyKoli: item.actualQtyKoli,
-                                                        weightKg: item.actualWeightKg,
-                                                        weightInputValue: item.actualWeightInputValue,
-                                                        weightInputUnit: item.actualWeightInputUnit,
-                                                        volumeM3: item.actualVolumeM3,
-                                                        volumeInputValue: item.actualVolumeInputValue,
-                                                        volumeInputUnit: item.actualVolumeInputUnit,
-                                                    })
-                                                    : 'Belum final'}
-                                            </div>
-                                        </td>
-                                        {canAppendCargoToDo && (
-                                            <td>
-                                                {isDeliveryOrderItemEditable(item) ? (
-                                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-ghost btn-sm"
-                                                            onClick={() => openCargoEditModal(item)}
-                                                            disabled={Boolean(removingCargoItemId) || savingCargo}
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-ghost btn-sm"
-                                                            onClick={() => void removeCargoItem(item._id, item.orderItemDescription || 'barang ini')}
-                                                            disabled={Boolean(removingCargoItemId) || savingCargo}
-                                                        >
-                                                            {removingCargoItemId === item._id ? 'Menghapus...' : 'Hapus'}
-                                                        </button>
-                                                    </div>
-                                                ) : editableCargoItemMap[item._id] ? (
-                                                    <span className="text-muted text-sm">SJ delivered</span>
-                                                ) : (
-                                                    <span className="text-muted text-sm">-</span>
-                                                )}
-                                            </td>
-                                        )}
-                                    </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                        </div>
+                                    </details>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>
@@ -6644,7 +6697,7 @@ export default function TripDetailPage() {
 
                             {linkedVoucher?.status === 'SETTLED' ? (
                                 <div className="alert alert-warning" style={{ marginTop: '0.85rem' }}>
-                                    Uang Jalan Trip sudah selesai. Perubahan ini menyimpan overtonase di trip, tapi settlement lama tidak otomatis berubah.
+                                    Uang Jalan Trip sudah selesai. Perubahan ini menyimpan overtonase di trip, tapi penyelesaian uang jalan lama tidak otomatis berubah.
                                 </div>
                             ) : linkedVoucher ? (
                                 <div className="alert alert-info" style={{ marginTop: '0.85rem' }}>
@@ -7012,7 +7065,7 @@ export default function TripDetailPage() {
                                         <div className="font-semibold">{formatCurrency(linkedVoucherSummary.driverFeeAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Net Settlement Akhir</div>
+                                        <div className="text-muted text-sm">{linkedVoucherSettlementDisplay?.label || 'Penyelesaian Uang Jalan'}</div>
                                         <div className="font-semibold" style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                                             {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
                                         </div>
@@ -7030,7 +7083,7 @@ export default function TripDetailPage() {
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rekening / Kas Settlement {linkedVoucherSummary.balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <label className="form-label">{linkedVoucherSettlementDisplay?.bankFieldLabel || 'Rekening / Kas Penyelesaian'} {linkedVoucherSummary.balance !== 0 ? <span className="required">*</span> : null}</label>
                                 <select
                                     className="form-select"
                                     value={tripCashSettlementBankRef}
@@ -7052,7 +7105,7 @@ export default function TripDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(linkedVoucherSummary.operationalBalance)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>- {formatCurrency(linkedVoucherSummary.driverFeeAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.5rem' }}>
-                                    <span>Net Settlement Akhir</span>
+                                    <span>{linkedVoucherSettlementDisplay?.label || 'Penyelesaian Uang Jalan'}</span>
                                     <strong style={{ color: linkedVoucherSummary.balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(linkedVoucherSummary.balance))}</strong>
                                 </div>
                             </div>
@@ -7137,7 +7190,7 @@ export default function TripDetailPage() {
                                 </div>
                             )}
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>
-                                Perubahan armada hanya diizinkan saat status trip masih <strong>Dibuat</strong> dan belum masuk uang jalan / settlement trip.
+                                Perubahan armada hanya diizinkan saat status trip masih <strong>Dibuat</strong> dan belum masuk uang jalan / penyelesaian trip.
                             </div>
                         </div>
                         <div className="modal-footer">

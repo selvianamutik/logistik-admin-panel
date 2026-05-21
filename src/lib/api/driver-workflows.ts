@@ -466,7 +466,7 @@ export async function handleDriverBoronganCreate(
             const duplicateVoucher = existingVoucherTrips[0];
             return NextResponse.json(
                 {
-                    error: `DO ${duplicateVoucher.doNumber || ''} sudah memakai settlement trip di bon ${duplicateVoucher.bonNumber || ''}. Jangan dobel lewat slip borongan.`,
+                    error: `DO ${duplicateVoucher.doNumber || ''} sudah memakai penyelesaian uang jalan di bon ${duplicateVoucher.bonNumber || ''}. Jangan dobel lewat slip borongan.`,
                 },
                 { status: 409 }
             );
@@ -1015,7 +1015,7 @@ export async function handleDriverVoucherCreate(
     ))[0] || null;
     if (existingVoucher) {
         return NextResponse.json(
-            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah punya bon ${existingVoucher.bonNumber || ''}. Gunakan satu bon per perjalanan agar settlement tidak bercampur.` },
+            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah punya bon ${existingVoucher.bonNumber || ''}. Gunakan satu bon per perjalanan agar penyelesaian uang jalan tidak bercampur.` },
             { status: 409 }
         );
     }
@@ -1026,7 +1026,7 @@ export async function handleDriverVoucherCreate(
     ))[0] || null;
     if (existingBoronganItem) {
         return NextResponse.json(
-            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Trip ini harus settle lewat uang jalan trip, bukan dobel.` },
+            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Trip ini harus diselesaikan lewat Uang Jalan Trip, bukan dobel.` },
             { status: 409 }
         );
     }
@@ -1200,7 +1200,7 @@ export async function handleDriverVoucherTopUp(
     const state = await getDriverVoucherState(voucherId);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa ditambah lagi' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa ditambah lagi' }, { status: 409 });
     }
     const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
         state.voucher,
@@ -1346,7 +1346,7 @@ export async function handleDriverVoucherItemCreate(
     const state = await getDriverVoucherState(voucherRef);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa diubah' }, { status: 409 });
     }
     const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
         state.voucher,
@@ -1436,7 +1436,7 @@ export async function handleDriverVoucherItemUpdate(
     const state = await getDriverVoucherState(initialItem.voucherRef);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa diubah' }, { status: 409 });
     }
     const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
         state.voucher,
@@ -1510,7 +1510,7 @@ export async function handleDriverVoucherItemDelete(
     const state = await getDriverVoucherState(initialItem.voucherRef);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa diubah' }, { status: 409 });
     }
 
     const deletedItem = state.items.find(existing => existing._id === itemId);
@@ -1586,7 +1586,7 @@ export async function handleDriverVoucherDisbursementDelete(
     const state = await getDriverVoucherState(initialDisbursement.voucherRef);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa dikoreksi' }, { status: 409 });
     }
 
     const disbursement = state.disbursements.find(existing => existing._id === disbursementId);
@@ -1672,7 +1672,7 @@ export async function handleDriverVoucherDisbursementDelete(
         voidedAt: new Date().toISOString(),
         voidedBy: session._id,
         voidedByName: session.name,
-        voidReason: 'Tambahan bon dibatalkan sebelum settlement',
+        voidReason: 'Tambahan bon dibatalkan sebelum penyelesaian',
         reversalBankTransactionRef,
     }, 'driverVoucherDisbursement');
 
@@ -1755,7 +1755,7 @@ export async function handleDriverVoucherDisbursementUpdate(
     const state = await getDriverVoucherState(initialDisbursement.voucherRef);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon yang sudah selesai tidak bisa dikoreksi' }, { status: 409 });
     }
     const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
         state.voucher,
@@ -1949,7 +1949,7 @@ export async function handleDriverVoucherSettlement(
         typeof data.date === 'string' && data.date
             ? data.date
             : getBusinessDateValue();
-    const settledDateError = validateIsoDateOrResponse(settledDate, 'Tanggal settlement', 'Tanggal settlement tidak valid');
+    const settledDateError = validateIsoDateOrResponse(settledDate, 'Tanggal penyelesaian', 'Tanggal penyelesaian tidak valid');
     if (settledDateError) {
         return settledDateError;
     }
@@ -1957,11 +1957,11 @@ export async function handleDriverVoucherSettlement(
     const state = await getDriverVoucherState(voucherId);
     if ('error' in state) return state.error;
     if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
+        return NextResponse.json({ error: 'Bon supir ini sudah selesai' }, { status: 409 });
     }
     const cancelledTripError = await rejectIfVoucherDeliveryOrderCancelled(
         state.voucher,
-        'Settlement uang jalan trip'
+        'Penyelesaian uang jalan trip'
     );
     if (cancelledTripError) return cancelledTripError;
     const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 });
@@ -1976,7 +1976,7 @@ export async function handleDriverVoucherSettlement(
         ))[0] || null;
         if (existingBoronganItem) {
             return NextResponse.json(
-                { error: `DO ${existingBoronganItem.doNumber || state.voucher.deliveryOrderRef} sudah ada di slip borongan. Trip ini tidak boleh settle di dua workflow.` },
+                { error: `DO ${existingBoronganItem.doNumber || state.voucher.deliveryOrderRef} sudah ada di slip borongan. Trip ini tidak boleh diselesaikan di dua workflow.` },
                 { status: 409 }
             );
         }
@@ -2004,7 +2004,7 @@ export async function handleDriverVoucherSettlement(
 
     if (balance !== 0) {
         if (!settlementBankRef) {
-            return NextResponse.json({ error: 'Rekening settlement wajib dipilih untuk net settlement akhir' }, { status: 400 });
+            return NextResponse.json({ error: 'Rekening penyelesaian uang jalan wajib dipilih' }, { status: 400 });
         }
 
         settlementBank = await getLedgerAccount(settlementBankRef);
@@ -2012,8 +2012,8 @@ export async function handleDriverVoucherSettlement(
             return NextResponse.json(
                 {
                     error: requestedSettlementBankRef
-                        ? 'Rekening settlement tidak ditemukan'
-                        : 'Pilih rekening settlement aktif untuk penyelesaian akhir',
+                        ? 'Rekening penyelesaian uang jalan tidak ditemukan'
+                        : 'Pilih rekening penyelesaian uang jalan yang aktif',
                 },
                 { status: requestedSettlementBankRef ? 404 : 400 }
             );
@@ -2078,7 +2078,7 @@ export async function handleDriverVoucherSettlement(
                 date: settledDate,
                 amount: driverFeeAmount,
                 description: driverFeeDescription,
-                note: `Settlement uang jalan trip ${state.voucher.bonNumber}`,
+                note: `Penyelesaian uang jalan trip ${state.voucher.bonNumber}`,
                 privacyLevel: 'internal',
                 relatedVehicleRef: state.voucher.vehicleRef,
                 relatedVehiclePlate: state.voucher.vehiclePlate,
@@ -2107,7 +2107,7 @@ export async function handleDriverVoucherSettlement(
         if (!alreadyPostedSettlementTransaction && balance < 0 && nextBankBalance < 0) {
             const { startingBalance } = computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount);
             return NextResponse.json(
-                { error: `Saldo ${settlementBank.bankName} tidak cukup untuk settlement bon. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${settlementBank.bankName} tidak cukup untuk penyelesaian uang jalan. Saldo tersedia ${startingBalance}` },
                 { status: 409 }
             );
         }
@@ -2157,7 +2157,7 @@ export async function handleDriverVoucherSettlement(
     };
     await postDriverVoucherSettlementJournal(session, updatedVoucher, settlementBank);
 
-    await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
+    await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir selesai: ${state.voucher.bonNumber}`);
     return NextResponse.json({ data: updatedVoucher });
 }
 

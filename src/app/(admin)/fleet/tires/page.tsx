@@ -572,6 +572,10 @@ export default function TiresPage() {
         if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
+        if (!form.linkedWarehouseItemRef) {
+            addToast('error', 'Pilih master barang gudang untuk referensi aset ban');
+            return;
+        }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
         if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
         if (!editTarget && form.holderType === 'INTERNAL_VEHICLE' && availableSlotCount <= 0) {
@@ -1043,7 +1047,7 @@ export default function TiresPage() {
                                         onChange={e => updateLinkedWarehouseItemRef(e.target.value)}
                                         disabled={saving || linkedWarehouseItemLocked}
                                     >
-                                        <option value="">Tidak dihubungkan (ban mandiri)</option>
+                                        <option value="">Pilih master barang gudang</option>
                                         {trackedTireItems.map(item => (
                                             <option key={item._id} value={item._id}>
                                                 {item.itemCode} - {item.name}
@@ -1052,15 +1056,15 @@ export default function TiresPage() {
                                     </select>
                                     <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
                                         {form.holderType === 'INTERNAL_VEHICLE'
-                                            ? 'Opsional. Hubungkan ke master barang hanya jika ban ini memang berasal dari stok gudang tertracking.'
-                                            : 'Opsional. Jika dihubungkan, stok gudang ban tertracking ikut tersinkron; jika kosong, ban dicatat mandiri tanpa stok master barang.'}
+                                            ? 'Wajib. Ban unit harus terhubung ke master barang ban tertracking agar histori aset dan sumber inventory tetap satu.'
+                                            : 'Wajib. Ban baru di Gudang Ban harus terhubung ke master barang agar stok gudang ban tertracking ikut tersinkron.'}
                                     </div>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Mode Tracking</label>
                                     <input
                                         className="form-input"
-                                        value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Ban mandiri'}
+                                        value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Belum terkait stok'}
                                         readOnly
                                     />
                                 </div>

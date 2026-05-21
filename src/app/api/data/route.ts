@@ -77,7 +77,9 @@ import {
     handleIncidentCreate,
     handleIncidentSettlementLineCreate,
     handleIncidentSettlementLineDelete,
+    handleIncidentSettlementLineMaintenanceFollowUpCreate,
     handleIncidentSettlementLineStatusUpdate,
+    handleIncidentSettlementLineTireFollowUpCreate,
     handleIncidentSettlementLineUpdate,
     handleIncidentStatusUpdate,
 } from '@/lib/api/operations-workflows';
@@ -283,6 +285,8 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'mark-paid' ||
         action === 'void' ||
         action === 'end-early' ||
+        action === 'create-tire-follow-up' ||
+        action === 'create-maintenance-follow-up' ||
         action === 'complete-with-materials'
         || action === 'install-to-slot'
     ) {
@@ -1584,6 +1588,14 @@ export async function POST(request: Request) {
 
         if (entity === 'incident-settlement-lines' && action === 'set-status') {
             return await handleIncidentSettlementLineStatusUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'incident-settlement-lines' && action === 'create-tire-follow-up') {
+            return await handleIncidentSettlementLineTireFollowUpCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'incident-settlement-lines' && action === 'create-maintenance-follow-up') {
+            return await handleIncidentSettlementLineMaintenanceFollowUpCreate(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'create-with-items') {

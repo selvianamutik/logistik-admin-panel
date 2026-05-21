@@ -648,6 +648,10 @@ export default function VehicleDetailPage() {
     const handleSaveTire = async () => {
         if (editingTire && !tireForm.registeredTireId) { addToast('error', 'Pilih ban sumber untuk mengganti ban lama'); return; }
         if (tireForm.tireSource === 'UNIT' && !tireForm.registeredTireId) { addToast('error', 'Pilih ban dari unit lain'); return; }
+        if (!tireForm.registeredTireId) {
+            addToast('error', 'Pilih ban tertracking dari gudang atau unit sumber. Catat aset ban baru dari halaman Ban terlebih dahulu.');
+            return;
+        }
         if (!tireForm.tireCode.trim()) { addToast('error', 'Isi kode ban'); return; }
         if (!tireForm.tireBrand.trim()) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!tireForm.tireSize.trim()) { addToast('error', 'Isi ukuran ban'); return; }
@@ -1313,26 +1317,32 @@ export default function VehicleDetailPage() {
                                                 </option>
                                         ))}
                                         </select>
-                                        {availableRegisteredTires.length === 0 && (
-                                            <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
-                                                {tireForm.tireSource === 'WAREHOUSE'
-                                                    ? 'Tidak ada ban gudang yang tersedia.'
-                                                    : tireForm.sourceVehicleRef
-                                                        ? 'Tidak ada ban di unit sumber yang tersedia.'
-                                                        : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
-                                            </div>
-                                        )}
                                     </div>
-                                    {!editingTire && tireForm.tireSource === 'WAREHOUSE' && !selectedRegisteredTire && (
-                                        <div className="form-group">
-                                            <label className="form-label">Catat Ban Baru</label>
-                                            <input className="form-input" value="Isi detail ban baru di bawah" readOnly />
-                                            <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginTop: '0.4rem' }}>
-                                                Gunakan ini jika ban belum pernah dicatat sebagai aset ban.
+                                </div>
+
+                                {tireForm.tireSource === 'WAREHOUSE' && availableRegisteredTires.length === 0 && (
+                                    <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                        <div className="info-banner-title">Belum Ada Ban Tertracking Siap Pasang</div>
+                                        <div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}>
+                                            <div>
+                                                Catat atau terima aset ban tertracking dulu dari halaman Ban atau pembelian inventory. Setelah ban berada di Gudang Ban, ban akan muncul di pilihan ini.
+                                            </div>
+                                            <div>
+                                                <Link href="/fleet/tires" className="btn btn-secondary" style={{ width: 'fit-content' }}>
+                                                    <Disc3 size={14} /> Buka Halaman Ban
+                                                </Link>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
+
+                                {tireForm.tireSource === 'UNIT' && availableRegisteredTires.length === 0 && (
+                                    <div style={{ fontSize: '0.76rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
+                                        {tireForm.sourceVehicleRef
+                                            ? 'Tidak ada ban di unit sumber yang tersedia.'
+                                            : 'Pilih unit sumber untuk melihat ban yang tersedia.'}
+                                    </div>
+                                )}
 
                                 {editingTire && (
                                     <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
@@ -1360,11 +1370,11 @@ export default function VehicleDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Kode Ban</label>
-                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire || registeredTireDetailLocked} />
+                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire || !selectedRegisteredTire || registeredTireDetailLocked} />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Harga Ban / Original Cost</label>
-                                        <FormattedNumberInput allowDecimal={false} value={tireForm.originalCost} onValueChange={value => updateTireForm('originalCost', value)} disabled={savingTire || registeredTireDetailLocked} />
+                                        <FormattedNumberInput allowDecimal={false} value={tireForm.originalCost} onValueChange={value => updateTireForm('originalCost', value)} disabled={savingTire || !selectedRegisteredTire || registeredTireDetailLocked} />
                                     </div>
                                 </div>
 
@@ -1372,7 +1382,7 @@ export default function VehicleDetailPage() {
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Total Pemakaian (%)</label>
-                                            <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.totalUsedPercent} onValueChange={value => updateTireForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} disabled={savingTire || requiresSourceTireUsagePercent || registeredTireDetailLocked} />
+                                            <FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireForm.totalUsedPercent} onValueChange={value => updateTireForm('totalUsedPercent', Math.min(Math.max(value, 0), 100))} disabled={savingTire || !selectedRegisteredTire || requiresSourceTireUsagePercent || registeredTireDetailLocked} />
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Sisa Nilai Saat Ini</label>
@@ -1435,7 +1445,7 @@ export default function VehicleDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Jenis Ban</label>
-                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || registeredTireDetailLocked}>
+                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || !selectedRegisteredTire || registeredTireDetailLocked}>
                                             {VEHICLE_TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </div>
@@ -1448,11 +1458,11 @@ export default function VehicleDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Merk / Model Ban</label>
-                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire || registeredTireDetailLocked} />
+                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire || !selectedRegisteredTire || registeredTireDetailLocked} />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Ukuran</label>
-                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire || registeredTireDetailLocked} />
+                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire || !selectedRegisteredTire || registeredTireDetailLocked} />
                                     </div>
                                 </div>
 

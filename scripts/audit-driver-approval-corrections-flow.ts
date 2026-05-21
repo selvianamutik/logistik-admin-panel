@@ -547,7 +547,7 @@ async function main() {
         const sjBRef = getSuratJalanRef(state.deliveryOrderId, initialDocs, sjB);
 
         auditStep('admin majukan kedua SJ sampai ARRIVED sebagai dasar finalisasi driver');
-        for (const status of ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']) {
+        for (const status of ['ON_DELIVERY', 'ARRIVED']) {
             await postData(adminCookie, {
                 entity: 'delivery-orders',
                 action: 'set-surat-jalan-status-batch',

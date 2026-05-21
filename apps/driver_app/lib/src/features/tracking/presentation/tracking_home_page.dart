@@ -394,11 +394,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   TripStatus? _preferredSuratJalanStatus(DeliveryTrip trip) {
     return switch (trip.status) {
-      TripStatus.assigned => TripStatus.headingToPickup,
+      TripStatus.assigned => TripStatus.onDelivery,
       TripStatus.headingToPickup => TripStatus.onDelivery,
       TripStatus.onDelivery => TripStatus.arrived,
       TripStatus.arrived => TripStatus.delivered,
-      TripStatus.partialHold => TripStatus.headingToPickup,
+      TripStatus.partialHold => TripStatus.onDelivery,
       TripStatus.delivered => null,
     };
   }
@@ -442,9 +442,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   ) {
     final currentStatus = _referenceStatusForBatch(trip, reference);
     return switch (nextStatus) {
-      TripStatus.headingToPickup =>
-        currentStatus == 'CREATED' || currentStatus == 'PARTIAL_HOLD',
-      TripStatus.onDelivery => currentStatus == 'HEADING_TO_PICKUP',
+      TripStatus.headingToPickup => false,
+      TripStatus.onDelivery =>
+        currentStatus == 'CREATED' ||
+            currentStatus == 'HEADING_TO_PICKUP' ||
+            currentStatus == 'PARTIAL_HOLD',
       TripStatus.arrived => currentStatus == 'ON_DELIVERY',
       TripStatus.delivered =>
         reference.canRequestFinalization && currentStatus == 'ARRIVED',
@@ -482,7 +484,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   List<TripStatus> _availableSuratJalanStatuses(DeliveryTrip trip) {
     const orderedStatuses = [
-      TripStatus.headingToPickup,
       TripStatus.onDelivery,
       TripStatus.arrived,
       TripStatus.delivered,
@@ -1981,7 +1982,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   String _statusNoteForUpdate(TripStatus status) {
     return switch (status) {
       TripStatus.headingToPickup =>
-        'Driver mulai bergerak ke pickup via driver app',
+        'Driver menyiapkan perjalanan via driver app',
       TripStatus.onDelivery => 'Pengiriman dimulai via driver app',
       TripStatus.arrived => 'Driver menandai sudah tiba via driver app',
       TripStatus.partialHold =>
@@ -2640,12 +2641,82 @@ String _textOrDash(String? value) {
   return trimmed == null || trimmed.isEmpty ? '-' : trimmed;
 }
 
+String _normalizeManifestReference(String? value) =>
+    (value ?? '').trim().toUpperCase();
+
+bool _manifestCargoMatchesReference(
+  DeliveryCargoItem item,
+  DeliveryShipperReference reference,
+) {
+  final itemKey = (item.shipperReferenceKey ?? '').trim();
+  final referenceKey = (reference.key ?? '').trim();
+  if (itemKey.isNotEmpty && referenceKey.isNotEmpty) {
+    return itemKey == referenceKey;
+  }
+
+  final itemNumber = _normalizeManifestReference(item.shipperReferenceNumber);
+  final referenceNumber = _normalizeManifestReference(
+    reference.referenceNumber,
+  );
+  if (itemNumber.isNotEmpty && referenceNumber.isNotEmpty) {
+    return itemNumber == referenceNumber;
+  }
+
+  return itemKey.isEmpty &&
+      itemNumber.isEmpty &&
+      referenceKey.isEmpty &&
+      referenceNumber.isEmpty;
+}
+
+String _formatManifestNumber(num value, {int fractionDigits = 2}) {
+  final digits = value == value.roundToDouble() ? 0 : fractionDigits;
+  return formatMobileNumberValue(value.toDouble(), fractionDigits: digits);
+}
+
+String _formatManifestUnit(String? value, String fallback) {
+  final normalized = (value ?? fallback).trim().toUpperCase();
+  if (normalized == 'M3') return 'm3';
+  return normalized.toLowerCase();
+}
+
+String _formatManifestCargoSummary({
+  num? qtyKoli,
+  num? weightKg,
+  num? volumeM3,
+  num? weightInputValue,
+  String? weightInputUnit,
+  num? volumeInputValue,
+  String? volumeInputUnit,
+}) {
+  final parts = <String>[];
+  if (qtyKoli != null && qtyKoli > 0) {
+    parts.add('${_formatManifestNumber(qtyKoli)} koli');
+  }
+
+  final displayWeight = weightInputValue ?? weightKg;
+  if (displayWeight != null && displayWeight > 0) {
+    parts.add(
+      '${_formatManifestNumber(displayWeight)} ${_formatManifestUnit(weightInputUnit, 'KG')}',
+    );
+  }
+
+  final displayVolume = volumeInputValue ?? volumeM3;
+  if (displayVolume != null && displayVolume > 0) {
+    parts.add(
+      '${_formatManifestNumber(displayVolume, fractionDigits: 3)} ${_formatManifestUnit(volumeInputUnit, 'M3')}',
+    );
+  }
+
+  return parts.isEmpty ? '-' : parts.join(' | ');
+}
+
 String _voucherDisbursementLabel(
   DriverTripVoucherDisbursement disbursement,
-  int topUpSequence,
+  int sequence,
 ) {
-  if (disbursement.kind == 'INITIAL') return 'Pencairan awal';
-  if (disbursement.kind == 'TOP_UP') return 'Top up ke-$topUpSequence';
+  if (disbursement.kind == 'INITIAL' || disbursement.kind == 'TOP_UP') {
+    return formatDriverTripVoucherBonLabel(sequence);
+  }
   return disbursement.kind;
 }
 
@@ -2787,8 +2858,8 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
                     _formatRupiah(voucher.driverFeeAmount),
                   ),
                   _pdfKeyValue(
-                    'Net Settlement',
-                    '${voucher.netSettlementAmount < 0 ? '-' : ''}${_formatRupiah(voucher.netSettlementAmount.abs())}',
+                    voucher.settlementDisplayLabel,
+                    _formatRupiah(voucher.netSettlementAmount.abs()),
                   ),
                 ],
               ),
@@ -2824,18 +2895,16 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
               _pdfTableRow(['-', '-', 'Belum ada riwayat bon', '-', '-', '-'])
             else
               ...(() {
-                var topUpSequence = 0;
-                return disbursements.indexed.map((entry) {
-                  final index = entry.$1;
-                  final item = entry.$2;
-                  if (item.kind == 'TOP_UP') topUpSequence += 1;
-                  return _pdfTableRow([
-                    '${index + 1}',
-                    _formatDateText(item.date),
-                    _voucherDisbursementLabel(item, topUpSequence),
-                    _textOrDash(item.bankAccountName),
-                    _textOrDash(item.note),
-                    _formatRupiah(item.amount),
+                  return disbursements.indexed.map((entry) {
+                    final index = entry.$1;
+                    final item = entry.$2;
+                    return _pdfTableRow([
+                      '${index + 1}',
+                      _formatDateText(item.date),
+                      _voucherDisbursementLabel(item, index + 1),
+                      _textOrDash(item.bankAccountName),
+                      _textOrDash(item.note),
+                      _formatRupiah(item.amount),
                   ]);
                 });
               })(),
@@ -3208,7 +3277,7 @@ class _DriverVoucherCard extends StatelessWidget {
                   value: _formatRupiah(voucher.driverFeeAmount),
                 ),
                 _VoucherInfoItem(
-                  label: 'Settlement',
+                  label: voucher.settlementDisplayLabel,
                   value: _formatRupiah(voucher.netSettlementAmount.abs()),
                   color: settlementColor,
                   caption: voucher.settlementLabel,
@@ -3431,9 +3500,8 @@ class _DriverVoucherPreviewDialog extends StatelessWidget {
                       value: _formatRupiah(voucher.driverFeeAmount),
                     ),
                     _VoucherSummaryLine(
-                      label: 'Net settlement akhir',
-                      value:
-                          '${voucher.netSettlementAmount < 0 ? '-' : ''}${_formatRupiah(voucher.netSettlementAmount.abs())}',
+                      label: voucher.settlementDisplayLabel,
+                      value: _formatRupiah(voucher.netSettlementAmount.abs()),
                     ),
                     const SizedBox(height: 18),
                     _VoucherHistorySection(voucher: voucher),
@@ -3522,11 +3590,11 @@ class _VoucherHistorySection extends StatelessWidget {
           )
         else
           ...(() {
-            var topUpSequence = 0;
-            return voucher.disbursements.map((item) {
-              if (item.kind == 'TOP_UP') topUpSequence += 1;
+            return voucher.disbursements.indexed.map((entry) {
+              final sequence = entry.$1 + 1;
+              final item = entry.$2;
               return _VoucherHistoryRow(
-                title: _voucherDisbursementLabel(item, topUpSequence),
+                title: _voucherDisbursementLabel(item, sequence),
                 subtitle:
                     '${_formatDateText(item.date)} | ${_textOrDash(item.bankAccountName)}',
                 amount: _formatRupiah(item.amount),
@@ -3854,6 +3922,13 @@ class _ManifestSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final shipperRefs = trip.shipperReferences;
+    final orphanCargoItems = trip.cargoItems
+        .where(
+          (item) => !shipperRefs.any(
+            (shipperRef) => _manifestCargoMatchesReference(item, shipperRef),
+          ),
+        )
+        .toList(growable: false);
 
     return Card(
       child: Padding(
@@ -3893,7 +3968,7 @@ class _ManifestSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            if (shipperRefs.isEmpty)
+            if (shipperRefs.isEmpty && trip.cargoItems.isEmpty)
               Text(
                 'Belum ada SJ tercatat untuk DO ini.',
                 style: TextStyle(
@@ -3903,76 +3978,37 @@ class _ManifestSummaryCard extends StatelessWidget {
               )
             else
               Column(
-                children: shipperRefs
-                    .map((shipperRef) {
-                      final status =
-                          shipperRef.tripStatus?.trim().isNotEmpty == true
-                          ? shipperRef.tripStatus!.trim()
-                          : deliveryStatusApiValue(trip.status);
-                      final targetLabel = shipperRef.targetLabel.trim();
-                      final pickupAddress =
-                          shipperRef.pickupAddress?.trim() ?? '';
-                      return Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: scheme.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: scheme.outline.withValues(alpha: 0.32),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  shipperRef.referenceNumber,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                _SuratJalanStatusChip(status: status),
-                              ],
-                            ),
-                            if (targetLabel.isNotEmpty &&
-                                targetLabel != '-') ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                targetLabel,
-                                style: TextStyle(
-                                  color: scheme.onSurface.withValues(
-                                    alpha: 0.72,
-                                  ),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                            if (pickupAddress.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                pickupAddress,
-                                style: TextStyle(
-                                  color: scheme.onSurface.withValues(
-                                    alpha: 0.58,
-                                  ),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    })
-                    .toList(growable: false),
+                children: [
+                  ...shipperRefs.map((shipperRef) {
+                    final status =
+                        shipperRef.tripStatus?.trim().isNotEmpty == true
+                        ? shipperRef.tripStatus!.trim()
+                        : deliveryStatusApiValue(trip.status);
+                    final cargoItems = trip.cargoItems
+                        .where(
+                          (item) =>
+                              _manifestCargoMatchesReference(item, shipperRef),
+                        )
+                        .toList(growable: false);
+                    return _ManifestReferenceAccordion(
+                      referenceNumber: shipperRef.referenceNumber,
+                      status: status,
+                      targetLabel: shipperRef.targetLabel.trim(),
+                      pickupAddress: shipperRef.pickupAddress?.trim() ?? '',
+                      cargoItems: cargoItems,
+                      initiallyExpanded: shipperRefs.length <= 2,
+                    );
+                  }),
+                  if (orphanCargoItems.isNotEmpty)
+                    _ManifestReferenceAccordion(
+                      referenceNumber: 'Barang tanpa SJ',
+                      status: deliveryStatusApiValue(trip.status),
+                      targetLabel: '',
+                      pickupAddress: '',
+                      cargoItems: orphanCargoItems,
+                      initiallyExpanded: true,
+                    ),
+                ],
               ),
             const SizedBox(height: 10),
             Text(
@@ -3987,6 +4023,213 @@ class _ManifestSummaryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ManifestReferenceAccordion extends StatelessWidget {
+  const _ManifestReferenceAccordion({
+    required this.referenceNumber,
+    required this.status,
+    required this.targetLabel,
+    required this.pickupAddress,
+    required this.cargoItems,
+    required this.initiallyExpanded,
+  });
+
+  final String referenceNumber;
+  final String status;
+  final String targetLabel;
+  final String pickupAddress;
+  final List<DeliveryCargoItem> cargoItems;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final plannedSummary = _formatManifestCargoSummary(
+      qtyKoli: cargoItems.fold<num>(
+        0,
+        (sum, item) => sum + (item.qtyKoli ?? 0),
+      ),
+      weightKg: cargoItems.fold<num>(
+        0,
+        (sum, item) => sum + (item.weightKg ?? 0),
+      ),
+      volumeM3: cargoItems.fold<num>(
+        0,
+        (sum, item) => sum + (item.volumeM3 ?? 0),
+      ),
+    );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.32)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          title: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                referenceNumber,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              _SuratJalanStatusChip(status: status),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${cargoItems.length} barang | Rencana: $plannedSummary',
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.68),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (targetLabel.isNotEmpty && targetLabel != '-') ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    targetLabel,
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.72),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (pickupAddress.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    pickupAddress,
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.58),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          children: cargoItems.isEmpty
+              ? [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Belum ada barang tercatat untuk SJ ini.',
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.58),
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ]
+              : cargoItems
+                    .map((item) => _ManifestCargoItemTile(item: item))
+                    .toList(growable: false),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManifestCargoItemTile extends StatelessWidget {
+  const _ManifestCargoItemTile({required this.item});
+
+  final DeliveryCargoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final plannedSummary = _formatManifestCargoSummary(
+      qtyKoli: item.qtyKoli,
+      weightKg: item.weightKg,
+      volumeM3: item.volumeM3,
+      weightInputValue: item.weightInputValue,
+      weightInputUnit: item.weightInputUnit,
+      volumeInputValue: item.volumeInputValue,
+      volumeInputUnit: item.volumeInputUnit,
+    );
+    final hasActual =
+        item.actualQtyKoli != null ||
+        item.actualWeightInputValue != null ||
+        item.actualVolumeInputValue != null;
+    final actualSummary = hasActual
+        ? _formatManifestCargoSummary(
+            qtyKoli: item.actualQtyKoli,
+            weightInputValue: item.actualWeightInputValue,
+            weightInputUnit: item.actualWeightInputUnit,
+            volumeInputValue: item.actualVolumeInputValue,
+            volumeInputUnit: item.actualVolumeInputUnit,
+          )
+        : 'Belum final';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.description.trim().isEmpty ? '-' : item.description.trim(),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+          if ((item.pickupAddress ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              item.pickupAddress!.trim(),
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.58),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            'Rencana: $plannedSummary',
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.68),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Aktual final: $actualSummary',
+            style: TextStyle(
+              color: hasActual
+                  ? scheme.primary
+                  : scheme.onSurface.withValues(alpha: 0.5),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -31,7 +31,7 @@ bool deliveryStatusRequiresActiveTracking(TripStatus status) {
 String deliveryStatusLabel(String status) {
   return switch (status.trim().toUpperCase()) {
     'CREATED' => 'Dibuat',
-    'HEADING_TO_PICKUP' => 'Menuju Pickup',
+    'HEADING_TO_PICKUP' => 'Dalam Persiapan',
     'ON_DELIVERY' => 'Dalam Pengiriman',
     'ARRIVED' => 'Tiba di Tujuan',
     'PARTIAL_HOLD' => 'Terkirim Sebagian / Hold',
@@ -401,10 +401,25 @@ class DriverTripVoucher {
   };
 
   String get settlementLabel {
-    if (netSettlementAmount < 0) return 'Tambahan bayar ke supir';
+    if (netSettlementAmount < 0) return '$settlementDisplayLabel ke supir';
     if (netSettlementAmount > 0) return 'Dikembalikan ke perusahaan';
     return 'Nihil';
   }
+
+  String get settlementDisplayLabel {
+    if (netSettlementAmount < 0) {
+      return '${formatDriverTripVoucherBonLabel(disbursements.length + 1)} Penutupan';
+    }
+    if (netSettlementAmount > 0) return 'Pengembalian Sisa Bon';
+    return 'Penyelesaian Uang Jalan';
+  }
+}
+
+String formatDriverTripVoucherBonLabel(int sequence) {
+  if (sequence <= 1) return 'Bon Pertama';
+  if (sequence == 2) return 'Bon Kedua';
+  if (sequence == 3) return 'Bon Ketiga';
+  return 'Bon Ke-$sequence';
 }
 
 class DriverTripVoucherDisbursement {
@@ -784,7 +799,7 @@ String defaultTripStatusNote(
   }
 
   return switch (status) {
-    TripStatus.headingToPickup => 'Driver menuju pickup',
+    TripStatus.headingToPickup => 'Driver menyiapkan perjalanan',
     TripStatus.onDelivery => 'Pengiriman berjalan',
     TripStatus.arrived => 'Driver sudah tiba',
     TripStatus.partialHold => 'Sebagian muatan hold',

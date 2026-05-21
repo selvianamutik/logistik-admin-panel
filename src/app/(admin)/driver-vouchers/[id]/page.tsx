@@ -14,10 +14,12 @@ import {
     buildDriverVoucherCashBreakdown,
     buildDriverVoucherDetailSummary,
     buildDriverVoucherPrintHtml,
+    buildDriverVoucherSettlementDisplay,
     createDefaultDriverVoucherItemForm,
     createDefaultDriverVoucherTopUpForm,
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
     getDriverVoucherDisbursementLabel,
+    inferDriverVoucherDisbursementCount,
     sortDriverVoucherItems,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
@@ -137,10 +139,16 @@ export default function DriverVoucherDetailPage() {
         balance,
         isSettled,
         statusConfig,
-        settlementLabel,
-        settlementPrimaryLabel,
     } = buildDriverVoucherDetailSummary(voucher, items);
     const cashBreakdown = buildDriverVoucherCashBreakdown(disbursements, { initialCashGiven, topUpAmount });
+    const settlementDisplay = buildDriverVoucherSettlementDisplay({
+        balance,
+        disbursements,
+        fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+            ...(voucher || {}),
+            topUpAmount,
+        }),
+    });
     const routeLabel = formatDriverVoucherRouteForDisplay(voucher?.route) || voucher?.route || '-';
     const linkedDoBaseTripFee =
         linkedDeliveryOrder?.baseTaripBorongan
@@ -563,7 +571,7 @@ export default function DriverVoucherDetailPage() {
             return;
         }
         if (balance !== 0 && !settlementBankRef) {
-            addToast('error', 'Pilih rekening settlement untuk net settlement akhir');
+            addToast('error', 'Pilih rekening penyelesaian uang jalan');
             return;
         }
 
@@ -591,7 +599,7 @@ export default function DriverVoucherDetailPage() {
 
             setVoucher(result.data);
             setShowSettleModal(false);
-            addToast('success', 'Settlement trip selesai');
+            addToast('success', 'Penyelesaian trip selesai');
         } catch {
             addToast('error', 'Gagal menyelesaikan bon');
         } finally {
@@ -728,10 +736,10 @@ export default function DriverVoucherDetailPage() {
                     )}
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Net Settlement Akhir</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{settlementDisplay.label}</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        {balance >= 0 ? 'Kembali ke perusahaan setelah biaya lain-lain dan upah borongan diperhitungkan' : 'Tambahan bayar ke supir setelah biaya lain-lain dan upah borongan diperhitungkan'}
+                        {settlementDisplay.description}
                     </div>
                 </div></div>
             </div>
@@ -752,10 +760,10 @@ export default function DriverVoucherDetailPage() {
                         {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN FINAL DO</div><div>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</div></div>}
                         {linkedDeliveryOrder && linkedDoHasFinalActualWeight && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BERAT AKTUAL FINAL</div><div>{linkedDeliveryOrder.actualTotalWeightKg} kg</div></div>}
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NET SETTLEMENT AKHIR</div><div>{formatCurrency(balance)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>{settlementDisplay.label.toUpperCase()}</div><div>{formatCurrency(balance)}</div></div>
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
                         {isSettled && voucher.settledDate && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TANGGAL SELESAI</div><div>{formatDate(voucher.settledDate)}</div></div>}
-                        {isSettled && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SETTLEMENT</div><div>{voucher.settlementBankName || '-'}</div></div>}
+                        {isSettled && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING PENYELESAIAN</div><div>{voucher.settlementBankName || '-'}</div></div>}
                     </div>
                 </div>
             </CollapsibleCard>
@@ -982,7 +990,7 @@ export default function DriverVoucherDetailPage() {
                                 <div className="text-muted text-sm">
                                     Hitungan otomatis dari muatan aktual saat ini: <strong>{manualOvertonasePendingPreview.automaticOvertonaseWeightKg} kg</strong>.
                                     {!linkedDoHasFinalActualWeight ? ' Muatan aktual belum final, jadi hasil otomatis masih bisa berubah.' : ''}
-                                    {isSettled ? ' Bon ini sudah settle, perubahan akan tersimpan di trip tetapi settlement lama tidak otomatis berubah.' : ''}
+                                    {isSettled ? ' Bon ini sudah selesai, perubahan akan tersimpan di trip tetapi penyelesaian uang jalan lama tidak otomatis berubah.' : ''}
                                 </div>
                             </div>
                         </div>
@@ -1041,7 +1049,7 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Net Settlement Saat Ini</div>
+                                        <div className="text-muted text-sm">Penyelesaian Saat Ini</div>
                                         <div className="font-semibold" style={{ color: balance < 0 ? 'var(--color-danger)' : 'inherit' }}>{formatCurrency(Math.abs(balance))}</div>
                                     </div>
                                 </div>
@@ -1091,7 +1099,7 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Net Settlement Akhir</div>
+                                        <div className="text-muted text-sm">{settlementDisplay.label}</div>
                                         <div className="font-semibold" style={{ color: balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(Math.abs(balance))}</div>
                                     </div>
                                 </div>
@@ -1101,16 +1109,16 @@ export default function DriverVoucherDetailPage() {
                                 <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} disabled={settling} />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rekening / Kas Penyelesaian Akhir {balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <label className="form-label">{settlementDisplay.bankFieldLabel} {balance !== 0 ? <span className="required">*</span> : null}</label>
                                 <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)} disabled={settling}>
                                     <option value="">Pilih rekening atau kas</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
-                                <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>{settlementLabel}</div>
+                                <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>{settlementDisplay.description}</div>
                             </div>
                             <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Pertama</span><strong>{formatCurrency(initialCashGiven)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Bon Tambahan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Bon Tambahan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>{formatCurrency(operationalSpent)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>
@@ -1119,12 +1127,12 @@ export default function DriverVoucherDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
                                 {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan Final DO</span><strong>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</strong></div>}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Klaim Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Net Settlement Akhir</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{settlementDisplay.label}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowSettleModal(false)} disabled={settling}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : settlementPrimaryLabel}</button>
+                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : settlementDisplay.primaryActionLabel}</button>
                         </div>
                     </div>
                 </div>

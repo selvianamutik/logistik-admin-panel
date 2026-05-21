@@ -1188,6 +1188,7 @@ export interface Expense {
   relatedVehiclePlate?: string;
   relatedIncidentRef?: string;
   relatedIncidentSettlementLineRef?: string;
+  incidentExpenseRoute?: IncidentExpenseRoute;
   relatedMaintenanceRef?: string;
   relatedOrderRef?: string;
   relatedOrderNumber?: string;
@@ -1285,6 +1286,10 @@ export interface Maintenance {
   cost?: number;
   source?: 'MANUAL' | 'ODOMETER_AUTO' | 'TIRE_REPLACEMENT';
   relatedDeliveryOrderRef?: string;
+  relatedIncidentRef?: string;
+  relatedIncidentNumber?: string;
+  relatedIncidentSettlementLineRef?: string;
+  relatedIncidentExpenseRef?: string;
   triggerOdometer?: number;
 }
 
@@ -1321,6 +1326,10 @@ export interface TireEvent {
   sourcePurchaseNumber?: string;
   sourcePurchaseItemRef?: string;
   sourceReceiveDate?: string;
+  sourceIncidentRef?: string;
+  sourceIncidentNumber?: string;
+  sourceIncidentSettlementLineRef?: string;
+  sourceIncidentExpenseRef?: string;
   installDate: string;
   replaceDate?: string;
   notes?: string;
@@ -1433,6 +1442,7 @@ export interface IncidentActionLog {
 
 export type IncidentSettlementLineType = 'COST' | 'COMPENSATION' | 'RECOVERY';
 export type IncidentSettlementLineStatus = 'DRAFT' | 'APPROVED' | 'POSTED' | 'VOID';
+export type IncidentExpenseRoute = 'DRIVER_VOUCHER' | 'COMPANY_EXPENSE';
 export type IncidentSettlementRecipientType =
   | 'DRIVER'
   | 'KERNET'
@@ -1483,6 +1493,12 @@ export interface IncidentSettlementLine {
   linkedExpenseAmount?: number;
   linkedExpenseCategoryRef?: string;
   linkedExpenseCategoryName?: string;
+  linkedExpenseRoute?: IncidentExpenseRoute;
+  linkedTireEventRef?: string;
+  linkedTireCode?: string;
+  linkedTireWarehouseItemRef?: string;
+  linkedMaintenanceRef?: string;
+  linkedMaintenanceType?: string;
   postedAt?: string;
   postedBy?: string;
   postedByName?: string;

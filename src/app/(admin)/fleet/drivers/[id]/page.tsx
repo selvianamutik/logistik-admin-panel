@@ -9,7 +9,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { buildDriverScoresQuery, DRIVER_SCORE_TYPE_META, getDriverScoreStatusMeta, getLatestDriverScoreSummary } from '@/lib/driver-scoring-support';
 import { buildDriverAccountMap, isDriverAccountActive, type DriverMobileAccount } from '@/lib/fleet-asset-page-support';
-import { DRIVER_VOUCHER_STATUS_MAP } from '@/lib/driver-voucher-detail-support';
+import { buildDriverVoucherSettlementDisplay, DRIVER_VOUCHER_STATUS_MAP, inferDriverVoucherDisbursementCount } from '@/lib/driver-voucher-detail-support';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { DeliveryOrder, Driver, DriverScore, DriverVoucher } from '@/lib/types';
 import {
@@ -367,7 +367,7 @@ export default function DriverDetailPage() {
                         <>
                             <div className="table-wrapper table-desktop-only">
                                 <table>
-                                    <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Net Settlement</th><th>Status</th></tr></thead>
+                                    <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Penyelesaian Uang Jalan</th><th>Status</th></tr></thead>
                                     <tbody>
                                         {vouchers.length === 0 ? (
                                             <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
@@ -378,8 +378,16 @@ export default function DriverDetailPage() {
                                                 totalSpent,
                                                 operationalBalance,
                                                 driverFeeAmount,
+                                                topUpAmount,
                                                 balance,
                                             } = getDriverVoucherFinancialSummary(item);
+                                            const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                                balance,
+                                                fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                                    ...item,
+                                                    topUpAmount,
+                                                }),
+                                            });
                                             return (
                                                 <tr key={item._id}>
                                                     <td>
@@ -396,6 +404,7 @@ export default function DriverDetailPage() {
                                                     <td>{formatCurrency(driverFeeAmount)}</td>
                                                     <td>
                                                         <div>{formatCurrency(balance)}</div>
+                                                        <div className="text-muted text-sm">{settlementDisplay.label}</div>
                                                         <div className="text-muted text-sm">Sisa bon: {formatCurrency(operationalBalance)}</div>
                                                     </td>
                                                     <td><span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span></td>
@@ -417,6 +426,13 @@ export default function DriverDetailPage() {
                                         balance,
                                         topUpAmount,
                                     } = getDriverVoucherFinancialSummary(item);
+                                    const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                                        balance,
+                                        fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                                            ...item,
+                                            topUpAmount,
+                                        }),
+                                    });
                                     return (
                                         <div key={item._id} className="mobile-record-card">
                                             <div className="mobile-record-header">
@@ -444,7 +460,7 @@ export default function DriverDetailPage() {
                                                     <span className="mobile-record-value">{formatCurrency(driverFeeAmount)}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">
-                                                    <span className="mobile-record-label">Net Settlement</span>
+                                                    <span className="mobile-record-label">{settlementDisplay.label}</span>
                                                     <span className="mobile-record-value">{formatCurrency(balance)}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">

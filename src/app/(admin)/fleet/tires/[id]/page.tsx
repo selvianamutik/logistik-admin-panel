@@ -159,6 +159,7 @@ export default function TireDetailPage() {
         editTargetId: tire._id,
     });
     const selectedLinkedWarehouseItem = trackedTireItems.find(item => item._id === editForm.linkedWarehouseItemRef) || null;
+    const linkedWarehouseItemLocked = Boolean(tire.linkedWarehouseItemRef || tire.sourcePurchaseRef);
     const requiresUsagePercentOnExit = Boolean(
         resolvedEditTire.holderType === 'INTERNAL_VEHICLE' &&
         tire.vehicleRef &&
@@ -202,6 +203,10 @@ export default function TireDetailPage() {
         }
         if (!editForm.tireBrand.trim() || !editForm.tireSize.trim()) {
             addToast('error', 'Merk dan ukuran ban wajib diisi');
+            return;
+        }
+        if (!editForm.linkedWarehouseItemRef) {
+            addToast('error', 'Pilih master barang gudang ban tertracking');
             return;
         }
         if (editForm.holderType === 'INTERNAL_VEHICLE' && !editForm.vehicleRef) {
@@ -393,9 +398,9 @@ export default function TireDetailPage() {
                                         className="form-select"
                                         value={editForm.linkedWarehouseItemRef}
                                         onChange={event => setEditForm(current => ({ ...current, linkedWarehouseItemRef: event.target.value }))}
-                                        disabled={savingEdit}
+                                        disabled={savingEdit || linkedWarehouseItemLocked}
                                     >
-                                        <option value="">Ban mandiri / tidak terkait stok</option>
+                                        <option value="">Pilih master barang ban tertracking</option>
                                         {trackedTireItems.map(item => (
                                             <option key={item._id} value={item._id}>
                                                 {item.itemCode} - {item.name}
@@ -407,7 +412,7 @@ export default function TireDetailPage() {
                                     <label className="form-label">Mode Tracking</label>
                                     <input
                                         className="form-input"
-                                        value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Ban mandiri'}
+                                        value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Belum terkait stok'}
                                         readOnly
                                     />
                                 </div>

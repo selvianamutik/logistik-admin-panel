@@ -711,11 +711,11 @@ export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropD
 
 export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
-        CREATED: ['HEADING_TO_PICKUP'],
+        CREATED: ['ON_DELIVERY'],
         HEADING_TO_PICKUP: ['ON_DELIVERY'],
         ON_DELIVERY: ['ARRIVED'],
         ARRIVED: ['DELIVERED'],
-        PARTIAL_HOLD: ['HEADING_TO_PICKUP'],
+        PARTIAL_HOLD: ['ON_DELIVERY'],
         DELIVERED: [],
     };
     return transitions[current] || [];

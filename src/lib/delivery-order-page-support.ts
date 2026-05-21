@@ -16,7 +16,7 @@ export function getNextDeliveryOrderAction(deliveryOrder: DeliveryOrder) {
                 ? 'Pantau perjalanan'
                 : 'Aktifkan tracking / pantau';
         case 'HEADING_TO_PICKUP':
-            return 'Pantau menuju pickup';
+            return 'Pantau persiapan perjalanan';
         case 'CREATED':
             return 'Pastikan trip siap berangkat';
         case 'DELIVERED':

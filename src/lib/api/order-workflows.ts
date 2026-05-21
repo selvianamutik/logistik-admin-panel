@@ -87,7 +87,7 @@ import {
 } from '@/lib/trip-document-mappers';
 import { findLatestActualDropPoint, isHoldContinuationStopType } from '@/lib/actual-drop-point-utils';
 
-const MANUAL_DO_STATUSES = ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
+const MANUAL_DO_STATUSES = ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
 
 function getDeliveryOrderSuratJalanIdentity(params: {
     deliveryOrderId: string;
@@ -1064,7 +1064,7 @@ async function computeTripOvertonageAdjustment(params: {
         linkedVoucher.status === 'SETTLED' &&
         Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
     ) {
-        settledVoucherOvertonageWarning = `Bon ${linkedVoucher.bonNumber || linkedVoucher._id} sudah settle, jadi tambahan overtonase tidak ikut mengubah settlement lama.`;
+        settledVoucherOvertonageWarning = `Bon ${linkedVoucher.bonNumber || linkedVoucher._id} sudah selesai, jadi tambahan overtonase tidak ikut mengubah penyelesaian uang jalan lama.`;
     }
 
     return {
@@ -4454,11 +4454,11 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
     ));
 
     const allowedStatusesByCurrent: Record<DOStatus, DOStatus[]> = {
-        CREATED: ['HEADING_TO_PICKUP'],
+        CREATED: ['ON_DELIVERY'],
         HEADING_TO_PICKUP: ['ON_DELIVERY'],
         ON_DELIVERY: ['ARRIVED'],
         ARRIVED: ['DELIVERED'],
-        PARTIAL_HOLD: ['HEADING_TO_PICKUP'],
+        PARTIAL_HOLD: ['ON_DELIVERY'],
         DELIVERED: [],
         CANCELLED: [],
     };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Pencil, Plus, Printer, ReceiptText, Save, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Pencil, Plus, Printer, ReceiptText, Save, Trash2, Wrench, XCircle } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
@@ -24,15 +24,18 @@ import {
 } from '@/lib/fleet-incident-detail-support';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPermission } from '@/lib/rbac';
-import { inferExpenseCategoryScope } from '@/lib/expense-category-scope';
+import { getExpenseCategoryScopeLabel, inferExpenseCategoryScope } from '@/lib/expense-category-scope';
+import { isTireTrackedWarehouseItem } from '@/lib/inventory';
 import type {
     BankAccount,
     ExpenseCategory,
     Incident,
     IncidentActionLog,
+    IncidentExpenseRoute,
     IncidentSettlementCategory,
     IncidentSettlementLine,
     IncidentSettlementLineType,
+    WarehouseItem,
 } from '@/lib/types';
 import {
     formatCurrency,
@@ -55,6 +58,81 @@ const TYPE_OPTIONS: Array<{ value: IncidentSettlementLineType; label: string }> 
     { value: 'RECOVERY', label: 'Recovery' },
 ];
 const RECIPIENT_OPTIONS = ['DRIVER', 'KERNET', 'THIRD_PARTY', 'FAMILY', 'VENDOR', 'INSURANCE', 'INTERNAL', 'OTHER'] as const;
+const INCIDENT_EXPENSE_ROUTE_OPTIONS: Array<{ value: IncidentExpenseRoute; label: string; hint: string }> = [
+    {
+        value: 'DRIVER_VOUCHER',
+        label: 'Masuk Uang Jalan Driver',
+        hint: 'Supir memakai uang jalan atau perlu reimburse lewat bon trip.',
+    },
+    {
+        value: 'COMPANY_EXPENSE',
+        label: 'Pengeluaran Perusahaan',
+        hint: 'Perusahaan membayar toko, bengkel, vendor, ban, atau sparepart.',
+    },
+];
+const INCIDENT_TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
+
+type IncidentTireFollowUpForm = {
+    linkedWarehouseItemRef: string;
+    tireCode: string;
+    tireType: typeof INCIDENT_TIRE_TYPES[number];
+    tireBrand: string;
+    tireSize: string;
+    installDate: string;
+    originalCost: number;
+    notes: string;
+};
+
+function createDefaultIncidentTireFollowUpForm(): IncidentTireFollowUpForm {
+    return {
+        linkedWarehouseItemRef: '',
+        tireCode: '',
+        tireType: 'Tubeless',
+        tireBrand: '',
+        tireSize: '',
+        installDate: '',
+        originalCost: 0,
+        notes: '',
+    };
+}
+
+function getIncidentExpenseRouteLabel(route?: string) {
+    if (route === 'DRIVER_VOUCHER') return 'Masuk biaya lain-lain uang jalan';
+    if (route === 'COMPANY_EXPENSE') return 'Masuk pengeluaran perusahaan';
+    return '';
+}
+
+function getExpenseCategoryRouteScopes(route: IncidentExpenseRoute | '') {
+    if (route === 'DRIVER_VOUCHER') return new Set(['TRIP', 'INCIDENT']);
+    if (route === 'COMPANY_EXPENSE') return new Set(['INCIDENT', 'MAINTENANCE']);
+    return new Set<string>();
+}
+
+function categoryNameIncludes(category: ExpenseCategory, keywords: string[]) {
+    const name = String(category.name || '').toLowerCase();
+    return keywords.some(keyword => name.includes(keyword));
+}
+
+function findSuggestedIncidentExpenseCategory(
+    categories: ExpenseCategory[],
+    line: IncidentSettlementLine,
+    route: IncidentExpenseRoute | ''
+) {
+    const options = categories.filter(category =>
+        getExpenseCategoryRouteScopes(route).has(inferExpenseCategoryScope(category))
+    );
+    const findByName = (keywords: string[]) => options.find(category => categoryNameIncludes(category, keywords));
+    if (route === 'COMPANY_EXPENSE') {
+        if (line.category === 'TIRE') return findByName(['ban'])?._id || '';
+        if (line.category === 'SPAREPART') return findByName(['sparepart', 'oli'])?._id || '';
+        if (line.category === 'REPAIR') return findByName(['servis', 'service', 'maintenance', 'perbaikan'])?._id || '';
+    }
+    if (line.category === 'TOWING') return findByName(['towing', 'evakuasi'])?._id || '';
+    if (line.category === 'ACCOMMODATION') return findByName(['menginap', 'hotel', 'akomodasi'])?._id || '';
+    if (line.category === 'CARGO_HANDLING') return findByName(['bongkar', 'handling'])?._id || '';
+    if (line.category === 'REPAIR' || line.category === 'SPAREPART' || line.category === 'TIRE') return findByName(['perbaikan', 'darurat'])?._id || '';
+    return findByName(['lain-lain', 'lain lain'])?._id || options[0]?._id || '';
+}
 
 export default function IncidentDetailPage() {
     const params = useParams();
@@ -63,12 +141,15 @@ export default function IncidentDetailPage() {
     const incidentId = params.id as string;
     const canManageIncident = user ? hasPermission(user.role, 'incidents', 'update') : false;
     const canCreateExpense = user ? hasPermission(user.role, 'expenses', 'create') : false;
+    const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
+    const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
 
     const [incident, setIncident] = useState<Incident | null>(null);
     const [logs, setLogs] = useState<IncidentActionLog[]>([]);
     const [lines, setLines] = useState<IncidentSettlementLine[]>([]);
     const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [trackedTireWarehouseItems, setTrackedTireWarehouseItems] = useState<WarehouseItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
@@ -82,6 +163,11 @@ export default function IncidentDetailPage() {
     const [postingLine, setPostingLine] = useState<IncidentSettlementLine | null>(null);
     const [expenseForm, setExpenseForm] = useState(createDefaultIncidentExpensePostForm());
     const [postingExpense, setPostingExpense] = useState(false);
+    const [showTireFollowUpModal, setShowTireFollowUpModal] = useState(false);
+    const [tireFollowUpLine, setTireFollowUpLine] = useState<IncidentSettlementLine | null>(null);
+    const [tireFollowUpForm, setTireFollowUpForm] = useState(createDefaultIncidentTireFollowUpForm());
+    const [savingTireFollowUp, setSavingTireFollowUp] = useState(false);
+    const [creatingMaintenanceLineRef, setCreatingMaintenanceLineRef] = useState('');
 
     const loadDetail = useCallback(async () => {
         setLoading(true);
@@ -91,28 +177,38 @@ export default function IncidentDetailPage() {
                 fetchAdminData<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
                 fetchAllAdminCollectionData<IncidentActionLog>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
                 fetchAllAdminCollectionData<IncidentSettlementLine>(`/api/data?entity=incident-settlement-lines&filter=${filter}`, 'Gagal memuat detail biaya insiden'),
+                canCreateExpense
+                    ? fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat referensi pengeluaran')
+                    : Promise.resolve([]),
+                canCreateExpense
+                    ? fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat referensi pengeluaran')
+                    : Promise.resolve([]),
+                canCreateTires
+                    ? fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items', 'Gagal memuat master barang ban')
+                    : Promise.resolve([]),
             ];
-            if (canCreateExpense) {
-                tasks.push(
-                    fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat referensi pengeluaran'),
-                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat referensi pengeluaran'),
-                );
-            }
-            const [incidentData, actionLogs, lineRows, categoryRows, accountRows] = await Promise.all(tasks);
+            const [incidentData, actionLogs, lineRows, categoryRows, accountRows, warehouseRows] = await Promise.all(tasks);
             setIncident((incidentData as Incident | null) || null);
             setLogs(sortIncidentActionLogs((actionLogs as IncidentActionLog[]) || []));
             setLines(sortIncidentSettlementLines((lineRows as IncidentSettlementLine[]) || []));
             setExpenseCategories(canCreateExpense
-                ? (((categoryRows as ExpenseCategory[]) || []).filter(item => item.active !== false && inferExpenseCategoryScope(item) === 'INCIDENT'))
+                ? (((categoryRows as ExpenseCategory[]) || []).filter(item => {
+                    const scope = inferExpenseCategoryScope(item);
+                    return item.active !== false && (scope === 'INCIDENT' || scope === 'TRIP' || scope === 'MAINTENANCE');
+                }))
                 : []
             );
             setBankAccounts(canCreateExpense ? (((accountRows as BankAccount[]) || []).filter(item => item.active !== false)) : []);
+            setTrackedTireWarehouseItems(canCreateTires
+                ? (((warehouseRows as WarehouseItem[]) || []).filter(item => item.active !== false && isTireTrackedWarehouseItem(item)))
+                : []
+            );
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');
         } finally {
             setLoading(false);
         }
-    }, [addToast, canCreateExpense, incidentId]);
+    }, [addToast, canCreateExpense, canCreateTires, incidentId]);
 
     useEffect(() => { void loadDetail(); }, [loadDetail]);
 
@@ -130,6 +226,14 @@ export default function IncidentDetailPage() {
     const hasPendingDriverResolution = Boolean(
         incident?.pendingDriverResolutionRequestedAt ||
         pendingDriverReviewLines.length > 0
+    );
+    const expenseCategoryOptions = useMemo(() => {
+        const allowedScopes = getExpenseCategoryRouteScopes(expenseForm.incidentExpenseRoute);
+        return expenseCategories.filter(category => allowedScopes.has(inferExpenseCategoryScope(category)));
+    }, [expenseCategories, expenseForm.incidentExpenseRoute]);
+    const selectedTireWarehouseItem = useMemo(
+        () => trackedTireWarehouseItems.find(item => item._id === tireFollowUpForm.linkedWarehouseItemRef) || null,
+        [tireFollowUpForm.linkedWarehouseItemRef, trackedTireWarehouseItems]
     );
 
     const resetLineModal = () => {
@@ -254,19 +358,60 @@ export default function IncidentDetailPage() {
 
     const openExpenseModal = (line: IncidentSettlementLine) => {
         setPostingLine(line);
-        setExpenseForm({ date: line.date, categoryRef: '', bankAccountRef: '', note: line.note || line.payeeName || '', description: line.description || '' });
+        setExpenseForm({ date: line.date, incidentExpenseRoute: '', categoryRef: '', bankAccountRef: '', note: line.note || line.payeeName || '', description: line.description || '' });
         setShowExpenseModal(true);
+    };
+
+    const openTireFollowUpModal = (line: IncidentSettlementLine) => {
+        setTireFollowUpLine(line);
+        setTireFollowUpForm({
+            ...createDefaultIncidentTireFollowUpForm(),
+            installDate: line.date,
+            originalCost: line.amount || 0,
+            notes: line.note || '',
+        });
+        setShowTireFollowUpModal(true);
+    };
+
+    const closeTireFollowUpModal = (force = false) => {
+        if (savingTireFollowUp && !force) return;
+        setShowTireFollowUpModal(false);
+        setTireFollowUpLine(null);
+        setTireFollowUpForm(createDefaultIncidentTireFollowUpForm());
+    };
+
+    const updateTireFollowUpWarehouseItem = (warehouseItemRef: string) => {
+        const item = trackedTireWarehouseItems.find(row => row._id === warehouseItemRef) || null;
+        setTireFollowUpForm(prev => ({
+            ...prev,
+            linkedWarehouseItemRef: warehouseItemRef,
+            tireBrand: prev.tireBrand || item?.tireBrandDefault || '',
+            tireSize: prev.tireSize || item?.tireSizeDefault || '',
+            tireType: (prev.tireType || item?.tireTypeDefault || 'Tubeless') as IncidentTireFollowUpForm['tireType'],
+            originalCost: prev.originalCost || item?.defaultPurchasePrice || 0,
+        }));
+    };
+
+    const chooseIncidentExpenseRoute = (route: IncidentExpenseRoute) => {
+        setExpenseForm(prev => ({
+            ...prev,
+            incidentExpenseRoute: route,
+            categoryRef: postingLine ? findSuggestedIncidentExpenseCategory(expenseCategories, postingLine, route) : '',
+            bankAccountRef: route === 'DRIVER_VOUCHER' ? '' : prev.bankAccountRef,
+        }));
     };
 
     const postExpense = async () => {
         if (!incident?._id || !postingLine?._id || !postingLine._rev) return addToast('error', 'Detail insiden tidak valid untuk diposting');
+        if (!expenseForm.incidentExpenseRoute) return addToast('error', 'Pilih sumber biaya insiden');
         if (!expenseForm.categoryRef) return addToast('error', 'Kategori pengeluaran wajib dipilih');
+        if (expenseForm.incidentExpenseRoute === 'COMPANY_EXPENSE' && !expenseForm.bankAccountRef) return addToast('error', 'Rekening / kas pembayaran wajib dipilih untuk pengeluaran perusahaan');
         setPostingExpense(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'expenses', data: { categoryRef: expenseForm.categoryRef, date: expenseForm.date, amount: postingLine.amount, note: expenseForm.note || undefined, description: expenseForm.description || undefined, bankAccountRef: expenseForm.bankAccountRef || undefined, relatedIncidentRef: incident._id, relatedIncidentSettlementLineRef: postingLine._id, relatedIncidentSettlementLineRevision: postingLine._rev } }),
+                body: JSON.stringify({ entity: 'expenses', data: { categoryRef: expenseForm.categoryRef, date: expenseForm.date, amount: postingLine.amount, note: expenseForm.note || undefined, description: expenseForm.description || undefined, bankAccountRef: expenseForm.incidentExpenseRoute === 'COMPANY_EXPENSE' ? expenseForm.bankAccountRef || undefined : undefined, incidentExpenseRoute: expenseForm.incidentExpenseRoute, relatedIncidentRef: incident._id, relatedIncidentSettlementLineRef: postingLine._id, relatedIncidentSettlementLineRevision: postingLine._rev } }),
             });
             const payload = await res.json();
             if (!res.ok) return addToast('error', payload.error || 'Gagal memposting pengeluaran insiden');
@@ -279,6 +424,75 @@ export default function IncidentDetailPage() {
             addToast('error', 'Gagal memposting pengeluaran insiden');
         } finally {
             setPostingExpense(false);
+        }
+    };
+
+    const saveTireFollowUp = async () => {
+        if (!tireFollowUpLine?._id || !tireFollowUpLine._rev) {
+            return addToast('error', 'Detail biaya insiden perlu direfresh sebelum mencatat aset ban');
+        }
+        if (!tireFollowUpForm.linkedWarehouseItemRef || !tireFollowUpForm.tireCode.trim() || !tireFollowUpForm.tireBrand.trim() || !tireFollowUpForm.tireSize.trim()) {
+            return addToast('error', 'Master barang, kode, merk, dan ukuran ban wajib diisi');
+        }
+        if (tireFollowUpForm.originalCost <= 0) {
+            return addToast('error', 'Nilai awal aset ban harus lebih besar dari 0');
+        }
+        setSavingTireFollowUp(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'incident-settlement-lines',
+                    action: 'create-tire-follow-up',
+                    data: {
+                        id: tireFollowUpLine._id,
+                        revision: tireFollowUpLine._rev,
+                        ...tireFollowUpForm,
+                        tireCode: tireFollowUpForm.tireCode.trim(),
+                        tireBrand: tireFollowUpForm.tireBrand.trim(),
+                        tireSize: tireFollowUpForm.tireSize.trim(),
+                        notes: tireFollowUpForm.notes.trim() || undefined,
+                    },
+                }),
+            });
+            const payload = await res.json();
+            if (!res.ok) return addToast('error', payload.error || 'Gagal mencatat aset ban dari insiden');
+            addToast('success', 'Aset ban insiden dicatat ke gudang ban');
+            closeTireFollowUpModal(true);
+            await loadDetail();
+        } catch {
+            addToast('error', 'Gagal mencatat aset ban dari insiden');
+        } finally {
+            setSavingTireFollowUp(false);
+        }
+    };
+
+    const createMaintenanceFollowUp = async (line: IncidentSettlementLine) => {
+        if (!line._rev) return addToast('error', 'Detail biaya insiden perlu direfresh sebelum membuat follow-up maintenance');
+        if (!window.confirm('Buat jadwal maintenance dari detail biaya insiden ini? Biaya yang sudah diposting dari insiden tidak akan diposting ulang.')) return;
+        setCreatingMaintenanceLineRef(line._id);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'incident-settlement-lines',
+                    action: 'create-maintenance-follow-up',
+                    data: {
+                        id: line._id,
+                        revision: line._rev,
+                    },
+                }),
+            });
+            const payload = await res.json();
+            if (!res.ok) return addToast('error', payload.error || 'Gagal membuat follow-up maintenance');
+            addToast('success', 'Follow-up maintenance insiden dibuat');
+            await loadDetail();
+        } catch {
+            addToast('error', 'Gagal membuat follow-up maintenance');
+        } finally {
+            setCreatingMaintenanceLineRef('');
         }
     };
 
@@ -300,6 +514,8 @@ export default function IncidentDetailPage() {
             {canManageIncident && !incidentClosed && line.status === 'DRAFT' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'APPROVED')}><CheckCircle2 size={14} /> Setujui</button>}
             {canManageIncident && !incidentClosed && line.status === 'APPROVED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'DRAFT')}><XCircle size={14} /> Draft</button>}
             {canCreateExpense && canPostIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openExpenseModal(line)}><ReceiptText size={14} /> Post Expense</button>}
+            {canCreateTires && line.lineType === 'COST' && line.category === 'TIRE' && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedTireEventRef && <button className="table-action-btn" onClick={() => openTireFollowUpModal(line)}><Plus size={14} /> Catat Aset Ban</button>}
+            {canCreateMaintenance && line.lineType === 'COST' && ['REPAIR', 'SPAREPART', 'TIRE'].includes(line.category) && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedMaintenanceRef && <button className="table-action-btn" onClick={() => void createMaintenanceFollowUp(line)} disabled={creatingMaintenanceLineRef === line._id}><Wrench size={14} /> {creatingMaintenanceLineRef === line._id ? 'Membuat...' : 'Follow-up Maintenance'}</button>}
             {canManageIncident && canMarkIncidentRecoveryPosted(line) && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'POSTED')}><CheckCircle2 size={14} /> Tandai Diterima</button>}
             {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Tolak</button>}
             {canManageIncident && !incidentClosed && canDeleteIncidentSettlementLine(line) && <button className="table-action-btn danger" onClick={() => void deleteLine(line)}><Trash2 size={14} /> Hapus</button>}
@@ -382,7 +598,7 @@ export default function IncidentDetailPage() {
                             <td className="text-muted">{formatDate(line.date)}</td>
                             <td><span className={`badge badge-${INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.color}`}>{INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.label}</span></td>
                             <td>{INCIDENT_SETTLEMENT_CATEGORY_MAP[line.category] || line.category}</td>
-                            <td><div className="font-semibold">{line.description}</div>{line.note && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>{line.note}</div>}{line.linkedExpenseRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.25rem' }}>Expense {line.linkedExpenseRef}</div>}{line.linkedDriverVoucherItemRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.15rem' }}>Masuk biaya lain-lain uang jalan</div>}</td>
+                            <td><div className="font-semibold">{line.description}</div>{line.note && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>{line.note}</div>}{line.linkedExpenseRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.25rem' }}>Expense {line.linkedExpenseRef}</div>}{(line.linkedDriverVoucherItemRef || line.linkedExpenseRoute) && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: '0.15rem' }}>{line.linkedDriverVoucherItemRef ? 'Masuk biaya lain-lain uang jalan' : getIncidentExpenseRouteLabel(line.linkedExpenseRoute)}</div>}{line.linkedTireEventRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-primary)', marginTop: '0.15rem' }}><a href={`/fleet/tires/${line.linkedTireEventRef}`}>Aset ban {line.linkedTireCode || line.linkedTireEventRef}</a></div>}{line.linkedMaintenanceRef && <div style={{ fontSize: '0.72rem', color: 'var(--color-primary)', marginTop: '0.15rem' }}><a href="/fleet/maintenance">Maintenance {line.linkedMaintenanceType || line.linkedMaintenanceRef}</a></div>}</td>
                             <td><div>{line.payeeName || '-'}</div>{line.recipientType && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>{INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP[line.recipientType] || line.recipientType}</div>}</td>
                             <td><span className={`badge badge-${INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.color}`}>{INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.label}</span></td>
                             <td className="font-semibold">{formatCurrency(line.amount)}</td>
@@ -394,8 +610,8 @@ export default function IncidentDetailPage() {
                     {lines.length === 0 ? <div className="mobile-record-card"><div className="mobile-record-title">Belum ada detail biaya insiden</div><div className="mobile-record-subtitle">Tambahkan dari halaman ini.</div></div> : lines.map(line => (
                         <div key={line._id} className="mobile-record-card">
                             <div className="mobile-record-header"><div><div className="mobile-record-title">{line.description}</div><div className="mobile-record-subtitle">{formatDate(line.date)} | {INCIDENT_SETTLEMENT_CATEGORY_MAP[line.category] || line.category}</div></div><div className="text-right"><div className="font-semibold">{formatCurrency(line.amount)}</div><div style={{ marginTop: 4 }}><span className={`badge badge-${INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.color}`}>{INCIDENT_SETTLEMENT_STATUS_MAP[line.status]?.label}</span></div></div></div>
-                            <div className="mobile-record-meta"><div className="mobile-record-kv"><span className="mobile-record-label">Tipe</span><span className="mobile-record-value">{INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.label}</span></div><div className="mobile-record-kv"><span className="mobile-record-label">Pihak</span><span className="mobile-record-value">{line.payeeName || '-'}</span></div>{line.recipientType && <div className="mobile-record-kv"><span className="mobile-record-label">Kategori Pihak</span><span className="mobile-record-value">{INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP[line.recipientType] || line.recipientType}</span></div>}{line.note && <div className="mobile-record-kv"><span className="mobile-record-label">Catatan</span><span className="mobile-record-value">{line.note}</span></div>}</div>
-                            {canManageIncident && <div className="mobile-record-actions">{renderActions(line)}</div>}
+                            <div className="mobile-record-meta"><div className="mobile-record-kv"><span className="mobile-record-label">Tipe</span><span className="mobile-record-value">{INCIDENT_SETTLEMENT_LINE_TYPE_MAP[line.lineType]?.label}</span></div><div className="mobile-record-kv"><span className="mobile-record-label">Pihak</span><span className="mobile-record-value">{line.payeeName || '-'}</span></div>{line.recipientType && <div className="mobile-record-kv"><span className="mobile-record-label">Kategori Pihak</span><span className="mobile-record-value">{INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP[line.recipientType] || line.recipientType}</span></div>}{line.note && <div className="mobile-record-kv"><span className="mobile-record-label">Catatan</span><span className="mobile-record-value">{line.note}</span></div>}{line.linkedTireEventRef && <div className="mobile-record-kv"><span className="mobile-record-label">Aset Ban</span><span className="mobile-record-value">{line.linkedTireCode || line.linkedTireEventRef}</span></div>}{line.linkedMaintenanceRef && <div className="mobile-record-kv"><span className="mobile-record-label">Maintenance</span><span className="mobile-record-value">{line.linkedMaintenanceType || line.linkedMaintenanceRef}</span></div>}</div>
+                            {(canManageIncident || canCreateExpense || canCreateTires || canCreateMaintenance) && <div className="mobile-record-actions">{renderActions(line)}</div>}
                         </div>
                     ))}
                 </div>
@@ -413,13 +629,28 @@ export default function IncidentDetailPage() {
                 <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={lineForm.note} onChange={event => setLineForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Keterangan tambahan, nomor kuitansi, atau konteks approval" /></div>
             </div><div className="modal-footer"><button className="btn btn-secondary" onClick={resetLineModal} disabled={savingLine}>Batal</button><button className="btn btn-primary" onClick={handleLineSave} disabled={savingLine}><Save size={16} /> {savingLine ? 'Menyimpan...' : 'Simpan'}</button></div></div></div>}
 
-            {showExpenseModal && postingLine && <div className="modal-overlay" onClick={() => { if (!postingExpense) { setShowExpenseModal(false); setPostingLine(null); } }}><div className="modal" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Posting ke Pengeluaran</h3></div><div className="modal-body">
+            {showExpenseModal && postingLine && <div className="modal-overlay" onClick={() => { if (!postingExpense) { setShowExpenseModal(false); setPostingLine(null); } }}><div className="modal" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Posting Biaya Insiden</h3></div><div className="modal-body">
                 <div style={{ padding: '0.85rem 1rem', borderRadius: 12, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', marginBottom: '1rem' }}><div style={{ fontWeight: 700 }}>{postingLine.description}</div><div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>{INCIDENT_SETTLEMENT_CATEGORY_MAP[postingLine.category]} | {formatCurrency(postingLine.amount)}</div></div>
-                <div className="form-row"><div className="form-group"><label className="form-label">Tanggal Posting</label><input type="date" className="form-input" value={expenseForm.date} onChange={event => setExpenseForm(prev => ({ ...prev, date: event.target.value }))} /></div><div className="form-group"><label className="form-label">Kategori Pengeluaran <span className="required">*</span></label><select className="form-select" value={expenseForm.categoryRef} onChange={event => setExpenseForm(prev => ({ ...prev, categoryRef: event.target.value }))}><option value="">Pilih kategori</option>{expenseCategories.map(category => <option key={category._id} value={category._id}>{category.name}</option>)}</select></div></div>
-                <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas</label><select className="form-select" value={expenseForm.bankAccountRef} onChange={event => setExpenseForm(prev => ({ ...prev, bankAccountRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">Sumber Penyelesaian Biaya <span className="required">*</span></label><div style={{ display: 'grid', gap: '0.5rem' }}>{INCIDENT_EXPENSE_ROUTE_OPTIONS.map(option => <button key={option.value} type="button" className={expenseForm.incidentExpenseRoute === option.value ? 'btn btn-primary' : 'btn btn-secondary'} style={{ justifyContent: 'flex-start', textAlign: 'left', alignItems: 'flex-start', flexDirection: 'column', gap: 4 }} onClick={() => chooseIncidentExpenseRoute(option.value)} disabled={postingExpense || (option.value === 'DRIVER_VOUCHER' && !incident.relatedDeliveryOrderRef)}><span>{option.label}</span><span style={{ fontSize: '0.75rem', fontWeight: 400, opacity: 0.8 }}>{option.hint}</span></button>)}</div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Tanggal Posting</label><input type="date" className="form-input" value={expenseForm.date} onChange={event => setExpenseForm(prev => ({ ...prev, date: event.target.value }))} /></div><div className="form-group"><label className="form-label">Kategori Pengeluaran <span className="required">*</span></label><select className="form-select" value={expenseForm.categoryRef} onChange={event => setExpenseForm(prev => ({ ...prev, categoryRef: event.target.value }))} disabled={!expenseForm.incidentExpenseRoute}><option value="">Pilih kategori</option>{expenseCategoryOptions.map(category => <option key={category._id} value={category._id}>{category.name} ({getExpenseCategoryScopeLabel(inferExpenseCategoryScope(category))})</option>)}</select></div></div>
+                {expenseForm.incidentExpenseRoute === 'COMPANY_EXPENSE' ? <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas <span className="required">*</span></label><select className="form-select" value={expenseForm.bankAccountRef} onChange={event => setExpenseForm(prev => ({ ...prev, bankAccountRef: event.target.value }))}><option value="">Pilih rekening atau kas</option>{bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}</select></div> : expenseForm.incidentExpenseRoute === 'DRIVER_VOUCHER' ? <div style={{ padding: '0.75rem 0.85rem', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>Tidak memakai rekening / kas di posting ini. Biaya akan masuk biaya lain-lain uang jalan driver pada bon trip terkait.</div> : null}
                 <div className="form-group"><label className="form-label">Catatan Pengeluaran</label><input className="form-input" value={expenseForm.note} onChange={event => setExpenseForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Catatan singkat pengeluaran" /></div>
                 <div className="form-group"><label className="form-label">Deskripsi Pengeluaran</label><textarea className="form-textarea" rows={3} value={expenseForm.description} onChange={event => setExpenseForm(prev => ({ ...prev, description: event.target.value }))} placeholder="Deskripsi yang akan tersimpan di modul pengeluaran" /></div>
-            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => { setShowExpenseModal(false); setPostingLine(null); }} disabled={postingExpense}>Batal</button><button className="btn btn-primary" onClick={postExpense} disabled={postingExpense}><ReceiptText size={16} /> {postingExpense ? 'Memposting...' : 'Posting Pengeluaran'}</button></div></div></div>}
+            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => { setShowExpenseModal(false); setPostingLine(null); }} disabled={postingExpense}>Batal</button><button className="btn btn-primary" onClick={postExpense} disabled={postingExpense || !expenseForm.incidentExpenseRoute || !expenseForm.categoryRef || (expenseForm.incidentExpenseRoute === 'COMPANY_EXPENSE' && !expenseForm.bankAccountRef)}><ReceiptText size={16} /> {postingExpense ? 'Memposting...' : 'Posting Pengeluaran'}</button></div></div></div>}
+
+            {showTireFollowUpModal && tireFollowUpLine && <div className="modal-overlay" onClick={() => closeTireFollowUpModal()}><div className="modal modal-lg" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Catat Aset Ban dari Insiden</h3></div><div className="modal-body">
+                <div style={{ padding: '0.85rem 1rem', borderRadius: 12, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
+                    <div style={{ fontWeight: 700 }}>{tireFollowUpLine.description}</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+                        Biaya sudah diposting dari insiden. Form ini hanya mencatat aset ban tertracking ke Gudang Ban agar perpindahan, pemasangan, dan persentase pemakaiannya tetap ditangani modul Ban.
+                    </div>
+                </div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Master Barang Ban Tertracking <span className="required">*</span></label><select className="form-select" value={tireFollowUpForm.linkedWarehouseItemRef} onChange={event => updateTireFollowUpWarehouseItem(event.target.value)} disabled={savingTireFollowUp}><option value="">Pilih master barang</option>{trackedTireWarehouseItems.map(item => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select>{selectedTireWarehouseItem && <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>Stok aktif {selectedTireWarehouseItem.currentStockQty || 0} {selectedTireWarehouseItem.unit || ''}. Pencatatan aset ban baru akan menambah stok gudang ban tertracking.</div>}</div><div className="form-group"><label className="form-label">Kode Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireCode} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireCode: event.target.value.toUpperCase() }))} placeholder="Contoh: BAN-INC-0001" disabled={savingTireFollowUp} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Jenis Ban</label><select className="form-select" value={tireFollowUpForm.tireType} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireType: event.target.value as IncidentTireFollowUpForm['tireType'] }))} disabled={savingTireFollowUp}>{INCIDENT_TIRE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></div><div className="form-group"><label className="form-label">Tanggal Pencatatan</label><input type="date" className="form-input" value={tireFollowUpForm.installDate} onChange={event => setTireFollowUpForm(prev => ({ ...prev, installDate: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Merk Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireBrand} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireBrand: event.target.value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Ukuran Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireSize} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireSize: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Nilai Awal Aset Ban</label><FormattedNumberInput allowDecimal={false} value={tireFollowUpForm.originalCost} onValueChange={value => setTireFollowUpForm(prev => ({ ...prev, originalCost: value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Lokasi Awal</label><input className="form-input" value="Gudang Ban" readOnly /></div></div>
+                <div className="form-group"><label className="form-label">Catatan Aset</label><textarea className="form-textarea" rows={3} value={tireFollowUpForm.notes} onChange={event => setTireFollowUpForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Opsional: nomor nota toko, kondisi ban, konteks pemasangan di perjalanan" disabled={savingTireFollowUp} /></div>
+            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => closeTireFollowUpModal()} disabled={savingTireFollowUp}>Batal</button><button className="btn btn-primary" onClick={saveTireFollowUp} disabled={savingTireFollowUp || !tireFollowUpForm.linkedWarehouseItemRef || !tireFollowUpForm.tireCode.trim() || !tireFollowUpForm.tireBrand.trim() || !tireFollowUpForm.tireSize.trim() || tireFollowUpForm.originalCost <= 0}><Save size={16} /> {savingTireFollowUp ? 'Menyimpan...' : 'Catat Aset Ban'}</button></div></div></div>}
         </div>
     );
 }

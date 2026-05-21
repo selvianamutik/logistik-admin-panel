@@ -102,6 +102,7 @@ export async function syncIncidentSettlementLineToDriverVoucherItem(params: {
         description?: string;
         note?: string;
         linkedDriverVoucherItemRef?: string;
+        linkedExpenseRoute?: string;
     };
     expenseId: string;
     expenseDate: string;
@@ -146,6 +147,22 @@ export async function syncIncidentSettlementLineToDriverVoucherItem(params: {
     return voucherItemId;
 }
 
+function shouldSyncIncidentExpenseToDriverVoucher(params: {
+    line: Pick<IncidentSettlementLine, 'linkedExpenseRoute'>;
+    expense: Pick<Expense, 'bankAccountRef' | 'incidentExpenseRoute'>;
+}) {
+    const route = normalizeOptionalText(params.expense.incidentExpenseRoute || params.line.linkedExpenseRoute)?.toUpperCase();
+    if (route === 'COMPANY_EXPENSE') {
+        return false;
+    }
+    if (route === 'DRIVER_VOUCHER') {
+        return !params.expense.bankAccountRef;
+    }
+    // Legacy posted incident expenses had no explicit route; no-bank rows were intended
+    // to be pulled into the trip voucher by the old workflow.
+    return !params.expense.bankAccountRef;
+}
+
 export async function syncPostedIncidentSettlementLinesToDriverVoucher(params: {
     voucher: DriverVoucher;
     deliveryOrderRef: string;
@@ -181,7 +198,7 @@ export async function syncPostedIncidentSettlementLinesToDriverVoucher(params: {
             if (!expense) {
                 continue;
             }
-            if (expense.bankAccountRef) {
+            if (!shouldSyncIncidentExpenseToDriverVoucher({ line, expense })) {
                 skippedBankPaidCount += 1;
                 continue;
             }

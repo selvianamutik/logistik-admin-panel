@@ -37,6 +37,7 @@ import {
   formatDate,
   getDriverVoucherFinancialSummary,
 } from "@/lib/utils";
+import { buildDriverVoucherSettlementDisplay, inferDriverVoucherDisbursementCount } from "@/lib/driver-voucher-detail-support";
 import { exportToExcel } from "@/lib/export";
 import { parseFormattedNumberish } from "@/components/FormattedNumberInput.helpers";
 import type {
@@ -642,7 +643,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Potensi Tambahan Bayar Akhir
+                    Potensi Bon Penutupan
                   </div>
                   <div
                     style={{
@@ -668,7 +669,7 @@ export default function ReportsPage() {
                       <th style={{ textAlign: "right" }}>Upah Trip</th>
                       <th style={{ textAlign: "right" }}>Total Hak Trip</th>
                       <th style={{ textAlign: "right" }}>Sisa Bon Operasional</th>
-                      <th style={{ textAlign: "right" }}>Net Settlement Akhir</th>
+                      <th style={{ textAlign: "right" }}>Penyelesaian Uang Jalan</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -692,9 +693,17 @@ export default function ReportsPage() {
                           totalSpent,
                           driverFeeAmount,
                           totalClaimAmount,
+                          topUpAmount,
                           operationalBalance,
                           balance,
                         } = getDriverVoucherFinancialSummary(item);
+                        const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                          balance,
+                          fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                            ...item,
+                            topUpAmount,
+                          }),
+                        });
                         return (
                           <tr key={item._id}>
                             <td style={{ fontWeight: 600 }}>{item.bonNumber}</td>
@@ -735,7 +744,8 @@ export default function ReportsPage() {
                                     : "var(--color-success)",
                               }}
                             >
-                              {formatCurrency(balance)}
+                              <div>{formatCurrency(balance)}</div>
+                              <div className="text-muted text-sm">{settlementDisplay.label}</div>
                             </td>
                           </tr>
                         );
@@ -761,9 +771,17 @@ export default function ReportsPage() {
                       totalSpent,
                       driverFeeAmount,
                       totalClaimAmount,
+                      topUpAmount,
                       operationalBalance,
                       balance,
                     } = getDriverVoucherFinancialSummary(item);
+                    const settlementDisplay = buildDriverVoucherSettlementDisplay({
+                      balance,
+                      fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
+                        ...item,
+                        topUpAmount,
+                      }),
+                    });
                     return (
                       <div key={item._id} className="mobile-record-card">
                         <div className="mobile-record-header">
@@ -824,7 +842,7 @@ export default function ReportsPage() {
                             </span>
                           </div>
                           <div className="mobile-record-kv">
-                            <span className="mobile-record-label">Net Settlement Akhir</span>
+                            <span className="mobile-record-label">{settlementDisplay.label}</span>
                             <span
                               className="mobile-record-value"
                               style={{

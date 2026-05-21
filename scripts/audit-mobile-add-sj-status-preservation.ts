@@ -181,7 +181,6 @@ async function main() {
         assert(trip, 'trip awal tidak muncul di mobile');
         const refAId = trip.driverSuratJalanRecords?.find(record => record.suratJalanNumber === sjA)?._id || `${doId}:${refA}`;
 
-        await postBatch(token, 'HEADING_TO_PICKUP', [refAId]);
         await updateDocument(doId, { trackingState: 'ACTIVE' }, 'deliveryOrder');
         await postBatch(token, 'ON_DELIVERY', [refAId]);
         await postBatch(token, 'ARRIVED', [refAId]);

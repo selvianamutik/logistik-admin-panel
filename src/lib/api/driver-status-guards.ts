@@ -5,17 +5,16 @@ export function validateDriverStatusTransition(
     requestedStatus: string
 ) {
     if (deliveryOrder.trackingState !== 'ACTIVE') {
-        if (requestedStatus !== 'HEADING_TO_PICKUP') {
-            return 'Tracking live harus aktif sebelum driver mengirim progres perjalanan.';
-        }
+        return 'Tracking live harus aktif sebelum driver mengirim progres perjalanan.';
     }
 
-    if (requestedStatus === 'HEADING_TO_PICKUP' && deliveryOrder.status !== 'CREATED') {
-        return 'Driver hanya bisa menuju pickup dari status siap jalan.';
-    }
-
-    if (requestedStatus === 'ON_DELIVERY' && deliveryOrder.status !== 'HEADING_TO_PICKUP') {
-        return 'Driver hanya bisa menandai dalam pengiriman setelah status menuju pickup.';
+    if (
+        requestedStatus === 'ON_DELIVERY' &&
+        deliveryOrder.status !== 'CREATED' &&
+        deliveryOrder.status !== 'HEADING_TO_PICKUP' &&
+        deliveryOrder.status !== 'PARTIAL_HOLD'
+    ) {
+        return 'Driver hanya bisa menandai dalam pengiriman dari status siap jalan atau hold lanjutan.';
     }
 
     if (requestedStatus === 'ARRIVED' && deliveryOrder.status !== 'ON_DELIVERY') {
