@@ -14,6 +14,7 @@ import {
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
 } from '@/lib/inventory';
 import { hasPermission } from '@/lib/rbac';
+import { normalizeTireType } from '@/lib/tire-types';
 import type { Supplier, WarehouseItem } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -192,7 +193,7 @@ export default function PurchaseNewPage() {
                         <div>Mode {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedItem.trackingMode || 'STANDARD']}</div>
                         {isTrackedTireItem && (
                           <div>
-                            Penerimaan barang akan otomatis membuat kartu ban individual dengan default {selectedItem.tireBrandDefault || '-'} | {selectedItem.tireSizeDefault || '-'} | {selectedItem.tireTypeDefault || '-'}.
+                            Penerimaan barang akan otomatis membuat kartu ban individual dengan default {selectedItem.tireBrandDefault || '-'} | {selectedItem.tireSizeDefault || '-'} | {normalizeTireType(selectedItem.tireTypeDefault)}.
                           </div>
                         )}
                       </div>

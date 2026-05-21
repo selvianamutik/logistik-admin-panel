@@ -226,7 +226,7 @@ async function main() {
             defaultPurchasePrice: 350000,
             tireBrandDefault: 'Audit Tire',
             tireSizeDefault: '11R22.5',
-            tireTypeDefault: 'Tubeless',
+            tireTypeDefault: 'ORI kawat / radial',
             active: true,
         });
         await addDoc('expenseCategory', {
@@ -405,7 +405,7 @@ async function main() {
                 revision: companyLine?._rev || 'audit-revision',
                 linkedWarehouseItemRef: trackedTireItemId,
                 tireCode: `AUD-TIRE-${suffix}`,
-                tireType: 'Tubeless',
+                tireType: 'ORI kawat / radial',
                 tireBrand: 'Audit Tire',
                 tireSize: '11R22.5',
                 installDate: AUDIT_DATE,

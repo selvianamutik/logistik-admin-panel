@@ -19,6 +19,7 @@ import {
 import { isTireTrackedWarehouseItem, WAREHOUSE_ITEM_TRACKING_MODE_LABELS } from '@/lib/inventory';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { getTireHistoryActionColor, getTireHistoryActionLabel, getTireHistoryTransitionLabel } from '@/lib/tire-history';
+import { DEFAULT_TIRE_TYPE, normalizeTireType } from '@/lib/tire-types';
 import { formatTireSlotLabel, resolveTireSlotCode, TIRE_HOLDER_TYPE_OPTIONS, TIRE_STATUS_OPTIONS, type TireAssetStatus, type TireHolderType } from '@/lib/tire-slots';
 import { TIRE_ASSET_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatQuantity } from '@/lib/utils';
 import { useApp, useToast } from '../../../layout';
@@ -71,7 +72,7 @@ export default function TireDetailPage() {
         vehicleRef: '',
         slotCode: '',
         linkedWarehouseItemRef: '',
-        tireType: 'Tubeless',
+        tireType: DEFAULT_TIRE_TYPE,
         tireBrand: '',
         tireSize: '',
         installDate: '',
@@ -182,7 +183,7 @@ export default function TireDetailPage() {
             vehicleRef: tire.vehicleRef || '',
             slotCode: editResolvedTire.slotCode || resolveTireSlotCode(tire) || '',
             linkedWarehouseItemRef: tire.linkedWarehouseItemRef || '',
-            tireType: tire.tireType || 'Tubeless',
+            tireType: normalizeTireType(tire.tireType),
             tireBrand: tire.tireBrand || '',
             tireSize: tire.tireSize || '',
             installDate: tire.installDate || '',
@@ -330,7 +331,7 @@ export default function TireDetailPage() {
                     <div className="card-body">
                         <div className="detail-row"><div className="detail-item"><div className="detail-label">Kode Ban</div><div className="detail-value font-mono">{resolvedTire.tireCodeLabel}</div></div><div className="detail-item"><div className="detail-label">Status</div><div className="detail-value"><span className={`badge badge-${statusMeta?.color || 'gray'}`}>{statusMeta?.label || resolvedTire.status}</span></div></div></div>
                         <div className="detail-row"><div className="detail-item"><div className="detail-label">Merk</div><div className="detail-value">{tire.tireBrand}</div></div><div className="detail-item"><div className="detail-label">Ukuran</div><div className="detail-value font-mono">{tire.tireSize}</div></div></div>
-                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Tipe</div><div className="detail-value">{tire.tireType}</div></div><div className="detail-item"><div className="detail-label">Tanggal Catat</div><div className="detail-value">{formatDate(tire.installDate)}</div></div></div>
+                        <div className="detail-row"><div className="detail-item"><div className="detail-label">Tipe</div><div className="detail-value">{resolvedTire.tireType}</div></div><div className="detail-item"><div className="detail-label">Tanggal Catat</div><div className="detail-value">{formatDate(tire.installDate)}</div></div></div>
                         <div className="detail-row"><div className="detail-item"><div className="detail-label">Lokasi Saat Ini</div><div className="detail-value">{placementLabel}</div></div><div className="detail-item"><div className="detail-label">Slot</div><div className="detail-value">{slotLabel}</div></div></div>
                         <div className="detail-row"><div className="detail-item"><div className="detail-label">Kilometer Pemakaian</div><div className="detail-value">{formatQuantity(tire.accumulatedKm || 0, 0)} km</div></div><div className="detail-item"><div className="detail-label">Update Km Terakhir</div><div className="detail-value">{formatDateTime(tire.lastKmUpdateAt)}</div></div></div>
                         <div className="detail-row"><div className="detail-item"><div className="detail-label">Harga Ban</div><div className="detail-value">{formatCurrency(tire.originalCost ?? tire.purchaseCost ?? 0)}</div></div><div className="detail-item"><div className="detail-label">Pemakaian / Sisa</div><div className="detail-value">{formatQuantity(tire.totalUsedPercent || 0, 2)}% terpakai | {formatQuantity(tire.remainingPercent ?? Math.max(100 - Number(tire.totalUsedPercent || 0), 0), 2)}% tersisa</div></div></div>

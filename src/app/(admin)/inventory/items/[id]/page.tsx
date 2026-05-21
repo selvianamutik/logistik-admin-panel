@@ -26,6 +26,7 @@ import {
 } from '@/lib/inventory';
 import { getMaintenanceMaterialUsageRows, summarizeItemUsageRows } from '@/lib/inventory-material-usage';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import { normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
 import type { Maintenance, Purchase, PurchaseItem, StockMovement, Supplier, TireEvent, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 
@@ -98,8 +99,6 @@ type ItemFormState = {
   active: boolean;
 };
 
-const TIRE_TYPE_OPTIONS = ['Tubeless', 'Tube Type', 'Solid'] as const;
-
 const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   itemCode: item?.itemCode || '',
   name: item?.name || '',
@@ -109,7 +108,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   minStockQty: typeof item?.minStockQty === 'number' ? item.minStockQty : 0,
   defaultSupplierRef: item?.defaultSupplierRef || '',
   defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
-  tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
+  tireTypeDefault: normalizeTireType(item?.tireTypeDefault),
   tireBrandDefault: item?.tireBrandDefault || '',
   tireSizeDefault: item?.tireSizeDefault || '',
   notes: item?.notes || '',
@@ -473,7 +472,7 @@ export default function WarehouseItemDetailPage() {
               <>
                 <div className="detail-row"><span className="detail-label">Merk Ban Default</span><span className="detail-value">{item.tireBrandDefault || '-'}</span></div>
                 <div className="detail-row"><span className="detail-label">Ukuran Ban Default</span><span className="detail-value">{item.tireSizeDefault || '-'}</span></div>
-                <div className="detail-row"><span className="detail-label">Jenis Ban Default</span><span className="detail-value">{item.tireTypeDefault || '-'}</span></div>
+                <div className="detail-row"><span className="detail-label">Jenis Ban Default</span><span className="detail-value">{normalizeTireType(item.tireTypeDefault)}</span></div>
                 <div className="detail-row"><span className="detail-label">Ban Terhubung</span><span className="detail-value">{linkedTires.length}</span></div>
               </>
             )}

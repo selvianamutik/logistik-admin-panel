@@ -1,5 +1,6 @@
 import { getBusinessDateValue } from './business-date';
 import { DEFAULT_PAGE_SIZE } from './pagination';
+import { DEFAULT_TIRE_TYPE, normalizeTireType, TIRE_TYPE_OPTIONS } from './tire-types';
 import {
     compareTireSlotCodes,
     formatTireSlotLabel,
@@ -12,7 +13,7 @@ import {
     type TireAssetStatus,
     type TireHolderType,
 } from './tire-slots';
-import type { TireEvent, User, Driver, Vehicle } from './types';
+import type { TireEvent, TireType, User, Driver, Vehicle } from './types';
 
 export type DriverMobileAccount = Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>;
 
@@ -23,7 +24,7 @@ export type TireFormState = {
     vehicleRef: string;
     slotCode: string;
     linkedWarehouseItemRef: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     installDate: string;
@@ -59,7 +60,7 @@ export type VehicleCategoryOption = {
     vehicleCount: number;
 };
 
-export const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
+export const TIRE_TYPES = TIRE_TYPE_OPTIONS;
 
 export function createDefaultTireForm(): TireFormState {
     return {
@@ -69,7 +70,7 @@ export function createDefaultTireForm(): TireFormState {
         vehicleRef: '',
         slotCode: '',
         linkedWarehouseItemRef: '',
-        tireType: 'Tubeless',
+        tireType: DEFAULT_TIRE_TYPE,
         tireBrand: '',
         tireSize: '',
         installDate: getBusinessDateValue(),
@@ -275,6 +276,7 @@ export function resolveFleetTireEvents(events: TireEvent[]): ResolvedFleetTireEv
         const slotLabel = slotCode ? formatTireSlotLabel(slotCode) : undefined;
         return {
             ...event,
+            tireType: normalizeTireType(event.tireType),
             holderType,
             status,
             tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',

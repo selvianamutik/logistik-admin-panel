@@ -34,6 +34,7 @@ import {
     type TireAssetStatus,
     type TireHolderType,
 } from '@/lib/tire-slots';
+import { normalizeTireType } from '@/lib/tire-types';
 import { getTireHistoryActionColor, getTireHistoryActionLabel, getTireHistoryTransitionLabel } from '@/lib/tire-history';
 import type { TireEvent, TireHistoryLog, Vehicle, WarehouseItem } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -421,7 +422,7 @@ export default function TiresPage() {
             vehicleRef: event.vehicleRef || '',
             slotCode,
             linkedWarehouseItemRef: event.linkedWarehouseItemRef || '',
-            tireType: event.tireType,
+            tireType: normalizeTireType(event.tireType),
             tireBrand: event.tireBrand,
             tireSize: event.tireSize,
             installDate: event.installDate,
@@ -477,7 +478,7 @@ export default function TiresPage() {
             linkedWarehouseItemRef: itemRef,
             tireBrand: linkedItem?.tireBrandDefault || prev.tireBrand,
             tireSize: linkedItem?.tireSizeDefault || prev.tireSize,
-            tireType: linkedItem?.tireTypeDefault || prev.tireType,
+            tireType: normalizeTireType(linkedItem?.tireTypeDefault || prev.tireType),
             originalCost: linkedItem?.defaultPurchasePrice || prev.originalCost,
         }));
     };
@@ -523,7 +524,7 @@ export default function TiresPage() {
         setForm(prev => {
             const nextBrand = prev.tireBrand || selectedLinkedWarehouseItem.tireBrandDefault || prev.tireBrand;
             const nextSize = prev.tireSize || selectedLinkedWarehouseItem.tireSizeDefault || prev.tireSize;
-            const nextType = prev.tireType || selectedLinkedWarehouseItem.tireTypeDefault || prev.tireType;
+            const nextType = normalizeTireType(selectedLinkedWarehouseItem.tireTypeDefault || prev.tireType);
             const nextOriginalCost = prev.originalCost || selectedLinkedWarehouseItem.defaultPurchasePrice || prev.originalCost;
             if (nextBrand === prev.tireBrand && nextSize === prev.tireSize && nextType === prev.tireType && nextOriginalCost === prev.originalCost) {
                 return prev;

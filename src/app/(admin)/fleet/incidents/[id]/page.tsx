@@ -26,6 +26,7 @@ import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocument
 import { hasPermission } from '@/lib/rbac';
 import { getExpenseCategoryScopeLabel, inferExpenseCategoryScope } from '@/lib/expense-category-scope';
 import { isTireTrackedWarehouseItem } from '@/lib/inventory';
+import { DEFAULT_TIRE_TYPE, normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
 import type {
     BankAccount,
     ExpenseCategory,
@@ -35,6 +36,7 @@ import type {
     IncidentSettlementCategory,
     IncidentSettlementLine,
     IncidentSettlementLineType,
+    TireType,
     WarehouseItem,
 } from '@/lib/types';
 import {
@@ -70,12 +72,10 @@ const INCIDENT_EXPENSE_ROUTE_OPTIONS: Array<{ value: IncidentExpenseRoute; label
         hint: 'Perusahaan membayar toko, bengkel, vendor, ban, atau sparepart.',
     },
 ];
-const INCIDENT_TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
-
 type IncidentTireFollowUpForm = {
     linkedWarehouseItemRef: string;
     tireCode: string;
-    tireType: typeof INCIDENT_TIRE_TYPES[number];
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     installDate: string;
@@ -87,7 +87,7 @@ function createDefaultIncidentTireFollowUpForm(): IncidentTireFollowUpForm {
     return {
         linkedWarehouseItemRef: '',
         tireCode: '',
-        tireType: 'Tubeless',
+        tireType: DEFAULT_TIRE_TYPE,
         tireBrand: '',
         tireSize: '',
         installDate: '',
@@ -387,7 +387,7 @@ export default function IncidentDetailPage() {
             linkedWarehouseItemRef: warehouseItemRef,
             tireBrand: prev.tireBrand || item?.tireBrandDefault || '',
             tireSize: prev.tireSize || item?.tireSizeDefault || '',
-            tireType: (prev.tireType || item?.tireTypeDefault || 'Tubeless') as IncidentTireFollowUpForm['tireType'],
+            tireType: normalizeTireType(item?.tireTypeDefault || prev.tireType),
             originalCost: prev.originalCost || item?.defaultPurchasePrice || 0,
         }));
     };
@@ -646,7 +646,7 @@ export default function IncidentDetailPage() {
                     </div>
                 </div>
                 <div className="form-row"><div className="form-group"><label className="form-label">Master Barang Ban Tertracking <span className="required">*</span></label><select className="form-select" value={tireFollowUpForm.linkedWarehouseItemRef} onChange={event => updateTireFollowUpWarehouseItem(event.target.value)} disabled={savingTireFollowUp}><option value="">Pilih master barang</option>{trackedTireWarehouseItems.map(item => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select>{selectedTireWarehouseItem && <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>Stok aktif {selectedTireWarehouseItem.currentStockQty || 0} {selectedTireWarehouseItem.unit || ''}. Pencatatan aset ban baru akan menambah stok gudang ban tertracking.</div>}</div><div className="form-group"><label className="form-label">Kode Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireCode} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireCode: event.target.value.toUpperCase() }))} placeholder="Contoh: BAN-INC-0001" disabled={savingTireFollowUp} /></div></div>
-                <div className="form-row"><div className="form-group"><label className="form-label">Jenis Ban</label><select className="form-select" value={tireFollowUpForm.tireType} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireType: event.target.value as IncidentTireFollowUpForm['tireType'] }))} disabled={savingTireFollowUp}>{INCIDENT_TIRE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></div><div className="form-group"><label className="form-label">Tanggal Pencatatan</label><input type="date" className="form-input" value={tireFollowUpForm.installDate} onChange={event => setTireFollowUpForm(prev => ({ ...prev, installDate: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Jenis Ban</label><select className="form-select" value={tireFollowUpForm.tireType} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireType: event.target.value as IncidentTireFollowUpForm['tireType'] }))} disabled={savingTireFollowUp}>{TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}</select></div><div className="form-group"><label className="form-label">Tanggal Pencatatan</label><input type="date" className="form-input" value={tireFollowUpForm.installDate} onChange={event => setTireFollowUpForm(prev => ({ ...prev, installDate: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
                 <div className="form-row"><div className="form-group"><label className="form-label">Merk Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireBrand} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireBrand: event.target.value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Ukuran Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireSize} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireSize: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
                 <div className="form-row"><div className="form-group"><label className="form-label">Nilai Awal Aset Ban</label><FormattedNumberInput allowDecimal={false} value={tireFollowUpForm.originalCost} onValueChange={value => setTireFollowUpForm(prev => ({ ...prev, originalCost: value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Lokasi Awal</label><input className="form-input" value="Gudang Ban" readOnly /></div></div>
                 <div className="form-group"><label className="form-label">Catatan Aset</label><textarea className="form-textarea" rows={3} value={tireFollowUpForm.notes} onChange={event => setTireFollowUpForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Opsional: nomor nota toko, kondisi ban, konteks pemasangan di perjalanan" disabled={savingTireFollowUp} /></div>

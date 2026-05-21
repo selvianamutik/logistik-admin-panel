@@ -1,5 +1,6 @@
 import { getBusinessDateValue } from './business-date';
-import type { TireEvent, Vehicle } from './types';
+import { DEFAULT_TIRE_TYPE, normalizeTireType, TIRE_TYPE_OPTIONS } from './tire-types';
+import type { TireEvent, TireType, Vehicle } from './types';
 import {
     compareTireSlotCodes,
     formatTireSlotLabel,
@@ -15,7 +16,7 @@ export type VehicleTireFormState = {
     registeredTireId: string;
     tireCode: string;
     slotCode: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireType: TireType;
     tireBrand: string;
     tireSize: string;
     originalCost: number;
@@ -38,7 +39,7 @@ export type NormalizedVehicleTireRow = TireEvent & {
     placementLabel: string;
 };
 
-export const VEHICLE_TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['Tubeless', 'Tube Type', 'Solid'];
+export const VEHICLE_TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = [...TIRE_TYPE_OPTIONS];
 
 export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormState {
     return {
@@ -47,7 +48,7 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         registeredTireId: '',
         tireCode: '',
         slotCode,
-        tireType: 'Tubeless',
+        tireType: DEFAULT_TIRE_TYPE,
         tireBrand: '',
         tireSize: '',
         originalCost: 0,
@@ -72,6 +73,7 @@ export function normalizeVehicleTireRow(event: TireEvent): NormalizedVehicleTire
     const slotCode = resolveTireSlotCode(event);
     return {
         ...event,
+        tireType: normalizeTireType(event.tireType),
         status,
         tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
         slotCode,

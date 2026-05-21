@@ -307,6 +307,7 @@ export type InventoryUnit =
   | 'METER';
 
 export type WarehouseItemTrackingMode = 'STANDARD' | 'TIRE_ASSET';
+export type TireType = 'ORI benang / nilon' | 'ORI kawat / radial' | 'kanisir';
 
 export interface WarehouseItem {
   _id: string;
@@ -321,7 +322,7 @@ export interface WarehouseItem {
   defaultSupplierRef?: string;
   defaultSupplierName?: string;
   defaultPurchasePrice?: number;
-  tireTypeDefault?: TireEvent['tireType'];
+  tireTypeDefault?: TireType;
   tireBrandDefault?: string;
   tireSizeDefault?: string;
   active: boolean;
@@ -369,7 +370,7 @@ export interface PurchaseItem {
   itemName?: string;
   itemUnit?: InventoryUnit;
   trackingMode?: WarehouseItemTrackingMode;
-  tireTypeDefault?: TireEvent['tireType'];
+  tireTypeDefault?: TireType;
   tireBrandDefault?: string;
   tireSizeDefault?: string;
   orderedQty: number;
@@ -1314,7 +1315,7 @@ export interface TireEvent {
   slotLabel?: string;
   externalPartyName?: string;
   externalPlateNumber?: string;
-  tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+  tireType: TireType;
   tireBrand: string;
   tireSize: string;
   linkedWarehouseItemRef?: string;

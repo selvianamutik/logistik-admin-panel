@@ -19,6 +19,7 @@ import {
 } from '@/lib/inventory';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import { normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
 import type { Supplier, WarehouseItem } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -56,7 +57,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   minStockQty: typeof item?.minStockQty === 'number' ? item.minStockQty : 0,
   defaultSupplierRef: item?.defaultSupplierRef || '',
   defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
-  tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
+  tireTypeDefault: normalizeTireType(item?.tireTypeDefault),
   tireBrandDefault: item?.tireBrandDefault || '',
   tireSizeDefault: item?.tireSizeDefault || '',
   notes: item?.notes || '',
@@ -69,8 +70,6 @@ const createMovementForm = (sourceType: 'MANUAL_IN' | 'MANUAL_OUT' = 'MANUAL_IN'
   quantity: 0,
   note: '',
 });
-
-const TIRE_TYPE_OPTIONS = ['Tubeless', 'Tube Type', 'Solid'] as const;
 
 function getStockBadge(item: WarehouseItem) {
   const stock = Number(item.currentStockQty || 0);
@@ -252,7 +251,7 @@ export default function WarehouseItemsPage() {
           hargaBeliDefault: Number(item.defaultPurchasePrice || 0),
           tireBrandDefault: item.tireBrandDefault || '-',
           tireSizeDefault: item.tireSizeDefault || '-',
-          tireTypeDefault: item.tireTypeDefault || '-',
+          tireTypeDefault: isTireTrackedWarehouseItem(item) ? normalizeTireType(item.tireTypeDefault) : '-',
           status: item.active !== false ? 'Aktif' : 'Nonaktif',
           catatan: item.notes || '',
         })),
@@ -414,7 +413,7 @@ export default function WarehouseItemsPage() {
                     <div className="mobile-record-field"><span className="mobile-record-label">Min. Stok</span><span className="mobile-record-value">{formatInventoryQuantity(item.minStockQty || 0)} {item.unit}</span></div>
                     <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Harga Beli Default</span><span className="mobile-record-value">{Number(item.defaultPurchasePrice || 0) > 0 ? formatCurrency(Number(item.defaultPurchasePrice || 0)) : '-'}</span></div>
                     {isTireTrackedWarehouseItem(item) && (
-                      <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Default Ban</span><span className="mobile-record-value">{item.tireBrandDefault || '-'} | {item.tireSizeDefault || '-'} | {item.tireTypeDefault || '-'}</span></div>
+                      <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Default Ban</span><span className="mobile-record-value">{item.tireBrandDefault || '-'} | {item.tireSizeDefault || '-'} | {normalizeTireType(item.tireTypeDefault)}</span></div>
                     )}
                   </div>
                   <div className="mobile-record-actions">

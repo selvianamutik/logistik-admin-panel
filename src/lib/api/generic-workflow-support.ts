@@ -29,6 +29,7 @@ import {
     parseWholeMoneyAmount,
 } from '@/lib/inventory';
 import { findMatchingTripRouteRate, stripTripRouteOvertonaseRateNote } from '@/lib/trip-route-rate-support';
+import { normalizeOptionalTireType } from '@/lib/tire-types';
 import type { TripRouteRate } from '@/lib/types';
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
@@ -264,8 +265,8 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
     }
     const tireTypeDefault =
         Object.prototype.hasOwnProperty.call(data, 'tireTypeDefault') || !existing
-            ? normalizeOptionalText(data.tireTypeDefault)
-            : normalizeOptionalText(existing?.tireTypeDefault);
+            ? normalizeOptionalTireType(data.tireTypeDefault)
+            : normalizeOptionalTireType(existing?.tireTypeDefault);
     const tireBrandDefault =
         Object.prototype.hasOwnProperty.call(data, 'tireBrandDefault') || !existing
             ? normalizeOptionalText(data.tireBrandDefault)
@@ -279,7 +280,7 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
         if (unit !== 'PCS' && unit !== 'UNIT') {
             throw new Error('Barang gudang ban tertracking hanya boleh memakai satuan PCS atau UNIT');
         }
-        if (tireTypeDefault !== 'Tubeless' && tireTypeDefault !== 'Tube Type' && tireTypeDefault !== 'Solid') {
+        if (!tireTypeDefault) {
             throw new Error('Jenis ban default barang gudang tidak valid');
         }
         if (!tireBrandDefault) {

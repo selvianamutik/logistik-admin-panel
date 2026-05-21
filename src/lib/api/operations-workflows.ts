@@ -11,6 +11,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
+import { normalizeOptionalTireType } from '@/lib/tire-types';
 import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
 
 import {
@@ -811,7 +812,7 @@ export async function handleIncidentSettlementLineTireFollowUpCreate(
     const tireCode = normalizeOptionalText(data.tireCode);
     const tireBrand = normalizeOptionalText(data.tireBrand);
     const tireSize = normalizeOptionalText(data.tireSize);
-    const tireType = normalizeOptionalText(data.tireType);
+    const tireType = normalizeOptionalTireType(data.tireType);
     const originalCost = normalizeCurrencyNumber(data.originalCost ?? line.amount, { maxFractionDigits: 0 });
     if (!linkedWarehouseItemRef) {
         return NextResponse.json({ error: 'Master barang gudang ban tertracking wajib dipilih' }, { status: 400 });
