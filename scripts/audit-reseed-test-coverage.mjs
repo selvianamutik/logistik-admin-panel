@@ -25,6 +25,21 @@ function unique(values) {
     return [...new Set(values.filter(Boolean))].sort();
 }
 
+function buildTireSlotCodesFromLayoutConfig(config) {
+    const axleLayouts = Array.isArray(config?.axleLayouts) && config.axleLayouts.length > 0
+        ? config.axleLayouts
+        : ['SINGLE', 'SINGLE'];
+    const roadSlots = axleLayouts.flatMap((layout, index) => {
+        const axle = String(index + 1);
+        if (layout === 'DUAL') return [`${axle}LI`, `${axle}LO`, `${axle}RI`, `${axle}RO`];
+        if (layout === 'SINGLE') return [`${axle}L`, `${axle}R`];
+        return [];
+    });
+    const spareCount = Math.max(0, Math.round(Number(config?.spareCount ?? 1) || 0));
+    const spareSlots = Array.from({ length: spareCount }, (_, index) => `SP${index + 1}`);
+    return [...roadSlots, ...spareSlots];
+}
+
 async function main() {
     const seedPath = path.resolve(process.cwd(), 'artifacts', 'default-supabase-seed.json');
     const docs = JSON.parse(await readFile(seedPath, 'utf8'));
@@ -70,6 +85,54 @@ async function main() {
             { currentStockQty: item.currentStockQty, inWarehouseCount }
         );
     }
+
+    const vehicles = byType(docs, 'vehicle');
+    const vehicleTires = tireEvents.filter(tire => tire.holderType === 'INTERNAL_VEHICLE' && tire.status === 'IN_USE');
+    const vehicleInstallIssues = [];
+    const duplicateVehicleSlots = [];
+    const activeVehicleIds = new Set(vehicles.filter(vehicle => vehicle.status !== 'SOLD').map(vehicle => vehicle._id));
+    const vehicleSlotKeySet = new Set();
+
+    for (const tire of vehicleTires) {
+        const key = `${tire.vehicleRef || ''}:${tire.slotCode || ''}`;
+        if (!tire.vehicleRef || !tire.slotCode) {
+            vehicleInstallIssues.push({ vehicleRef: tire.vehicleRef, tireRef: tire._id, issue: 'missing vehicleRef or slotCode' });
+            continue;
+        }
+        if (!activeVehicleIds.has(tire.vehicleRef)) {
+            vehicleInstallIssues.push({ vehicleRef: tire.vehicleRef, tireRef: tire._id, issue: 'installed on SOLD or unknown vehicle' });
+        }
+        if (vehicleSlotKeySet.has(key)) {
+            duplicateVehicleSlots.push(key);
+        }
+        vehicleSlotKeySet.add(key);
+    }
+
+    for (const vehicle of vehicles) {
+        const installed = vehicleTires.filter(tire => tire.vehicleRef === vehicle._id);
+        if (vehicle.status === 'SOLD') {
+            if (installed.length > 0) {
+                vehicleInstallIssues.push({ vehicleRef: vehicle._id, issue: 'SOLD vehicle must not have installed tires', installed: installed.length });
+            }
+            continue;
+        }
+        const requiredSlots = buildTireSlotCodesFromLayoutConfig(vehicle.tireLayoutConfig);
+        const installedSlots = new Set(installed.map(tire => tire.slotCode).filter(Boolean));
+        const missingSlots = requiredSlots.filter(slot => !installedSlots.has(slot));
+        const unexpectedSlots = [...installedSlots].filter(slot => !requiredSlots.includes(slot));
+        if (missingSlots.length > 0 || unexpectedSlots.length > 0) {
+            vehicleInstallIssues.push({
+                vehicleRef: vehicle._id,
+                plateNumber: vehicle.plateNumber,
+                missingSlots,
+                unexpectedSlots,
+                requiredCount: requiredSlots.length,
+                installedCount: installed.length,
+            });
+        }
+    }
+    requireCondition(duplicateVehicleSlots.length === 0, 'Duplicate tire slots found on vehicles', duplicateVehicleSlots);
+    requireCondition(vehicleInstallIssues.length === 0, 'Vehicle tire installation coverage is incomplete', vehicleInstallIssues.slice(0, 20));
 
     const deliveryOrders = byType(docs, 'deliveryOrder');
     const deliveryOrderItems = byType(docs, 'deliveryOrderItem');
@@ -151,6 +214,8 @@ async function main() {
             incidentSettlementLines: lines.length,
             trackedTireItems: tireItems.map(item => item._id),
             tireEvents: tireEvents.length,
+            vehicleTiresInstalled: vehicleTires.length,
+            tireMountedVehicles: vehicles.filter(vehicle => vehicle.status !== 'SOLD').length,
             vouchers: vouchers.length,
             freightNotas: freightNotas.length,
         },
