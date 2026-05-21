@@ -51,13 +51,14 @@ async function main() {
 
     const seedFile = path.resolve(process.cwd(), 'artifacts', 'default-supabase-seed.json');
     const docs = JSON.parse(await readFile(seedFile, 'utf8'));
+    const serviceDocs = docs.filter(doc => doc && doc._type === 'service');
     const tripRateDocs = docs.filter(doc => doc && doc._type === 'tripRouteRate');
     if (tripRateDocs.length === 0) {
         throw new Error('Tidak ada dokumen tripRouteRate di artifacts/default-supabase-seed.json');
     }
 
-    await seedRelationalTables(supabaseRequest, tripRateDocs);
-    console.log(`Trip route rates restored from seed: ${tripRateDocs.length} rows.`);
+    await seedRelationalTables(supabaseRequest, [...serviceDocs, ...tripRateDocs]);
+    console.log(`Services/trip route rates restored from seed: ${serviceDocs.length}/${tripRateDocs.length} rows.`);
 }
 
 main().catch(error => {

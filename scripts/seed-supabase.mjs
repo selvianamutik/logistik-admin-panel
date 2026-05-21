@@ -84,6 +84,80 @@ function logSkippedTypes(seedDocuments) {
     }
 }
 
+function toFiniteNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isInventoryLinkedTireEvent(doc, warehouseItemsById) {
+    if (!doc || doc._type !== 'tireEvent' || typeof doc.linkedWarehouseItemRef !== 'string' || !doc.linkedWarehouseItemRef.trim()) {
+        return false;
+    }
+    const linkedItem = warehouseItemsById.get(doc.linkedWarehouseItemRef);
+    return Boolean(linkedItem && linkedItem.trackingMode === 'TIRE_ASSET');
+}
+
+function filterInventoryLinkedTireSeedDocuments(seedDocuments) {
+    const warehouseItemsById = new Map(
+        seedDocuments
+            .filter(doc => doc && doc._type === 'warehouseItem' && typeof doc._id === 'string')
+            .map(doc => [doc._id, doc])
+    );
+    const keptTireEventIds = new Set();
+    let removedTireEvents = 0;
+    let originalTireEvents = 0;
+
+    for (const doc of seedDocuments) {
+        if (!doc || doc._type !== 'tireEvent') continue;
+        originalTireEvents += 1;
+        if (isInventoryLinkedTireEvent(doc, warehouseItemsById)) {
+            keptTireEventIds.add(doc._id);
+        } else {
+            removedTireEvents += 1;
+        }
+    }
+
+    if (originalTireEvents > 0 && keptTireEventIds.size === 0) {
+        throw new Error('Seed ban tidak valid: semua tireEvent terfilter karena tidak terhubung ke inventory TIRE_ASSET.');
+    }
+
+    let removedTireHistoryLogs = 0;
+    const filteredDocuments = seedDocuments.filter(doc => {
+        if (!doc || doc._type !== 'tireEvent') return true;
+        return keptTireEventIds.has(doc._id);
+    }).filter(doc => {
+        if (!doc || doc._type !== 'tireHistoryLog') return true;
+        const keepHistory = keptTireEventIds.has(doc.tireEventRef);
+        if (!keepHistory) {
+            removedTireHistoryLogs += 1;
+        }
+        return keepHistory;
+    });
+
+    const warehouseStockByItemRef = new Map();
+    for (const doc of filteredDocuments) {
+        if (!doc || doc._type !== 'tireEvent') continue;
+        if (doc.holderType === 'WAREHOUSE' && doc.status === 'IN_WAREHOUSE') {
+            warehouseStockByItemRef.set(doc.linkedWarehouseItemRef, (warehouseStockByItemRef.get(doc.linkedWarehouseItemRef) || 0) + 1);
+        }
+    }
+
+    for (const item of warehouseItemsById.values()) {
+        if (item.trackingMode !== 'TIRE_ASSET') continue;
+        const tireStock = warehouseStockByItemRef.get(item._id) || 0;
+        const itemStock = toFiniteNumber(item.currentStockQty);
+        if (itemStock !== tireStock) {
+            throw new Error(`Seed ban tidak sinkron: ${item.itemCode || item._id} currentStockQty=${itemStock}, tetapi tireEvent IN_WAREHOUSE=${tireStock}.`);
+        }
+    }
+
+    if (removedTireEvents > 0 || removedTireHistoryLogs > 0) {
+        console.log(`Filtering standalone tire seed docs: removed ${removedTireEvents} tireEvent and ${removedTireHistoryLogs} tireHistoryLog rows.`);
+    }
+
+    return filteredDocuments;
+}
+
 async function main() {
     const seedFile = getArgValue('--input', path.join('artifacts', 'default-supabase-seed.json'));
     const raw = await readFile(path.resolve(process.cwd(), seedFile), 'utf8');
@@ -116,10 +190,14 @@ async function main() {
     if (skipWorkflowTransactions) {
         WORKFLOW_TRANSACTION_DOC_TYPES.forEach(type => skipDocTypes.add(type));
     }
-    const seedDocumentsToImport = seedDocuments.filter(doc =>
+    const filteredSeedDocuments = seedDocuments.filter(doc =>
         !skipDocTypes.has(doc?._type) &&
         !skipDocIds.has(doc?._id)
     );
+    const enforceInventoryLinkedTires = hasFlag('--enforce-inventory-linked-tires');
+    const seedDocumentsToImport = enforceInventoryLinkedTires
+        ? filterInventoryLinkedTireSeedDocuments(filteredSeedDocuments)
+        : filteredSeedDocuments;
 
     if (skipDocTypes.size > 0) {
         console.log(`Skipping seed document types: ${Array.from(skipDocTypes).sort().join(', ')}`);
