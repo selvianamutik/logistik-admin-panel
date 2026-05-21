@@ -47,14 +47,11 @@ class DriverAuthService {
       );
     }
 
-    return DriverAppSession(
-      driverId: user['_id'] as String? ?? '',
-      driverName:
-          user['driverName'] as String? ?? user['name'] as String? ?? '',
-      email: user['email'] as String? ?? email,
-      role: user['role'] as String? ?? 'DRIVER',
-      driverRef: driverRef,
-      token: decoded['token'] as String?,
+    final token = decoded['token'] as String? ?? '';
+
+    return DriverAppSession.fromApiUserJson(
+      user,
+      token: token,
       accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
     );
   }

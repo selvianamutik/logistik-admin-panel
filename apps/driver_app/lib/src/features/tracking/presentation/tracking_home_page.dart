@@ -83,6 +83,38 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     return vouchers;
   }
 
+  void _showSuccess(String message) {
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.success,
+      message: message,
+    );
+  }
+
+  void _showInfo(String message) {
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.info,
+      message: message,
+    );
+  }
+
+  void _showWarning(String message) {
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.warning,
+      message: message,
+    );
+  }
+
+  void _showError(String message) {
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.error,
+      message: message,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -347,12 +379,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     } on DriverAccessException catch (err) {
       if (!mounted) return;
       setState(() => _acknowledgingWarning = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     }
   }
 
@@ -622,12 +649,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     if (tripPlan.linkedDeliveryOrderRef?.trim().isNotEmpty == true) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip ini sudah punya DO. Kelola SJ dari DO aktifnya.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showInfo('Trip ini sudah punya DO. Kelola SJ dari DO aktifnya.');
       return;
     }
 
@@ -663,24 +685,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            tripPlan.allowsDirectCargoInput
-                ? 'SJ dan barang berhasil dibuat.'
-                : 'SJ berhasil dibuat.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSuccess(
+        tripPlan.allowsDirectCargoInput
+            ? 'SJ dan barang berhasil dibuat.'
+            : 'SJ berhasil dibuat.',
       );
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _submittingManifest = false);
@@ -695,15 +707,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     if (!_canManageManifest(trip)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            trip.isTripClosedByAdmin
-                ? 'Trip sudah ditutup admin. SJ/barang dikunci sampai trip dibuka kembali.'
-                : 'DO ini tidak bisa diubah dari aplikasi driver.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showWarning(
+        trip.isTripClosedByAdmin
+            ? 'Trip sudah ditutup admin. SJ/barang dikunci sampai trip dibuka kembali.'
+            : 'DO ini tidak bisa diubah dari aplikasi driver.',
       );
       return;
     }
@@ -763,24 +770,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       }
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.cargoItems.isEmpty
-                ? 'SJ berhasil disimpan.'
-                : 'SJ dan barang berhasil disimpan.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSuccess(
+        result.cargoItems.isEmpty
+            ? 'SJ berhasil disimpan.'
+            : 'SJ dan barang berhasil disimpan.',
       );
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _submittingManifest = false);
@@ -796,12 +793,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     final availableStatuses = _availableSuratJalanStatuses(trip);
     if (!_canUpdateSuratJalanStatus(trip) || availableStatuses.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak ada SJ yang bisa diupdate pada tahap ini.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showInfo('Tidak ada SJ yang bisa diupdate pada tahap ini.');
       return;
     }
 
@@ -990,22 +982,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       final distribution = refreshedTrip == null
           ? ''
           : ' Status sekarang: ${_suratJalanStatusDistributionText(refreshedTrip)}.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$selectedText berhasil dipindah ke $targetLabel.$distribution',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSuccess(
+        '$selectedText berhasil dipindah ke $targetLabel.$distribution',
       );
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _updatingBatchStatus = false);
@@ -1178,13 +1160,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     if (trip.cargoItems.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showWarning(
+        'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.',
       );
       return;
     }
@@ -1218,20 +1195,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Permintaan selesai dikirim. Menunggu approval admin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSuccess('Permintaan selesai dikirim. Menunggu approval admin.');
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _updatingStatus = false);
@@ -1245,30 +1212,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       return;
     }
     if (trip.status != TripStatus.delivered) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tutup trip hanya bisa diajukan setelah trip selesai.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showInfo('Tutup trip hanya bisa diajukan setelah trip selesai.');
       return;
     }
     if (trip.isTripClosedByAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip ini sudah ditutup admin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showInfo('Trip ini sudah ditutup admin.');
       return;
     }
     if (trip.isAwaitingAdminApproval) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip ini masih menunggu approval admin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showInfo('Trip ini masih menunggu approval admin.');
       return;
     }
 
@@ -1393,22 +1345,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Permintaan tutup trip dikirim. Menunggu approval admin.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSuccess('Permintaan tutup trip dikirim. Menunggu approval admin.');
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _updatingStatus = false);
@@ -1625,20 +1565,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Laporan insiden dikirim ke admin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSuccess('Laporan insiden dikirim ke admin.');
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _reportingIncident = false);
@@ -1954,24 +1884,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isAddingCostOnly
-                ? 'Biaya tambahan insiden dikirim. Menunggu review admin.'
-                : 'Penyelesaian insiden dikirim. Menunggu review admin.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSuccess(
+        isAddingCostOnly
+            ? 'Biaya tambahan insiden dikirim. Menunggu review admin.'
+            : 'Penyelesaian insiden dikirim. Menunggu review admin.',
       );
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showError(err.message);
     } finally {
       if (mounted) {
         setState(() => _submittingIncidentResolution = false);
@@ -2443,10 +2363,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   Widget _buildTripList(ColorScheme scheme) {
     if (_loadingTrips) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(child: CircularProgressIndicator(color: scheme.primary)),
-      );
+      return const _DriverTripListSkeleton();
     }
     if (_loadError != null) {
       return _ErrorCard(message: _loadError!, onRetry: _loadTrips);
@@ -2471,10 +2388,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   Widget _buildVoucherList(ColorScheme scheme) {
     if (_loadingTrips) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(child: CircularProgressIndicator(color: scheme.primary)),
-      );
+      return const _DriverVoucherListSkeleton();
     }
     if (_loadError != null) {
       return _ErrorCard(message: _loadError!, onRetry: _loadTrips);
@@ -2895,16 +2809,16 @@ Future<Uint8List> _buildDriverVoucherPdf(DriverTripVoucher voucher) async {
               _pdfTableRow(['-', '-', 'Belum ada riwayat bon', '-', '-', '-'])
             else
               ...(() {
-                  return disbursements.indexed.map((entry) {
-                    final index = entry.$1;
-                    final item = entry.$2;
-                    return _pdfTableRow([
-                      '${index + 1}',
-                      _formatDateText(item.date),
-                      _voucherDisbursementLabel(item, index + 1),
-                      _textOrDash(item.bankAccountName),
-                      _textOrDash(item.note),
-                      _formatRupiah(item.amount),
+                return disbursements.indexed.map((entry) {
+                  final index = entry.$1;
+                  final item = entry.$2;
+                  return _pdfTableRow([
+                    '${index + 1}',
+                    _formatDateText(item.date),
+                    _voucherDisbursementLabel(item, index + 1),
+                    _textOrDash(item.bankAccountName),
+                    _textOrDash(item.note),
+                    _formatRupiah(item.amount),
                   ]);
                 });
               })(),
@@ -3166,6 +3080,164 @@ class _DriverSectionSwitcher extends StatelessWidget {
   }
 }
 
+class _DriverTripListSkeleton extends StatelessWidget {
+  const _DriverTripListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        _DriverTripSkeletonCard(),
+        SizedBox(height: 10),
+        _DriverTripSkeletonCard(),
+        SizedBox(height: 10),
+        _DriverTripSkeletonCard(compact: true),
+      ],
+    );
+  }
+}
+
+class _DriverVoucherListSkeleton extends StatelessWidget {
+  const _DriverVoucherListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        _DriverVoucherSkeletonCard(),
+        SizedBox(height: 10),
+        _DriverVoucherSkeletonCard(),
+      ],
+    );
+  }
+}
+
+class _DriverTripSkeletonCard extends StatelessWidget {
+  const _DriverTripSkeletonCard({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                _DriverSkeletonBlock(width: 44, height: 44, radius: 14),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _DriverSkeletonBlock(width: 170, height: 16, radius: 8),
+                      SizedBox(height: 8),
+                      _DriverSkeletonBlock(width: 220, height: 12, radius: 8),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 10),
+                _DriverSkeletonBlock(width: 74, height: 28, radius: 999),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const _DriverSkeletonBlock(
+              width: double.infinity,
+              height: 12,
+              radius: 8,
+            ),
+            const SizedBox(height: 8),
+            _DriverSkeletonBlock(
+              width: compact ? 180 : 260,
+              height: 12,
+              radius: 8,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DriverVoucherSkeletonCard extends StatelessWidget {
+  const _DriverVoucherSkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Row(
+              children: [
+                _DriverSkeletonBlock(width: 42, height: 42, radius: 14),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _DriverSkeletonBlock(width: 160, height: 15, radius: 8),
+                      SizedBox(height: 8),
+                      _DriverSkeletonBlock(width: 120, height: 12, radius: 8),
+                    ],
+                  ),
+                ),
+                _DriverSkeletonBlock(width: 86, height: 28, radius: 999),
+              ],
+            ),
+            SizedBox(height: 16),
+            _DriverSkeletonBlock(width: double.infinity, height: 12, radius: 8),
+            SizedBox(height: 8),
+            _DriverSkeletonBlock(width: 210, height: 12, radius: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DriverSkeletonBlock extends StatelessWidget {
+  const _DriverSkeletonBlock({
+    required this.width,
+    required this.height,
+    required this.radius,
+  });
+
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: width,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          gradient: LinearGradient(
+            colors: [
+              scheme.surfaceContainerHighest.withValues(alpha: 0.72),
+              scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+              scheme.surfaceContainerHighest.withValues(alpha: 0.72),
+            ],
+            stops: const [0.05, 0.48, 0.95],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DriverVoucherCard extends StatelessWidget {
   const _DriverVoucherCard({required this.voucher, required this.onPreview});
 
@@ -3402,9 +3474,11 @@ class _DriverVoucherPreviewDialog extends StatelessWidget {
       );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
+      showMobileFeedback(
         context,
-      ).showSnackBar(SnackBar(content: Text('Gagal membuat PDF: $error')));
+        type: MobileFeedbackType.error,
+        message: 'Gagal membuat PDF: $error',
+      );
     }
   }
 

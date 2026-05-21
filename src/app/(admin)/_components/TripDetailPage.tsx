@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../layout';
-import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, Trash2, X } from 'lucide-react';
+import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, Trash2, X, ChevronDown } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import AuditTrailCard from './AuditTrailCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -584,10 +584,15 @@ export default function TripDetailPage() {
     const [selectedSuratJalanActualEditDocument, setSelectedSuratJalanActualEditDocument] = useState<SuratJalanDocument | null>(null);
     const [selectedSuratJalanActualEditItemRef, setSelectedSuratJalanActualEditItemRef] = useState('');
     const statusModalBodyRef = useRef<HTMLDivElement | null>(null);
+    const actualCargoModalBodyRef = useRef<HTMLDivElement | null>(null);
     const statusModalScrollTopRef = useRef(0);
+    const actualCargoModalScrollTopRef = useRef(0);
     const shouldRestoreStatusModalScrollRef = useRef(false);
+    const shouldRestoreActualCargoModalScrollRef = useRef(false);
     const [activeFinalizationCargoItemRef, setActiveFinalizationCargoItemRef] = useState('');
     const [activeFinalizationDropKey, setActiveFinalizationDropKey] = useState('');
+    const [activeFinalizationReviewDropKey, setActiveFinalizationReviewDropKey] = useState('');
+    const [actualCargoModalReturnTarget, setActualCargoModalReturnTarget] = useState<'status' | 'review'>('status');
     const [newStatus, setNewStatus] = useState('');
     const [selectedStatusSuratJalanRefs, setSelectedStatusSuratJalanRefs] = useState<string[]>([]);
     const [statusNote, setStatusNote] = useState('');
@@ -603,6 +608,10 @@ export default function TripDetailPage() {
     const [actualCargoItemValueMap, setActualCargoItemValueMap] = useState<Record<string, ActualCargoItemValueDraft>>({});
     const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
     const [actualDropItemValueMap, setActualDropItemValueMap] = useState<Record<string, ActualDropItemValueDraft>>({});
+    const [actualDropEditSnapshot, setActualDropEditSnapshot] = useState<{
+        points: ActualDropDraft[];
+        itemValueMap: Record<string, ActualDropItemValueDraft>;
+    } | null>(null);
     const [actualCargoSetupSnapshot, setActualCargoSetupSnapshot] = useState<ActualCargoDraft[]>([]);
     const [suratJalanActualEditItems, setSuratJalanActualEditItems] = useState<ActualCargoDraft[]>([]);
     const [partialHoldContinuationItemRefs, setPartialHoldContinuationItemRefs] = useState<string[]>([]);
@@ -802,15 +811,25 @@ export default function TripDetailPage() {
         if (!showStatusModal || !reviewingDriverRequest || newStatus !== 'DELIVERED') {
             return;
         }
-        if (!doData?.pendingDriverActualDropPoints?.length) {
+        if (!doData) {
+            return;
+        }
+        const requestActualDropPoints = reviewingDriverRequestId
+            ? (doData.pendingDriverRequests || []).find(request => request.requestId === reviewingDriverRequestId)?.actualDropPoints
+            : undefined;
+        const sourceActualDropPoints = requestActualDropPoints || doData.pendingDriverActualDropPoints || [];
+        if (!sourceActualDropPoints.length) {
             return;
         }
 
-        const syncedDropDrafts = buildDefaultActualDropDrafts(
-            doData,
-            actualCargoItems,
-            doData.pendingDriverActualDropPoints
-        );
+        const hydratedDropState = buildDriverReviewActualDropHydration(sourceActualDropPoints, actualCargoItems);
+        const syncedDropDrafts = hydratedDropState.groupedDrafts.length > 0
+            ? hydratedDropState.groupedDrafts
+            : buildDefaultActualDropDrafts(
+                doData,
+                actualCargoItems,
+                sourceActualDropPoints
+            );
         const shouldUseAdvancedDropEditor = shouldOpenAdvancedDropEditor(doData, syncedDropDrafts);
         const nextSyncedDropDrafts = syncedDropDrafts;
 
@@ -835,12 +854,14 @@ export default function TripDetailPage() {
             }
             return nextSyncedDropDrafts;
         });
+        setActualDropItemValueMap(hydratedDropState.itemValueMap);
         setShowAdvancedDropEditor(shouldUseAdvancedDropEditor);
     }, [
         actualCargoItems,
         doData,
         newStatus,
         reviewingDriverRequest,
+        reviewingDriverRequestId,
         showStatusModal,
     ]);
 
@@ -2734,32 +2755,6 @@ export default function TripDetailPage() {
         );
     };
 
-    const getActualDropDraftIndex = (draftKey: string) =>
-        actualDropPoints.findIndex(drop => drop.draftKey === draftKey);
-
-    const isActualDropAfter = (candidateDraftKey: string, sourceDraftKey: string) => {
-        const candidateIndex = getActualDropDraftIndex(candidateDraftKey);
-        const sourceIndex = getActualDropDraftIndex(sourceDraftKey);
-        return candidateIndex >= 0 && sourceIndex >= 0 && candidateIndex > sourceIndex;
-    };
-
-    const clearLaterActualDropAllocationsForItem = (draftKey: string, deliveryOrderItemRef: string) => {
-        setActualDropItemValueMap(previous => {
-            const next = { ...previous };
-            Object.keys(next).forEach(valueKey => {
-                const parsedKey = parseActualDropItemValueKey(valueKey);
-                if (
-                    parsedKey &&
-                    parsedKey.deliveryOrderItemRef === deliveryOrderItemRef &&
-                    isActualDropAfter(parsedKey.draftKey, draftKey)
-                ) {
-                    delete next[valueKey];
-                }
-            });
-            return next;
-        });
-    };
-
     function getActualDropAllocationForItem(drop: ActualDropDraft, cargoItem: ActualCargoDraft): ActualDropDraft {
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         const cachedValues = actualDropItemValueMap[valueKey];
@@ -2825,7 +2820,6 @@ export default function TripDetailPage() {
             ...previous,
             [valueKey]: pickActualDropItemValues(nextAllocation),
         }));
-        clearLaterActualDropAllocationsForItem(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setActualDropPoints(previous => previous.map(item =>
             item.draftKey === drop.draftKey && item.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef
                 ? { ...item, ...pickActualDropItemValues(nextAllocation) }
@@ -2872,37 +2866,6 @@ export default function TripDetailPage() {
                 ? { ...item, deliveryOrderItemRef: visibleItemRef, ...visibleAllocation }
                 : item;
         }));
-        const persistedItemRefs = new Set(nextAllocationByItemRef.keys());
-        setActualDropPoints(previous => previous.map(item => {
-            if (
-                !item.deliveryOrderItemRef ||
-                !persistedItemRefs.has(item.deliveryOrderItemRef) ||
-                !isActualDropAfter(item.draftKey, drop.draftKey)
-            ) {
-                return item;
-            }
-            return {
-                ...item,
-                deliveryOrderItemRef: '',
-                qtyKoli: '',
-                weightInputValue: '',
-                volumeInputValue: '',
-            };
-        }));
-        setActualDropItemValueMap(previous => {
-            const next = { ...previous };
-            Object.keys(next).forEach(valueKey => {
-                const parsedKey = parseActualDropItemValueKey(valueKey);
-                if (
-                    parsedKey &&
-                    persistedItemRefs.has(parsedKey.deliveryOrderItemRef) &&
-                    isActualDropAfter(parsedKey.draftKey, drop.draftKey)
-                ) {
-                    delete next[valueKey];
-                }
-            });
-            return next;
-        });
     };
 
     const buildActualDropAllocationEntriesForItems = (
@@ -3161,6 +3124,27 @@ export default function TripDetailPage() {
         setShowStatusModal(true);
     }, []);
 
+    const rememberActualCargoModalScrollPosition = useCallback(() => {
+        actualCargoModalScrollTopRef.current = actualCargoModalBodyRef.current?.scrollTop ?? actualCargoModalScrollTopRef.current;
+    }, []);
+
+    const restoreActualCargoModalScrollOnNextFrame = useCallback(() => {
+        shouldRestoreActualCargoModalScrollRef.current = true;
+    }, []);
+
+    const restoreActualCargoModalScroll = useCallback(() => {
+        const scrollTop = actualCargoModalScrollTopRef.current;
+        const restore = () => {
+            if (actualCargoModalBodyRef.current) {
+                actualCargoModalBodyRef.current.scrollTop = scrollTop;
+            }
+        };
+        window.requestAnimationFrame(() => {
+            restore();
+            window.requestAnimationFrame(restore);
+        });
+    }, []);
+
     useEffect(() => {
         if (!showStatusModal || !shouldRestoreStatusModalScrollRef.current) {
             return;
@@ -3175,6 +3159,19 @@ export default function TripDetailPage() {
 
         return () => window.cancelAnimationFrame(animationFrameId);
     }, [showStatusModal]);
+
+    useEffect(() => {
+        if (!showActualCargoFinalizationModal || !shouldRestoreActualCargoModalScrollRef.current) {
+            return;
+        }
+
+        const animationFrameId = window.requestAnimationFrame(() => {
+            restoreActualCargoModalScroll();
+            shouldRestoreActualCargoModalScrollRef.current = false;
+        });
+
+        return () => window.cancelAnimationFrame(animationFrameId);
+    }, [showActualCargoFinalizationModal, activeFinalizationDropKey, restoreActualCargoModalScroll]);
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -4786,7 +4783,7 @@ export default function TripDetailPage() {
     })();
     const selectedDerivedActualCargoItems = selectedActualCargoItems.map(item => {
         const manualValues = actualCargoItemValueMap[item.deliveryOrderItemRef];
-        if (manualValues) {
+        if (manualValues && (!showAdvancedDropEditor || reviewingDriverRequest)) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
         if (reviewingDriverRequest) {
@@ -4939,58 +4936,6 @@ export default function TripDetailPage() {
                 }) > 0
             ));
         }
-        for (const cargoItem of selectedDerivedActualCargoItems) {
-            if (!actualCargoItemValueMap[cargoItem.deliveryOrderItemRef]) {
-                continue;
-            }
-
-            const billableDropIndexes = adjustedDropPoints
-                .map((point, index) => ({ point, index }))
-                .filter(entry =>
-                    entry.point.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef &&
-                    isDeliveryOrderBillableDropType(entry.point.stopType)
-                )
-                .map(entry => entry.index);
-            if (billableDropIndexes.length === 0) {
-                continue;
-            }
-
-            const manualQtyKoli = parseFormattedNumberish(cargoItem.actualQtyKoli || 0, { maxFractionDigits: 2 });
-            const manualWeightKg = convertWeightToKg(
-                parseFormattedNumberish(cargoItem.actualWeightInputValue || 0, {
-                    maxFractionDigits: getWeightInputFractionDigits(cargoItem.actualWeightInputUnit),
-                }),
-                cargoItem.actualWeightInputUnit
-            );
-            const manualVolumeM3 = convertVolumeToM3(
-                parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
-                    maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                }),
-                cargoItem.actualVolumeInputUnit
-            );
-
-            const primaryBillableIndex = billableDropIndexes[0];
-            const primaryBillableDrop = adjustedDropPoints[primaryBillableIndex];
-            const weightInputUnit = primaryBillableDrop.weightInputUnit || cargoItem.actualWeightInputUnit;
-            const volumeInputUnit = primaryBillableDrop.volumeInputUnit || cargoItem.actualVolumeInputUnit;
-            adjustedDropPoints[primaryBillableIndex] = {
-                ...primaryBillableDrop,
-                qtyKoli: manualQtyKoli > 0 ? String(manualQtyKoli) : '',
-                weightInputValue: manualWeightKg > 0 ? String(convertKgToWeightInputValue(manualWeightKg, weightInputUnit)) : '',
-                weightInputUnit,
-                volumeInputValue: manualVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(manualVolumeM3, volumeInputUnit)) : '',
-                volumeInputUnit,
-            };
-
-            billableDropIndexes.slice(1).forEach(index => {
-                adjustedDropPoints[index] = {
-                    ...adjustedDropPoints[index],
-                    qtyKoli: '',
-                    weightInputValue: '',
-                    volumeInputValue: '',
-                };
-            });
-        }
 
         return adjustedDropPoints.filter(point => (
             parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }) > 0 ||
@@ -5029,10 +4974,14 @@ export default function TripDetailPage() {
                 : selectedActualCargoTotals.volumeM3 > 0 && Math.abs(selectedSubmissionBillableActualDropTotals.volumeM3 - selectedActualCargoTotals.volumeM3) > 0.001
                     ? 'Total volume titik DROP harus sama dengan volume aktual barang SJ.'
                     : null;
-    const selectedBillableDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
-    const selectedHoldDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
-    const selectedReturnDropCount = selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
-    const selectedDropModeLabel = showAdvancedDropEditor ? `${selectedEffectiveActualDropPoints.length} titik aktual` : 'Trip normal / 1 tujuan';
+    const selectedPhysicalActualDropPoints = showAdvancedDropEditor ? selectedActualDropPoints : selectedEffectiveActualDropPoints;
+    const selectedBillableDropCount = selectedPhysicalActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
+    const selectedHoldDropCount = selectedPhysicalActualDropPoints.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
+    const selectedReturnDropCount = selectedPhysicalActualDropPoints.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
+    const selectedBillableInvoiceDropCount = showAdvancedDropEditor
+        ? selectedEffectiveActualDropPoints.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length
+        : selectedBillableDropCount;
+    const selectedDropModeLabel = showAdvancedDropEditor ? `${selectedPhysicalActualDropPoints.length} titik aktual` : 'Trip normal / 1 tujuan';
     const selectedSuratJalanLabelMap = new Map(
         selectedStatusSuratJalanDocuments.flatMap(document => {
             const labels: Array<[string, string]> = [];
@@ -5095,6 +5044,13 @@ export default function TripDetailPage() {
             groupLabel: group.label,
         }))
     );
+    const selectedActualDropPointSjGroups = Array.from(selectedActualCargoGroupMap.values()).map(group => ({
+        ...group,
+        items: group.items.map(item => ({
+            ...item,
+            groupLabel: group.label,
+        })),
+    }));
     const getActualDropAllocationSummaryRows = (drop: ActualDropDraft) =>
         selectedActualCargoItems
             .map(cargoItem => {
@@ -5138,12 +5094,137 @@ export default function TripDetailPage() {
                 };
             })
             .filter(row => row.hasAllocation);
+    const summarizeActualDropItemValues = (values: Pick<ActualDropDraft, 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit'>) => ({
+        qtyKoli: parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),
+        weightKg: convertWeightToKg(
+            parseFormattedNumberish(values.weightInputValue || 0, {
+                maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
+            }),
+            values.weightInputUnit
+        ),
+        volumeM3: convertVolumeToM3(
+            parseFormattedNumberish(values.volumeInputValue || 0, {
+                maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
+            }),
+            values.volumeInputUnit
+        ),
+    });
+    const subtractCargoSummary = (
+        left: { qtyKoli: number; weightKg: number; volumeM3: number },
+        right: { qtyKoli: number; weightKg: number; volumeM3: number }
+    ) => ({
+        qtyKoli: Math.max(left.qtyKoli - right.qtyKoli, 0),
+        weightKg: Math.max(left.weightKg - right.weightKg, 0),
+        volumeM3: Math.max(left.volumeM3 - right.volumeM3, 0),
+    });
+    const summarizeActualCargoDraftAsCargoSummary = (item: ActualCargoDraft) => {
+        const actualWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+        });
+        const actualVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
+        return {
+            qtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
+            weightKg: convertWeightToKg(actualWeightInputValue, item.actualWeightInputUnit),
+            volumeM3: convertVolumeToM3(actualVolumeInputValue, item.actualVolumeInputUnit),
+        };
+    };
+    const getExplicitActualDropItemValues = (drop: ActualDropDraft, cargoItem: ActualCargoDraft): ActualDropItemValueDraft | null => {
+        const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
+        const cachedValues = actualDropItemValueMap[valueKey];
+        if (cachedValues && hasActualDropItemValues(cachedValues)) {
+            return cachedValues;
+        }
+        if (drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef) {
+            const values = pickActualDropItemValues(drop);
+            return hasActualDropItemValues(values) ? values : null;
+        }
+        return null;
+    };
+    const summarizeExplicitActualDropItemValues = (drop: ActualDropDraft, cargoItem: ActualCargoDraft) => {
+        const explicitValues = getExplicitActualDropItemValues(drop, cargoItem);
+        return explicitValues
+            ? summarizeActualDropItemValues({
+                qtyKoli: explicitValues.qtyKoli,
+                weightInputValue: explicitValues.weightInputValue,
+                weightInputUnit: explicitValues.weightInputUnit,
+                volumeInputValue: explicitValues.volumeInputValue,
+                volumeInputUnit: explicitValues.volumeInputUnit,
+            })
+            : { qtyKoli: 0, weightKg: 0, volumeM3: 0 };
+    };
+    const getActualDropItemHelper = (drop: ActualDropDraft, cargoItem: ActualCargoDraft) => {
+        const currentValues = getExplicitActualDropItemValues(drop, cargoItem);
+        const currentSummary = summarizeExplicitActualDropItemValues(drop, cargoItem);
+        const otherSummary = selectedActualDropPoints
+            .filter(point => point.draftKey !== drop.draftKey)
+            .map(point => summarizeExplicitActualDropItemValues(point, cargoItem))
+            .reduce((sum, summary) => ({
+                qtyKoli: sum.qtyKoli + summary.qtyKoli,
+                weightKg: sum.weightKg + summary.weightKg,
+                volumeM3: sum.volumeM3 + summary.volumeM3,
+            }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+        const itemActualSummary = summarizeActualCargoDraftAsCargoSummary(cargoItem);
+        const availableForThisDrop = subtractCargoSummary(itemActualSummary, otherSummary);
+        const remainingAfterCurrent = subtractCargoSummary(availableForThisDrop, currentSummary);
+        const hasAllocation = Boolean(currentValues);
+        return {
+            currentSummary,
+            otherSummary,
+            remainingAfterCurrent,
+            hasAllocation,
+            badgeLabel: hasAllocation ? 'Terisi' : 'Kosong',
+            badgeColor: hasAllocation ? 'var(--color-success)' : 'var(--color-gray-500)',
+            badgeBackground: hasAllocation ? 'var(--color-success-soft)' : 'var(--color-gray-100)',
+        };
+    };
+    const getExplicitActualDropItemSummary = (cargoItem: ActualCargoDraft) =>
+        selectedActualDropPoints
+            .map(drop => getExplicitActualDropItemValues(drop, cargoItem))
+            .filter((values): values is ActualDropItemValueDraft => Boolean(values))
+            .map(values => summarizeActualDropItemValues({
+                qtyKoli: values.qtyKoli,
+                weightInputValue: values.weightInputValue,
+                weightInputUnit: values.weightInputUnit,
+                volumeInputValue: values.volumeInputValue,
+                volumeInputUnit: values.volumeInputUnit,
+            }))
+            .reduce((sum, summary) => ({
+                qtyKoli: sum.qtyKoli + summary.qtyKoli,
+                weightKg: sum.weightKg + summary.weightKg,
+                volumeM3: sum.volumeM3 + summary.volumeM3,
+            }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const getActualDropAllocationIncompleteItems = () =>
+        selectedActualCargoItems.filter(cargoItem => {
+            const target = summarizeActualCargoDraftAsCargoSummary(cargoItem);
+            const allocated = getExplicitActualDropItemSummary(cargoItem);
+            const qtyRequired = cargoItem.requireQty || target.qtyKoli > 0;
+            const weightRequired = cargoItem.requireWeight || target.weightKg > 0;
+            const volumeRequired = cargoItem.requireVolume || target.volumeM3 > 0;
+            return (
+                (qtyRequired && Math.abs(allocated.qtyKoli - target.qtyKoli) > 0.01) ||
+                (weightRequired && Math.abs(allocated.weightKg - target.weightKg) > 0.01) ||
+                (volumeRequired && Math.abs(allocated.volumeM3 - target.volumeM3) > 0.001)
+            );
+        });
+    const selectedActualDropIncompleteItems = showAdvancedDropEditor ? getActualDropAllocationIncompleteItems() : [];
+    const selectedActualDropAllocationComplete =
+        !showAdvancedDropEditor ||
+        (selectedActualCargoItems.length > 0 && selectedActualDropIncompleteItems.length === 0);
     const activeFinalizationDrop = activeFinalizationDropKey
         ? selectedActualDropPoints.find(drop => drop.draftKey === activeFinalizationDropKey) || null
         : null;
-    const finalizationCargoTabItems = activeFinalizationDrop
-        ? selectedActualCargoTabItems
-        : selectedDerivedActualCargoTabItems;
+    const activeFinalizationReviewDrop =
+        selectedActualDropPoints.find(drop => drop.draftKey === activeFinalizationReviewDropKey) ||
+        selectedActualDropPoints[0] ||
+        null;
+    const showingDropFinalizationReview = showAdvancedDropEditor && !activeFinalizationDrop;
+    const finalizationCargoTabItems = activeFinalizationDrop && activeFinalizationCargoItemRef
+        ? selectedActualCargoTabItems.filter(item => item.deliveryOrderItemRef === activeFinalizationCargoItemRef)
+        : activeFinalizationDrop
+            ? selectedActualCargoTabItems.slice(0, 1)
+            : selectedDerivedActualCargoTabItems;
     const activeFinalizationCargoItem =
         finalizationCargoTabItems.find(item => item.deliveryOrderItemRef === activeFinalizationCargoItemRef)
         || finalizationCargoTabItems[0]
@@ -5168,19 +5249,6 @@ export default function TripDetailPage() {
             volumeInputValue: item.actualVolumeInputValue,
             volumeInputUnit: item.actualVolumeInputUnit,
         });
-    };
-    const summarizeActualCargoDraftAsCargoSummary = (item: ActualCargoDraft) => {
-        const actualWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-        });
-        const actualVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-        });
-        return {
-            qtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
-            weightKg: convertWeightToKg(actualWeightInputValue, item.actualWeightInputUnit),
-            volumeM3: convertVolumeToM3(actualVolumeInputValue, item.actualVolumeInputUnit),
-        };
     };
     const summarizeActualDropPointsForItemByType = (cargoItem: ActualCargoDraft, stopTypes: string[]) => {
         const stopTypeSet = new Set(stopTypes);
@@ -5302,9 +5370,10 @@ export default function TripDetailPage() {
     const selectedActualDropSetupReady =
         selectedActualDropPoints.length > 0 &&
         selectedActualDropPoints.every(item => Boolean(item.locationName.trim() || item.locationAddress.trim())) &&
-        !selectedActualDropAmbiguityMessage;
+        !selectedActualDropAmbiguityMessage &&
+        selectedActualDropAllocationComplete;
     const selectedDropOutcomeSummary = [
-        selectedBillableDropCount > 0 ? `${selectedBillableDropCount} drop invoice` : null,
+        selectedBillableInvoiceDropCount > 0 ? `${selectedBillableInvoiceDropCount} drop invoice` : null,
         selectedHoldDropCount > 0 ? `${selectedHoldDropCount} hold` : null,
         selectedReturnDropCount > 0 ? `${selectedReturnDropCount} return` : null,
     ].filter(Boolean).join(' • ') || 'Semua muatan mengikuti tujuan default';
@@ -7580,37 +7649,71 @@ export default function TripDetailPage() {
                                                                         <div className="font-semibold" style={{ marginTop: '0.15rem' }}>{formatCargoSummary(selectedActualCargoTotals)}</div>
                                                                     </div>
                                                                 </div>
-                                                                {selectedActualCargoItems.map(cargoItem => (
-                                                                    <div
-                                                                        key={`admin-default-drop-${cargoItem.deliveryOrderItemRef}`}
-                                                                        style={{
-                                                                            display: 'grid',
-                                                                            gap: '0.2rem',
-                                                                            padding: '0.65rem 0.75rem',
-                                                                            border: '1px solid var(--color-gray-200)',
-                                                                            borderRadius: '0.65rem',
-                                                                            background: 'var(--color-white)',
-                                                                        }}
-                                                                    >
-                                                                        <div className="font-medium">{cargoItem.description || 'Barang'}</div>
-                                                                        <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
-                                                                        <div className="text-muted text-sm">
-                                                                            Rencana awal SJ: {formatCargoSummary({
-                                                                                qtyKoli: cargoItem.plannedQtyKoli,
-                                                                                weightKg: cargoItem.plannedWeightKg,
-                                                                                weightInputValue: cargoItem.plannedWeightInputValue,
-                                                                                weightInputUnit: cargoItem.plannedWeightInputUnit,
-                                                                                volumeM3: cargoItem.plannedVolumeM3,
-                                                                                volumeInputValue: cargoItem.plannedVolumeInputValue,
-                                                                                volumeInputUnit: cargoItem.plannedVolumeInputUnit,
-                                                                            })}
-                                                                        </div>
-                                                                        <div className="text-muted text-sm">Akan direalisasikan: {summarizeActualCargoDraft(cargoItem)}</div>
-                                                                        <div className="text-muted text-sm">
-                                                                            Tipe realisasi: {DO_ACTUAL_DROP_TYPE_MAP[selectedAutoActualDropDraft.stopType]?.label || selectedAutoActualDropDraft.stopType}
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
+                                                                <div style={{ display: 'grid', gap: '0.6rem' }}>
+                                                                    {selectedActualDropPointSjGroups.map(group => (
+                                                                        <details
+                                                                            key={`default-drop-${group.key}`}
+                                                                            open
+                                                                            style={{
+                                                                                border: '1px solid var(--color-gray-200)',
+                                                                                borderRadius: '0.65rem',
+                                                                                background: 'var(--color-white)',
+                                                                                overflow: 'hidden',
+                                                                            }}
+                                                                        >
+                                                                            <summary
+                                                                                style={{
+                                                                                    alignItems: 'center',
+                                                                                    cursor: 'pointer',
+                                                                                    display: 'flex',
+                                                                                    gap: '0.5rem',
+                                                                                    justifyContent: 'space-between',
+                                                                                    listStyle: 'none',
+                                                                                    padding: '0.7rem 0.8rem',
+                                                                                }}
+                                                                            >
+                                                                                <span>
+                                                                                    <span className="font-semibold">{group.label}</span>
+                                                                                    <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                                                </span>
+                                                                                <ChevronDown size={16} />
+                                                                            </summary>
+                                                                            <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
+                                                                                {group.items.map(cargoItem => (
+                                                                                    <div
+                                                                                        key={`admin-default-drop-${cargoItem.deliveryOrderItemRef}`}
+                                                                                        style={{
+                                                                                            display: 'grid',
+                                                                                            gap: '0.22rem',
+                                                                                            padding: '0.65rem 0.75rem',
+                                                                                            border: '1px solid var(--color-gray-100)',
+                                                                                            borderRadius: '0.6rem',
+                                                                                            background: 'var(--color-gray-50)',
+                                                                                        }}
+                                                                                    >
+                                                                                        <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                                                        <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || group.label || '-'}</div>
+                                                                                        <div className="text-muted text-sm">
+                                                                                            Rencana awal SJ: {formatCargoSummary({
+                                                                                                qtyKoli: cargoItem.plannedQtyKoli,
+                                                                                                weightKg: cargoItem.plannedWeightKg,
+                                                                                                weightInputValue: cargoItem.plannedWeightInputValue,
+                                                                                                weightInputUnit: cargoItem.plannedWeightInputUnit,
+                                                                                                volumeM3: cargoItem.plannedVolumeM3,
+                                                                                                volumeInputValue: cargoItem.plannedVolumeInputValue,
+                                                                                                volumeInputUnit: cargoItem.plannedVolumeInputUnit,
+                                                                                            })}
+                                                                                        </div>
+                                                                                        <div className="text-muted text-sm">Akan direalisasikan: {summarizeActualCargoDraft(cargoItem)}</div>
+                                                                                        <div className="text-muted text-sm">
+                                                                                            Tipe realisasi: {DO_ACTUAL_DROP_TYPE_MAP[selectedAutoActualDropDraft.stopType]?.label || selectedAutoActualDropDraft.stopType}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </details>
+                                                                    ))}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     );
@@ -7621,9 +7724,6 @@ export default function TripDetailPage() {
                                                         <div className="text-muted text-sm">
                                                             Tentukan per titik apakah barang turun, hold, return, atau lanjut ke titik lain.
                                                         </div>
-                                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addActualDropDraft} disabled={updatingStatus}>
-                                                            + Tambah Titik Drop
-                                                        </button>
                                                     </div>
                                                     <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                         {selectedActualDropPoints.map((item, index) => (
@@ -7638,52 +7738,24 @@ export default function TripDetailPage() {
                                                                         <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
                                                                         <div className="text-muted text-sm">Barang untuk titik ini diatur dari tombol ini.</div>
                                                                     </div>
-                                                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="btn btn-primary btn-sm"
-                                                                            onClick={() => {
-                                                                                rememberStatusModalScrollPosition();
-                                                                                ensureActualDropAllocationsForItems(item, selectedActualCargoTabItems);
-                                                                                setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(item, selectedActualCargoTabItems));
-                                                                                setActiveFinalizationDropKey(item.draftKey);
-                                                                                setShowStatusModal(false);
-                                                                                setShowActualCargoFinalizationModal(true);
-                                                                            }}
-                                                                            disabled={
-                                                                                !newStatus ||
-                                                                                updatingStatus ||
-                                                                                selectedStatusSuratJalanRefs.length === 0 ||
-                                                                                selectedActualCargoTabItems.length === 0
-                                                                            }
-                                                                        >
-                                                                            Tentukan Barang
+                                                                    {selectedActualDropPoints.length > 1 && (
+                                                                        <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
+                                                                            Hapus
                                                                         </button>
-                                                                        {selectedActualDropPoints.length > 1 && (
-                                                                            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
-                                                                                Hapus
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
+                                                                    )}
                                                                 </div>
                                                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.7rem 0.8rem', background: 'var(--color-white)', marginBottom: '0.75rem' }}>
                                                                     <div className="text-muted text-sm" style={{ marginBottom: '0.45rem' }}>
-                                                                        Alokasi {DO_ACTUAL_DROP_TYPE_MAP[item.stopType]?.label || item.stopType}
+                                                                        Total alokasi {DO_ACTUAL_DROP_TYPE_MAP[item.stopType]?.label || item.stopType} di titik ini
                                                                     </div>
                                                                     {allocationSummaryRows.length > 0 ? (
-                                                                        <div style={{ display: 'grid', gap: '0.35rem' }}>
-                                                                            {allocationSummaryRows.map(row => (
-                                                                                <div key={row.key} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8rem' }}>
-                                                                                    <div style={{ fontWeight: 600 }}>{row.label}</div>
-                                                                                    <div style={{ display: 'grid', gap: '0.15rem', color: 'var(--color-gray-700)' }}>
-                                                                                        <div>No SJ: {selectedActualCargoItems.find(cargoItem => cargoItem.deliveryOrderItemRef === row.key)?.shipperReferenceNumber || '-'}</div>
-                                                                                        <div>Rencana awal SJ: {formatCargoSummary(row.totalSummary)}</div>
-                                                                                        <div>
-                                                                                            {(item.stopType === 'HOLD' ? 'Akan di-hold di titik ini' : 'Akan dialokasikan di titik ini')}: {formatCargoSummary(row.allocatedSummary)}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
+                                                                        <div style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8rem' }}>
+                                                                            <div>{formatCargoSummary(allocationSummaryRows.reduce((sum, row) => ({
+                                                                                qtyKoli: sum.qtyKoli + row.allocatedSummary.qtyKoli,
+                                                                                weightKg: sum.weightKg + row.allocatedSummary.weightKg,
+                                                                                volumeM3: sum.volumeM3 + row.allocatedSummary.volumeM3,
+                                                                            }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 }))}</div>
+                                                                            <div className="text-muted text-sm">{allocationSummaryRows.length} barang terisi di titik ini.</div>
                                                                         </div>
                                                                     ) : (
                                                                         <div className="text-muted text-sm">Belum ada barang dialokasikan.</div>
@@ -7742,6 +7814,115 @@ export default function TripDetailPage() {
                                                                         placeholder="Opsional, isi jika berbeda dari tujuan invoice"
                                                                     />
                                                                 </div>
+                                                                <div style={{ display: 'grid', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                                                                    {selectedActualDropPointSjGroups.map(group => (
+                                                                        <details
+                                                                            key={`${item.draftKey}-${group.key}`}
+                                                                            open
+                                                                            style={{
+                                                                                border: '1px solid var(--color-gray-200)',
+                                                                                borderRadius: '0.65rem',
+                                                                                background: 'var(--color-white)',
+                                                                                overflow: 'hidden',
+                                                                            }}
+                                                                        >
+                                                                            <summary
+                                                                                style={{
+                                                                                    alignItems: 'center',
+                                                                                    cursor: 'pointer',
+                                                                                    display: 'flex',
+                                                                                    gap: '0.5rem',
+                                                                                    justifyContent: 'space-between',
+                                                                                    listStyle: 'none',
+                                                                                    padding: '0.7rem 0.8rem',
+                                                                                }}
+                                                                            >
+                                                                                <span>
+                                                                                    <span className="font-semibold">{group.label}</span>
+                                                                                    <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                                                </span>
+                                                                                <ChevronDown size={16} />
+                                                                            </summary>
+                                                                            <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
+                                                                                {group.items.map(cargoItem => {
+                                                                                    const helper = getActualDropItemHelper(item, cargoItem);
+                                                                                    return (
+                                                                                        <div
+                                                                                            key={`${item.draftKey}-${cargoItem.deliveryOrderItemRef}`}
+                                                                                            style={{
+                                                                                                border: '1px solid var(--color-gray-100)',
+                                                                                                borderRadius: '0.6rem',
+                                                                                                display: 'grid',
+                                                                                                gap: '0.55rem',
+                                                                                                padding: '0.65rem 0.75rem',
+                                                                                                background: 'var(--color-gray-50)',
+                                                                                            }}
+                                                                                        >
+                                                                                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.65rem', flexWrap: 'wrap' }}>
+                                                                                                <div style={{ minWidth: 0 }}>
+                                                                                                    <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                                                                    <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || group.label || '-'}</div>
+                                                                                                </div>
+                                                                                                <span
+                                                                                                    style={{
+                                                                                                        background: helper.badgeBackground,
+                                                                                                        borderRadius: '999px',
+                                                                                                        color: helper.badgeColor,
+                                                                                                        fontSize: '0.72rem',
+                                                                                                        fontWeight: 700,
+                                                                                                        padding: '0.18rem 0.55rem',
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {helper.badgeLabel}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            <div style={{ display: 'grid', gap: '0.22rem', color: 'var(--color-gray-700)', fontSize: '0.8rem' }}>
+                                                                                                <div>Rencana awal SJ: {formatCargoSummary({
+                                                                                                    qtyKoli: cargoItem.plannedQtyKoli,
+                                                                                                    weightKg: cargoItem.plannedWeightKg,
+                                                                                                    weightInputValue: cargoItem.plannedWeightInputValue,
+                                                                                                    weightInputUnit: cargoItem.plannedWeightInputUnit,
+                                                                                                    volumeM3: cargoItem.plannedVolumeM3,
+                                                                                                    volumeInputValue: cargoItem.plannedVolumeInputValue,
+                                                                                                    volumeInputUnit: cargoItem.plannedVolumeInputUnit,
+                                                                                                })}</div>
+                                                                                                <div>{item.stopType === 'HOLD' ? 'Hold di titik ini' : 'Alokasi titik ini'}: {formatCargoSummary(helper.currentSummary)}</div>
+                                                                                                <div>Total alokasi titik lain: {formatCargoSummary(helper.otherSummary)}</div>
+                                                                                                <div>Sisa setelah titik ini: {formatCargoSummary(helper.remainingAfterCurrent)}</div>
+                                                                                            </div>
+                                                                                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    className="btn btn-primary btn-sm"
+                                                                                                    onClick={() => {
+                                                                                                        rememberStatusModalScrollPosition();
+                                                                                                        setActualDropEditSnapshot({
+                                                                                                            points: actualDropPoints.map(point => ({ ...point })),
+                                                                                                            itemValueMap: { ...actualDropItemValueMap },
+                                                                                                        });
+                                                                                                        ensureActualDropAllocationsForItems(item, [cargoItem]);
+                                                                                                        setActualCargoModalReturnTarget('status');
+                                                                                                        setActiveFinalizationCargoItemRef(cargoItem.deliveryOrderItemRef);
+                                                                                                        setActiveFinalizationDropKey(item.draftKey);
+                                                                                                        setShowStatusModal(false);
+                                                                                                        setShowActualCargoFinalizationModal(true);
+                                                                                                    }}
+                                                                                                    disabled={
+                                                                                                        !newStatus ||
+                                                                                                        updatingStatus ||
+                                                                                                        selectedStatusSuratJalanRefs.length === 0
+                                                                                                    }
+                                                                                                >
+                                                                                                    Tentukan Barang
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        </details>
+                                                                    ))}
+                                                                </div>
                                                                 <div className="form-group">
                                                                     <label className="form-label">Catatan Titik Drop</label>
                                                                     <textarea
@@ -7757,51 +7938,33 @@ export default function TripDetailPage() {
                                                                 );
                                                             })()
                                                         ))}
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-secondary btn-sm"
+                                                            onClick={addActualDropDraft}
+                                                            disabled={updatingStatus}
+                                                            style={{ justifySelf: 'flex-start' }}
+                                                        >
+                                                            + Tambah Titik Drop
+                                                        </button>
                                                     </div>
                                                 </>
                                             )}
                                         </div>
                                     </div>
                                     <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                        Langkah berikutnya akan membuka modal aktual barang. Setiap item dibuka sebagai tab supaya koreksi per barang tetap fokus.
+                                            {showAdvancedDropEditor
+                                                ? 'Klik Lanjut Aktual Barang untuk review aktual per titik drop. Setiap titik akan menampilkan SJ dan barang dengan muatan masing-masing.'
+                                                : 'Langkah berikutnya akan membuka modal aktual barang. Setiap item dibuka sebagai tab supaya koreksi per barang tetap fokus.'}
                                     </div>
+                                    {showAdvancedDropEditor && !selectedActualDropAllocationComplete && (
+                                        <div style={{ background: 'var(--color-warning-soft)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-warning-dark)' }}>
+                                            Lengkapi alokasi semua barang sebelum lanjut aktual barang. Belum lengkap: {selectedActualDropIncompleteItems.map(item => item.description || item.deliveryOrderItemRef).join(', ')}.
+                                        </div>
+                                    )}
                                 </>
                             )}
                             <div className="form-group">
-                                {isCompletingDelivery && selectedActualCargoItems.length > 0 && (
-                                    <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem', background: 'var(--color-white)', marginBottom: '1rem', display: 'grid', gap: '0.6rem' }}>
-                                        <div>
-                                            <div className="font-semibold">Ringkasan Item</div>
-                                            <div className="text-muted text-sm">
-                                                {selectedActualCargoItems.length} item | {formatCargoSummary(selectedActualCargoTotals)}
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'grid', gap: '0.45rem' }}>
-                                            {selectedActualCargoItems.map(cargoItem => (
-                                                <div
-                                                    key={`admin-status-item-summary-${cargoItem.deliveryOrderItemRef}`}
-                                                    style={{
-                                                        display: 'grid',
-                                                        gap: '0.18rem',
-                                                        padding: '0.6rem 0.7rem',
-                                                        border: '1px solid var(--color-gray-100)',
-                                                        borderRadius: '0.6rem',
-                                                        background: 'var(--color-gray-50)',
-                                                    }}
-                                                >
-                                                    <div className="font-medium">{cargoItem.description || 'Barang'}</div>
-                                                    <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
-                                                    {newStatus === 'DELIVERED' && (
-                                                        <>
-                                                            <div className="text-muted text-sm">Alokasi drop: {showAdvancedDropEditor ? summarizeActualDropPointsForItemByType(cargoItem, ['DROP', 'EXTRA_DROP']) : summarizeActualCargoDraft(cargoItem)}</div>
-                                                            <div className="text-muted text-sm">Alokasi hold: {summarizeActualDropPointsForItemByType(cargoItem, ['HOLD'])}</div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={3} value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder={isCompletingDelivery ? 'Catatan finalisasi batch SJ...' : 'Catatan progres batch SJ...'} disabled={updatingStatus} />
                             </div>
@@ -7813,8 +7976,11 @@ export default function TripDetailPage() {
                                     className="btn btn-primary"
                                     onClick={() => {
                                         rememberStatusModalScrollPosition();
-                                        setActiveFinalizationCargoItemRef(getDefaultFinalizationCargoItemRef(selectedAutoActualDropDraft, selectedDerivedActualCargoTabItems));
+                                        setActualDropEditSnapshot(null);
+                                        setActiveFinalizationCargoItemRef(showAdvancedDropEditor ? '' : getDefaultFinalizationCargoItemRef(selectedAutoActualDropDraft, selectedDerivedActualCargoTabItems));
                                         setActiveFinalizationDropKey('');
+                                        setActiveFinalizationReviewDropKey(showAdvancedDropEditor ? (selectedActualDropPoints[0]?.draftKey || '') : '');
+                                        setActualCargoModalReturnTarget('status');
                                         setShowStatusModal(false);
                                         setShowActualCargoFinalizationModal(true);
                                     }}
@@ -7838,16 +8004,24 @@ export default function TripDetailPage() {
                         <div className="modal-header">
                             <div>
                                 <h3 className="modal-title">
-                                    {activeFinalizationDrop ? 'Tentukan Barang Titik Drop' : (reviewingDriverRequest ? 'Review Aktual Barang SJ' : 'Aktual Barang SJ')}
+                                    {activeFinalizationDrop
+                                        ? 'Tentukan Barang Titik Drop'
+                                        : showingDropFinalizationReview
+                                            ? 'Aktual Barang per Titik Drop'
+                                            : (reviewingDriverRequest ? 'Review Aktual Barang SJ' : 'Aktual Barang SJ')}
                                 </h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
-                                    {activeFinalizationDrop ? 'Alokasi titik drop' : 'Langkah 2 dari 2'} | {finalizationCargoTabItems.length} item dalam batch SJ
+                                    {activeFinalizationDrop
+                                        ? 'Alokasi titik drop'
+                                        : showingDropFinalizationReview
+                                            ? `Review ${selectedActualDropPoints.length} titik drop`
+                                            : 'Langkah 2 dari 2'} | {showingDropFinalizationReview ? selectedActualCargoTabItems.length : finalizationCargoTabItems.length} item dalam batch SJ
                                     {activeFinalizationDrop ? ` | ${activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'Titik Drop'}` : ''}
                                 </div>
                             </div>
                             <button className="modal-close" onClick={() => setShowActualCargoFinalizationModal(false)} disabled={updatingStatus}>&times;</button>
                         </div>
-                        <div className="modal-body">
+                        <div className="modal-body" ref={actualCargoModalBodyRef}>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                     <div className="text-muted text-sm">{activeFinalizationDrop ? 'Muatan aktual saat ini' : 'Muatan realisasi'}</div>
@@ -7874,6 +8048,151 @@ export default function TripDetailPage() {
                                 </div>
                             )}
 
+                            {showingDropFinalizationReview && (
+                                <>
+                                    <div style={{ background: 'var(--color-info-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.85rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
+                                        Aktual barang di bawah ini dipisah per titik drop. Nilai final dikirim dari alokasi barang di setiap titik, bukan dari input aktual gabungan.
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', borderBottom: '1px solid var(--color-gray-200)', marginBottom: '1rem', paddingBottom: '0.5rem' }}>
+                                        {selectedActualDropPoints.map((drop, index) => {
+                                            const isActive = activeFinalizationReviewDrop?.draftKey === drop.draftKey;
+                                            const allocationSummaryRows = getActualDropAllocationSummaryRows(drop);
+                                            const dropSummary = allocationSummaryRows.reduce((sum, row) => ({
+                                                qtyKoli: sum.qtyKoli + row.allocatedSummary.qtyKoli,
+                                                weightKg: sum.weightKg + row.allocatedSummary.weightKg,
+                                                volumeM3: sum.volumeM3 + row.allocatedSummary.volumeM3,
+                                            }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+                                            return (
+                                                <button
+                                                    key={`final-review-drop-tab-${drop.draftKey}`}
+                                                    type="button"
+                                                    className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                                                    onClick={() => setActiveFinalizationReviewDropKey(drop.draftKey)}
+                                                    disabled={updatingStatus}
+                                                    title={`${drop.locationName || drop.locationAddress || `Titik Drop ${index + 1}`} | ${formatCargoSummary(dropSummary)}`}
+                                                    style={{
+                                                        alignItems: 'flex-start',
+                                                        display: 'grid',
+                                                        gap: '0.15rem',
+                                                        minWidth: 170,
+                                                        textAlign: 'left',
+                                                        whiteSpace: 'normal',
+                                                    }}
+                                                >
+                                                    <span>Titik {index + 1}</span>
+                                                    <span style={{ fontSize: '0.72rem', fontWeight: 500, opacity: 0.85 }}>
+                                                        {formatCargoSummary(dropSummary)}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {activeFinalizationReviewDrop ? (
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)', display: 'grid', gap: '0.75rem' }}>
+                                            <div>
+                                                <div className="font-semibold">{activeFinalizationReviewDrop.locationName || `Titik Drop ${selectedActualDropPoints.findIndex(drop => drop.draftKey === activeFinalizationReviewDrop.draftKey) + 1}`}</div>
+                                                <div className="text-muted text-sm">{activeFinalizationReviewDrop.locationAddress || 'Alamat belum diisi'} | {DO_ACTUAL_DROP_TYPE_MAP[activeFinalizationReviewDrop.stopType]?.label || activeFinalizationReviewDrop.stopType}</div>
+                                            </div>
+                                            {selectedActualDropPointSjGroups.map(group => (
+                                                <details
+                                                    key={`final-review-${activeFinalizationReviewDrop.draftKey}-${group.key}`}
+                                                    open
+                                                    style={{
+                                                        border: '1px solid var(--color-gray-200)',
+                                                        borderRadius: '0.65rem',
+                                                        background: 'var(--color-white)',
+                                                        overflow: 'hidden',
+                                                    }}
+                                                >
+                                                    <summary
+                                                        style={{
+                                                            alignItems: 'center',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            gap: '0.5rem',
+                                                            justifyContent: 'space-between',
+                                                            listStyle: 'none',
+                                                            padding: '0.7rem 0.8rem',
+                                                        }}
+                                                    >
+                                                        <span>
+                                                            <span className="font-semibold">{group.label}</span>
+                                                            <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                        </span>
+                                                        <ChevronDown size={16} />
+                                                    </summary>
+                                                    <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
+                                                        {group.items.map(cargoItem => {
+                                                            const helper = getActualDropItemHelper(activeFinalizationReviewDrop, cargoItem);
+                                                            return (
+                                                                <div
+                                                                    key={`final-review-${activeFinalizationReviewDrop.draftKey}-${cargoItem.deliveryOrderItemRef}`}
+                                                                    style={{
+                                                                        border: '1px solid var(--color-gray-100)',
+                                                                        borderRadius: '0.6rem',
+                                                                        display: 'grid',
+                                                                        gap: '0.55rem',
+                                                                        padding: '0.65rem 0.75rem',
+                                                                        background: 'var(--color-gray-50)',
+                                                                    }}
+                                                                >
+                                                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.65rem', flexWrap: 'wrap' }}>
+                                                                        <div style={{ minWidth: 0 }}>
+                                                                            <div className="font-medium">{cargoItem.description || 'Barang'}</div>
+                                                                            <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || group.label || '-'}</div>
+                                                                        </div>
+                                                                        <span
+                                                                            style={{
+                                                                                background: helper.badgeBackground,
+                                                                                borderRadius: '999px',
+                                                                                color: helper.badgeColor,
+                                                                                fontSize: '0.72rem',
+                                                                                fontWeight: 700,
+                                                                                padding: '0.18rem 0.55rem',
+                                                                            }}
+                                                                        >
+                                                                            {helper.badgeLabel}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div style={{ display: 'grid', gap: '0.22rem', color: 'var(--color-gray-700)', fontSize: '0.8rem' }}>
+                                                                        <div>{activeFinalizationReviewDrop.stopType === 'HOLD' ? 'Aktual hold titik ini' : 'Aktual drop titik ini'}: {formatCargoSummary(helper.currentSummary)}</div>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="btn btn-secondary btn-sm"
+                                                                            onClick={() => {
+                                                                                rememberActualCargoModalScrollPosition();
+                                                                                setActualDropEditSnapshot({
+                                                                                    points: actualDropPoints.map(point => ({ ...point })),
+                                                                                    itemValueMap: { ...actualDropItemValueMap },
+                                                                                });
+                                                                                ensureActualDropAllocationsForItems(activeFinalizationReviewDrop, [cargoItem]);
+                                                                                setActualCargoModalReturnTarget('review');
+                                                                                setActiveFinalizationCargoItemRef(cargoItem.deliveryOrderItemRef);
+                                                                                setActiveFinalizationDropKey(activeFinalizationReviewDrop.draftKey);
+                                                                            }}
+                                                                            disabled={updatingStatus}
+                                                                        >
+                                                                            Edit Aktual Barang
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </details>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="empty-state">
+                                            <div className="empty-state-title">Belum ada titik drop dalam batch SJ ini</div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {!showingDropFinalizationReview && !activeFinalizationDrop && (
                             <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', borderBottom: '1px solid var(--color-gray-200)', marginBottom: '1rem', paddingBottom: '0.5rem' }}>
                                 {finalizationCargoTabItems.map((item, index) => {
                                     const isActive = activeFinalizationCargoItem?.deliveryOrderItemRef === item.deliveryOrderItemRef;
@@ -7931,8 +8250,9 @@ export default function TripDetailPage() {
                                     );
                                 })}
                             </div>
+                            )}
 
-                            {activeFinalizationCargoItem ? (
+                            {!showingDropFinalizationReview && activeFinalizationCargoItem ? (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                     {(() => {
                                         return (
@@ -7950,12 +8270,12 @@ export default function TripDetailPage() {
                                     )}
                                     {activeFinalizationDrop && (
                                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.85rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                            Isi alokasi barang untuk titik <strong>{activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'ini'}</strong>. Nilai ini hanya rencana pembagian DROP, HOLD, RETURN, atau TRANSIT dan masih bisa diubah pada langkah Aktual Barang.
+                                            Isi alokasi barang untuk titik <strong>{activeFinalizationDrop.locationName || activeFinalizationDrop.locationAddress || 'ini'}</strong>. Nilai ini menjadi sumber aktual barang untuk finalisasi multi-drop.
                                         </div>
                                     )}
-                                    {activeFinalizationDrop && (
+                                    {!activeFinalizationDrop && showAdvancedDropEditor && (
                                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.85rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                            Data aktual final tetap diisi terpisah setelah pembagian titik drop selesai.
+                                            Aktual barang dihitung otomatis dari alokasi setiap titik drop. Ubah nilai dari langkah titik drop jika perlu koreksi.
                                         </div>
                                     )}
                                     <div className="form-row">
@@ -7972,7 +8292,7 @@ export default function TripDetailPage() {
                                                     }
                                                     updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualQtyKoli', String(value));
                                                 }}
-                                                disabled={updatingStatus || !activeFinalizationCargoItem.requireQty}
+                                                disabled={updatingStatus || !activeFinalizationCargoItem.requireQty || (showAdvancedDropEditor && !activeFinalizationDrop)}
                                             />
                                         </div>
                                         <div className="form-group">
@@ -7991,7 +8311,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualWeightInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus || Boolean(activeFinalizationDrop)}
+                                                    disabled={updatingStatus || (!activeFinalizationDrop && showAdvancedDropEditor)}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -8003,7 +8323,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoWeightUnit(activeFinalizationCargoItem.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit']);
                                                     }}
-                                                    disabled={updatingStatus || Boolean(activeFinalizationDrop)}
+                                                    disabled={updatingStatus || (!activeFinalizationDrop && showAdvancedDropEditor)}
                                                 >
                                                     {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
                                                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -8029,7 +8349,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualVolumeInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus}
+                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop)}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -8041,7 +8361,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoVolumeUnit(activeFinalizationCargoItem.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualVolumeInputUnit']);
                                                     }}
-                                                    disabled={updatingStatus}
+                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop)}
                                                 >
                                                     {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
                                                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -8100,74 +8420,65 @@ export default function TripDetailPage() {
                                         );
                                     })()}
                                 </div>
-                            ) : (
+                            ) : !showingDropFinalizationReview ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Belum ada item barang dalam batch SJ ini</div>
                                 </div>
-                            )}
+                            ) : null}
 
-                            {!activeFinalizationDrop && selectedActualCargoItems.length > 0 && (
-                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem', background: 'var(--color-white)', marginTop: '1rem', display: 'grid', gap: '0.6rem' }}>
-                                    <div>
-                                        <div className="font-semibold">Ringkasan Item</div>
-                                        <div className="text-muted text-sm">
-                                            {selectedActualCargoItems.length} item | {formatCargoSummary(selectedActualCargoTotals)}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'grid', gap: '0.45rem' }}>
-                                        {selectedActualCargoItems.map(cargoItem => (
-                                            <div
-                                                key={`admin-actual-modal-item-summary-${cargoItem.deliveryOrderItemRef}`}
-                                                style={{
-                                                    display: 'grid',
-                                                    gap: '0.18rem',
-                                                    padding: '0.6rem 0.7rem',
-                                                    border: '1px solid var(--color-gray-100)',
-                                                    borderRadius: '0.6rem',
-                                                    background: 'var(--color-gray-50)',
-                                                }}
-                                            >
-                                                <div className="font-medium">{cargoItem.description || 'Barang'}</div>
-                                                <div className="text-muted text-sm">No SJ: {cargoItem.shipperReferenceNumber || '-'}</div>
-                                                <div className="text-muted text-sm">Alokasi drop: {summarizeActualDropPointsForItemByType(cargoItem, ['DROP', 'EXTRA_DROP'])}</div>
-                                                <div className="text-muted text-sm">Alokasi hold: {summarizeActualDropPointsForItemByType(cargoItem, ['HOLD'])}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                         <div className="modal-footer">
                             <button
                                 className="btn btn-secondary"
                                 onClick={() => {
-                                    if (!activeFinalizationDrop && actualCargoSetupSnapshot.length > 0) {
+                                    if (activeFinalizationDrop && actualDropEditSnapshot) {
+                                        setActualDropPoints(actualDropEditSnapshot.points.map(point => ({ ...point })));
+                                        setActualDropItemValueMap({ ...actualDropEditSnapshot.itemValueMap });
+                                        setActualDropEditSnapshot(null);
+                                    }
+                                    if (activeFinalizationDrop && actualCargoModalReturnTarget === 'review') {
+                                        setActiveFinalizationReviewDropKey(activeFinalizationDrop.draftKey);
+                                        setActiveFinalizationDropKey('');
+                                        return;
+                                    }
+                                    if (!activeFinalizationDrop && !showAdvancedDropEditor && actualCargoSetupSnapshot.length > 0) {
                                         setActualCargoItems(actualCargoSetupSnapshot);
                                         setActualCargoItemValueMap({});
                                     }
+                                    setActiveFinalizationDropKey('');
+                                    setActualCargoModalReturnTarget('status');
                                     setShowActualCargoFinalizationModal(false);
                                     reopenStatusModalWithSavedScroll();
                                 }}
                                 disabled={updatingStatus}
                             >
-                                Kembali ke Titik Drop
+                                {activeFinalizationDrop && actualCargoModalReturnTarget === 'review' ? 'Kembali ke Review' : 'Kembali ke Titik Drop'}
                             </button>
                             {activeFinalizationDrop ? (
                                 <button
                                     className="btn btn-primary"
                                     onClick={() => {
+                                        if (actualCargoModalReturnTarget !== 'review') {
+                                            rememberActualCargoModalScrollPosition();
+                                        }
                                         if (activeFinalizationDrop) {
                                             persistActualDropAllocationsForItems(
                                                 activeFinalizationDrop,
                                                 finalizationCargoTabItems
                                             );
                                         }
-                                        setShowActualCargoFinalizationModal(false);
-                                        reopenStatusModalWithSavedScroll();
+                                        setActiveFinalizationReviewDropKey(activeFinalizationDrop.draftKey);
+                                        setActiveFinalizationDropKey('');
+                                        setActualDropEditSnapshot(null);
+                                        restoreActualCargoModalScrollOnNextFrame();
+                                        if (actualCargoModalReturnTarget === 'status') {
+                                            setShowActualCargoFinalizationModal(false);
+                                            reopenStatusModalWithSavedScroll();
+                                        }
                                     }}
                                     disabled={updatingStatus}
                                 >
-                                    Simpan Alokasi Barang
+                                    Simpan Aktual Barang
                                 </button>
                             ) : (
                                 <button

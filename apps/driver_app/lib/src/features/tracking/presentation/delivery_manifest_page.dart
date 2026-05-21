@@ -666,8 +666,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    showMobileFeedback(
+      context,
+      type: MobileFeedbackType.error,
+      message: message,
     );
   }
 

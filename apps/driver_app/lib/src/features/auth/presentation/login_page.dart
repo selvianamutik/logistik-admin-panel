@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../app.dart';
@@ -7,7 +9,7 @@ import '../data/driver_auth_service.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.onLogin});
 
-  final ValueChanged<DriverAppSession> onLogin;
+  final FutureOr<void> Function(DriverAppSession session) onLogin;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -41,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
         password: _passwordController.text,
       );
       if (!mounted) return;
-      widget.onLogin(session);
+      await widget.onLogin(session);
     } on DriverAuthException catch (err) {
       if (!mounted) return;
       setState(() => _errorMessage = err.message);

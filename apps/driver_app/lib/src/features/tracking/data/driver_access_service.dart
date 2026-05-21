@@ -6,7 +6,32 @@ import '../../../app.dart';
 import '../../../shared/config.dart';
 
 class DriverAccessService {
+  Future<DriverAppSession> fetchCurrentSession({
+    required String sessionToken,
+  }) async {
+    final decoded = await _getCurrentSessionPayload(sessionToken: sessionToken);
+    final userValue = decoded['user'];
+    final user = userValue is Map<String, dynamic> ? userValue : null;
+    if (user == null) {
+      throw const DriverAccessException('Respons sesi driver tidak valid', 500);
+    }
+    final session = DriverAppSession.fromApiUserJson(
+      user,
+      token: sessionToken,
+      accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
+    );
+    return session;
+  }
+
   Future<DriverAccessNotice?> fetchCurrentAccessNotice({
+    required String sessionToken,
+  }) async {
+    final decoded = await _getCurrentSessionPayload(sessionToken: sessionToken);
+    final notice = parseDriverAccessNotice(decoded['driverAccessNotice']);
+    return notice;
+  }
+
+  Future<Map<String, dynamic>> _getCurrentSessionPayload({
     required String sessionToken,
   }) async {
     final response = await http.get(
@@ -28,8 +53,7 @@ class DriverAccessService {
       throw DriverAccessException(message, response.statusCode);
     }
 
-    final notice = parseDriverAccessNotice(decoded['driverAccessNotice']);
-    return notice;
+    return decoded;
   }
 
   Future<DriverAccessNotice?> acknowledgeWarning({
