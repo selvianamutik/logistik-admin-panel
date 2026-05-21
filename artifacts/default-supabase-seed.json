@@ -1863,10 +1863,10 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00"
   },
   {
-    "notes": "Kasbon express untuk perjalanan aktif Mojokerto. Di tengah perjalanan ada tambahan bon karena biaya lapangan bertambah.",
+    "notes": "Kasbon express untuk perjalanan aktif Mojokerto. Termasuk top up dan biaya insiden yang masuk biaya lain-lain trip.",
     "route": "Gudang Rungkut Industri II No. 7, Surabaya -> Jl. By Pass Mojokerto No. 12, Mojokerto",
     "status": "ISSUED",
-    "balance": -30000,
+    "balance": -380000,
     "doNumber": "DO-202603-0003",
     "bonNumber": "BON-202603-0002",
     "cashGiven": 450000,
@@ -1874,7 +1874,7 @@
     "driverName": "Agus Santoso",
     "issuedDate": "2026-03-14",
     "topUpCount": 1,
-    "totalSpent": 150000,
+    "totalSpent": 500000,
     "vehicleRef": "veh-001",
     "issueBankRef": "bank-cash-on-hand",
     "vehiclePlate": "W 8123 GS",
@@ -1882,7 +1882,7 @@
     "driverFeeAmount": 480000,
     "deliveryOrderRef": "do-003",
     "initialCashGiven": 450000,
-    "totalClaimAmount": 630000,
+    "totalClaimAmount": 980000,
     "issuerCompanyName": "PT Gading Mas Surya",
     "totalIssuedAmount": 600000,
     "issuerCompanyEmail": "gadingmassurya@gmail.com",
@@ -1892,7 +1892,7 @@
     "_id": "voucher-002",
     "_type": "driverVoucher",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   },
   {
     "notes": "Kasbon perjalanan Surabaya - Kediri, termasuk upah supir saat settlement.",
@@ -2569,10 +2569,10 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00"
   },
   {
-    "note": "50 koli pertama diterima, sisa 50 koli ditahan di gudang transit Bekasi.",
+    "note": "50 koli diterima, 50 koli hold di gudang transit Bekasi.",
     "refRef": "do-011",
     "source": "ADMIN_PANEL",
-    "status": "DELIVERED",
+    "status": "PARTIAL_HOLD",
     "refType": "DO",
     "userRef": "user-admin-001",
     "userName": "Dimas Wicaksono",
@@ -2580,7 +2580,7 @@
     "_id": "tl-024",
     "_type": "trackingLog",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   },
   {
     "note": "DO parsial quantity dibuat untuk 50 koli pertama.",
@@ -2942,19 +2942,21 @@
   {
     "orderItemRef": "oi-016",
     "actualQtyKoli": 50,
-    "shippedWeight": 1000,
+    "shippedWeight": 2000,
     "actualWeightKg": 1000,
-    "shippedQtyKoli": 50,
-    "orderItemWeight": 1000,
+    "shippedQtyKoli": 100,
+    "orderItemWeight": 2000,
     "deliveryOrderRef": "do-011",
-    "orderItemQtyKoli": 50,
+    "orderItemQtyKoli": 100,
     "orderItemDescription": "Plat galvanis proyek batch A",
     "actualWeightInputUnit": "TON",
     "actualWeightInputValue": 1,
     "_id": "doi-012",
     "_type": "deliveryOrderItem",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00",
+    "heldQtyKoli": 50,
+    "heldWeight": 1000
   },
   {
     "orderItemRef": "oi-015",
@@ -3312,9 +3314,9 @@
   },
   {
     "date": "2026-03-08",
-    "notes": "Trip pertama membawa 50 koli. Sisa 50 koli ditahan di gudang transit karena lokasi bongkar penuh.",
-    "status": "DELIVERED",
-    "podNote": "Diterima sebagian 50 koli. Sisa 50 koli menunggu slot gudang kosong.",
+    "notes": "UAT partial hold: 50 koli drop di Cakung, 50 koli hold di gudang transit Bekasi untuk trip lanjutan.",
+    "status": "PARTIAL_HOLD",
+    "podNote": "Diterima 50 koli. Sisa 50 koli hold di gudang transit Bekasi.",
     "doNumber": "DO-202603-0011",
     "orderRef": "order-012",
     "driverRef": "drv-002",
@@ -3341,15 +3343,35 @@
     "actualDropPoints": [
       {
         "_key": "do-011-drop-1",
-        "note": "Batch pertama diterima di Cakung. Sisa order tetap hold di gudang transit dan akan dibuat trip lanjutan.",
-        "qtyKoli": 50,
         "sequence": 1,
         "stopType": "DROP",
-        "weightKg": 1000,
+        "deliveryOrderItemRef": "doi-012",
+        "deliveryOrderItemRefs": [
+          "doi-012"
+        ],
         "locationName": "Gudang Proyek Baja Cakung",
         "locationAddress": "Jl. Pergudangan Cakung No. 22, Jakarta Timur",
+        "qtyKoli": 50,
+        "weightKg": 1000,
+        "weightInputValue": 1,
         "weightInputUnit": "TON",
-        "weightInputValue": 1
+        "note": "Batch pertama diterima di Cakung."
+      },
+      {
+        "_key": "do-011-hold-1",
+        "sequence": 2,
+        "stopType": "HOLD",
+        "deliveryOrderItemRef": "doi-012",
+        "deliveryOrderItemRefs": [
+          "doi-012"
+        ],
+        "locationName": "Gudang Transit Bekasi",
+        "locationAddress": "Kawasan Pergudangan Bekasi Blok H-12",
+        "qtyKoli": 50,
+        "weightKg": 1000,
+        "weightInputValue": 1,
+        "weightInputUnit": "TON",
+        "note": "Sisa barang ditahan karena slot gudang tujuan penuh."
       }
     ],
     "cargoFinalizedAt": "2026-03-08T15:20:00Z",
@@ -3375,7 +3397,7 @@
     "_id": "do-011",
     "_type": "deliveryOrder",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   },
   {
     "date": "2026-03-18",
@@ -5011,12 +5033,12 @@
     "accountType": "BANK",
     "accountHolder": "PT Gading Mas Surya",
     "accountNumber": "1234500012",
-    "currentBalance": 82762000,
+    "currentBalance": 82062000,
     "initialBalance": 80000000,
     "_id": "bank-bca-001",
     "_type": "bankAccount",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   },
   {
     "notes": "Rekening penerimaan utama perusahaan",
@@ -5090,21 +5112,6 @@
     "bankAccountNumber": "1234500012",
     "relatedPaymentRef": "pay-003",
     "_id": "btx-012",
-    "_type": "bankTransaction",
-    "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
-  },
-  {
-    "date": "2026-03-15",
-    "type": "DEBIT",
-    "amount": 350000,
-    "description": "Konsumsi driver dan helper",
-    "balanceAfter": 7800000,
-    "bankAccountRef": "bank-cash-on-hand",
-    "bankAccountName": "Kas Tunai",
-    "bankAccountNumber": "CASH",
-    "relatedExpenseRef": "exp-003",
-    "_id": "btx-011",
     "_type": "bankTransaction",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
     "_updatedAt": "2026-04-19T15:24:41.711+00:00"
@@ -5565,7 +5572,7 @@
     "_updatedAt": "2026-04-19T15:24:41.711+00:00"
   },
   {
-    "status": "RESOLVED",
+    "status": "CLOSED",
     "urgency": "LOW",
     "dateTime": "2026-03-04T05:10:00Z",
     "odometer": 98120,
@@ -5589,10 +5596,10 @@
     "_id": "incident-003",
     "_type": "incident",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   },
   {
-    "status": "IN_PROGRESS",
+    "status": "RESOLVED",
     "urgency": "MEDIUM",
     "dateTime": "2026-03-16T06:40:00Z",
     "odometer": 98900,
@@ -5616,10 +5623,16 @@
     "_id": "incident-002",
     "_type": "incident",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00",
+    "pendingDriverResolutionRequestedAt": null,
+    "pendingDriverResolutionRequestedBy": null,
+    "pendingDriverResolutionRequestedByName": null,
+    "pendingDriverResolutionNote": null,
+    "pendingDriverResolutionCostCount": null,
+    "pendingDriverResolutionAmount": null
   },
   {
-    "status": "OPEN",
+    "status": "IN_PROGRESS",
     "urgency": "HIGH",
     "dateTime": "2026-03-16T09:20:00Z",
     "odometer": 120450,
@@ -5643,7 +5656,13 @@
     "_id": "incident-001",
     "_type": "incident",
     "_createdAt": "2026-04-19T15:24:41.711+00:00",
-    "_updatedAt": "2026-04-19T15:24:41.711+00:00"
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00",
+    "pendingDriverResolutionRequestedAt": "2026-03-16T10:15:00Z",
+    "pendingDriverResolutionRequestedBy": "drv-001",
+    "pendingDriverResolutionRequestedByName": "Agus Santoso",
+    "pendingDriverResolutionNote": "Driver mengajukan selesai dari mobile, biaya tambal darurat perlu approval admin.",
+    "pendingDriverResolutionCostCount": 1,
+    "pendingDriverResolutionAmount": 350000
   },
   {
     "action": "CREATE",
@@ -10262,5 +10281,181 @@
     "toPlacementLabel": "Gudang Ban",
     "remainingPercentAfter": 100,
     "remainingValueAfter": 2850000
+  },
+  {
+    "_id": "inc-line-001-driver-draft",
+    "_type": "incidentSettlementLine",
+    "incidentRef": "incident-001",
+    "incidentNumber": "INC-202603-0001",
+    "lineType": "COST",
+    "category": "TIRE",
+    "date": "2026-03-16",
+    "amount": 350000,
+    "description": "Tambal ban darurat saat trip Mojokerto",
+    "payeeName": "Bengkel Darurat Tol Mojokerto",
+    "recipientType": "VENDOR",
+    "note": "Diajukan driver dari mobile apps, menunggu approval admin.",
+    "status": "DRAFT",
+    "createdAt": "2026-03-16T10:15:00Z",
+    "createdByName": "Agus Santoso",
+    "updatedAt": "2026-03-16T10:15:00Z",
+    "updatedByName": "Agus Santoso",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "inc-line-002-voucher-posted",
+    "_type": "incidentSettlementLine",
+    "incidentRef": "incident-002",
+    "incidentNumber": "INC-202603-0002",
+    "lineType": "COST",
+    "category": "REPAIR",
+    "date": "2026-03-16",
+    "amount": 350000,
+    "description": "Perbaikan darurat indikator temperatur saat trip",
+    "payeeName": "Bengkel Pasuruan Mobile Service",
+    "recipientType": "VENDOR",
+    "note": "Biaya trip tanpa transfer bank, masuk ke biaya lain-lain uang jalan.",
+    "status": "POSTED",
+    "linkedExpenseRef": "exp-inc-002-voucher",
+    "linkedDriverVoucherItemRef": "vitem-006",
+    "linkedExpenseDate": "2026-03-16",
+    "linkedExpenseAmount": 350000,
+    "linkedExpenseCategoryRef": "expcat-trip-lain-lain",
+    "linkedExpenseCategoryName": "Lain-lain Trip",
+    "postedAt": "2026-03-16T11:30:00Z",
+    "postedByName": "Dimas Wicaksono",
+    "createdAt": "2026-03-16T10:50:00Z",
+    "createdByName": "Dimas Wicaksono",
+    "updatedAt": "2026-03-16T11:30:00Z",
+    "updatedByName": "Dimas Wicaksono",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "exp-inc-002-voucher",
+    "_type": "expense",
+    "date": "2026-03-16",
+    "amount": 350000,
+    "categoryRef": "expcat-trip-lain-lain",
+    "categoryName": "Lain-lain Trip",
+    "description": "Insiden INC-202603-0002 - Perbaikan darurat indikator temperatur saat trip",
+    "note": "Expense insiden ditunda ke uang jalan karena terkait DO aktif dan voucher belum settled.",
+    "privacyLevel": "internal",
+    "relatedVehicleRef": "veh-002",
+    "relatedVehiclePlate": "L 9456 AB",
+    "relatedIncidentRef": "incident-002",
+    "relatedIncidentSettlementLineRef": "inc-line-002-voucher-posted",
+    "voucherRef": "voucher-002",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "vitem-006",
+    "_type": "driverVoucherItem",
+    "voucherRef": "voucher-002",
+    "expenseDate": "2026-03-16",
+    "category": "Perbaikan Darurat Trip",
+    "description": "Insiden INC-202603-0002 - Perbaikan darurat indikator temperatur saat trip",
+    "amount": 350000,
+    "relatedIncidentRef": "incident-002",
+    "relatedIncidentSettlementLineRef": "inc-line-002-voucher-posted",
+    "linkedExpenseRef": "exp-inc-002-voucher",
+    "source": "INCIDENT",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "inc-line-003-company-posted",
+    "_type": "incidentSettlementLine",
+    "incidentRef": "incident-003",
+    "incidentNumber": "INC-202603-0003",
+    "lineType": "COST",
+    "category": "SPAREPART",
+    "date": "2026-03-17",
+    "amount": 700000,
+    "description": "Pembelian spion pengganti akibat senggolan saat bongkar",
+    "payeeName": "Toko Sparepart Kalianak",
+    "recipientType": "VENDOR",
+    "note": "Dibayar langsung perusahaan, tidak masuk uang jalan driver.",
+    "status": "POSTED",
+    "linkedExpenseRef": "exp-inc-003-company",
+    "linkedExpenseDate": "2026-03-17",
+    "linkedExpenseAmount": 700000,
+    "linkedExpenseCategoryRef": "expcat-003",
+    "linkedExpenseCategoryName": "Servis Kendaraan",
+    "postedAt": "2026-03-17T04:20:00Z",
+    "postedByName": "Dimas Wicaksono",
+    "createdAt": "2026-03-17T03:50:00Z",
+    "createdByName": "Dimas Wicaksono",
+    "updatedAt": "2026-03-17T04:20:00Z",
+    "updatedByName": "Dimas Wicaksono",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "exp-inc-003-company",
+    "_type": "expense",
+    "date": "2026-03-17",
+    "amount": 700000,
+    "categoryRef": "expcat-003",
+    "categoryName": "Servis Kendaraan",
+    "description": "Insiden INC-202603-0003 - Pembelian spion pengganti",
+    "note": "Biaya insiden dibayar langsung perusahaan.",
+    "privacyLevel": "internal",
+    "bankAccountRef": "bank-bca-001",
+    "bankAccountName": "BCA",
+    "bankAccountNumber": "1234500012",
+    "relatedVehicleRef": "veh-002",
+    "relatedVehiclePlate": "L 9456 AB",
+    "relatedIncidentRef": "incident-003",
+    "relatedIncidentSettlementLineRef": "inc-line-003-company-posted",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "btx-019",
+    "_type": "bankTransaction",
+    "date": "2026-03-17",
+    "type": "DEBIT",
+    "amount": 700000,
+    "description": "Pembayaran expense insiden INC-202603-0003",
+    "balanceAfter": 82062000,
+    "bankAccountRef": "bank-bca-001",
+    "bankAccountName": "BCA",
+    "bankAccountNumber": "1234500012",
+    "relatedExpenseRef": "exp-inc-003-company",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "ial-001-driver-submit",
+    "_type": "incidentActionLog",
+    "incidentRef": "incident-001",
+    "timestamp": "2026-03-16T10:15:00Z",
+    "note": "Driver mengajukan penyelesaian insiden dan biaya tambal ban dari mobile apps.",
+    "userName": "Agus Santoso",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "ial-002-post-voucher",
+    "_type": "incidentActionLog",
+    "incidentRef": "incident-002",
+    "timestamp": "2026-03-16T11:30:00Z",
+    "note": "Biaya insiden disetujui dan masuk ke biaya lain-lain uang jalan.",
+    "userName": "Dimas Wicaksono",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
+  },
+  {
+    "_id": "ial-003-post-company",
+    "_type": "incidentActionLog",
+    "incidentRef": "incident-003",
+    "timestamp": "2026-03-17T04:20:00Z",
+    "note": "Biaya sparepart insiden diposting sebagai pengeluaran perusahaan.",
+    "userName": "Dimas Wicaksono",
+    "_createdAt": "2026-05-21T03:00:00.000+00:00",
+    "_updatedAt": "2026-05-21T03:00:00.000+00:00"
   }
 ]
