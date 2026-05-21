@@ -418,7 +418,7 @@ const seedData: DataStore = {
             posisi: 'B 1234 XYZ - Depan Kiri',
             slotCode: '1L',
             slotLabel: 'Depan Kiri',
-            tireType: 'Tubeless',
+            tireType: 'ORI kawat / radial',
             tireBrand: 'Bridgestone',
             tireSize: '195/70 R14',
             installDate: '2026-02-23',
