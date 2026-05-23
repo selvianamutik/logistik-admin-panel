@@ -43,6 +43,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   final _draftVisibilityKeys = <String, GlobalKey>{};
   bool _submitting = false;
   bool _inputVisibilityScheduled = false;
+  String? _selectedGroupId;
   late String _initialDraftFingerprint;
   late List<_ManifestGroupDraft> _groups;
 
@@ -52,6 +53,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     WidgetsBinding.instance.addObserver(this);
     FocusManager.instance.addListener(_scheduleFocusedInputVisibility);
     _groups = _buildInitialGroups();
+    _selectedGroupId = _groups.isNotEmpty ? _groups.first.id : null;
     _initialDraftFingerprint = _draftFingerprint(_groups);
   }
 
@@ -171,6 +173,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     );
     setState(() {
       _groups = [..._groups, group];
+      _selectedGroupId = group.id;
     });
     _scheduleDraftVisibility(_groupVisibilityKey(group.id));
   }
@@ -206,7 +209,24 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                     : '',
               ),
             ];
+      _selectedGroupId = _groups.first.id;
     });
+  }
+
+  void _selectGroup(String groupId) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _selectedGroupId = groupId);
+  }
+
+  _ManifestGroupDraft? get _selectedGroup {
+    if (_groups.isEmpty) return null;
+    final selectedId = _selectedGroupId;
+    if (selectedId != null) {
+      for (final group in _groups) {
+        if (group.id == selectedId) return group;
+      }
+    }
+    return _groups.first;
   }
 
   void _updateGroup(
@@ -232,6 +252,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     FocusManager.instance.primaryFocus?.unfocus();
     final item = _ManifestItemDraft.create();
     setState(() {
+      _selectedGroupId = groupId;
       _groups = _groups
           .map(
             (group) => group.id == groupId
@@ -241,6 +262,11 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           .toList(growable: false);
     });
     _scheduleDraftVisibility(_itemVisibilityKey(item.id));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _openItemEditor(groupId, item.id);
+      }
+    });
   }
 
   Future<void> _removeItem(String groupId, String itemId) async {
@@ -285,47 +311,44 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
-  void _updateItem(
-    String groupId,
-    String itemId, {
-    String? customerProductRef,
-    String? description,
-    String? qtyKoli,
-    String? weightInputValue,
-    String? weightInputUnit,
-    String? volumeInputValue,
-    String? volumeInputUnit,
-  }) {
+  void _replaceItem(String groupId, _ManifestItemDraft nextItem) {
+    final groupIndex = _groups.indexWhere((group) => group.id == groupId);
+    if (groupIndex < 0) return;
+    final group = _groups[groupIndex];
+    final itemIndex = group.items.indexWhere((item) => item.id == nextItem.id);
+    if (itemIndex < 0 || group.items[itemIndex] == nextItem) return;
+
+    final nextItems = [...group.items];
+    nextItems[itemIndex] = nextItem;
+    final nextGroups = [..._groups];
+    nextGroups[groupIndex] = group.copyWith(items: nextItems);
+
     setState(() {
-      _groups = _groups
-          .map((group) {
-            if (group.id != groupId) return group;
-            return group.copyWith(
-              items: group.items
-                  .map(
-                    (item) => item.id == itemId
-                        ? _normalizeManifestItemPatch(
-                            item,
-                            customerProductRef: customerProductRef,
-                            description: description,
-                            qtyKoli: qtyKoli,
-                            weightInputValue: weightInputValue,
-                            weightInputUnit: weightInputUnit,
-                            volumeInputValue: volumeInputValue,
-                            volumeInputUnit: volumeInputUnit,
-                          )
-                        : item,
-                  )
-                  .toList(growable: false),
-            );
-          })
-          .toList(growable: false);
+      _groups = nextGroups;
     });
   }
 
-  void _applyCustomerProduct(
-    String groupId,
-    String itemId,
+  Future<void> _openItemEditor(String groupId, String itemId) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final item = _findItem(groupId, itemId);
+    if (item == null) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _ManifestItemEditorSheet(
+        initialItem: item,
+        customerProducts: widget.customerProducts,
+        normalizePatch: _normalizeManifestItemPatch,
+        applyCustomerProduct: _applyCustomerProductToDraft,
+        onSave: (nextItem) => _replaceItem(groupId, nextItem),
+      ),
+    );
+  }
+
+  _ManifestItemDraft _applyCustomerProductToDraft(
+    _ManifestItemDraft currentItem,
     String? customerProductRef,
   ) {
     final selectedProduct = widget.customerProducts.firstWhere(
@@ -334,12 +357,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           const CustomerProductOption(id: '', customerRef: '', name: ''),
     );
     if (selectedProduct.id.isEmpty) {
-      _updateItem(groupId, itemId, customerProductRef: '');
-      return;
+      return currentItem.copyWith(customerProductRef: '');
     }
 
-    final currentItem = _findItem(groupId, itemId);
-    final currentQty = currentItem?.qtyKoliValue ?? 0;
+    final currentQty = currentItem.qtyKoliValue;
     final nextQty = currentQty > 0
         ? currentQty
         : (selectedProduct.defaultQtyKoli ?? 0);
@@ -361,9 +382,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           nextVolumeUnit,
         );
 
-    _updateItem(
-      groupId,
-      itemId,
+    return currentItem.copyWith(
       customerProductRef: selectedProduct.id,
       description: (selectedProduct.description ?? selectedProduct.name).trim(),
       qtyKoli: _formatNumber(nextQty, fractionDigits: 0),
@@ -765,6 +784,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final selectedGroup = _selectedGroup;
 
     return PopScope(
       canPop: _submitting || !_hasUnsavedChanges,
@@ -801,25 +821,29 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                               ? 'Kelola SJ dan barang'
                               : 'Kelola SJ',
                           message: widget.allowsDirectCargoInput
-                              ? 'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.'
+                              ? 'Pilih satu SJ, lalu edit barang di dalamnya. Data baru dikirim setelah tombol simpan ditekan.'
                               : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
                         ),
                         const SizedBox(height: 16),
-                        ..._groups.map(
-                          (group) => Padding(
-                            key: _groupVisibilityKey(group.id),
+                        _ManifestGroupSelectorField(
+                          groups: _groups,
+                          selectedGroupId: selectedGroup?.id,
+                          onChanged: _selectGroup,
+                        ),
+                        const SizedBox(height: 14),
+                        if (selectedGroup != null)
+                          Padding(
+                            key: _groupVisibilityKey(selectedGroup.id),
                             padding: const EdgeInsets.only(bottom: 14),
-                            child: _ManifestGroupCard(
-                              key: ValueKey(group.id),
-                              group: group,
+                            child: _ManifestGroupEditorCard(
+                              key: ValueKey(selectedGroup.id),
+                              group: selectedGroup,
                               pickupStops: widget.pickupStops,
-                              customerProducts: widget.customerProducts,
                               allowsDirectCargoInput:
                                   widget.allowsDirectCargoInput,
                               onGroupChanged: _updateGroup,
-                              onItemChanged: _updateItem,
-                              onProductSelected: _applyCustomerProduct,
                               onAddItem: _addItem,
+                              onEditItem: _openItemEditor,
                               onRemoveItem: _removeItem,
                               onRemoveGroup: _groups.length > 1
                                   ? _removeGroup
@@ -827,7 +851,6 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                               itemVisibilityKeyFor: _itemVisibilityKey,
                             ),
                           ),
-                        ),
                         const SizedBox(height: 4),
                         OutlinedButton.icon(
                           onPressed: _submitting ? null : _addGroup,
@@ -1080,17 +1103,111 @@ String _normalizeVolumeUnit(String value) {
   };
 }
 
-class _ManifestGroupCard extends StatelessWidget {
-  const _ManifestGroupCard({
+class _ManifestGroupSelectorField extends StatelessWidget {
+  const _ManifestGroupSelectorField({
+    required this.groups,
+    required this.selectedGroupId,
+    required this.onChanged,
+  });
+
+  final List<_ManifestGroupDraft> groups;
+  final String? selectedGroupId;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedGroup = groups.firstWhere(
+      (group) => group.id == selectedGroupId,
+      orElse: () => groups.isNotEmpty
+          ? groups.first
+          : _ManifestGroupDraft.create('', createBlankItem: false),
+    );
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: groups.length > 1 ? () => _openPicker(context) : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Pilih Surat Jalan',
+          helperText: groups.length > 1
+              ? '${groups.length} SJ tersedia. Pilih SJ yang mau diedit.'
+              : 'Satu SJ tersedia.',
+          suffixIcon: groups.length > 1
+              ? const Icon(Icons.expand_more_rounded)
+              : null,
+        ),
+        child: Text(
+          _manifestGroupPickerLabel(selectedGroup),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPicker(BuildContext context) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final selectedId = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Surat Jalan',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: groups.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final group = groups[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.description_outlined),
+                        title: Text(_manifestGroupPickerLabel(group)),
+                        subtitle: Text(_manifestGroupSummary(group)),
+                        trailing: group.id == selectedGroupId
+                            ? const Icon(Icons.check_rounded)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(group.id),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selectedId != null && selectedId != selectedGroupId) {
+      onChanged(selectedId);
+    }
+  }
+}
+
+class _ManifestGroupEditorCard extends StatelessWidget {
+  const _ManifestGroupEditorCard({
     super.key,
     required this.group,
     required this.pickupStops,
-    required this.customerProducts,
     required this.allowsDirectCargoInput,
     required this.onGroupChanged,
-    required this.onItemChanged,
-    required this.onProductSelected,
     required this.onAddItem,
+    required this.onEditItem,
     required this.onRemoveItem,
     required this.onRemoveGroup,
     required this.itemVisibilityKeyFor,
@@ -1098,7 +1215,6 @@ class _ManifestGroupCard extends StatelessWidget {
 
   final _ManifestGroupDraft group;
   final List<DeliveryPickupStop> pickupStops;
-  final List<CustomerProductOption> customerProducts;
   final bool allowsDirectCargoInput;
   final void Function(
     String groupId, {
@@ -1106,21 +1222,8 @@ class _ManifestGroupCard extends StatelessWidget {
     String? shipperReferenceNumber,
   })
   onGroupChanged;
-  final void Function(
-    String groupId,
-    String itemId, {
-    String? customerProductRef,
-    String? description,
-    String? qtyKoli,
-    String? weightInputValue,
-    String? weightInputUnit,
-    String? volumeInputValue,
-    String? volumeInputUnit,
-  })
-  onItemChanged;
-  final void Function(String groupId, String itemId, String? customerProductRef)
-  onProductSelected;
   final void Function(String groupId) onAddItem;
+  final void Function(String groupId, String itemId) onEditItem;
   final void Function(String groupId, String itemId) onRemoveItem;
   final void Function(String groupId)? onRemoveGroup;
   final GlobalKey Function(String itemId) itemVisibilityKeyFor;
@@ -1177,36 +1280,34 @@ class _ManifestGroupCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (allowsDirectCargoInput) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Barang di SJ ini',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _manifestGroupSummary(group),
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.62),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
               ...group.items.map(
                 (item) => Padding(
                   key: itemVisibilityKeyFor(item.id),
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ManifestItemCard(
-                    key: ValueKey(item.id),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ManifestItemListTile(
                     item: item,
-                    customerProducts: customerProducts,
-                    onChanged:
-                        ({
-                          customerProductRef,
-                          description,
-                          qtyKoli,
-                          weightInputValue,
-                          weightInputUnit,
-                          volumeInputValue,
-                          volumeInputUnit,
-                        }) => onItemChanged(
-                          group.id,
-                          item.id,
-                          customerProductRef: customerProductRef,
-                          description: description,
-                          qtyKoli: qtyKoli,
-                          weightInputValue: weightInputValue,
-                          weightInputUnit: weightInputUnit,
-                          volumeInputValue: volumeInputValue,
-                          volumeInputUnit: volumeInputUnit,
-                        ),
-                    onProductSelected: (value) =>
-                        onProductSelected(group.id, item.id, value),
+                    onEdit: () => onEditItem(group.id, item.id),
                     onRemove: group.items.length > 1
                         ? () => onRemoveItem(group.id, item.id)
                         : null,
@@ -1229,6 +1330,17 @@ class _ManifestGroupCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _manifestGroupPickerLabel(_ManifestGroupDraft group) {
+  final referenceNumber = group.shipperReferenceNumber.trim();
+  final title = referenceNumber.isNotEmpty ? referenceNumber : 'SJ baru';
+  return '$title - ${group.items.length} barang';
+}
+
+String _manifestGroupSummary(_ManifestGroupDraft group) {
+  final filledCount = group.items.where((item) => item.isFilled).length;
+  return '$filledCount/${group.items.length} terisi';
 }
 
 class _PickupStopSelectorField extends StatelessWidget {
@@ -1643,14 +1755,278 @@ String? _customerProductMetrics(CustomerProductOption product) {
   return parts.join(' | ');
 }
 
+class _ManifestItemListTile extends StatelessWidget {
+  const _ManifestItemListTile({
+    required this.item,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  final _ManifestItemDraft item;
+  final VoidCallback onEdit;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final title = item.description.trim().isNotEmpty
+        ? item.description.trim()
+        : 'Barang belum diisi';
+    final summary = _manifestItemMetricSummary(item);
+    final isFilled = item.isFilled;
+
+    return Material(
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onEdit,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.26)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isFilled
+                    ? Icons.inventory_2_outlined
+                    : Icons.inventory_2_rounded,
+                color: isFilled
+                    ? scheme.primary
+                    : scheme.onSurface.withValues(alpha: 0.46),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      summary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.64),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'Edit barang',
+              ),
+              if (onRemove != null)
+                IconButton(
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.remove_circle_outline_rounded),
+                  tooltip: 'Hapus barang',
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _manifestItemMetricSummary(_ManifestItemDraft item) {
+  final parts = <String>[];
+  if (item.qtyKoliValue > 0) {
+    parts.add(
+      '${_formatDraftNumber(item.qtyKoliValue, fractionDigits: 0)} koli',
+    );
+  }
+  if (item.weightInputValueNumber > 0) {
+    parts.add(
+      '${_formatDraftNumber(item.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(item.weightInputUnit))} ${_normalizeWeightUnit(item.weightInputUnit)}',
+    );
+  }
+  if (item.volumeInputValueNumber > 0) {
+    parts.add(
+      '${_formatDraftNumber(item.volumeInputValueNumber, fractionDigits: mobileVolumeInputFractionDigits(item.volumeInputUnit))} ${_normalizeVolumeUnit(item.volumeInputUnit)}',
+    );
+  }
+  return parts.isEmpty ? 'Belum ada koli / berat / volume' : parts.join(' / ');
+}
+
+class _ManifestItemEditorSheet extends StatefulWidget {
+  const _ManifestItemEditorSheet({
+    required this.initialItem,
+    required this.customerProducts,
+    required this.normalizePatch,
+    required this.applyCustomerProduct,
+    required this.onSave,
+  });
+
+  final _ManifestItemDraft initialItem;
+  final List<CustomerProductOption> customerProducts;
+  final _ManifestItemDraft Function(
+    _ManifestItemDraft item, {
+    String? customerProductRef,
+    String? description,
+    String? qtyKoli,
+    String? weightInputValue,
+    String? weightInputUnit,
+    String? volumeInputValue,
+    String? volumeInputUnit,
+  })
+  normalizePatch;
+  final _ManifestItemDraft Function(
+    _ManifestItemDraft item,
+    String? customerProductRef,
+  )
+  applyCustomerProduct;
+  final ValueChanged<_ManifestItemDraft> onSave;
+
+  @override
+  State<_ManifestItemEditorSheet> createState() =>
+      _ManifestItemEditorSheetState();
+}
+
+class _ManifestItemEditorSheetState extends State<_ManifestItemEditorSheet> {
+  late _ManifestItemDraft _draft;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = widget.initialItem;
+  }
+
+  void _patch({
+    String? customerProductRef,
+    String? description,
+    String? qtyKoli,
+    String? weightInputValue,
+    String? weightInputUnit,
+    String? volumeInputValue,
+    String? volumeInputUnit,
+  }) {
+    setState(() {
+      _draft = widget.normalizePatch(
+        _draft,
+        customerProductRef: customerProductRef,
+        description: description,
+        qtyKoli: qtyKoli,
+        weightInputValue: weightInputValue,
+        weightInputUnit: weightInputUnit,
+        volumeInputValue: volumeInputValue,
+        volumeInputUnit: volumeInputUnit,
+      );
+    });
+  }
+
+  void _saveAndClose() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    widget.onSave(_draft);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: FractionallySizedBox(
+        heightFactor: 0.9,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Edit Barang',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Tutup',
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  children: [
+                    _ManifestItemCard(
+                      item: _draft,
+                      customerProducts: widget.customerProducts,
+                      onChanged:
+                          ({
+                            customerProductRef,
+                            description,
+                            qtyKoli,
+                            weightInputValue,
+                            weightInputUnit,
+                            volumeInputValue,
+                            volumeInputUnit,
+                          }) => _patch(
+                            customerProductRef: customerProductRef,
+                            description: description,
+                            qtyKoli: qtyKoli,
+                            weightInputValue: weightInputValue,
+                            weightInputUnit: weightInputUnit,
+                            volumeInputValue: volumeInputValue,
+                            volumeInputUnit: volumeInputUnit,
+                          ),
+                      onProductSelected: (value) {
+                        setState(() {
+                          _draft = widget.applyCustomerProduct(_draft, value);
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _saveAndClose,
+                    icon: Icon(Icons.save_rounded, color: scheme.onPrimary),
+                    label: const Text('Simpan Barang'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ManifestItemCard extends StatelessWidget {
   const _ManifestItemCard({
-    super.key,
     required this.item,
     required this.customerProducts,
     required this.onChanged,
     required this.onProductSelected,
-    this.onRemove,
   });
 
   final _ManifestItemDraft item;
@@ -1666,7 +2042,6 @@ class _ManifestItemCard extends StatelessWidget {
   })
   onChanged;
   final ValueChanged<String?> onProductSelected;
-  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1692,13 +2067,6 @@ class _ManifestItemCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const Spacer(),
-              if (onRemove != null)
-                IconButton(
-                  onPressed: onRemove,
-                  icon: const Icon(Icons.remove_circle_outline_rounded),
-                  tooltip: 'Hapus barang',
-                ),
             ],
           ),
           _CustomerProductSelectorField(

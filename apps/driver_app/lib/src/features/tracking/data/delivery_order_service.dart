@@ -956,6 +956,7 @@ class DeliveryOrderService {
             deliveryOrderItemRef: (item['deliveryOrderItemRef'] as String?)
                 ?.trim(),
             deliveryOrderItemRefs: _toStringList(item['deliveryOrderItemRefs']),
+            actualDropGroupKey: (item['actualDropGroupKey'] as String?)?.trim(),
             shipperReferenceNumber: (item['shipperReferenceNumber'] as String?)
                 ?.trim(),
             shipperReferenceKey: (item['shipperReferenceKey'] as String?)
@@ -1129,6 +1130,7 @@ class DriverActualDropPointInput {
     required this.volumeInputUnit,
     this.deliveryOrderItemRef,
     this.deliveryOrderItemRefs = const [],
+    this.actualDropGroupKey,
     this.shipperReferenceNumber,
     this.shipperReferenceKey,
     this.originLocationName,
@@ -1139,6 +1141,7 @@ class DriverActualDropPointInput {
   final String stopType;
   final String? deliveryOrderItemRef;
   final List<String> deliveryOrderItemRefs;
+  final String? actualDropGroupKey;
   final String? shipperReferenceNumber;
   final String? shipperReferenceKey;
   final String? originLocationName;
@@ -1161,6 +1164,8 @@ class DriverActualDropPointInput {
           .map((item) => item.trim())
           .where((item) => item.isNotEmpty)
           .toList(growable: false),
+    if (actualDropGroupKey != null && actualDropGroupKey!.trim().isNotEmpty)
+      'actualDropGroupKey': actualDropGroupKey!.trim(),
     if (shipperReferenceNumber != null &&
         shipperReferenceNumber!.trim().isNotEmpty)
       'shipperReferenceNumber': shipperReferenceNumber!.trim(),

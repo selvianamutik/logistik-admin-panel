@@ -670,6 +670,7 @@ export interface DeliveryActualDropPoint {
   stopType: DeliveryActualDropType;
   deliveryOrderItemRef?: string;
   deliveryOrderItemRefs?: string[];
+  actualDropGroupKey?: string;
   shipperReferenceKey?: string;
   shipperReferenceNumber?: string;
   billingCustomerRef?: string;

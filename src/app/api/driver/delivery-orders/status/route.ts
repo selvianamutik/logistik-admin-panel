@@ -77,6 +77,8 @@ export async function POST(request: Request) {
             actualDropPoints?: Array<{
                 stopType?: string;
                 deliveryOrderItemRef?: string;
+                deliveryOrderItemRefs?: string[];
+                actualDropGroupKey?: string;
                 shipperReferenceKey?: string;
                 shipperReferenceNumber?: string;
                 billingCustomerRef?: string;

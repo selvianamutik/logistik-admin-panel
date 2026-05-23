@@ -1,4 +1,4 @@
-import { createSession, verifyPassword } from '@/lib/auth';
+import { createDriverRefreshSession, createSession, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
@@ -113,6 +113,7 @@ export async function POST(request: Request) {
         await clearFailedAttempts(rateLimitKey);
 
         const token = await createSession(syncedUser);
+        const refreshToken = await createDriverRefreshSession(syncedUser);
         const appContext = await getDriverAppContext();
         const driverAccessNotice = await getDriverPortalAccessNotice(driver._id);
         await writeAuditLog(
@@ -126,7 +127,9 @@ export async function POST(request: Request) {
         return jsonNoStore({
             success: true,
             token,
+            refreshToken,
             expiresIn: 60 * 60 * 24,
+            refreshExpiresIn: 60 * 60 * 24 * 60,
             user: {
                 _id: syncedUser._id,
                 name: syncedUser.name,

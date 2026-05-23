@@ -51,6 +51,7 @@ export interface ActualCargoDraft {
 
 export interface ActualDropDraft {
     draftKey: string;
+    actualDropGroupKey?: string;
     stopType: 'DROP' | 'HOLD' | 'TRANSIT' | 'EXTRA_DROP' | 'RETURN';
     deliveryOrderItemRef: string;
     shipperReferenceKey: string;

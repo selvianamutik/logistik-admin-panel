@@ -11,6 +11,7 @@ import { normalizeUserRole } from './rbac';
 import { getUserById } from './repositories/user-store';
 import {
     createSessionToken,
+    DRIVER_REFRESH_SESSION_MAX_AGE,
     DRIVER_SESSION_COOKIE,
     SESSION_COOKIE,
     SESSION_MAX_AGE,
@@ -45,6 +46,21 @@ export async function createSession(user: User): Promise<string> {
     return createSessionToken(payload);
 }
 
+export async function createDriverRefreshSession(user: User): Promise<string> {
+    const payload: SessionUser = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: normalizeUserRole(user.role),
+        driverRef: user.driverRef,
+    };
+
+    return createSessionToken(payload, {
+        maxAge: DRIVER_REFRESH_SESSION_MAX_AGE,
+        tokenType: 'refresh',
+    });
+}
+
 function buildSessionUser(user: User): SessionUser {
     return {
         _id: user._id,
@@ -61,6 +77,20 @@ export async function getSessionFromToken(token: string): Promise<SessionUser | 
         const session = await verifySessionToken(token);
         const user = await getUserById(session._id);
         if (!user || user.active === false) {
+            return null;
+        }
+
+        return buildSessionUser(user);
+    } catch {
+        return null;
+    }
+}
+
+export async function getDriverSessionFromRefreshToken(token: string): Promise<SessionUser | null> {
+    try {
+        const session = await verifySessionToken(token, { tokenType: 'refresh' });
+        const user = await getUserById(session._id);
+        if (!user || user.active === false || normalizeUserRole(user.role) !== 'DRIVER' || !user.driverRef) {
             return null;
         }
 

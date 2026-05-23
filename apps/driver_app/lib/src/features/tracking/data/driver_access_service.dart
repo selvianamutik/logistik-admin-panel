@@ -18,9 +18,48 @@ class DriverAccessService {
     final session = DriverAppSession.fromApiUserJson(
       user,
       token: sessionToken,
+      refreshToken: decoded['refreshToken']?.toString(),
       accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
     );
     return session;
+  }
+
+  Future<DriverAppSession> refreshSession({
+    required String refreshToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/mobile/refresh'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+      },
+      body: jsonEncode({'refreshToken': refreshToken}),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal memperbarui sesi driver';
+      throw DriverAccessException(message, response.statusCode);
+    }
+
+    final userValue = decoded['user'];
+    final user = userValue is Map<String, dynamic> ? userValue : null;
+    if (user == null) {
+      throw const DriverAccessException(
+        'Respons refresh sesi tidak valid',
+        500,
+      );
+    }
+
+    return DriverAppSession.fromApiUserJson(
+      user,
+      token: decoded['token']?.toString() ?? '',
+      refreshToken: decoded['refreshToken']?.toString() ?? refreshToken,
+      accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
+    );
   }
 
   Future<DriverAccessNotice?> fetchCurrentAccessNotice({

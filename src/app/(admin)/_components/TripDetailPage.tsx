@@ -285,25 +285,34 @@ function buildDriverReviewActualDropHydration(
     const groupIndexByKey = new Map<string, number>();
 
     points.forEach((point, index) => {
-        const groupKey = [
-            point.stopType || 'DROP',
-            normalizeActualDropGroupText(point.shipperReferenceKey),
-            normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase(),
-            normalizeActualDropGroupText(point.billingCustomerRef),
-            normalizeActualDropGroupText(point.billingCustomerName),
-            normalizeActualDropGroupText(point.originLocationName),
-            normalizeActualDropGroupText(point.originLocationAddress),
-            normalizeActualDropGroupText(point.locationName),
-            normalizeActualDropGroupText(point.locationAddress),
-            normalizeActualDropGroupText(point.note),
-        ].join('|');
+        const pointItemRefs = [
+            point.deliveryOrderItemRef,
+            ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+        ].map(item => normalizeActualDropGroupText(item)).filter(Boolean);
+        const hasItemSpecificAllocation = pointItemRefs.length > 0;
+        const actualDropGroupKey = normalizeActualDropGroupText(point.actualDropGroupKey);
+        const groupKey = actualDropGroupKey
+            ? `driver-group:${actualDropGroupKey}`
+            : [
+                point.stopType || 'DROP',
+                hasItemSpecificAllocation ? '' : normalizeActualDropGroupText(point.shipperReferenceKey),
+                hasItemSpecificAllocation ? '' : normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase(),
+                normalizeActualDropGroupText(point.billingCustomerRef),
+                normalizeActualDropGroupText(point.billingCustomerName),
+                normalizeActualDropGroupText(point.originLocationName),
+                normalizeActualDropGroupText(point.originLocationAddress),
+                normalizeActualDropGroupText(point.locationName),
+                normalizeActualDropGroupText(point.locationAddress),
+                normalizeActualDropGroupText(point.note),
+            ].join('|');
         let groupIndex = groupIndexByKey.get(groupKey);
         if (groupIndex === undefined) {
-            const draftKey = point._key || `driver-drop-${groupedDrafts.length + 1}`;
+            const draftKey = actualDropGroupKey || point._key || `driver-drop-${groupedDrafts.length + 1}`;
             groupIndex = groupedDrafts.length;
             groupIndexByKey.set(groupKey, groupIndex);
             groupedDrafts.push({
                 draftKey,
+                actualDropGroupKey: actualDropGroupKey || undefined,
                 stopType: point.stopType || 'DROP',
                 deliveryOrderItemRef: '',
                 shipperReferenceKey: point.shipperReferenceKey || '',
@@ -3226,6 +3235,7 @@ export default function TripDetailPage() {
                                 actualDropPoints: selectedSubmissionActualDropPoints.map(item => ({
                                     stopType: item.stopType,
                                     deliveryOrderItemRef: item.deliveryOrderItemRef,
+                                    actualDropGroupKey: reviewingDriverRequest ? (item.actualDropGroupKey || item.draftKey) : undefined,
                                     shipperReferenceKey: item.shipperReferenceKey,
                                     shipperReferenceNumber: item.shipperReferenceNumber,
                                     billingCustomerRef: item.billingCustomerRef,
@@ -4728,9 +4738,10 @@ export default function TripDetailPage() {
                     return null;
                 }
                 const isVisibleItem = drop.deliveryOrderItemRef === cargoItem.deliveryOrderItemRef;
-                return {
+                const expandedDrop: ActualDropDraft = {
                     ...drop,
                     ...values,
+                    actualDropGroupKey: drop.actualDropGroupKey,
                     draftKey: isVisibleItem
                         ? drop.draftKey
                         : `${drop.draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${cargoItem.deliveryOrderItemRef}`,
@@ -4738,6 +4749,7 @@ export default function TripDetailPage() {
                     shipperReferenceKey: cargoItem.shipperReferenceKey || drop.shipperReferenceKey,
                     shipperReferenceNumber: cargoItem.shipperReferenceNumber || drop.shipperReferenceNumber,
                 };
+                return expandedDrop;
             })
             .filter((drop): drop is ActualDropDraft => Boolean(drop));
     const selectedWorkingActualDropPoints = (() => {

@@ -48,10 +48,12 @@ class DriverAuthService {
     }
 
     final token = decoded['token'] as String? ?? '';
+    final refreshToken = decoded['refreshToken'] as String? ?? '';
 
     return DriverAppSession.fromApiUserJson(
       user,
       token: token,
+      refreshToken: refreshToken,
       accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
     );
   }

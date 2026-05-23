@@ -179,6 +179,7 @@ class DeliveryActualDropPoint {
     required this.locationName,
     this.deliveryOrderItemRef,
     this.deliveryOrderItemRefs = const [],
+    this.actualDropGroupKey,
     this.shipperReferenceNumber,
     this.shipperReferenceKey,
     this.sequence,
@@ -197,6 +198,7 @@ class DeliveryActualDropPoint {
   final String stopType;
   final String? deliveryOrderItemRef;
   final List<String> deliveryOrderItemRefs;
+  final String? actualDropGroupKey;
   final String? shipperReferenceNumber;
   final String? shipperReferenceKey;
   final String? originLocationName;

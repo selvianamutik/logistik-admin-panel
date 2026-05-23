@@ -5,6 +5,8 @@ import type { SessionUser } from './types';
 export const SESSION_COOKIE = 'logistik-session';
 export const DRIVER_SESSION_COOKIE = 'logistik-driver-session';
 export const SESSION_MAX_AGE = 60 * 60 * 24; // 24 hours
+export const DRIVER_REFRESH_SESSION_MAX_AGE = 60 * 60 * 24 * 60; // 60 days
+export type SessionTokenType = 'access' | 'refresh';
 
 export class SessionConfigError extends Error {
     constructor(message: string) {
@@ -34,15 +36,29 @@ export function getJwtSecret(): Uint8Array {
     return new TextEncoder().encode(requireEnv('JWT_SECRET'));
 }
 
-export async function createSessionToken(user: SessionUser): Promise<string> {
-    return new SignJWT({ user })
+export async function createSessionToken(
+    user: SessionUser,
+    options: { maxAge?: number; tokenType?: SessionTokenType } = {}
+): Promise<string> {
+    return new SignJWT({ user, tokenType: options.tokenType || 'access' })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
-        .setExpirationTime(`${SESSION_MAX_AGE}s`)
+        .setExpirationTime(`${options.maxAge || SESSION_MAX_AGE}s`)
         .sign(getJwtSecret());
 }
 
-export async function verifySessionToken(token: string): Promise<SessionUser> {
+export async function verifySessionToken(
+    token: string,
+    options: { tokenType?: SessionTokenType } = {}
+): Promise<SessionUser> {
     const { payload } = await jwtVerify(token, getJwtSecret());
+    const expectedType = options.tokenType || 'access';
+    const tokenType = payload.tokenType;
+    if (tokenType && tokenType !== expectedType) {
+        throw new Error('Invalid session token type');
+    }
+    if (!tokenType && expectedType !== 'access') {
+        throw new Error('Invalid session token type');
+    }
     return (payload as { user: SessionUser }).user;
 }
