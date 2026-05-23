@@ -794,6 +794,28 @@ export function buildDefaultActualDropPoint(totals: ActualCargoTotals): Normaliz
     };
 }
 
+function buildActualDropPhysicalGroupKey(params: {
+    stopType: DeliveryActualDropType;
+    billingCustomerRef?: string;
+    billingCustomerName?: string;
+    originLocationName?: string;
+    originLocationAddress?: string;
+    locationName?: string;
+    locationAddress?: string;
+    note?: string;
+}) {
+    return [
+        params.stopType || 'DROP',
+        normalizeOptionalText(params.billingCustomerRef),
+        normalizeOptionalText(params.billingCustomerName),
+        normalizeOptionalText(params.originLocationName),
+        normalizeOptionalText(params.originLocationAddress),
+        normalizeOptionalText(params.locationName),
+        normalizeOptionalText(params.locationAddress),
+        normalizeOptionalText(params.note),
+    ].join('|');
+}
+
 export function normalizeDeliveryActualDropPoints(
     data: Record<string, unknown>,
     deliveryOrder: {
@@ -841,12 +863,28 @@ export function normalizeDeliveryActualDropPoints(
             : deliveryOrderItemRef
                 ? [deliveryOrderItemRef]
                 : [];
+        const actualDropGroupKey = normalizeOptionalText(rawPoint.actualDropGroupKey);
         const requestedShipperReferenceNumber = normalizeOptionalText(rawPoint.shipperReferenceNumber);
         const requestedShipperReferenceKey = normalizeOptionalText(rawPoint.shipperReferenceKey);
         const billingCustomerRef = normalizeOptionalText(rawPoint.billingCustomerRef);
         const billingCustomerName = normalizeOptionalText(rawPoint.billingCustomerName);
         const originLocationName = normalizeOptionalText(rawPoint.originLocationName);
         const originLocationAddress = normalizeOptionalText(rawPoint.originLocationAddress);
+        const stopType = normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`);
+        const resolvedActualDropGroupKey = actualDropGroupKey || (
+            normalizedDeliveryOrderItemRefs.length > 0
+                ? buildActualDropPhysicalGroupKey({
+                    stopType,
+                    billingCustomerRef,
+                    billingCustomerName,
+                    originLocationName,
+                    originLocationAddress,
+                    locationName,
+                    locationAddress,
+                    note,
+                })
+                : ''
+        );
         const matchedShipperReference =
             shipperReferences.find(reference =>
                 requestedShipperReferenceNumber &&
@@ -937,9 +975,10 @@ export function normalizeDeliveryActualDropPoints(
         normalized.push({
             _key: crypto.randomUUID(),
             sequence: index + 1,
-            stopType: normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`),
+            stopType,
             deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
             deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 1 ? normalizedDeliveryOrderItemRefs : undefined,
+            actualDropGroupKey: resolvedActualDropGroupKey || undefined,
             shipperReferenceKey: normalizeOptionalText(matchedShipperReference?._key) || requestedShipperReferenceKey,
             shipperReferenceNumber: normalizeOptionalText(matchedShipperReference?.referenceNumber) || requestedShipperReferenceNumber,
             billingCustomerRef,

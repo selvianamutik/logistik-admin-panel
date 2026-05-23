@@ -44,6 +44,14 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
     });
   }
 
+  Future<void> _handleSessionRefreshed(DriverAppSession session) async {
+    await _sessionStore.save(session).timeout(const Duration(seconds: 8));
+    if (!mounted) return;
+    setState(() {
+      _session = session;
+    });
+  }
+
   Future<void> _restoreCachedSession() async {
     DriverAppSession? cachedSession;
     try {
@@ -55,15 +63,25 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
     }
     if (!mounted) return;
 
-    if (cachedSession == null || (cachedSession.token ?? '').isEmpty) {
+    if (cachedSession == null ||
+        ((cachedSession.token ?? '').isEmpty &&
+            (cachedSession.refreshToken ?? '').isEmpty)) {
       setState(() => _restoringSession = false);
       return;
     }
 
     try {
-      final refreshedSession = await _accessService.fetchCurrentSession(
-        sessionToken: cachedSession.token!,
-      );
+      final refreshedSession = (cachedSession.token ?? '').isNotEmpty
+          ? await _accessService
+                .fetchCurrentSession(sessionToken: cachedSession.token!)
+                .then(
+                  (session) => session.copyWith(
+                    refreshToken: cachedSession!.refreshToken,
+                  ),
+                )
+          : await _accessService.refreshSession(
+              refreshToken: cachedSession.refreshToken!,
+            );
       await _sessionStore.save(refreshedSession);
       if (!mounted) return;
       setState(() {
@@ -72,6 +90,23 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
       });
     } on DriverAccessException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
+        final refreshToken = cachedSession.refreshToken;
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          try {
+            final refreshedSession = await _accessService.refreshSession(
+              refreshToken: refreshToken,
+            );
+            await _sessionStore.save(refreshedSession);
+            if (!mounted) return;
+            setState(() {
+              _session = refreshedSession;
+              _restoringSession = false;
+            });
+            return;
+          } catch (_) {
+            // Fall through to clearing the invalid cached session.
+          }
+        }
         await _sessionStore.clear();
         if (!mounted) return;
         setState(() {
@@ -102,7 +137,11 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
           ? const _DriverSessionRestorePage()
           : _session == null
           ? LoginPage(onLogin: _handleLogin)
-          : TrackingHomePage(session: _session!, onLogout: _handleLogout),
+          : TrackingHomePage(
+              session: _session!,
+              onSessionRefreshed: _handleSessionRefreshed,
+              onLogout: _handleLogout,
+            ),
     );
   }
 }
@@ -146,6 +185,7 @@ class DriverAppSession {
     required this.role,
     this.driverRef,
     this.token,
+    this.refreshToken,
     this.accessNotice,
   });
 
@@ -155,6 +195,7 @@ class DriverAppSession {
   final String role;
   final String? driverRef;
   final String? token;
+  final String? refreshToken;
   final DriverAccessNotice? accessNotice;
 
   Map<String, dynamic> toJson() => {
@@ -164,11 +205,13 @@ class DriverAppSession {
     'role': role,
     'driverRef': driverRef,
     'token': token,
+    'refreshToken': refreshToken,
     'accessNotice': accessNotice?.toJson(),
   };
 
   factory DriverAppSession.fromJson(Map<String, dynamic> json) {
     final token = json['token']?.toString();
+    final refreshToken = json['refreshToken']?.toString();
     return DriverAppSession(
       driverId: json['driverId']?.toString() ?? json['_id']?.toString() ?? '',
       driverName:
@@ -177,6 +220,7 @@ class DriverAppSession {
       role: json['role']?.toString() ?? 'DRIVER',
       driverRef: json['driverRef']?.toString(),
       token: token,
+      refreshToken: refreshToken,
       accessNotice: parseDriverAccessNotice(json['accessNotice']),
     );
   }
@@ -184,6 +228,7 @@ class DriverAppSession {
   static DriverAppSession fromApiUserJson(
     Map<String, dynamic> user, {
     required String token,
+    String? refreshToken,
     DriverAccessNotice? accessNotice,
   }) {
     return DriverAppSession(
@@ -194,7 +239,25 @@ class DriverAppSession {
       role: user['role']?.toString() ?? 'DRIVER',
       driverRef: user['driverRef']?.toString(),
       token: token,
+      refreshToken: refreshToken,
       accessNotice: accessNotice,
+    );
+  }
+
+  DriverAppSession copyWith({
+    String? token,
+    String? refreshToken,
+    DriverAccessNotice? accessNotice,
+  }) {
+    return DriverAppSession(
+      driverId: driverId,
+      driverName: driverName,
+      email: email,
+      role: role,
+      driverRef: driverRef,
+      token: token ?? this.token,
+      refreshToken: refreshToken ?? this.refreshToken,
+      accessNotice: accessNotice ?? this.accessNotice,
     );
   }
 }

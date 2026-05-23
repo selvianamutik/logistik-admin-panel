@@ -24,10 +24,12 @@ class TrackingHomePage extends StatefulWidget {
   const TrackingHomePage({
     super.key,
     required this.session,
+    required this.onSessionRefreshed,
     required this.onLogout,
   });
 
   final DriverAppSession session;
+  final FutureOr<void> Function(DriverAppSession session) onSessionRefreshed;
   final VoidCallback onLogout;
 
   @override
@@ -40,7 +42,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   final DeliveryOrderService _deliveryOrderService = DeliveryOrderService();
   final DriverAccessService _driverAccessService = DriverAccessService();
-  late final DriverTrackingService _trackingService;
+  DriverTrackingService? _trackingService;
+  DriverAppSession? _activeSession;
 
   List<DeliveryTrip> _trips = const [];
   List<DriverAssignedTripPlan> _plannedTrips = const [];
@@ -70,6 +73,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   Timer? _pingCounterTimer;
   Timer? _noticePollTimer;
   String? _trackingDeliveryOrderId;
+  DriverAppSession get _session => _activeSession ?? widget.session;
 
   List<DriverTripVoucher> get _visibleDriverVouchers {
     final vouchers = <DriverTripVoucher>[];
@@ -115,24 +119,100 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     );
   }
 
+  Future<DriverAppSession?> _refreshDriverSession() async {
+    final refreshToken = _session.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return null;
+    }
+
+    try {
+      final refreshedSession = await _driverAccessService.refreshSession(
+        refreshToken: refreshToken,
+      );
+      if (!mounted) return null;
+      final shouldRestartTracking =
+          (_trackingService?.isRunning ?? false) &&
+          _activeTrip != null &&
+          _trackingEnabled;
+      _trackingService?.stop();
+      setState(() {
+        _activeSession = refreshedSession;
+        _accessNotice = refreshedSession.accessNotice;
+        _trackingService = DriverTrackingService(
+          sessionToken: refreshedSession.token ?? '',
+        );
+      });
+      await widget.onSessionRefreshed(refreshedSession);
+      if (shouldRestartTracking) {
+        _startTracking(initialAction: 'heartbeat');
+      }
+      return refreshedSession;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<T> _withFreshSession<T>(
+    Future<T> Function(String sessionToken) action,
+  ) async {
+    final sessionToken = _session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      throw const DeliveryOrderException(
+        'Sesi driver tidak valid. Silakan login ulang.',
+        401,
+      );
+    }
+
+    try {
+      return await action(sessionToken);
+    } on DeliveryOrderException catch (error) {
+      if (error.statusCode != 401) rethrow;
+      final refreshed = await _refreshDriverSession();
+      final refreshedToken = refreshed?.token;
+      if (refreshedToken == null || refreshedToken.isEmpty) rethrow;
+      return action(refreshedToken);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _accessNotice = widget.session.accessNotice;
+    _activeSession = widget.session;
+    _accessNotice = _session.accessNotice;
     _trackingService = DriverTrackingService(
-      sessionToken: widget.session.token ?? '',
+      sessionToken: _session.token ?? '',
     );
     unawaited(_bootstrapPage());
     WidgetsBinding.instance.addObserver(this);
     _noticePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted && widget.session.token != null) {
+      if (mounted && _session.token != null) {
         unawaited(_silentNoticeCheck());
       }
     });
   }
 
+  @override
+  void didUpdateWidget(covariant TrackingHomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.token != widget.session.token ||
+        oldWidget.session.refreshToken != widget.session.refreshToken) {
+      final shouldRestartTracking =
+          (_trackingService?.isRunning ?? false) &&
+          _activeTrip != null &&
+          _trackingEnabled;
+      _trackingService?.stop();
+      _activeSession = widget.session;
+      _trackingService = DriverTrackingService(
+        sessionToken: _session.token ?? '',
+      );
+      if (shouldRestartTracking) {
+        _startTracking(initialAction: 'heartbeat');
+      }
+    }
+  }
+
   Future<void> _silentNoticeCheck() async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) return;
 
     try {
@@ -185,7 +265,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _bootstrapPage() async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       if (!mounted) return;
       setState(() {
@@ -243,14 +323,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     WidgetsBinding.instance.removeObserver(this);
     _noticePollTimer?.cancel();
     _pingCounterTimer?.cancel();
-    _trackingService.stop();
+    _trackingService?.stop();
     super.dispose();
   }
 
   // ── Trips ──────────────────────────────────────────────────
 
   Future<void> _loadTrips({bool skipAccessRefresh = false}) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       setState(() {
         _loadingTrips = false;
@@ -354,7 +434,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _closeWarningNotice() async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     final notice = _accessNotice;
     if (sessionToken == null ||
         sessionToken.isEmpty ||
@@ -643,7 +723,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _openTripManifestPlan(DriverAssignedTripPlan tripPlan) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -701,7 +781,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _openDeliveryManifest(DeliveryTrip trip) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -786,7 +866,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _openSuratJalanStatus(DeliveryTrip trip) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -967,12 +1047,14 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         result.targetSuratJalanRefs,
       );
       final targetLabel = _apiStatusLabel(_statusApiValue(result.status));
-      await _deliveryOrderService.updateBatchSuratJalanStatus(
-        sessionToken: sessionToken,
-        deliveryOrderId: trip.deliveryOrderId,
-        status: result.status,
-        targetSuratJalanRefs: result.targetSuratJalanRefs,
-        note: _statusNoteForUpdate(result.status),
+      await _withFreshSession(
+        (sessionToken) => _deliveryOrderService.updateBatchSuratJalanStatus(
+          sessionToken: sessionToken,
+          deliveryOrderId: trip.deliveryOrderId,
+          status: result.status,
+          targetSuratJalanRefs: result.targetSuratJalanRefs,
+          note: _statusNoteForUpdate(result.status),
+        ),
       );
       await _loadTrips();
       if (!mounted) return;
@@ -1050,9 +1132,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (!mounted) return;
 
     if (trip == null || !_shouldAutoTrack(trip)) {
-      if (_trackingService.isRunning || _trackingEnabled) {
+      if ((_trackingService?.isRunning ?? false) || _trackingEnabled) {
         _pingCounterTimer?.cancel();
-        _trackingService.stop();
+        _trackingService?.stop();
         setState(() {
           _trackingEnabled = false;
           _activeTrip = null;
@@ -1063,7 +1145,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       return;
     }
 
-    if (_trackingService.isRunning &&
+    if ((_trackingService?.isRunning ?? false) &&
         _trackingDeliveryOrderId == trip.deliveryOrderId) {
       if (!_trackingEnabled ||
           _activeTrip?.deliveryOrderId != trip.deliveryOrderId) {
@@ -1079,7 +1161,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (err != null) {
       if (!mounted) return;
       _pingCounterTimer?.cancel();
-      _trackingService.stop();
+      _trackingService?.stop();
       setState(() {
         _locationError = err;
         _trackingEnabled = false;
@@ -1107,8 +1189,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     if (trip == null || !_shouldAutoTrack(trip)) return;
 
     _pingCounterTimer?.cancel();
+    final trackingService = _trackingService;
+    if (trackingService == null) return;
 
-    _trackingService.start(
+    trackingService.start(
       deliveryOrderId: trip.deliveryOrderId,
       interval: _autoTrackingInterval,
       onLocation: (snapshot) {
@@ -1130,7 +1214,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       onTrackingInactive: (message) {
         if (!mounted) return;
         _pingCounterTimer?.cancel();
-        _trackingService.stop();
+        _trackingService?.stop();
         setState(() {
           _trackingEnabled = false;
           _activeTrip = null;
@@ -1154,7 +1238,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     DeliveryTrip trip, {
     List<String> initialSelectedSuratJalanRefs = const [],
   }) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -1183,15 +1267,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
     setState(() => _updatingStatus = true);
     try {
-      await _deliveryOrderService.requestDeliveryCompletion(
-        sessionToken: sessionToken,
-        deliveryOrderId: trip.deliveryOrderId,
-        note: result.note,
-        podReceiverName: result.podReceiverName,
-        podReceivedDate: result.podReceivedDate,
-        selectedSuratJalanRefs: result.selectedSuratJalanRefs,
-        actualItems: result.actualItems,
-        actualDropPoints: result.actualDropPoints,
+      await _withFreshSession(
+        (sessionToken) => _deliveryOrderService.requestDeliveryCompletion(
+          sessionToken: sessionToken,
+          deliveryOrderId: trip.deliveryOrderId,
+          note: result.note,
+          podReceiverName: result.podReceiverName,
+          podReceivedDate: result.podReceivedDate,
+          selectedSuratJalanRefs: result.selectedSuratJalanRefs,
+          actualItems: result.actualItems,
+          actualDropPoints: result.actualDropPoints,
+        ),
       );
       await _loadTrips();
       if (!mounted) return;
@@ -1207,7 +1293,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _openTripClosure(DeliveryTrip trip) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -1357,7 +1443,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   Future<void> _openIncidentReport(DeliveryTrip trip) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -1615,7 +1701,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     DeliveryTrip trip,
     DriverIncident incident,
   ) async {
-    final sessionToken = widget.session.token;
+    final sessionToken = _session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       return;
     }
@@ -2043,7 +2129,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   : const AlwaysScrollableScrollPhysics(),
               children: [
                 _DriverCard(
-                  session: widget.session,
+                  session: _session,
                   tripCount: _trips.length + pendingTripPlans.length,
                 ),
                 const SizedBox(height: 12),

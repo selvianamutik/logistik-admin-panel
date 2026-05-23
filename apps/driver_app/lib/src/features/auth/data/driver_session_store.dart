@@ -21,7 +21,9 @@ class DriverSessionStore {
         return null;
       }
       final session = DriverAppSession.fromJson(decoded);
-      if ((session.token ?? '').isEmpty || session.driverId.isEmpty) {
+      if (((session.token ?? '').isEmpty &&
+              (session.refreshToken ?? '').isEmpty) ||
+          session.driverId.isEmpty) {
         await clear();
         return null;
       }
