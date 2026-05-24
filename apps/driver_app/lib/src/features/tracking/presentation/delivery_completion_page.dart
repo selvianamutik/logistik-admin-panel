@@ -1397,9 +1397,9 @@ class _CompletionFooter extends StatelessWidget {
                     ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: CircularProgressIndicator.adaptive(
                           strokeWidth: 2,
-                          color: scheme.onPrimary,
+                          valueColor: AlwaysStoppedAnimation(scheme.onPrimary),
                         ),
                       )
                     : Icon(
@@ -3894,7 +3894,7 @@ class _ActualDropSelectorField extends StatelessWidget {
     final selectedGroup = groups[selectedIndex];
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       onTap: groups.length > 1 ? () => _openPicker(context) : null,
       child: InputDecorator(
         decoration: InputDecoration(
@@ -3922,6 +3922,10 @@ class _ActualDropSelectorField extends StatelessWidget {
     final selectedId = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Padding(
@@ -3947,7 +3951,13 @@ class _ActualDropSelectorField extends StatelessWidget {
                       final group = groups[index];
                       final draft = group.primaryDraft;
                       return ListTile(
-                        contentPadding: EdgeInsets.zero,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         leading: const Icon(Icons.location_on_outlined),
                         title: Text(_dropSelectorTitle(group, index)),
                         subtitle: Text(
@@ -4299,6 +4309,9 @@ class _DropPointCargoGroupTile extends StatelessWidget {
             );
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
               leading: Icon(
                 allocated
                     ? Icons.check_circle_rounded
@@ -4347,6 +4360,10 @@ class _DropPointCargoGroupTile extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) => _DropPointCargoDetermineSheet(
         group: group,
         allocationDrafts: _allocationDraftsWithRemainingDefaults(

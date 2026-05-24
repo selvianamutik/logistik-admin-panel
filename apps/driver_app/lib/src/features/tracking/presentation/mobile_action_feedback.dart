@@ -267,9 +267,9 @@ class MobileActionOverlay extends StatelessWidget {
                       SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(
+                        child: CircularProgressIndicator.adaptive(
                           strokeWidth: 3,
-                          color: scheme.primary,
+                          valueColor: AlwaysStoppedAnimation(scheme.primary),
                         ),
                       ),
                       const SizedBox(width: 14),

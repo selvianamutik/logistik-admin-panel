@@ -2205,9 +2205,11 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                             ? SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(
+                                child: CircularProgressIndicator.adaptive(
                                   strokeWidth: 2,
-                                  color: scheme.primary,
+                                  valueColor: AlwaysStoppedAnimation(
+                                    scheme.primary,
+                                  ),
                                 ),
                               )
                             : const Icon(Icons.inventory_2_outlined),
@@ -2248,7 +2250,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(
+                                  child: CircularProgressIndicator.adaptive(
                                     strokeWidth: 2,
                                   ),
                                 )
@@ -4053,9 +4055,9 @@ class _PlannedTripCard extends StatelessWidget {
                     ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: CircularProgressIndicator.adaptive(
                           strokeWidth: 2,
-                          color: scheme.primary,
+                          valueColor: AlwaysStoppedAnimation(scheme.primary),
                         ),
                       )
                     : const Icon(Icons.note_add_outlined),
@@ -4442,9 +4444,9 @@ class _TripStatusActionsCard extends StatelessWidget {
                     ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: CircularProgressIndicator.adaptive(
                           strokeWidth: 2,
-                          color: scheme.onPrimary,
+                          valueColor: AlwaysStoppedAnimation(scheme.onPrimary),
                         ),
                       )
                     : const Icon(Icons.sync_alt_rounded),
@@ -4583,9 +4585,11 @@ class _DriverIncidentCard extends StatelessWidget {
                               ? SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(
+                                  child: CircularProgressIndicator.adaptive(
                                     strokeWidth: 2,
-                                    color: scheme.primary,
+                                    valueColor: AlwaysStoppedAnimation(
+                                      scheme.primary,
+                                    ),
                                   ),
                                 )
                               : const Icon(Icons.task_alt_rounded),
