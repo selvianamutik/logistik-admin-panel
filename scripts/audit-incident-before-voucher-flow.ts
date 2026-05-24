@@ -4,6 +4,7 @@ loadScriptEnv();
 
 import { handleDriverVoucherCreate } from '../src/lib/api/driver-workflows';
 import { handleExpenseCreate } from '../src/lib/api/finance-workflows';
+import { handleTireInstallToSlot } from '../src/lib/api/generic-workflows';
 import { syncPostedIncidentSettlementLinesToDriverVoucher } from '../src/lib/api/incident-voucher-linking';
 import {
     handleIncidentSettlementLineMaintenanceFollowUpCreate,
@@ -424,7 +425,34 @@ async function main() {
         assert(lineAfterTireFollowUp?.linkedTireEventRef === tireEventId, 'line biaya ban tidak link ke aset ban');
         assert(tireAfterFollowUp?.sourceIncidentRef === incidentId, 'aset ban tidak menyimpan sumber insiden');
         assert(tireAfterFollowUp?.sourceIncidentSettlementLineRef === companyLineId, 'aset ban tidak menyimpan sumber line biaya');
+        assert(tireAfterFollowUp?.sourceCategory === 'INCIDENT_DO_PURCHASE', 'aset ban insiden harus ditandai sebagai ban mandiri / beli saat DO');
         assert(tireWarehouseItem?.currentStockQty === 1, 'aset ban follow-up tidak menambah stok ban tertracking di gudang');
+
+        await auditStep('aset ban insiden bisa dipasang ke unit tanpa membuat expense kedua');
+        const expensesBeforeInstall = await listDocumentsByFilter<Expense>('expense', { relatedIncidentSettlementLineRef: companyLineId });
+        const installPayload = await readResponse<TireEvent>(
+            await handleTireInstallToSlot(session as never, {
+                tireEventRef: tireEventId,
+                vehicleRef: vehicleId,
+                slotCode: '1L',
+                maintenanceDate: AUDIT_DATE,
+                note: 'Audit pasang ban dari incident',
+            }, async () => undefined),
+            { label: 'incident tire install to unit' }
+        );
+        assert(installPayload.data?._id === tireEventId, 'install ban tidak mengembalikan aset yang sama');
+        const [tireAfterInstall, lineAfterInstall, expensesAfterInstall] = await Promise.all([
+            getDocumentById<TireEvent>(tireEventId, 'tireEvent'),
+            getDocumentById<IncidentSettlementLine>(companyLineId, 'incidentSettlementLine'),
+            listDocumentsByFilter<Expense>('expense', { relatedIncidentSettlementLineRef: companyLineId }),
+        ]);
+        assert(tireAfterInstall, 'aset ban setelah pasang tidak ditemukan');
+        assert(tireAfterInstall.holderType === 'INTERNAL_VEHICLE', 'ban insiden tidak pindah ke unit');
+        assert(tireAfterInstall?.status === 'IN_USE', 'ban insiden tidak menjadi terpasang');
+        assert(tireAfterInstall.vehicleRef === vehicleId, 'ban insiden tidak link ke unit incident');
+        assert(tireAfterInstall.slotCode === '1L', 'ban insiden tidak masuk slot tujuan');
+        assert(lineAfterInstall?.linkedExpenseRef === companyExpenseId, 'install ban tidak boleh mengubah link expense incident');
+        assert(expensesAfterInstall.length === expensesBeforeInstall.length, 'install ban dari incident membuat expense dobel');
 
         const maintenanceFollowUpPayload = await readResponse<IncidentSettlementLine>(
             await handleIncidentSettlementLineMaintenanceFollowUpCreate(session as never, {

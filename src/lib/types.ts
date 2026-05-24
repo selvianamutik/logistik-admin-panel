@@ -1301,6 +1301,7 @@ export type TireAction = 'PATCH' | 'REPLACE_NEW' | 'ROTATE' | 'VULCANIZE';
 export type TireCause = 'FLAT' | 'BLOWOUT' | 'WORN' | 'NAIL' | 'OTHER';
 export type TireHolderType = 'INTERNAL_VEHICLE' | 'EXTERNAL_VEHICLE' | 'WAREHOUSE';
 export type TireAssetStatus = 'IN_USE' | 'SPARE' | 'IN_WAREHOUSE' | 'LOANED_OUT' | 'SCRAPPED';
+export type TireSourceCategory = 'PURCHASE' | 'INCIDENT_DO_PURCHASE' | 'MANUAL';
 
 export interface TireEvent {
   _id: string;
@@ -1332,6 +1333,8 @@ export interface TireEvent {
   sourceIncidentNumber?: string;
   sourceIncidentSettlementLineRef?: string;
   sourceIncidentExpenseRef?: string;
+  sourceCategory?: TireSourceCategory;
+  sourceCategoryLabel?: string;
   installDate: string;
   replaceDate?: string;
   notes?: string;

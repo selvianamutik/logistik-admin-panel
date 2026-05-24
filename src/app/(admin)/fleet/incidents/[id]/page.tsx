@@ -26,7 +26,9 @@ import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocument
 import { hasPermission } from '@/lib/rbac';
 import { getExpenseCategoryScopeLabel, inferExpenseCategoryScope } from '@/lib/expense-category-scope';
 import { isTireTrackedWarehouseItem } from '@/lib/inventory';
+import { resolveFleetTireEvents } from '@/lib/fleet-asset-page-support';
 import { DEFAULT_TIRE_TYPE, normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
+import { compareTireSlotCodes, formatTireSlotLabel, getSuggestedVehicleTireLayout, resolveTireSlotCode } from '@/lib/tire-slots';
 import type {
     BankAccount,
     ExpenseCategory,
@@ -36,7 +38,9 @@ import type {
     IncidentSettlementCategory,
     IncidentSettlementLine,
     IncidentSettlementLineType,
+    TireEvent,
     TireType,
+    Vehicle,
     WarehouseItem,
 } from '@/lib/types';
 import {
@@ -96,6 +100,34 @@ function createDefaultIncidentTireFollowUpForm(): IncidentTireFollowUpForm {
     };
 }
 
+type IncidentTireInstallForm = {
+    slotCode: string;
+    maintenanceDate: string;
+    oldTireUsagePercent: number | null;
+    oldTireDestination: 'WAREHOUSE' | 'SCRAPPED';
+    note: string;
+};
+
+function createDefaultIncidentTireInstallForm(): IncidentTireInstallForm {
+    return {
+        slotCode: '',
+        maintenanceDate: '',
+        oldTireUsagePercent: null,
+        oldTireDestination: 'WAREHOUSE',
+        note: '',
+    };
+}
+
+function getTireRemainingPercent(tire: Pick<TireEvent, 'remainingPercent' | 'totalUsedPercent'> | null | undefined) {
+    const explicit = Number(tire?.remainingPercent);
+    if (Number.isFinite(explicit)) return Math.max(explicit, 0);
+    return Math.max(100 - Number(tire?.totalUsedPercent || 0), 0);
+}
+
+function getTireOriginalCost(tire: Pick<TireEvent, 'originalCost' | 'purchaseCost'> | null | undefined) {
+    return Number(tire?.originalCost ?? tire?.purchaseCost ?? 0) || 0;
+}
+
 function getIncidentExpenseRouteLabel(route?: string) {
     if (route === 'DRIVER_VOUCHER') return 'Masuk biaya lain-lain uang jalan';
     if (route === 'COMPANY_EXPENSE') return 'Masuk pengeluaran perusahaan';
@@ -142,6 +174,7 @@ export default function IncidentDetailPage() {
     const canManageIncident = user ? hasPermission(user.role, 'incidents', 'update') : false;
     const canCreateExpense = user ? hasPermission(user.role, 'expenses', 'create') : false;
     const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
+    const canInstallTires = user ? hasPermission(user.role, 'tires', 'update') : false;
     const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
 
     const [incident, setIncident] = useState<Incident | null>(null);
@@ -150,6 +183,8 @@ export default function IncidentDetailPage() {
     const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [trackedTireWarehouseItems, setTrackedTireWarehouseItems] = useState<WarehouseItem[]>([]);
+    const [incidentVehicle, setIncidentVehicle] = useState<Vehicle | null>(null);
+    const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
@@ -167,6 +202,10 @@ export default function IncidentDetailPage() {
     const [tireFollowUpLine, setTireFollowUpLine] = useState<IncidentSettlementLine | null>(null);
     const [tireFollowUpForm, setTireFollowUpForm] = useState(createDefaultIncidentTireFollowUpForm());
     const [savingTireFollowUp, setSavingTireFollowUp] = useState(false);
+    const [showTireInstallModal, setShowTireInstallModal] = useState(false);
+    const [tireInstallLine, setTireInstallLine] = useState<IncidentSettlementLine | null>(null);
+    const [tireInstallForm, setTireInstallForm] = useState(createDefaultIncidentTireInstallForm());
+    const [savingTireInstall, setSavingTireInstall] = useState(false);
     const [creatingMaintenanceLineRef, setCreatingMaintenanceLineRef] = useState('');
 
     const loadDetail = useCallback(async () => {
@@ -188,7 +227,16 @@ export default function IncidentDetailPage() {
                     : Promise.resolve([]),
             ];
             const [incidentData, actionLogs, lineRows, categoryRows, accountRows, warehouseRows] = await Promise.all(tasks);
-            setIncident((incidentData as Incident | null) || null);
+            const nextIncident = (incidentData as Incident | null) || null;
+            const [vehicleData, tireRows] = canInstallTires
+                ? await Promise.all([
+                    nextIncident?.vehicleRef
+                        ? fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${nextIncident.vehicleRef}`, 'Gagal memuat unit insiden')
+                        : Promise.resolve(null),
+                    fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat data ban'),
+                ])
+                : [null, []];
+            setIncident(nextIncident);
             setLogs(sortIncidentActionLogs((actionLogs as IncidentActionLog[]) || []));
             setLines(sortIncidentSettlementLines((lineRows as IncidentSettlementLine[]) || []));
             setExpenseCategories(canCreateExpense
@@ -203,12 +251,14 @@ export default function IncidentDetailPage() {
                 ? (((warehouseRows as WarehouseItem[]) || []).filter(item => item.active !== false && isTireTrackedWarehouseItem(item)))
                 : []
             );
+            setIncidentVehicle((vehicleData as Vehicle | null) || null);
+            setTireEvents(canInstallTires ? ((tireRows as TireEvent[]) || []) : []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');
         } finally {
             setLoading(false);
         }
-    }, [addToast, canCreateExpense, canCreateTires, incidentId]);
+    }, [addToast, canCreateExpense, canCreateTires, canInstallTires, incidentId]);
 
     useEffect(() => { void loadDetail(); }, [loadDetail]);
 
@@ -235,6 +285,49 @@ export default function IncidentDetailPage() {
         () => trackedTireWarehouseItems.find(item => item._id === tireFollowUpForm.linkedWarehouseItemRef) || null,
         [tireFollowUpForm.linkedWarehouseItemRef, trackedTireWarehouseItems]
     );
+    const resolvedTireEvents = useMemo(() => resolveFleetTireEvents(tireEvents), [tireEvents]);
+    const tireById = useMemo(
+        () => new Map(resolvedTireEvents.map(tire => [tire._id, tire])),
+        [resolvedTireEvents]
+    );
+    const getLinkedTireForLine = useCallback(
+        (line: IncidentSettlementLine) => line.linkedTireEventRef ? tireById.get(line.linkedTireEventRef) || null : null,
+        [tireById]
+    );
+    const installTargetTire = tireInstallLine ? getLinkedTireForLine(tireInstallLine) : null;
+    const installedVehicleTires = useMemo(
+        () => resolvedTireEvents
+            .filter(tire =>
+                tire.vehicleRef === incident?.vehicleRef &&
+                tire.holderType === 'INTERNAL_VEHICLE' &&
+                tire.status === 'IN_USE' &&
+                Boolean(resolveTireSlotCode(tire))
+            ),
+        [incident?.vehicleRef, resolvedTireEvents]
+    );
+    const incidentTireSlotOptions = useMemo(() => {
+        if (!incidentVehicle) return [];
+        const layout = getSuggestedVehicleTireLayout(
+            incidentVehicle.vehicleType,
+            incidentVehicle.serviceName,
+            installedVehicleTires.map(tire => resolveTireSlotCode(tire)).filter((slot): slot is string => Boolean(slot)),
+            incidentVehicle.tireLayoutConfig
+        );
+        return layout.allSlots.slice().sort(compareTireSlotCodes);
+    }, [incidentVehicle, installedVehicleTires]);
+    const oldTireInInstallSlot = useMemo(() => {
+        const selectedSlot = tireInstallForm.slotCode.trim();
+        if (!selectedSlot) return null;
+        return installedVehicleTires.find(tire =>
+            tire._id !== installTargetTire?._id &&
+            resolveTireSlotCode(tire) === selectedSlot
+        ) || null;
+    }, [installTargetTire?._id, installedVehicleTires, tireInstallForm.slotCode]);
+    const oldTireRemainingPercent = getTireRemainingPercent(oldTireInInstallSlot);
+    const oldTireUsagePercent = typeof tireInstallForm.oldTireUsagePercent === 'number' ? tireInstallForm.oldTireUsagePercent : 0;
+    const oldTireUsageCostPreview = Math.round(getTireOriginalCost(oldTireInInstallSlot) * oldTireUsagePercent / 100);
+    const oldTireRemainingPercentAfter = Math.max(oldTireRemainingPercent - oldTireUsagePercent, 0);
+    const oldTireRemainingValueAfter = Math.round(getTireOriginalCost(oldTireInInstallSlot) * oldTireRemainingPercentAfter / 100);
 
     const resetLineModal = () => {
         setShowLineModal(false);
@@ -392,6 +485,107 @@ export default function IncidentDetailPage() {
         }));
     };
 
+    const canInstallIncidentTire = useCallback((line: IncidentSettlementLine) => {
+        const tire = getLinkedTireForLine(line);
+        return Boolean(
+            canInstallTires &&
+            incident?.vehicleRef &&
+            line.lineType === 'COST' &&
+            line.category === 'TIRE' &&
+            line.status === 'POSTED' &&
+            line.linkedExpenseRef &&
+            line.linkedTireEventRef &&
+            tire &&
+            tire.holderType === 'WAREHOUSE' &&
+            tire.status === 'IN_WAREHOUSE'
+        );
+    }, [canInstallTires, getLinkedTireForLine, incident?.vehicleRef]);
+
+    const openTireInstallModal = (line: IncidentSettlementLine) => {
+        const tire = getLinkedTireForLine(line);
+        if (!incident?.vehicleRef) {
+            addToast('error', 'Kendaraan insiden tidak tersedia untuk pemasangan ban');
+            return;
+        }
+        if (!incidentVehicle) {
+            addToast('error', 'Data unit armada belum termuat. Refresh halaman lalu coba lagi.');
+            return;
+        }
+        if (!tire) {
+            addToast('error', 'Aset ban insiden belum ditemukan. Refresh halaman lalu coba lagi.');
+            return;
+        }
+        if (tire.holderType !== 'WAREHOUSE' || tire.status !== 'IN_WAREHOUSE') {
+            addToast('error', 'Aset ban ini tidak berada di Gudang Ban, jadi tidak bisa dipasang dari insiden.');
+            return;
+        }
+        const occupiedSlots = new Set(installedVehicleTires.map(row => resolveTireSlotCode(row)).filter(Boolean));
+        const defaultSlot = incidentTireSlotOptions.find(slot => !occupiedSlots.has(slot)) || incidentTireSlotOptions[0] || '';
+        setTireInstallLine(line);
+        setTireInstallForm({
+            ...createDefaultIncidentTireInstallForm(),
+            slotCode: defaultSlot,
+            maintenanceDate: line.date,
+            note: `Pasang ban ${tire.tireCodeLabel || tire.tireCode || ''} dari insiden ${incident.incidentNumber || ''}`.trim(),
+        });
+        setShowTireInstallModal(true);
+    };
+
+    const closeTireInstallModal = (force = false) => {
+        if (savingTireInstall && !force) return;
+        setShowTireInstallModal(false);
+        setTireInstallLine(null);
+        setTireInstallForm(createDefaultIncidentTireInstallForm());
+    };
+
+    const saveTireInstall = async () => {
+        if (!tireInstallLine?.linkedTireEventRef) return addToast('error', 'Aset ban insiden belum tertaut');
+        if (!incident?.vehicleRef) return addToast('error', 'Kendaraan insiden tidak tersedia untuk pemasangan ban');
+        if (!tireInstallForm.slotCode) return addToast('error', 'Pilih slot ban tujuan');
+        if (!tireInstallForm.maintenanceDate) return addToast('error', 'Tanggal pasang wajib diisi');
+        if (!installTargetTire || installTargetTire.holderType !== 'WAREHOUSE' || installTargetTire.status !== 'IN_WAREHOUSE') {
+            return addToast('error', 'Ban sumber harus berada di Gudang Ban sebelum dipasang');
+        }
+        if (oldTireInInstallSlot) {
+            if (tireInstallForm.oldTireUsagePercent === null || !Number.isFinite(tireInstallForm.oldTireUsagePercent)) {
+                return addToast('error', 'Isi persentase pemakaian ban lama di slot tujuan');
+            }
+            if (tireInstallForm.oldTireUsagePercent < 0 || tireInstallForm.oldTireUsagePercent > oldTireRemainingPercent) {
+                return addToast('error', `Persentase ban lama harus 0-${formatQuantity(oldTireRemainingPercent, 2)}%`);
+            }
+        }
+
+        setSavingTireInstall(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'tire-events',
+                    action: 'install-to-slot',
+                    data: {
+                        tireEventRef: tireInstallLine.linkedTireEventRef,
+                        vehicleRef: incident.vehicleRef,
+                        slotCode: tireInstallForm.slotCode,
+                        oldTireUsagePercent: oldTireInInstallSlot ? tireInstallForm.oldTireUsagePercent : undefined,
+                        oldTireDestination: oldTireInInstallSlot ? tireInstallForm.oldTireDestination : undefined,
+                        maintenanceDate: tireInstallForm.maintenanceDate,
+                        note: tireInstallForm.note.trim() || undefined,
+                    },
+                }),
+            });
+            const payload = await res.json();
+            if (!res.ok) return addToast('error', payload.error || 'Gagal memasang ban insiden ke unit');
+            addToast('success', 'Ban insiden berhasil dipasang ke unit armada');
+            closeTireInstallModal(true);
+            await loadDetail();
+        } catch {
+            addToast('error', 'Gagal memasang ban insiden ke unit');
+        } finally {
+            setSavingTireInstall(false);
+        }
+    };
+
     const chooseIncidentExpenseRoute = (route: IncidentExpenseRoute) => {
         setExpenseForm(prev => ({
             ...prev,
@@ -515,6 +709,7 @@ export default function IncidentDetailPage() {
             {canManageIncident && !incidentClosed && line.status === 'APPROVED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'DRAFT')}><XCircle size={14} /> Draft</button>}
             {canCreateExpense && canPostIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openExpenseModal(line)}><ReceiptText size={14} /> Post Expense</button>}
             {canCreateTires && line.lineType === 'COST' && line.category === 'TIRE' && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedTireEventRef && <button className="table-action-btn" onClick={() => openTireFollowUpModal(line)}><Plus size={14} /> Catat Aset Ban</button>}
+            {canInstallIncidentTire(line) && <button className="table-action-btn" onClick={() => openTireInstallModal(line)}><Wrench size={14} /> Pasang Ban</button>}
             {canCreateMaintenance && line.lineType === 'COST' && ['REPAIR', 'SPAREPART', 'TIRE'].includes(line.category) && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedMaintenanceRef && <button className="table-action-btn" onClick={() => void createMaintenanceFollowUp(line)} disabled={creatingMaintenanceLineRef === line._id}><Wrench size={14} /> {creatingMaintenanceLineRef === line._id ? 'Membuat...' : 'Follow-up Maintenance'}</button>}
             {canManageIncident && canMarkIncidentRecoveryPosted(line) && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'POSTED')}><CheckCircle2 size={14} /> Tandai Diterima</button>}
             {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Tolak</button>}
@@ -649,8 +844,21 @@ export default function IncidentDetailPage() {
                 <div className="form-row"><div className="form-group"><label className="form-label">Jenis Ban</label><select className="form-select" value={tireFollowUpForm.tireType} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireType: event.target.value as IncidentTireFollowUpForm['tireType'] }))} disabled={savingTireFollowUp}>{TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}</select></div><div className="form-group"><label className="form-label">Tanggal Pencatatan</label><input type="date" className="form-input" value={tireFollowUpForm.installDate} onChange={event => setTireFollowUpForm(prev => ({ ...prev, installDate: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
                 <div className="form-row"><div className="form-group"><label className="form-label">Merk Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireBrand} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireBrand: event.target.value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Ukuran Ban <span className="required">*</span></label><input className="form-input" value={tireFollowUpForm.tireSize} onChange={event => setTireFollowUpForm(prev => ({ ...prev, tireSize: event.target.value }))} disabled={savingTireFollowUp} /></div></div>
                 <div className="form-row"><div className="form-group"><label className="form-label">Nilai Awal Aset Ban</label><FormattedNumberInput allowDecimal={false} value={tireFollowUpForm.originalCost} onValueChange={value => setTireFollowUpForm(prev => ({ ...prev, originalCost: value }))} disabled={savingTireFollowUp} /></div><div className="form-group"><label className="form-label">Lokasi Awal</label><input className="form-input" value="Gudang Ban" readOnly /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Sumber Aset Ban</label><input className="form-input" value="Ban mandiri / beli saat DO" readOnly /></div><div className="form-group"><label className="form-label">Status Awal</label><input className="form-input" value="Masuk Gudang Ban tertracking" readOnly /></div></div>
                 <div className="form-group"><label className="form-label">Catatan Aset</label><textarea className="form-textarea" rows={3} value={tireFollowUpForm.notes} onChange={event => setTireFollowUpForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Opsional: nomor nota toko, kondisi ban, konteks pemasangan di perjalanan" disabled={savingTireFollowUp} /></div>
             </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => closeTireFollowUpModal()} disabled={savingTireFollowUp}>Batal</button><button className="btn btn-primary" onClick={saveTireFollowUp} disabled={savingTireFollowUp || !tireFollowUpForm.linkedWarehouseItemRef || !tireFollowUpForm.tireCode.trim() || !tireFollowUpForm.tireBrand.trim() || !tireFollowUpForm.tireSize.trim() || tireFollowUpForm.originalCost <= 0}><Save size={16} /> {savingTireFollowUp ? 'Menyimpan...' : 'Catat Aset Ban'}</button></div></div></div>}
+            {showTireInstallModal && tireInstallLine && installTargetTire && <div className="modal-overlay" onClick={() => closeTireInstallModal()}><div className="modal modal-lg" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Pasang Ban dari Insiden</h3></div><div className="modal-body">
+                <div style={{ padding: '0.85rem 1rem', borderRadius: 12, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
+                    <div style={{ fontWeight: 700 }}>{installTargetTire.tireCodeLabel || installTargetTire.tireCode} - {installTargetTire.tireBrand} {installTargetTire.tireSize}</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+                        Biaya pembelian ban sudah diposting dari insiden. Pemasangan ini hanya memindahkan aset ban ke unit armada, mencatat slot, riwayat, dan persentase pemakaian ban lama bila slot sudah terisi.
+                    </div>
+                </div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Unit Armada</label><input className="form-input" value={incidentVehicle ? `${incidentVehicle.plateNumber || incident?.vehiclePlate || '-'}${incidentVehicle.unitCode ? ` - ${incidentVehicle.unitCode}` : ''}` : (incident?.vehiclePlate || '-')} readOnly /></div><div className="form-group"><label className="form-label">Tanggal Pasang</label><input type="date" className="form-input" value={tireInstallForm.maintenanceDate} onChange={event => setTireInstallForm(prev => ({ ...prev, maintenanceDate: event.target.value }))} disabled={savingTireInstall} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Slot Ban <span className="required">*</span></label><select className="form-select" value={tireInstallForm.slotCode} onChange={event => setTireInstallForm(prev => ({ ...prev, slotCode: event.target.value, oldTireUsagePercent: null }))} disabled={savingTireInstall}><option value="">Pilih slot</option>{incidentTireSlotOptions.map(slotCode => { const occupied = installedVehicleTires.find(tire => resolveTireSlotCode(tire) === slotCode); return <option key={slotCode} value={slotCode}>{slotCode} - {formatTireSlotLabel(slotCode)}{occupied ? ` | Terisi ${occupied.tireCodeLabel}` : ' | Kosong'}</option>; })}</select></div><div className="form-group"><label className="form-label">Sumber Aset Ban</label><input className="form-input" value="Ban mandiri / beli saat DO" readOnly /></div></div>
+                {oldTireInInstallSlot && <div className="info-banner" style={{ marginBottom: '1rem' }}><div className="info-banner-title">Slot tujuan sudah berisi ban lama</div><div className="info-banner-text" style={{ display: 'grid', gap: '0.65rem' }}><div>{oldTireInInstallSlot.tireCodeLabel || oldTireInInstallSlot.tireCode} akan keluar dari slot {tireInstallForm.slotCode}. Isi pemakaian ban lama sebelum diganti agar sisa nilai dan histori tetap benar.</div><div className="form-row" style={{ marginBottom: 0 }}><div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">Ban Lama Dipindahkan Ke</label><select className="form-select" value={tireInstallForm.oldTireDestination} onChange={event => setTireInstallForm(prev => ({ ...prev, oldTireDestination: event.target.value as IncidentTireInstallForm['oldTireDestination'] }))} disabled={savingTireInstall}><option value="WAREHOUSE">Gudang Ban</option><option value="SCRAPPED">Afkir</option></select></div><div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">Persentase Pemakaian Ban Lama</label><FormattedNumberInput allowDecimal maxFractionDigits={2} value={tireInstallForm.oldTireUsagePercent} onValueChange={value => setTireInstallForm(prev => ({ ...prev, oldTireUsagePercent: value }))} placeholder={`Maks ${formatQuantity(oldTireRemainingPercent, 2)}%`} disabled={savingTireInstall} /></div></div><div className="form-row" style={{ marginBottom: 0 }}><div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">Preview Biaya Ban Lama</label><input className="form-input" value={`${formatCurrency(oldTireUsageCostPreview)} | sisa ${formatQuantity(oldTireRemainingPercentAfter, 2)}% (${formatCurrency(oldTireRemainingValueAfter)})`} readOnly /></div></div></div></div>}
+                <div className="form-group"><label className="form-label">Catatan Pemasangan</label><textarea className="form-textarea" rows={3} value={tireInstallForm.note} onChange={event => setTireInstallForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Opsional: lokasi pemasangan, kondisi ban lama, atau nomor kuitansi" disabled={savingTireInstall} /></div>
+            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => closeTireInstallModal()} disabled={savingTireInstall}>Batal</button><button className="btn btn-primary" onClick={saveTireInstall} disabled={savingTireInstall || !tireInstallForm.slotCode || !tireInstallForm.maintenanceDate || Boolean(oldTireInInstallSlot && tireInstallForm.oldTireUsagePercent === null)}><Save size={16} /> {savingTireInstall ? 'Memasang...' : 'Pasang Ban'}</button></div></div></div>}
         </div>
     );
 }
