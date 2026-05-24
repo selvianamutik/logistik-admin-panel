@@ -1,10 +1,11 @@
-import { createDriverRefreshSession, createSession, verifyPassword } from '@/lib/auth';
+import { createDriverMobileSession, createDriverRefreshSession, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDocumentById } from '@/lib/repositories/document-store';
 import { findActiveUserByEmail, updateUserLoginState } from '@/lib/repositories/user-store';
+import { DRIVER_MOBILE_SESSION_MAX_AGE, DRIVER_REFRESH_SESSION_MAX_AGE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
 
         await clearFailedAttempts(rateLimitKey);
 
-        const token = await createSession(syncedUser);
+        const token = await createDriverMobileSession(syncedUser);
         const refreshToken = await createDriverRefreshSession(syncedUser);
         const appContext = await getDriverAppContext();
         const driverAccessNotice = await getDriverPortalAccessNotice(driver._id);
@@ -128,8 +129,8 @@ export async function POST(request: Request) {
             success: true,
             token,
             refreshToken,
-            expiresIn: 60 * 60 * 24,
-            refreshExpiresIn: 60 * 60 * 24 * 60,
+            expiresIn: DRIVER_MOBILE_SESSION_MAX_AGE,
+            refreshExpiresIn: DRIVER_REFRESH_SESSION_MAX_AGE,
             user: {
                 _id: syncedUser._id,
                 name: syncedUser.name,

@@ -11,6 +11,7 @@ import { normalizeUserRole } from './rbac';
 import { getUserById } from './repositories/user-store';
 import {
     createSessionToken,
+    DRIVER_MOBILE_SESSION_MAX_AGE,
     DRIVER_REFRESH_SESSION_MAX_AGE,
     DRIVER_SESSION_COOKIE,
     SESSION_COOKIE,
@@ -44,6 +45,20 @@ export async function createSession(user: User): Promise<string> {
     };
 
     return createSessionToken(payload);
+}
+
+export async function createDriverMobileSession(user: User): Promise<string> {
+    const payload: SessionUser = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: normalizeUserRole(user.role),
+        driverRef: user.driverRef,
+    };
+
+    return createSessionToken(payload, {
+        maxAge: DRIVER_MOBILE_SESSION_MAX_AGE,
+    });
 }
 
 export async function createDriverRefreshSession(user: User): Promise<string> {

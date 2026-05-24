@@ -5,6 +5,7 @@ import type { SessionUser } from './types';
 export const SESSION_COOKIE = 'logistik-session';
 export const DRIVER_SESSION_COOKIE = 'logistik-driver-session';
 export const SESSION_MAX_AGE = 60 * 60 * 24; // 24 hours
+export const DRIVER_MOBILE_SESSION_MAX_AGE = 60 * 60 * 24 * 14; // 14 days
 export const DRIVER_REFRESH_SESSION_MAX_AGE = 60 * 60 * 24 * 60; // 60 days
 export type SessionTokenType = 'access' | 'refresh';
 
