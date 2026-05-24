@@ -8,6 +8,7 @@ import { CheckCircle, Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edi
 import CollapsibleCard from '@/components/CollapsibleCard';
 import AuditTrailCard from './AuditTrailCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import SplitDecimalNumberInput from '@/components/SplitDecimalNumberInput';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
@@ -24,6 +25,8 @@ import {
     createEmptyActualDropDraft,
     applyActualCargoAutoWeightFromQty,
     applyActualDropAutoWeightFromQty,
+    shouldLockActualCargoVolume,
+    shouldLockActualDropVolume,
     getAssignableTripDrivers,
     getAssignableTripVehicles,
     getNextDeliveryOrderStatuses,
@@ -89,7 +92,7 @@ import {
     inferDriverVoucherDisbursementCount,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
-import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
+import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shouldLockOrderItemVolume, shouldLockOrderItemWeight, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
@@ -1350,6 +1353,8 @@ export default function TripDetailPage() {
                             }, value as number))
                             : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                 ? item
+                            : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
+                                ? item
                             : { ...item, [field]: value }
                     )
                     : item
@@ -1378,6 +1383,8 @@ export default function TripDetailPage() {
                                 }, value as number)),
                             }
                             : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
+                                ? item
+                            : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
                                 ? item
                             : { ...item, [field]: value }
                     )
@@ -1635,6 +1642,8 @@ export default function TripDetailPage() {
                                         shipperReferenceNumber: group.shipperReferenceNumber,
                                     }, value as number))
                                     : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
+                                        ? item
+                                    : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
                                         ? item
                                     : { ...item, [field]: value }
                             )
@@ -2395,6 +2404,9 @@ export default function TripDetailPage() {
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
             }
+            if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
+                return item;
+            }
             return { ...item, [field]: value };
         };
         if (currentItem) {
@@ -2620,6 +2632,9 @@ export default function TripDetailPage() {
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
             }
+            if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
+                return item;
+            }
             return { ...item, [field]: value };
         }));
     };
@@ -2746,6 +2761,9 @@ export default function TripDetailPage() {
             if (field === 'weightInputUnit') {
                 return updateActualDropDraftWeightUnit(drop, value as ActualDropDraft['weightInputUnit']);
             }
+            if (field === 'volumeInputValue' && shouldLockActualDropVolume(selectedCargoItem)) {
+                return drop;
+            }
             return { ...drop, [field]: value };
         };
         if (field === 'qtyKoli' || field === 'weightInputValue' || field === 'weightInputUnit' || field === 'volumeInputValue' || field === 'volumeInputUnit') {
@@ -2823,6 +2841,8 @@ export default function TripDetailPage() {
                 ? applyActualDropAutoWeightFromQty(currentAllocation, cargoItem, value)
                 : field === 'weightInputUnit'
                     ? updateActualDropDraftWeightUnit(currentAllocation, value as ActualDropDraft['weightInputUnit'])
+                    : field === 'volumeInputValue' && shouldLockActualDropVolume(cargoItem)
+                        ? currentAllocation
                     : { ...currentAllocation, [field]: value };
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setActualDropItemValueMap(previous => ({
@@ -4856,6 +4876,15 @@ export default function TripDetailPage() {
             item.actualVolumeInputUnit
         ),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const selectedActualCargoDisplaySummary = selectedDerivedActualCargoItems.length === 1
+        ? {
+            ...selectedActualCargoTotals,
+            weightInputValue: selectedDerivedActualCargoItems[0].actualWeightInputValue,
+            weightInputUnit: selectedDerivedActualCargoItems[0].actualWeightInputUnit,
+            volumeInputValue: selectedDerivedActualCargoItems[0].actualVolumeInputValue,
+            volumeInputUnit: selectedDerivedActualCargoItems[0].actualVolumeInputUnit,
+        }
+        : selectedActualCargoTotals;
     const selectedActualDropTotals = selectedEffectiveActualDropPoints.reduce((sum, point) => ({
         qtyKoli: sum.qtyKoli + parseFormattedNumberish(point.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + convertWeightToKg(
@@ -7653,7 +7682,7 @@ export default function TripDetailPage() {
                                             </div>
                                             {selectedActualDropMismatchMessage && (
                                                 <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
-                                                    {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
+                                                    {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoDisplaySummary)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
                                                 </div>
                                             )}
                                             {selectedActualDropAmbiguityMessage && (
@@ -7712,7 +7741,7 @@ export default function TripDetailPage() {
                                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.55rem' }}>
                                                                     <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.65rem 0.75rem', background: 'var(--color-white)' }}>
                                                                         <div className="text-muted text-sm">Total akan direalisasikan</div>
-                                                                        <div className="font-semibold" style={{ marginTop: '0.15rem' }}>{formatCargoSummary(selectedActualCargoTotals)}</div>
+                                                                        <div className="font-semibold" style={{ marginTop: '0.15rem' }}>{formatCargoSummary(selectedActualCargoDisplaySummary)}</div>
                                                                     </div>
                                                                 </div>
                                                                 <div style={{ display: 'grid', gap: '0.6rem' }}>
@@ -8110,7 +8139,7 @@ export default function TripDetailPage() {
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                     <div className="text-muted text-sm">{activeFinalizationDrop ? 'Muatan aktual saat ini' : 'Muatan realisasi'}</div>
                                     <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
-                                        {formatCargoSummary(selectedActualCargoTotals)}
+                                        {formatCargoSummary(selectedActualCargoDisplaySummary)}
                                     </div>
                                 </div>
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
@@ -8122,7 +8151,7 @@ export default function TripDetailPage() {
 
                             {!activeFinalizationDrop && selectedActualDropMismatchMessage && (
                                 <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
-                                    {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
+                                    {selectedActualDropMismatchMessage} Muatan aktual {formatCargoSummary(selectedActualCargoDisplaySummary)} tetapi alokasi drop baru {formatCargoSummary(selectedActualDropTotals)}.
                                 </div>
                             )}
 
@@ -8390,12 +8419,10 @@ export default function TripDetailPage() {
                                         <div className="form-group">
                                             <label className="form-label">{activeFinalizationDrop ? 'Berat Alokasi' : 'Berat Aktual'} {activeFinalizationCargoItem.requireWeight && <span className="required">*</span>}</label>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                <FormattedNumberInput
+                                                <SplitDecimalNumberInput
                                                     min={0}
                                                     maxFractionDigits={getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit)}
-                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0, {
-                                                        maxFractionDigits: getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit),
-                                                    })}
+                                                    value={(activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0}
                                                     onValueChange={value => {
                                                         if (activeFinalizationDrop) {
                                                             updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'weightInputValue', String(value));
@@ -8428,12 +8455,10 @@ export default function TripDetailPage() {
                                         <div className="form-group">
                                             <label className="form-label">{activeFinalizationDrop ? 'Volume Alokasi' : 'Volume Aktual'} {activeFinalizationCargoItem.requireVolume && <span className="required">*</span>}</label>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                <FormattedNumberInput
+                                                <SplitDecimalNumberInput
                                                     min={0}
                                                     maxFractionDigits={(activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3}
-                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue) || 0, {
-                                                        maxFractionDigits: (activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3,
-                                                    })}
+                                                    value={(activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue) || 0}
                                                     onValueChange={value => {
                                                         if (activeFinalizationDrop) {
                                                             updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'volumeInputValue', String(value));
@@ -8441,7 +8466,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualVolumeInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop)}
+                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop) || (activeFinalizationDrop ? shouldLockActualDropVolume(activeFinalizationCargoItem) : shouldLockActualCargoVolume(activeFinalizationCargoItem))}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -8699,15 +8724,13 @@ export default function TripDetailPage() {
                                                 <div className="form-group">
                                                     <label className="form-label">Berat Aktual</label>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                        <FormattedNumberInput
+                                                        <SplitDecimalNumberInput
                                                             key={`${item.deliveryOrderItemRef}-weight`}
                                                             min={0}
                                                             maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
-                                                            value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                                maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-                                                            })}
+                                                            value={item.actualWeightInputValue || 0}
                                                             onValueChange={value => updateSuratJalanActualEditItem(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                            disabled={savingSuratJalanActualEdit}
+                                                            disabled={savingSuratJalanActualEdit || shouldLockActualCargoVolume(item)}
                                                         />
                                                         <select
                                                             className="form-select"
@@ -8722,13 +8745,11 @@ export default function TripDetailPage() {
                                                 <div className="form-group">
                                                     <label className="form-label">Volume Aktual</label>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                        <FormattedNumberInput
+                                                        <SplitDecimalNumberInput
                                                             key={`${item.deliveryOrderItemRef}-volume`}
                                                             min={0}
                                                             maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                            value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                                                                maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                                                            })}
+                                                            value={item.actualVolumeInputValue || 0}
                                                             onValueChange={value => updateSuratJalanActualEditItem(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                             disabled={savingSuratJalanActualEdit}
                                                         />
@@ -8953,7 +8974,7 @@ export default function TripDetailPage() {
                                                                         maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                         value={item.weightInputValue}
                                                                         onValueChange={value => updateSelectedExistingShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                                        disabled={savingShipperReference}
+                                                                        disabled={savingShipperReference || shouldLockOrderItemVolume(item)}
                                                                     />
                                                                     <select
                                                                         className="form-select"
@@ -9067,7 +9088,7 @@ export default function TripDetailPage() {
                                                             maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                             value={item.weightInputValue}
                                                             onValueChange={value => updateSelectedShipperReferenceItemDraft(itemIndex, 'weightInputValue', value)}
-                                                            disabled={savingShipperReference}
+                                                            disabled={savingShipperReference || shouldLockOrderItemVolume(item)}
                                                         />
                                                         <select
                                                             className="form-select"
@@ -9452,7 +9473,7 @@ export default function TripDetailPage() {
                                                                     maxFractionDigits={getWeightInputFractionDigits(item.weightInputUnit)}
                                                                     value={item.weightInputValue}
                                                                     onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'weightInputValue', value)}
-                                                                    disabled={savingCargo}
+                                                                    disabled={savingCargo || shouldLockOrderItemVolume(item)}
                                                                 />
                                                                 <select
                                                                     className="form-select"

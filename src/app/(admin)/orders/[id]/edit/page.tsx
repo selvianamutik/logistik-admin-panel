@@ -26,6 +26,7 @@ import {
     getDraftPickupStops,
     sortCustomerPickups,
     summarizePickupStopList,
+    shouldLockOrderItemVolume,
     shouldLockOrderItemWeight,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
@@ -186,6 +187,9 @@ export default function OrderEditPage() {
                 return applyOrderItemAutoWeightFromQty(item, value as number | string);
             }
             if (field === 'weightInputValue' && shouldLockOrderItemWeight(item)) {
+                return item;
+            }
+            if (field === 'volumeInputValue' && shouldLockOrderItemVolume(item)) {
                 return item;
             }
             return { ...item, [field]: value };
@@ -770,7 +774,7 @@ export default function OrderEditPage() {
                                     <div style={{ flex: '1 1 180px' }}>
                                         <label className="form-label">{isRevisionMode ? 'Target Volume' : 'Volume'}</label>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                            <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={false} />
+                                            <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={shouldLockOrderItemVolume(item)} />
                                             <select
                                                 className="form-select"
                                                 value={item.volumeInputUnit}

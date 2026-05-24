@@ -49,6 +49,7 @@ import {
     applyOrderItemAutoWeightFromQty,
     createDefaultOrderItemForm,
     getDraftOrderItems,
+    shouldLockOrderItemVolume,
     shouldLockOrderItemWeight,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
@@ -674,6 +675,8 @@ export default function OrderDetailPage() {
                                             shipperReferenceNumber: group.shipperReferenceNumber,
                                         }, value as number))
                                         : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
+                                            ? item
+                                        : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
                                             ? item
                                         : { ...item, [field]: value }
                                 )
@@ -3221,7 +3224,7 @@ export default function OrderDetailPage() {
                                                                                     : entry
                                                                             )))}
                                                                             style={{ width: 92 }}
-                                                                            disabled={creatingDO}
+                                                                            disabled={creatingDO || shouldLockOrderItemVolume(item)}
                                                                         >
                                                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                                                         </select>

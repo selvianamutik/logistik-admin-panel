@@ -208,6 +208,37 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
             final nextVolumeUnit = volumeInputUnit == null
                 ? draft.volumeInputUnit
                 : _normalizeVolumeUnit(volumeInputUnit);
+            final nextQty = qtyKoli ?? draft.qtyKoli;
+            final autoWeightValue =
+                qtyKoli != null && weightInputValue == null
+                ? _autoWeightInputValueForQty(
+                    draft: _ActualDropDraft.create(
+                      qtyKoli: draft.qtyKoli,
+                      weightInputValue: draft.weightInputValue,
+                      weightInputUnit: draft.weightInputUnit,
+                      volumeInputValue: draft.volumeInputValue,
+                      volumeInputUnit: draft.volumeInputUnit,
+                    ),
+                    cargo: draft,
+                    nextQtyKoli: nextQty,
+                    nextWeightUnit: nextWeightUnit,
+                  )
+                : null;
+            final autoVolumeValue =
+                qtyKoli != null && volumeInputValue == null
+                ? _autoVolumeInputValueForQty(
+                    draft: _ActualDropDraft.create(
+                      qtyKoli: draft.qtyKoli,
+                      weightInputValue: draft.weightInputValue,
+                      weightInputUnit: draft.weightInputUnit,
+                      volumeInputValue: draft.volumeInputValue,
+                      volumeInputUnit: draft.volumeInputUnit,
+                    ),
+                    cargo: draft,
+                    nextQtyKoli: nextQty,
+                    nextVolumeUnit: nextVolumeUnit,
+                  )
+                : null;
             final convertedWeightValue =
                 weightInputUnit != null && weightInputValue == null
                 ? _formatMetric(
@@ -221,8 +252,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileWeightInputFractionDigits(
                       nextWeightUnit,
                     ),
-                  )
-                : weightInputValue;
+                )
+                : weightInputValue ?? autoWeightValue;
             final convertedVolumeValue =
                 volumeInputUnit != null && volumeInputValue == null
                 ? _formatMetric(
@@ -236,8 +267,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileVolumeInputFractionDigits(
                       nextVolumeUnit,
                     ),
-                  )
-                : volumeInputValue;
+                )
+                : volumeInputValue ?? autoVolumeValue;
 
             return draft.copyWith(
               qtyKoli: qtyKoli,
@@ -324,8 +355,17 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileWeightInputFractionDigits(
                       nextWeightUnit,
                     ),
-                  )
+                )
                 : weightInputValue;
+            final nextVolumeInputValueFromQty =
+                qtyKoli != null && volumeInputValue == null
+                ? _autoVolumeInputValueForQty(
+                    draft: draft,
+                    cargo: selectedItem,
+                    nextQtyKoli: nextQty,
+                    nextVolumeUnit: nextVolumeUnit,
+                  )
+                : null;
             final nextVolumeInputValue =
                 volumeInputUnit != null && volumeInputValue == null
                 ? _formatMetric(
@@ -339,8 +379,8 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileVolumeInputFractionDigits(
                       nextVolumeUnit,
                     ),
-                  )
-                : volumeInputValue;
+                )
+                : volumeInputValue ?? nextVolumeInputValueFromQty;
 
             return draft.copyWith(
               stopType: stopType,
@@ -2933,6 +2973,45 @@ String? _autoWeightInputValueForQty({
   );
 }
 
+String? _autoVolumeInputValueForQty({
+  required _ActualDropDraft draft,
+  required _ActualCargoDraft? cargo,
+  required String nextQtyKoli,
+  required String nextVolumeUnit,
+}) {
+  if (cargo == null) return null;
+  final qtyKoli = _parseDouble(nextQtyKoli);
+  final basisQtyKoli = cargo.qtyKoliValue;
+  final basisVolumeM3 = _convertVolumeToM3(
+    cargo.volumeInputValueNumber,
+    cargo.volumeInputUnit,
+  );
+  if (qtyKoli <= 0 || basisQtyKoli <= 0 || basisVolumeM3 <= 0) {
+    return '';
+  }
+
+  final currentQtyKoli = draft.qtyKoliValue;
+  final currentVolumeM3 = _convertVolumeToM3(
+    draft.volumeInputValueNumber,
+    draft.volumeInputUnit,
+  );
+  final previousAutoVolumeM3 = currentQtyKoli > 0
+      ? basisVolumeM3 * currentQtyKoli / basisQtyKoli
+      : 0;
+  final shouldRefresh =
+      currentVolumeM3 <= 0 ||
+      previousAutoVolumeM3 <= 0 ||
+      (currentVolumeM3 - previousAutoVolumeM3).abs() <= 0.001;
+  if (!shouldRefresh) return null;
+
+  final nextVolumeM3 = basisVolumeM3 * qtyKoli / basisQtyKoli;
+  final normalizedUnit = _normalizeVolumeUnit(nextVolumeUnit);
+  return _formatMetric(
+    _convertM3ToVolumeInputValue(nextVolumeM3, normalizedUnit),
+    fractionDigits: mobileVolumeInputFractionDigits(normalizedUnit),
+  );
+}
+
 String _formatCargoDraftValues(_ActualCargoDraft draft) {
   final parts = <String>[
     if (draft.qtyKoliValue > 0) '${_formatMetric(draft.qtyKoliValue)} koli',
@@ -4360,6 +4439,7 @@ class _DropPointCargoDetermineSheetState
     final current = _selectedValueDraft;
     final nextQtyKoli = qtyKoli ?? current.qtyKoli;
     final nextWeightUnit = weightInputUnit ?? current.weightInputUnit;
+    final nextVolumeUnit = volumeInputUnit ?? current.volumeInputUnit;
     final autoWeightInputValue =
         weightInputValue == null && (qtyKoli != null || weightInputUnit != null)
         ? _autoWeightInputValueForQty(
@@ -4379,11 +4459,30 @@ class _DropPointCargoDetermineSheetState
             nextWeightUnit: nextWeightUnit,
           )
         : null;
+    final autoVolumeInputValue =
+        volumeInputValue == null && (qtyKoli != null || volumeInputUnit != null)
+        ? _autoVolumeInputValueForQty(
+            draft: _ActualDropDraft.create(
+              deliveryOrderItemRef: _selectedCargo.itemId,
+              deliveryOrderItemRefs: [_selectedCargo.itemId],
+              shipperReferenceNumber: _selectedCargo.shipperReferenceNumber,
+              shipperReferenceKey: _selectedCargo.shipperReferenceKey,
+              qtyKoli: current.qtyKoli,
+              weightInputValue: current.weightInputValue,
+              weightInputUnit: current.weightInputUnit,
+              volumeInputValue: current.volumeInputValue,
+              volumeInputUnit: current.volumeInputUnit,
+            ),
+            cargo: _selectedCargo,
+            nextQtyKoli: nextQtyKoli,
+            nextVolumeUnit: nextVolumeUnit,
+          )
+        : null;
     _valueDraftByItemId[_selectedItemId] = current.copyWith(
       qtyKoli: qtyKoli,
       weightInputValue: weightInputValue ?? autoWeightInputValue,
       weightInputUnit: weightInputUnit,
-      volumeInputValue: volumeInputValue,
+      volumeInputValue: volumeInputValue ?? autoVolumeInputValue,
       volumeInputUnit: volumeInputUnit,
     );
     _editedItemIds.add(_selectedItemId);

@@ -19,6 +19,8 @@ export type OrderItemForm = {
     weightInputUnit: WeightInputUnit;
     autoWeightBasisQtyKoli?: number;
     autoWeightBasisWeightKg?: number;
+    autoVolumeBasisQtyKoli?: number;
+    autoVolumeBasisVolumeM3?: number;
     volumeInputValue: number;
     volumeInputUnit: VolumeInputUnit;
     pickupStopKey: string;
@@ -120,6 +122,7 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
             getWeightInputFractionDigits(nextWeightUnit)
         )
         : 0;
+    const productVolumeInputUnit = selectedProduct.defaultVolumeInputUnit || 'M3';
     const normalizedVolumeInputValue = parseFormattedNumberish(
         selectedProduct.defaultVolumeInputValue ?? 0,
         { maxFractionDigits: nextVolumeUnit === 'LITER' ? 0 : 3 }
@@ -127,12 +130,21 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
     const normalizedVolumeM3 = parseFormattedNumberish(selectedProduct.defaultVolume ?? 0, {
         maxFractionDigits: 3,
     });
-    const nextVolumeValue =
+    const productVolumePerKoliM3 =
         normalizedVolumeInputValue > 0
-            ? normalizedVolumeInputValue
+            ? convertVolumeToM3(normalizedVolumeInputValue, productVolumeInputUnit)
             : normalizedVolumeM3 > 0
-                ? convertM3ToVolumeInputValue(normalizedVolumeM3, nextVolumeUnit)
+                ? normalizedVolumeM3
                 : 0;
+    const nextVolumeM3 = productVolumePerKoliM3 > 0 && normalizedQtyKoli > 0
+        ? productVolumePerKoliM3 * normalizedQtyKoli
+        : 0;
+    const nextVolumeValue = nextVolumeM3 > 0
+        ? roundToFractionDigits(
+            convertM3ToVolumeInputValue(nextVolumeM3, nextVolumeUnit),
+            nextVolumeUnit === 'LITER' ? 0 : 3
+        )
+        : 0;
 
     return {
         ...item,
@@ -143,6 +155,8 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
         weightInputUnit: nextWeightUnit,
         autoWeightBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
         autoWeightBasisWeightKg: nextWeightKg > 0 ? nextWeightKg : undefined,
+        autoVolumeBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: nextVolumeM3 > 0 ? nextVolumeM3 : undefined,
         volumeInputValue: nextVolumeValue,
         volumeInputUnit: nextVolumeUnit,
     };
@@ -161,21 +175,35 @@ export function applyOrderItemAutoWeightFromQty(
     const normalizedCurrentWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
         maxFractionDigits: getWeightInputFractionDigits(item.weightInputUnit),
     });
+    const normalizedCurrentVolumeInputValue = parseFormattedNumberish(item.volumeInputValue ?? 0, {
+        maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+    });
     const currentWeightKg = normalizedCurrentWeightInputValue > 0
         ? convertWeightToKg(normalizedCurrentWeightInputValue, item.weightInputUnit)
+        : 0;
+    const currentVolumeM3 = normalizedCurrentVolumeInputValue > 0
+        ? convertVolumeToM3(normalizedCurrentVolumeInputValue, item.volumeInputUnit)
         : 0;
     const basisQtyKoli = normalizedCurrentQtyKoli > 0
         ? normalizedCurrentQtyKoli
         : parseFormattedNumberish(item.autoWeightBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const volumeBasisQtyKoli = normalizedCurrentQtyKoli > 0
+        ? normalizedCurrentQtyKoli
+        : parseFormattedNumberish(item.autoVolumeBasisQtyKoli ?? basisQtyKoli, { maxFractionDigits: 2 });
     const basisWeightKg = currentWeightKg > 0
         ? currentWeightKg
         : parseFormattedNumberish(item.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
+    const basisVolumeM3 = currentVolumeM3 > 0
+        ? currentVolumeM3
+        : parseFormattedNumberish(item.autoVolumeBasisVolumeM3 ?? 0, { maxFractionDigits: 3 });
     const nextBasis = {
         autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
         autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
+        autoVolumeBasisQtyKoli: volumeBasisQtyKoli > 0 ? volumeBasisQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: basisVolumeM3 > 0 ? basisVolumeM3 : undefined,
     };
 
-    if (basisQtyKoli <= 0 || basisWeightKg <= 0) {
+    if ((basisQtyKoli <= 0 || basisWeightKg <= 0) && (volumeBasisQtyKoli <= 0 || basisVolumeM3 <= 0)) {
         return {
             ...item,
             qtyKoli: normalizedNextQtyKoli,
@@ -184,16 +212,28 @@ export function applyOrderItemAutoWeightFromQty(
     }
 
     const maxFractionDigits = getWeightInputFractionDigits(item.weightInputUnit);
-    const nextWeightKg = (basisWeightKg / basisQtyKoli) * normalizedNextQtyKoli;
-    const nextWeightInputValue = roundToFractionDigits(
-        convertKgToWeightInputValue(nextWeightKg, item.weightInputUnit),
-        maxFractionDigits
+    const nextWeightKg = basisQtyKoli > 0 && basisWeightKg > 0
+        ? (basisWeightKg / basisQtyKoli) * normalizedNextQtyKoli
+        : 0;
+    const nextWeightInputValue = nextWeightKg > 0
+        ? roundToFractionDigits(
+            convertKgToWeightInputValue(nextWeightKg, item.weightInputUnit),
+            maxFractionDigits
+        )
+        : 0;
+    const nextVolumeM3 = volumeBasisQtyKoli > 0 && basisVolumeM3 > 0
+        ? (basisVolumeM3 / volumeBasisQtyKoli) * normalizedNextQtyKoli
+        : 0;
+    const nextVolumeInputValue = roundToFractionDigits(
+        convertM3ToVolumeInputValue(nextVolumeM3, item.volumeInputUnit),
+        item.volumeInputUnit === 'LITER' ? 0 : 3
     );
 
     return {
         ...item,
         qtyKoli: normalizedNextQtyKoli,
-        weightInputValue: normalizedNextQtyKoli > 0 ? nextWeightInputValue : 0,
+        weightInputValue: normalizedNextQtyKoli > 0 && basisQtyKoli > 0 && basisWeightKg > 0 ? nextWeightInputValue : item.weightInputValue,
+        volumeInputValue: normalizedNextQtyKoli > 0 && volumeBasisQtyKoli > 0 && basisVolumeM3 > 0 ? nextVolumeInputValue : item.volumeInputValue,
         ...nextBasis,
     };
 }
@@ -209,6 +249,14 @@ export function shouldLockOrderItemWeight(
     const qtyKoli = parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 });
     const weightInputValue = parseFormattedNumberish(item.weightInputValue || 0);
     return Boolean(item.customerProductRef && qtyKoli > 0 && weightInputValue > 0);
+}
+
+export function shouldLockOrderItemVolume(
+    item: Pick<OrderItemForm, 'customerProductRef' | 'qtyKoli' | 'volumeInputValue'>
+) {
+    const qtyKoli = parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 });
+    const volumeInputValue = parseFormattedNumberish(item.volumeInputValue || 0);
+    return Boolean(item.customerProductRef && qtyKoli > 0 && volumeInputValue > 0);
 }
 
 export function updateOrderItemWeightUnit(item: OrderItemForm, nextUnit: WeightInputUnit): OrderItemForm {
@@ -243,6 +291,7 @@ export function updateOrderItemVolumeUnit(item: OrderItemForm, nextUnit: VolumeI
         ...item,
         volumeInputUnit: nextUnit,
         volumeInputValue: currentVolumeM3 > 0 ? convertM3ToVolumeInputValue(currentVolumeM3, nextUnit) : 0,
+        autoVolumeBasisVolumeM3: currentVolumeM3 > 0 ? currentVolumeM3 : item.autoVolumeBasisVolumeM3,
     };
 }
 

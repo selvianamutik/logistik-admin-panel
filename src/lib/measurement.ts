@@ -61,6 +61,26 @@ function formatVolumeValue(value: number, unit: VolumeInputUnit | 'M3' = 'M3') {
   });
 }
 
+function readRawCommaDecimal(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const match = value.trim().match(/^(\d*),(\d+)$/);
+  if (!match) return null;
+
+  const integerPart = match[1] || '0';
+  const fractionPart = match[2];
+  const numeric = Number(`${integerPart}.${fractionPart}`);
+  if (!Number.isFinite(numeric)) return null;
+  const integerValue = Number(integerPart);
+  const displayIntegerPart = Number.isFinite(integerValue)
+    ? formatNumber(integerValue, { maximumFractionDigits: 0 })
+    : integerPart;
+
+  return {
+    numeric,
+    display: `${displayIntegerPart},${fractionPart}`,
+  };
+}
+
 export function convertWeightToKg(value: number, unit: WeightInputUnit) {
   return unit === 'TON' ? value * 1000 : value;
 }
@@ -94,9 +114,10 @@ export function formatWeightDisplay(input: {
   const inputValue = parseFormattedNumberish(input.weightInputValue || 0, {
     maxFractionDigits: getWeightInputFractionDigits(unit),
   });
+  const rawInputValue = readRawCommaDecimal(input.weightInputValue);
 
   if (inputValue > 0) {
-    const inputLabel = `${formatWeightValue(inputValue, unit)} ${unit === 'TON' ? 'ton' : 'kg'}`;
+    const inputLabel = `${rawInputValue?.display || formatWeightValue(inputValue, unit)} ${unit === 'TON' ? 'ton' : 'kg'}`;
     if (input.includeCanonical && unit === 'TON') {
       return `${inputLabel} (${formatWeightValue(weightKg, 'KG')} kg)`;
     }
@@ -123,10 +144,11 @@ export function formatVolumeDisplay(input: {
   const inputValue = parseFormattedNumberish(input.volumeInputValue || 0, {
     maxFractionDigits: unit === 'LITER' ? 0 : 3,
   });
+  const rawInputValue = readRawCommaDecimal(input.volumeInputValue);
 
   if (inputValue > 0) {
     const unitLabel = unit === 'M3' ? 'm3' : unit === 'KL' ? 'KL' : 'liter';
-    const inputLabel = `${formatVolumeValue(inputValue, unit)} ${unitLabel}`;
+    const inputLabel = `${rawInputValue?.display || formatVolumeValue(inputValue, unit)} ${unitLabel}`;
     if (input.includeCanonical && unit !== 'M3') {
       return `${inputLabel} (${formatVolumeValue(volumeM3, 'M3')} m3)`;
     }

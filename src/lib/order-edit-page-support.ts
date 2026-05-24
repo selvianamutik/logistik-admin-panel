@@ -4,6 +4,7 @@ import {
     convertKgToWeightInputValue,
     convertWeightToKg,
     convertM3ToVolumeInputValue,
+    convertVolumeToM3,
     getWeightInputFractionDigits,
     type WeightInputUnit,
     type VolumeInputUnit,
@@ -163,6 +164,12 @@ export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
             ? normalizedWeightKg
             : normalizedWeightInputValue > 0
                 ? convertWeightToKg(normalizedWeightInputValue, nextWeightUnit)
+                : undefined,
+        autoVolumeBasisQtyKoli: normalizedQtyKoli > 0 ? normalizedQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: normalizedVolumeM3 > 0
+            ? normalizedVolumeM3
+            : normalizedVolumeInputValue > 0
+                ? convertVolumeToM3(normalizedVolumeInputValue, nextVolumeUnit)
                 : undefined,
         volumeInputValue:
             normalizedVolumeInputValue > 0

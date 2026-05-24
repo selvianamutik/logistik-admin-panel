@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import SplitDecimalNumberInput from '@/components/SplitDecimalNumberInput';
 import {
     buildActualCargoDrafts,
     buildDefaultActualDropDrafts,
@@ -28,6 +29,8 @@ import {
     createEmptyActualDropDraft,
     applyActualCargoAutoWeightFromQty,
     applyActualDropAutoWeightFromQty,
+    shouldLockActualCargoVolume,
+    shouldLockActualDropVolume,
     shouldOpenAdvancedDropEditor,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
@@ -60,6 +63,7 @@ import {
 import {
     applyCustomerProductToOrderItem,
     applyOrderItemAutoWeightFromQty,
+    shouldLockOrderItemVolume,
     shouldLockOrderItemWeight,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
@@ -1538,21 +1542,34 @@ export default function DriverPortalPage() {
         [flattenedTripCreateItems]
     );
     const completionBatchSjCargoSummary = useMemo(
-        () => formatCargoSummary({
-            qtyKoli: selectedCompletionCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }), 0),
-            weightKg: selectedCompletionCargoItems.reduce((sum, item) => {
-                const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                    maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-                });
-                return sum + convertWeightToKg(value, item.actualWeightInputUnit);
-            }, 0),
-            volumeM3: selectedCompletionCargoItems.reduce((sum, item) => {
-                const value = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                });
-                return sum + convertVolumeToM3(value, item.actualVolumeInputUnit);
-            }, 0),
-        }),
+        () => {
+            const summary = {
+                qtyKoli: selectedCompletionCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }), 0),
+                weightKg: selectedCompletionCargoItems.reduce((sum, item) => {
+                    const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                        maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
+                    });
+                    return sum + convertWeightToKg(value, item.actualWeightInputUnit);
+                }, 0),
+                volumeM3: selectedCompletionCargoItems.reduce((sum, item) => {
+                    const value = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                        maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                    });
+                    return sum + convertVolumeToM3(value, item.actualVolumeInputUnit);
+                }, 0),
+            };
+            if (selectedCompletionCargoItems.length !== 1) {
+                return formatCargoSummary(summary);
+            }
+            const [item] = selectedCompletionCargoItems;
+            return formatCargoSummary({
+                ...summary,
+                weightInputValue: item.actualWeightInputValue,
+                weightInputUnit: item.actualWeightInputUnit,
+                volumeInputValue: item.actualVolumeInputValue,
+                volumeInputUnit: item.actualVolumeInputUnit,
+            });
+        },
         [selectedCompletionCargoItems]
     );
     const completionBillingCustomerOptions = useMemo(() => {
@@ -2353,6 +2370,8 @@ export default function DriverPortalPage() {
                                     }, value))
                                     : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                         ? item
+                                    : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
+                                        ? item
                                         : { ...item, [field]: value }
                             )
                             : item
@@ -2454,6 +2473,8 @@ export default function DriverPortalPage() {
                                     }, value))
                                     : field === 'weightInputValue' && shouldLockOrderItemWeight(item)
                                         ? item
+                                    : field === 'volumeInputValue' && shouldLockOrderItemVolume(item)
+                                        ? item
                                         : { ...item, [field]: value }
                             )
                             : item
@@ -2535,6 +2556,8 @@ export default function DriverPortalPage() {
                 item.deliveryOrderItemRef === deliveryOrderItemRef
                     ? field === 'actualQtyKoli'
                         ? applyActualCargoAutoWeightFromQty(item, value)
+                        : field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)
+                            ? item
                         : { ...item, [field]: value }
                     : item
             )
@@ -2596,6 +2619,8 @@ export default function DriverPortalPage() {
             ? applyActualDropAutoWeightFromQty(currentAllocation, cargoItem, value)
             : field === 'weightInputUnit'
                 ? updateActualDropDraftWeightUnit(currentAllocation, value as ActualDropDraft['weightInputUnit'])
+                : field === 'volumeInputValue' && shouldLockActualDropVolume(cargoItem)
+                    ? currentAllocation
                 : { ...currentAllocation, [field]: value };
         const valueKey = buildCompletionDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setCompletionDropItemValueMap(previous => ({
@@ -4621,7 +4646,7 @@ export default function DriverPortalPage() {
                                                                 value={item.description}
                                                                 onChange={event => updateTripCreateItem(group.id, itemIndex, 'description', event.target.value)}
                                                                 placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
-                                                                disabled={isActionInFlight}
+                                                                disabled={isActionInFlight || shouldLockActualCargoVolume(activeCompletionCargoItem)}
                                                             />
                                                         </div>
                                                         <div style={{ flex: '0 1 110px' }}>
@@ -4631,7 +4656,7 @@ export default function DriverPortalPage() {
                                                                 allowDecimal={false}
                                                                 value={item.qtyKoli}
                                                                 onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'qtyKoli', value)}
-                                                                disabled={isActionInFlight}
+                                                                disabled={isActionInFlight || shouldLockActualDropVolume(activeCompletionDropCargoItem)}
                                                             />
                                                         </div>
                                                         <div style={{ flex: '1 1 180px' }}>
@@ -5412,12 +5437,10 @@ export default function DriverPortalPage() {
                                                     <div className="form-group">
                                                         <label className="form-label">Berat Aktual</label>
                                                         <div className="driver-completion-unit-row">
-                                                            <FormattedNumberInput
+                                                            <SplitDecimalNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={getWeightInputFractionDigits(activeCompletionCargoItem.actualWeightInputUnit)}
-                                                                value={parseFormattedNumberish(activeCompletionCargoItem.actualWeightInputValue || 0, {
-                                                                    maxFractionDigits: getWeightInputFractionDigits(activeCompletionCargoItem.actualWeightInputUnit),
-                                                                })}
+                                                                value={activeCompletionCargoItem.actualWeightInputValue || 0}
                                                                 onValueChange={value => updateCompletionActualCargoValue(activeCompletionCargoItem, 'actualWeightInputValue', String(value))}
                                                                 disabled={isActionInFlight}
                                                             />
@@ -5439,12 +5462,10 @@ export default function DriverPortalPage() {
                                                     <div className="form-group">
                                                         <label className="form-label">Volume Aktual</label>
                                                         <div className="driver-completion-unit-row">
-                                                            <FormattedNumberInput
+                                                            <SplitDecimalNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={activeCompletionCargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                                value={parseFormattedNumberish(activeCompletionCargoItem.actualVolumeInputValue || 0, {
-                                                                    maxFractionDigits: activeCompletionCargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                                                                })}
+                                                                value={activeCompletionCargoItem.actualVolumeInputValue || 0}
                                                                 onValueChange={value => updateCompletionActualCargoValue(activeCompletionCargoItem, 'actualVolumeInputValue', String(value))}
                                                                 disabled={isActionInFlight}
                                                             />
@@ -6058,12 +6079,10 @@ export default function DriverPortalPage() {
                                                     <div className="form-group">
                                                         <label className="form-label">Berat Alokasi {activeCompletionDropCargoItem.requireWeight && <span className="required">*</span>}</label>
                                                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                            <FormattedNumberInput
+                                                            <SplitDecimalNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={getWeightInputFractionDigits(allocation.weightInputUnit)}
-                                                                value={parseFormattedNumberish(allocation.weightInputValue || 0, {
-                                                                    maxFractionDigits: getWeightInputFractionDigits(allocation.weightInputUnit),
-                                                                })}
+                                                                value={allocation.weightInputValue || 0}
                                                                 onValueChange={value => updateCompletionDropAllocationForItem(activeCompletionDrop, activeCompletionDropCargoItem, 'weightInputValue', String(value))}
                                                                 disabled
                                                             />
@@ -6084,12 +6103,10 @@ export default function DriverPortalPage() {
                                                     <div className="form-group">
                                                         <label className="form-label">Volume Alokasi {activeCompletionDropCargoItem.requireVolume && <span className="required">*</span>}</label>
                                                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                            <FormattedNumberInput
+                                                            <SplitDecimalNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={allocation.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                                value={parseFormattedNumberish(allocation.volumeInputValue || 0, {
-                                                                    maxFractionDigits: allocation.volumeInputUnit === 'LITER' ? 0 : 3,
-                                                                })}
+                                                                value={allocation.volumeInputValue || 0}
                                                                 onValueChange={value => updateCompletionDropAllocationForItem(activeCompletionDrop, activeCompletionDropCargoItem, 'volumeInputValue', String(value))}
                                                                 disabled={isActionInFlight}
                                                             />

@@ -25,6 +25,8 @@ export function toDeliveryOrderCargoDraftItem(item: DeliveryOrderCargoDraftItem 
         weightInputUnit: item.weightInputUnit,
         autoWeightBasisQtyKoli: item.autoWeightBasisQtyKoli,
         autoWeightBasisWeightKg: item.autoWeightBasisWeightKg,
+        autoVolumeBasisQtyKoli: item.autoVolumeBasisQtyKoli,
+        autoVolumeBasisVolumeM3: item.autoVolumeBasisVolumeM3,
         volumeInputValue: item.volumeInputValue,
         volumeInputUnit: item.volumeInputUnit,
         value: item.value,

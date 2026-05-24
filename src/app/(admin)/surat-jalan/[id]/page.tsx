@@ -7,6 +7,7 @@ import { Edit, FileText, MapPin, Plus, Save, Truck, X } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import SplitDecimalNumberInput from '@/components/SplitDecimalNumberInput';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
@@ -24,7 +25,9 @@ import {
     createEmptyActualDropDraft,
     getActualCargoDraftsForDrop,
     getNextDeliveryOrderStatuses,
+    shouldLockActualCargoVolume,
     shouldLockActualDropWeight,
+    shouldLockActualDropVolume,
     shouldOpenAdvancedDropEditor,
     summarizeActualCargoDraftDescriptions,
     type ActualCargoDraft,
@@ -36,6 +39,7 @@ import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpe
 import {
     applyCustomerProductToOrderItem,
     applyOrderItemAutoWeightFromQty,
+    shouldLockOrderItemVolume,
     shouldLockOrderItemWeight,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
@@ -295,6 +299,9 @@ export default function SuratJalanDetailPage() {
             if (field === 'weightInputValue' && shouldLockOrderItemWeight(item)) {
                 return item;
             }
+            if (field === 'volumeInputValue' && shouldLockOrderItemVolume(item)) {
+                return item;
+            }
             return { ...item, [field]: value };
         }));
     };
@@ -309,6 +316,9 @@ export default function SuratJalanDetailPage() {
                 }, value as number));
             }
             if (field === 'weightInputValue' && shouldLockOrderItemWeight(item)) {
+                return item;
+            }
+            if (field === 'volumeInputValue' && shouldLockOrderItemVolume(item)) {
                 return item;
             }
             return { ...item, [field]: value };
@@ -1069,6 +1079,9 @@ export default function SuratJalanDetailPage() {
                 if (field === 'actualQtyKoli') {
                     return applyActualCargoAutoWeightFromQty(item, value);
                 }
+                if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
+                    return item;
+                }
                 return { ...item, [field]: value };
             })
         );
@@ -1128,6 +1141,9 @@ export default function SuratJalanDetailPage() {
             }
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
+            }
+            if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
+                return item;
             }
             return { ...item, [field]: value };
         }));
@@ -1311,6 +1327,9 @@ export default function SuratJalanDetailPage() {
                     : drop.weightInputUnit;
                 return applyActualDropAutoWeightFromQty(drop, selectedCargoItem, drop.qtyKoli, nextUnit);
             }
+            if (field === 'volumeInputValue' && shouldLockActualDropVolume(selectedCargoItem)) {
+                return drop;
+            }
             return { ...drop, [field]: value };
         };
         if (field === 'qtyKoli' || field === 'weightInputValue' || field === 'weightInputUnit' || field === 'volumeInputValue' || field === 'volumeInputUnit') {
@@ -1432,6 +1451,8 @@ export default function SuratJalanDetailPage() {
                         currentAllocation.qtyKoli,
                         field === 'weightInputUnit' ? value as ActualDropDraft['weightInputUnit'] : currentAllocation.weightInputUnit
                     )
+                    : field === 'volumeInputValue' && shouldLockActualDropVolume(cargoItem)
+                        ? currentAllocation
                     : { ...currentAllocation, [field]: value };
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setActualDropItemValueMap(previous => ({
@@ -1893,15 +1914,13 @@ export default function SuratJalanDetailPage() {
                                             <div className="form-group">
                                                 <label className="form-label">Berat Aktual</label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                    <FormattedNumberInput
+                                                    <SplitDecimalNumberInput
                                                         key={`${item.deliveryOrderItemRef}-weight`}
                                                         min={0}
                                                         maxFractionDigits={getWeightInputFractionDigits(item.actualWeightInputUnit)}
-                                                        value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
-                                                            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-                                                        })}
+                                                        value={item.actualWeightInputValue || 0}
                                                         onValueChange={value => updateActualEditItem(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
-                                                        disabled={savingActualEdit}
+                                                        disabled={savingActualEdit || shouldLockActualCargoVolume(item)}
                                                     />
                                                     <select
                                                         className="form-select"
@@ -1916,13 +1935,11 @@ export default function SuratJalanDetailPage() {
                                             <div className="form-group">
                                                 <label className="form-label">Volume Aktual</label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                    <FormattedNumberInput
+                                                    <SplitDecimalNumberInput
                                                         key={`${item.deliveryOrderItemRef}-volume`}
                                                         min={0}
                                                         maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                        value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-                                                            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                                                        })}
+                                                        value={item.actualVolumeInputValue || 0}
                                                         onValueChange={value => updateActualEditItem(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                         disabled={savingActualEdit}
                                                     />
@@ -2061,7 +2078,7 @@ export default function SuratJalanDetailPage() {
                                                     <div className="form-group">
                                                         <label className="form-label">Volume</label>
                                                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                            <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateExistingItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit} />
+                                                            <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateExistingItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit || shouldLockOrderItemVolume(item)} />
                                                             <select
                                                                 className="form-select"
                                                                 value={item.volumeInputUnit}
@@ -2140,7 +2157,7 @@ export default function SuratJalanDetailPage() {
                                             <div className="form-group">
                                                 <label className="form-label">Volume</label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                    <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateNewItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit} />
+                                                    <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateNewItem(itemIndex, 'volumeInputValue', value)} disabled={savingEdit || shouldLockOrderItemVolume(item)} />
                                                     <select
                                                         className="form-select"
                                                         value={item.volumeInputUnit}
@@ -2529,12 +2546,10 @@ export default function SuratJalanDetailPage() {
                                         <div className="form-group">
                                             <label className="form-label">{activeFinalizationDrop ? 'Berat Alokasi' : 'Berat Aktual'} {activeFinalizationCargoItem.requireWeight && <span className="required">*</span>}</label>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                <FormattedNumberInput
+                                                <SplitDecimalNumberInput
                                                     min={0}
                                                     maxFractionDigits={getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit)}
-                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0, {
-                                                        maxFractionDigits: getWeightInputFractionDigits(activeFinalizationDropAllocation?.weightInputUnit || activeFinalizationCargoItem.actualWeightInputUnit),
-                                                    })}
+                                                    value={(activeFinalizationDropAllocation?.weightInputValue ?? activeFinalizationCargoItem.actualWeightInputValue) || 0}
                                                     onValueChange={value => {
                                                         if (activeFinalizationDrop) {
                                                             updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'weightInputValue', String(value));
@@ -2542,7 +2557,7 @@ export default function SuratJalanDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualWeightInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus}
+                                                    disabled={updatingStatus || (activeFinalizationDrop ? shouldLockActualDropVolume(activeFinalizationCargoItem) : shouldLockActualCargoVolume(activeFinalizationCargoItem))}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -2565,12 +2580,10 @@ export default function SuratJalanDetailPage() {
                                         <div className="form-group">
                                             <label className="form-label">{activeFinalizationDrop ? 'Volume Alokasi' : 'Volume Aktual'} {activeFinalizationCargoItem.requireVolume && <span className="required">*</span>}</label>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                <FormattedNumberInput
+                                                <SplitDecimalNumberInput
                                                     min={0}
                                                     maxFractionDigits={(activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3}
-                                                    value={parseFormattedNumberish((activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue) || 0, {
-                                                        maxFractionDigits: (activeFinalizationDropAllocation?.volumeInputUnit || activeFinalizationCargoItem.actualVolumeInputUnit) === 'LITER' ? 0 : 3,
-                                                    })}
+                                                    value={(activeFinalizationDropAllocation?.volumeInputValue ?? activeFinalizationCargoItem.actualVolumeInputValue) || 0}
                                                     onValueChange={value => {
                                                         if (activeFinalizationDrop) {
                                                             updateActualDropAllocationForItem(activeFinalizationDrop, activeFinalizationCargoItem, 'volumeInputValue', String(value));

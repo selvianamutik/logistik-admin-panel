@@ -375,12 +375,13 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         : 0.0;
     final nextVolumeUnit = (selectedProduct.defaultVolumeInputUnit ?? 'M3')
         .toUpperCase();
-    final nextVolumeValue =
-        selectedProduct.defaultVolumeInputValue ??
-        _convertM3ToVolumeInputValue(
-          selectedProduct.defaultVolume ?? 0,
-          nextVolumeUnit,
-        );
+    final volumePerKoliM3 = _productVolumePerKoliM3(selectedProduct);
+    final nextVolumeValue = nextQty > 0 && volumePerKoliM3 > 0
+        ? _convertM3ToVolumeInputValue(
+            volumePerKoliM3 * nextQty,
+            nextVolumeUnit,
+          )
+        : 0.0;
 
     return currentItem.copyWith(
       customerProductRef: selectedProduct.id,
@@ -414,6 +415,13 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         qtyKoli == null &&
         weightInputUnit == null &&
         _shouldLockWeight(item)) {
+      return item;
+    }
+    if (volumeInputValue != null &&
+        customerProductRef == null &&
+        qtyKoli == null &&
+        volumeInputUnit == null &&
+        _shouldLockVolume(item)) {
       return item;
     }
 
@@ -461,7 +469,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       );
     }
 
-    if (qtyKoli == null && weightInputUnit == null) {
+    if (qtyKoli == null && weightInputUnit == null && volumeInputUnit == null) {
       return patched;
     }
 
@@ -477,16 +485,30 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     final nextQty = patched.qtyKoliValue;
     final nextWeightUnit = patched.weightInputUnit.toUpperCase();
     final weightPerKoliKg = _productWeightBasisPerKoliKg(item, selectedProduct);
-    if (nextQty <= 0 || weightPerKoliKg <= 0) {
-      return patched.copyWith(weightInputValue: '');
-    }
+    final nextVolumeUnit = patched.volumeInputUnit.toUpperCase();
+    final volumePerKoliM3 = _productVolumeBasisPerKoliM3(item, selectedProduct);
 
     return patched.copyWith(
-      weightInputValue: _formatNumber(
-        _convertKgToWeightInputValue(weightPerKoliKg * nextQty, nextWeightUnit),
-        fractionDigits: mobileWeightInputFractionDigits(nextWeightUnit),
-      ),
+      weightInputValue: nextQty > 0 && weightPerKoliKg > 0
+          ? _formatNumber(
+              _convertKgToWeightInputValue(
+                weightPerKoliKg * nextQty,
+                nextWeightUnit,
+              ),
+              fractionDigits: mobileWeightInputFractionDigits(nextWeightUnit),
+            )
+          : patched.weightInputValue,
       weightInputUnit: nextWeightUnit,
+      volumeInputValue: nextQty > 0 && volumePerKoliM3 > 0
+          ? _formatNumber(
+              _convertM3ToVolumeInputValue(
+                volumePerKoliM3 * nextQty,
+                nextVolumeUnit,
+              ),
+              fractionDigits: mobileVolumeInputFractionDigits(nextVolumeUnit),
+            )
+          : patched.volumeInputValue,
+      volumeInputUnit: nextVolumeUnit,
     );
   }
 
@@ -504,6 +526,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
 
   bool _shouldLockWeight(_ManifestItemDraft item) {
     return item.isWeightLocked;
+  }
+
+  bool _shouldLockVolume(_ManifestItemDraft item) {
+    return item.isVolumeLocked;
   }
 
   double _productWeightPerKoliKg(CustomerProductOption product) {
@@ -530,6 +556,32 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     );
     if (currentQty <= 0 || currentWeightKg <= 0) return 0;
     return currentWeightKg / currentQty;
+  }
+
+  double _productVolumePerKoliM3(CustomerProductOption product) {
+    final inputValue = product.defaultVolumeInputValue ?? 0;
+    if (inputValue > 0) {
+      final volumeInputUnit = (product.defaultVolumeInputUnit ?? 'M3')
+          .toUpperCase();
+      return _convertVolumeToM3(inputValue, volumeInputUnit);
+    }
+    return product.defaultVolume ?? 0;
+  }
+
+  double _productVolumeBasisPerKoliM3(
+    _ManifestItemDraft currentItem,
+    CustomerProductOption product,
+  ) {
+    final productVolumePerKoliM3 = _productVolumePerKoliM3(product);
+    if (productVolumePerKoliM3 > 0) return productVolumePerKoliM3;
+
+    final currentQty = currentItem.qtyKoliValue;
+    final currentVolumeM3 = _convertVolumeToM3(
+      currentItem.volumeInputValueNumber,
+      currentItem.volumeInputUnit,
+    );
+    if (currentQty <= 0 || currentVolumeM3 <= 0) return 0;
+    return currentVolumeM3 / currentQty;
   }
 
   double _convertWeightToKg(double value, String unit) {
@@ -1057,6 +1109,11 @@ class _ManifestItemDraft {
       customerProductRef.trim().isNotEmpty &&
       qtyKoliValue > 0 &&
       weightInputValueNumber > 0;
+
+  bool get isVolumeLocked =>
+      customerProductRef.trim().isNotEmpty &&
+      qtyKoliValue > 0 &&
+      volumeInputValueNumber > 0;
 
   double get qtyKoliValue => parseMobileNumberInput(qtyKoli);
   double get weightInputValueNumber => parseMobileNumberInput(weightInputValue);
@@ -2157,6 +2214,7 @@ class _ManifestItemCard extends StatelessWidget {
                   inputFormatters: mobileNumberInputFormatters(fractionDigits),
                   decoration: const InputDecoration(labelText: 'Volume'),
                   onChanged: (value) => onChanged(volumeInputValue: value),
+                  enabled: !item.isVolumeLocked,
                 );
               }
 

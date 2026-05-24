@@ -9,6 +9,7 @@ import type {
 } from '@/lib/types';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
+    calculateVolumePortion,
     calculateWeightPortion,
     roundQuantity,
 } from '@/lib/order-item-progress';
@@ -36,6 +37,8 @@ export interface ActualCargoDraft {
     plannedWeightInputUnit?: WeightInputUnit;
     autoWeightBasisQtyKoli?: number;
     autoWeightBasisWeightKg?: number;
+    autoVolumeBasisQtyKoli?: number;
+    autoVolumeBasisVolumeM3?: number;
     plannedVolumeM3?: number;
     plannedVolumeInputValue?: number;
     plannedVolumeInputUnit?: VolumeInputUnit;
@@ -67,6 +70,8 @@ export interface ActualDropDraft {
     weightInputUnit: WeightInputUnit;
     autoWeightBasisQtyKoli?: number;
     autoWeightBasisWeightKg?: number;
+    autoVolumeBasisQtyKoli?: number;
+    autoVolumeBasisVolumeM3?: number;
     volumeInputValue: string;
     volumeInputUnit: VolumeInputUnit;
     note: string;
@@ -76,7 +81,11 @@ export type DeliveryOrderDetailState = {
     actualCargoTotals: {
         qtyKoli: number;
         weightKg: number;
+        weightInputValue?: string;
+        weightInputUnit?: WeightInputUnit;
         volumeM3: number;
+        volumeInputValue?: string;
+        volumeInputUnit?: VolumeInputUnit;
     };
     actualDropTotals: {
         qtyKoli: number;
@@ -169,6 +178,8 @@ export function buildActualCargoDraft(
         plannedVolumeM3,
         plannedVolumeInputValue,
         plannedVolumeInputUnit,
+        autoVolumeBasisQtyKoli: plannedQtyKoli > 0 ? plannedQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: plannedVolumeM3 > 0 ? plannedVolumeM3 : undefined,
         actualQtyKoli:
             plannedQtyKoli > 0
                 ? String(parseFormattedNumberish(pendingDraft?.actualQtyKoli ?? item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0))
@@ -226,12 +237,22 @@ export function shouldLockActualCargoWeight(
     return plannedQtyKoli > 0 && plannedWeightKg > 0;
 }
 
+export function shouldLockActualCargoVolume(
+    item: Pick<ActualCargoDraft, 'plannedQtyKoli' | 'plannedVolumeM3'>
+) {
+    const plannedQtyKoli = parseFormattedNumberish(item.plannedQtyKoli || 0, { maxFractionDigits: 2 });
+    const plannedVolumeM3 = parseFormattedNumberish(item.plannedVolumeM3 || 0, { maxFractionDigits: 3 });
+    return plannedQtyKoli > 0 && plannedVolumeM3 > 0;
+}
+
 export function applyActualCargoAutoWeightFromQty(
     item: ActualCargoDraft,
     nextQtyKoli: string | number,
     nextUnit: WeightInputUnit = item.actualWeightInputUnit || item.plannedWeightInputUnit || 'KG'
 ): ActualCargoDraft {
-    if (!shouldLockActualCargoWeight(item)) {
+    const shouldAutoWeight = shouldLockActualCargoWeight(item);
+    const shouldAutoVolume = shouldLockActualCargoVolume(item);
+    if (!shouldAutoWeight && !shouldAutoVolume) {
         return {
             ...item,
             actualQtyKoli: String(nextQtyKoli),
@@ -248,6 +269,14 @@ export function applyActualCargoAutoWeightFromQty(
         item.plannedWeightKg > 0
             ? item.plannedWeightKg
             : parseFormattedNumberish(item.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
+    const basisVolumeQtyKoli =
+        item.plannedQtyKoli > 0
+            ? item.plannedQtyKoli
+            : parseFormattedNumberish(item.autoVolumeBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const basisVolumeM3 =
+        (item.plannedVolumeM3 || 0) > 0
+            ? item.plannedVolumeM3 || 0
+            : parseFormattedNumberish(item.autoVolumeBasisVolumeM3 ?? 0, { maxFractionDigits: 3 });
     const currentQtyKoli = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
     const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
         maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
@@ -256,7 +285,16 @@ export function applyActualCargoAutoWeightFromQty(
         currentWeightInputValue > 0
             ? convertWeightToKg(currentWeightInputValue, item.actualWeightInputUnit)
             : 0;
-    const previousAutoWeightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli);
+    const currentVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+        maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+    });
+    const currentVolumeM3 =
+        currentVolumeInputValue > 0
+            ? convertVolumeToM3(currentVolumeInputValue, item.actualVolumeInputUnit)
+            : 0;
+    const previousAutoWeightKg = shouldAutoWeight
+        ? calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli)
+        : 0;
     const shouldRefreshAutoWeight =
         currentWeightKg <= 0 ||
         previousAutoWeightKg <= 0 ||
@@ -264,23 +302,44 @@ export function applyActualCargoAutoWeightFromQty(
     const weightKg = shouldRefreshAutoWeight
         ? calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli)
         : currentWeightKg;
+    const previousAutoVolumeM3 = shouldAutoVolume
+        ? calculateVolumePortion(basisVolumeM3, basisVolumeQtyKoli, currentQtyKoli)
+        : 0;
+    const shouldRefreshAutoVolume =
+        currentVolumeM3 <= 0 ||
+        previousAutoVolumeM3 <= 0 ||
+        Math.abs(currentVolumeM3 - previousAutoVolumeM3) <= 0.001;
+    const volumeM3 = shouldAutoVolume && shouldRefreshAutoVolume
+        ? calculateVolumePortion(basisVolumeM3, basisVolumeQtyKoli, qtyKoli)
+        : currentVolumeM3;
     const actualWeightInputValue =
-        weightKg > 0
+        shouldAutoWeight && weightKg > 0
             ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
+            : '';
+    const actualVolumeInputValue =
+        volumeM3 > 0
+            ? String(roundQuantity(convertM3ToVolumeInputValue(volumeM3, item.actualVolumeInputUnit), item.actualVolumeInputUnit === 'LITER' ? 0 : 3))
             : '';
 
     return {
         ...item,
         actualQtyKoli: String(nextQtyKoli),
-        actualWeightInputValue,
+        actualWeightInputValue: shouldAutoWeight ? actualWeightInputValue : item.actualWeightInputValue,
         actualWeightInputUnit: nextUnit,
+        actualVolumeInputValue: shouldAutoVolume ? actualVolumeInputValue : item.actualVolumeInputValue,
         autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
         autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
+        autoVolumeBasisQtyKoli: basisVolumeQtyKoli > 0 ? basisVolumeQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: basisVolumeM3 > 0 ? basisVolumeM3 : undefined,
     };
 }
 
 export function shouldLockActualDropWeight(cargoItem?: ActualCargoDraft | null) {
     return Boolean(cargoItem && shouldLockActualCargoWeight(cargoItem));
+}
+
+export function shouldLockActualDropVolume(cargoItem?: ActualCargoDraft | null) {
+    return Boolean(cargoItem && shouldLockActualCargoVolume(cargoItem));
 }
 
 export function updateActualDropDraftWeightUnit(drop: ActualDropDraft, nextUnit: WeightInputUnit): ActualDropDraft {
@@ -311,7 +370,9 @@ export function applyActualDropAutoWeightFromQty(
     nextQtyKoli: string | number,
     nextUnit: WeightInputUnit = drop.weightInputUnit
 ): ActualDropDraft {
-    if (!shouldLockActualDropWeight(cargoItem)) {
+    const shouldAutoWeight = shouldLockActualDropWeight(cargoItem);
+    const shouldAutoVolume = shouldLockActualDropVolume(cargoItem);
+    if (!shouldAutoWeight && !shouldAutoVolume) {
         return {
             ...drop,
             qtyKoli: String(nextQtyKoli),
@@ -329,12 +390,26 @@ export function applyActualDropAutoWeightFromQty(
             cargoItem.actualWeightInputUnit
         )
         : 0;
+    const actualVolumeM3 = cargoItem
+        ? convertVolumeToM3(
+            parseFormattedNumberish(cargoItem.actualVolumeInputValue || 0, {
+                maxFractionDigits: cargoItem.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+            }),
+            cargoItem.actualVolumeInputUnit
+        )
+        : 0;
     const basisQtyKoli = actualQtyKoli > 0
         ? actualQtyKoli
         : cargoItem?.plannedQtyKoli || parseFormattedNumberish(drop.autoWeightBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
     const basisWeightKg = actualWeightKg > 0
         ? actualWeightKg
         : cargoItem?.plannedWeightKg || parseFormattedNumberish(drop.autoWeightBasisWeightKg ?? 0, { maxFractionDigits: 2 });
+    const basisVolumeQtyKoli = actualQtyKoli > 0
+        ? actualQtyKoli
+        : cargoItem?.plannedQtyKoli || parseFormattedNumberish(drop.autoVolumeBasisQtyKoli ?? 0, { maxFractionDigits: 2 });
+    const basisVolumeM3 = actualVolumeM3 > 0
+        ? actualVolumeM3
+        : cargoItem?.plannedVolumeM3 || parseFormattedNumberish(drop.autoVolumeBasisVolumeM3 ?? 0, { maxFractionDigits: 3 });
     const currentQtyKoli = parseFormattedNumberish(drop.qtyKoli || 0, { maxFractionDigits: 2 });
     const currentWeightInputValue = parseFormattedNumberish(drop.weightInputValue || 0, {
         maxFractionDigits: getWeightInputFractionDigits(drop.weightInputUnit),
@@ -343,7 +418,16 @@ export function applyActualDropAutoWeightFromQty(
         currentWeightInputValue > 0
             ? convertWeightToKg(currentWeightInputValue, drop.weightInputUnit)
             : 0;
-    const previousAutoWeightKg = calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli);
+    const currentVolumeInputValue = parseFormattedNumberish(drop.volumeInputValue || 0, {
+        maxFractionDigits: drop.volumeInputUnit === 'LITER' ? 0 : 3,
+    });
+    const currentVolumeM3 =
+        currentVolumeInputValue > 0
+            ? convertVolumeToM3(currentVolumeInputValue, drop.volumeInputUnit)
+            : 0;
+    const previousAutoWeightKg = shouldAutoWeight
+        ? calculateWeightPortion(basisWeightKg, basisQtyKoli, currentQtyKoli)
+        : 0;
     const shouldRefreshAutoWeight =
         currentWeightKg <= 0 ||
         previousAutoWeightKg <= 0 ||
@@ -351,16 +435,31 @@ export function applyActualDropAutoWeightFromQty(
     const weightKg = shouldRefreshAutoWeight
         ? calculateWeightPortion(basisWeightKg, basisQtyKoli, qtyKoli)
         : currentWeightKg;
+    const previousAutoVolumeM3 = shouldAutoVolume
+        ? calculateVolumePortion(basisVolumeM3, basisVolumeQtyKoli, currentQtyKoli)
+        : 0;
+    const shouldRefreshAutoVolume =
+        currentVolumeM3 <= 0 ||
+        previousAutoVolumeM3 <= 0 ||
+        Math.abs(currentVolumeM3 - previousAutoVolumeM3) <= 0.001;
+    const volumeM3 = shouldAutoVolume && shouldRefreshAutoVolume
+        ? calculateVolumePortion(basisVolumeM3, basisVolumeQtyKoli, qtyKoli)
+        : currentVolumeM3;
 
     return {
         ...drop,
         qtyKoli: String(nextQtyKoli),
-        weightInputValue: weightKg > 0
+        weightInputValue: shouldAutoWeight && weightKg > 0
             ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
-            : '',
+            : drop.weightInputValue,
         weightInputUnit: nextUnit,
+        volumeInputValue: shouldAutoVolume && volumeM3 > 0
+            ? String(roundQuantity(convertM3ToVolumeInputValue(volumeM3, drop.volumeInputUnit), drop.volumeInputUnit === 'LITER' ? 0 : 3))
+            : drop.volumeInputValue,
         autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
         autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
+        autoVolumeBasisQtyKoli: basisVolumeQtyKoli > 0 ? basisVolumeQtyKoli : undefined,
+        autoVolumeBasisVolumeM3: basisVolumeM3 > 0 ? basisVolumeM3 : undefined,
     };
 }
 
@@ -403,10 +502,16 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
         return sum + value;
     }, 0);
 
+    const singleItem = items.length === 1 ? items[0] : null;
+
     return {
         qtyKoli,
         weightKg,
+        weightInputValue: singleItem?.actualWeightInputValue,
+        weightInputUnit: singleItem?.actualWeightInputUnit,
         volumeM3,
+        volumeInputValue: singleItem?.actualVolumeInputValue,
+        volumeInputUnit: singleItem?.actualVolumeInputUnit,
     };
 }
 
