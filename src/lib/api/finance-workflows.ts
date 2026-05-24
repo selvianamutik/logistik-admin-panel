@@ -308,7 +308,7 @@ function bankTransactionOrderKey(transaction: Pick<BankTransaction, '_id' | '_cr
     return `${transaction.date || ''} ${transaction._createdAt || ''} ${transaction._id}`;
 }
 
-async function recomputeBankLedgerBalancesForAccounts(accountRefs: Array<string | null | undefined>) {
+export async function recomputeBankLedgerBalancesForAccounts(accountRefs: Array<string | null | undefined>) {
     const refs = [...new Set(accountRefs.filter((value): value is string => Boolean(value)))];
     if (refs.length === 0) return;
 
@@ -841,6 +841,7 @@ export async function handlePaymentCreate(
             relatedPaymentRef: paymentId,
         });
         await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
+        await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
     }
 
     await postPaymentJournal(session, paymentDoc, bankAcc, loaded.label);
@@ -1262,6 +1263,7 @@ export async function handleCustomerReceiptCreate(
             relatedReceiptRef: receiptId,
         });
         await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
+        await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
     }
 
     const createdPaymentIds: string[] = [];
@@ -1746,6 +1748,7 @@ export async function handleCustomerOverpaymentRefund(
         relatedOverpaymentRefundRef: refundId,
     });
     await updateDocument(bankAcc._id, { currentBalance: nextBalance }, 'bankAccount');
+    await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
 
     if (receiptPatch) {
         await updateDocument(receiptPatch.receiptRef, buildCustomerReceiptOverpaymentPatch({
@@ -1850,6 +1853,7 @@ export async function handleBankTransfer(
     });
     await updateDocument(fromAccountRef, { currentBalance: fromBalance }, 'bankAccount');
     await updateDocument(toAccountRef, { currentBalance: toBalance }, 'bankAccount');
+    await recomputeBankLedgerBalancesForAccounts([fromAccountRef, toAccountRef]);
     await postBankTransferJournal(session, {
         transferId,
         date: transferDate,
@@ -2408,6 +2412,7 @@ export async function handleExpenseCreate(
         });
         await updateDocument(categoryRef, { updatedAt: now }, 'expenseCategory');
         await updateDocument(selectedAccountRef, { currentBalance: newBalance }, 'bankAccount');
+        await recomputeBankLedgerBalancesForAccounts([selectedAccountRef]);
         if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now }, 'incident');
         if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now }, 'maintenance');
         if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now }, 'driverVoucher');

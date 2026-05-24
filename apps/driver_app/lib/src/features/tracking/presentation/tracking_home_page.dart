@@ -2644,6 +2644,11 @@ String _textOrDash(String? value) {
 String _normalizeManifestReference(String? value) =>
     (value ?? '').trim().toUpperCase();
 
+bool _manifestCargoHasExplicitReference(DeliveryCargoItem item) {
+  return (item.shipperReferenceKey ?? '').trim().isNotEmpty ||
+      _normalizeManifestReference(item.shipperReferenceNumber).isNotEmpty;
+}
+
 bool _manifestCargoMatchesReference(
   DeliveryCargoItem item,
   DeliveryShipperReference reference,
@@ -4082,11 +4087,14 @@ class _ManifestSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final shipperRefs = trip.shipperReferences;
+    final hasSingleReference = shipperRefs.length == 1;
     final orphanCargoItems = trip.cargoItems
         .where(
-          (item) => !shipperRefs.any(
-            (shipperRef) => _manifestCargoMatchesReference(item, shipperRef),
-          ),
+          (item) =>
+              !shipperRefs.any(
+                (shipperRef) => _manifestCargoMatchesReference(item, shipperRef),
+              ) &&
+              !(hasSingleReference && !_manifestCargoHasExplicitReference(item)),
         )
         .toList(growable: false);
 
@@ -4147,7 +4155,9 @@ class _ManifestSummaryCard extends StatelessWidget {
                     final cargoItems = trip.cargoItems
                         .where(
                           (item) =>
-                              _manifestCargoMatchesReference(item, shipperRef),
+                              _manifestCargoMatchesReference(item, shipperRef) ||
+                              (hasSingleReference &&
+                                  !_manifestCargoHasExplicitReference(item)),
                         )
                         .toList(growable: false);
                     return _ManifestReferenceAccordion(

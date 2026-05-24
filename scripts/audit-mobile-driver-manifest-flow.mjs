@@ -98,8 +98,13 @@ for (const payloadKey of [
 
 assertIncludes(
     manifestSource,
-    'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.',
-    'Copy mobile manifest harus menjelaskan multi-SJ, edit SJ, hapus SJ, dan multi-barang.'
+    'Pilih satu SJ, lalu edit barang di dalamnya. Data baru dikirim setelah tombol simpan ditekan.',
+    'Copy mobile manifest harus menjelaskan edit barang per SJ dan kapan data dikirim.'
+);
+assertIncludes(
+    manifestSource,
+    'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
+    'Copy mobile manifest harus menjelaskan mode driver yang hanya kelola nomor SJ tanpa mengubah barang order.'
 );
 assertIncludes(
     manifestSource,
@@ -188,12 +193,12 @@ assertIncludes(
 );
 assertIncludes(
     manifestSource,
-    'key: ValueKey(group.id)',
+    'key: ValueKey(selectedGroup.id)',
     'Group SJ mobile harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(
     manifestSource,
-    'key: ValueKey(item.id)',
+    'key: itemVisibilityKeyFor(item.id)',
     'Item barang mobile harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(
@@ -228,7 +233,7 @@ assertIncludes(
 );
 assertIncludes(
     completionSource,
-    'key: ValueKey(entry.value.id)',
+    'key: ValueKey(selectedDropDraft.id)',
     'Mobile completion drop card harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(

@@ -136,6 +136,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       );
     }
 
+    final singleInitialReference = widget.initialShipperReferences.length == 1
+        ? widget.initialShipperReferences.first
+        : null;
+
     for (final reference in widget.initialShipperReferences) {
       upsertGroup(
         referenceKey: reference.key,
@@ -145,10 +149,22 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     }
 
     for (final item in widget.existingCargoItems) {
+      final itemReferenceKey = item.shipperReferenceKey?.trim() ?? '';
+      final itemReferenceNumber = item.shipperReferenceNumber?.trim() ?? '';
+      final shouldAttachToSingleReference =
+          singleInitialReference != null &&
+          itemReferenceKey.isEmpty &&
+          itemReferenceNumber.isEmpty;
       upsertGroup(
-        referenceKey: item.shipperReferenceKey,
-        referenceNumber: item.shipperReferenceNumber,
-        pickupStopKey: item.pickupStopKey,
+        referenceKey: shouldAttachToSingleReference
+            ? singleInitialReference.key
+            : item.shipperReferenceKey,
+        referenceNumber: shouldAttachToSingleReference
+            ? singleInitialReference.referenceNumber
+            : item.shipperReferenceNumber,
+        pickupStopKey: shouldAttachToSingleReference
+            ? (item.pickupStopKey ?? singleInitialReference.pickupStopKey)
+            : item.pickupStopKey,
         item: _ManifestItemDraft.fromCargoItem(item),
       );
     }
