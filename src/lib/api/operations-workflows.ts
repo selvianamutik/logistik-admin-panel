@@ -861,6 +861,8 @@ export async function handleIncidentSettlementLineTireFollowUpCreate(
         sourceIncidentNumber: incidentLabel,
         sourceIncidentSettlementLineRef: line._id,
         sourceIncidentExpenseRef: line.linkedExpenseRef,
+        sourceCategory: 'INCIDENT_DO_PURCHASE',
+        sourceCategoryLabel: 'Ban mandiri / beli saat DO',
     }, 'tireEvent');
     const updatedLine = await updateDocument<IncidentSettlementLine>(line._id, {
         linkedTireEventRef: created.id,
