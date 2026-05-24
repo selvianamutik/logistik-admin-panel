@@ -1622,13 +1622,22 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
     for (final item in trip.pendingActualCargoItems)
       item.deliveryOrderItemRef: item,
   };
+  final hasHoldContinuationContext = _hasHoldContinuationContext(trip);
   final holdContinuationByItemId = _holdContinuationTotalsByItemId(trip);
+  final holdContinuationItemIds = _holdContinuationItemIds(trip);
   return trip.cargoItems
-      .map((item) {
-        final pending = pendingById[item.id];
-        final holdContinuation = pending == null
-            ? holdContinuationByItemId[item.id]
+      .map<_ActualCargoDraft?>((item) {
+        final isHoldContinuationItem =
+            hasHoldContinuationContext &&
+            holdContinuationItemIds.contains(item.id);
+        final holdContinuation = isHoldContinuationItem
+            ? holdContinuationByItemId[item.id] ??
+                  _heldCargoItemFallbackDraft(item)
             : null;
+        final pending = isHoldContinuationItem ? null : pendingById[item.id];
+        if (isHoldContinuationItem && holdContinuation == null) {
+          return null;
+        }
         final defaultWeightUnit =
             (pending?.actualWeightInputUnit ??
                     holdContinuation?.weightInputUnit ??
@@ -1646,19 +1655,19 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
         final defaultQty =
             pending?.actualQtyKoli ??
             holdContinuation?.qtyKoliValue ??
-            item.actualQtyKoli ??
+            (isHoldContinuationItem ? null : item.actualQtyKoli) ??
             item.qtyKoli ??
             0;
         final defaultWeightInput =
             pending?.actualWeightInputValue ??
             holdContinuation?.weightInputValueNumber ??
-            item.actualWeightInputValue ??
+            (isHoldContinuationItem ? null : item.actualWeightInputValue) ??
             item.weightInputValue ??
             (item.weightKg ?? 0);
         final defaultVolumeInput =
             pending?.actualVolumeInputValue ??
             holdContinuation?.volumeInputValueNumber ??
-            item.actualVolumeInputValue ??
+            (isHoldContinuationItem ? null : item.actualVolumeInputValue) ??
             item.volumeInputValue ??
             (item.volumeM3 ?? 0);
         return _ActualCargoDraft(
@@ -1684,7 +1693,35 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
           volumeInputUnit: defaultVolumeUnit,
         );
       })
+      .whereType<_ActualCargoDraft>()
       .toList(growable: false);
+}
+
+_ActualDropDraft? _heldCargoItemFallbackDraft(DeliveryCargoItem item) {
+  final heldQtyKoli = item.heldQtyKoli ?? 0;
+  final heldWeightKg = item.heldWeightKg ?? 0;
+  final heldVolumeM3 = item.heldVolumeM3 ?? 0;
+  if (heldQtyKoli <= 0 && heldWeightKg <= 0 && heldVolumeM3 <= 0) {
+    return null;
+  }
+
+  final weightUnit = (item.weightInputUnit ?? 'KG').toUpperCase();
+  final volumeUnit = (item.volumeInputUnit ?? 'M3').toUpperCase();
+  return _ActualDropDraft.create(
+    deliveryOrderItemRef: item.id,
+    deliveryOrderItemRefs: [item.id],
+    qtyKoli: _formatMetric(heldQtyKoli),
+    weightInputValue: _formatMetric(
+      _convertKgToWeightInputValue(heldWeightKg, weightUnit),
+      fractionDigits: mobileWeightInputFractionDigits(weightUnit),
+    ),
+    weightInputUnit: weightUnit,
+    volumeInputValue: _formatMetric(
+      _convertM3ToVolumeInputValue(heldVolumeM3, volumeUnit),
+      fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
+    ),
+    volumeInputUnit: volumeUnit,
+  );
 }
 
 List<_ActualDropDraft> _buildInitialDropDrafts(
@@ -1729,22 +1766,57 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         .toList(growable: false);
   }
 
-  final holdContinuationDrafts = _buildHoldContinuationDropDrafts(
+  final firstDropDrafts = _buildFirstDropPointAllocationDrafts(
     trip,
     cargoDrafts,
   );
-  if (holdContinuationDrafts.isNotEmpty) {
-    return holdContinuationDrafts;
-  }
+  return firstDropDrafts.isNotEmpty
+      ? firstDropDrafts
+      : [_ActualDropDraft.create()];
+}
 
-  final totals = _summarizeCargoDrafts(cargoDrafts);
-  return [
-    _ActualDropDraft.create(
-      qtyKoli: _formatMetric(totals.qtyKoli),
-      weightInputValue: _formatMetric(totals.weightKg),
-      volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
-    ),
-  ];
+List<_ActualDropDraft> _buildFirstDropPointAllocationDrafts(
+  DeliveryTrip trip,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  if (cargoDrafts.isEmpty) return const [];
+
+  final base = _ActualDropDraft.create();
+  final groupKey = base.groupKey;
+
+  return cargoDrafts.map((cargo) {
+    final holdPoint = _holdContinuationPointForCargo(trip, cargo);
+    return _ActualDropDraft.create(
+      groupKey: groupKey,
+      stopType: 'DROP',
+      deliveryOrderItemRef: cargo.itemId,
+      deliveryOrderItemRefs: [cargo.itemId],
+      shipperReferenceKey: cargo.shipperReferenceKey,
+      shipperReferenceNumber: cargo.shipperReferenceNumber,
+      originLocationName: holdPoint?.locationName ?? '',
+      originLocationAddress: holdPoint?.locationAddress ?? '',
+      qtyKoli: cargo.qtyKoli,
+      weightInputValue: cargo.weightInputValue,
+      weightInputUnit: cargo.weightInputUnit,
+      volumeInputValue: cargo.volumeInputValue,
+      volumeInputUnit: cargo.volumeInputUnit,
+      note: holdPoint == null ? '' : 'Lanjutan hold dikirim',
+    );
+  }).toList(growable: false);
+}
+
+DeliveryActualDropPoint? _holdContinuationPointForCargo(
+  DeliveryTrip trip,
+  _ActualCargoDraft cargo,
+) {
+  final holdContinuationItemIds = _holdContinuationItemIds(trip);
+  if (!holdContinuationItemIds.contains(cargo.itemId)) return null;
+  for (final point in trip.actualDropPoints) {
+    if (!_isHoldContinuationStopType(point.stopType)) continue;
+    final itemRefs = _deliveryActualDropPointItemRefs(point, trip.cargoItems);
+    if (itemRefs.contains(cargo.itemId)) return point;
+  }
+  return null;
 }
 
 Map<String, _ActualDropDraft> _holdContinuationTotalsByItemId(
@@ -1752,12 +1824,16 @@ Map<String, _ActualDropDraft> _holdContinuationTotalsByItemId(
 ) {
   if (!_hasHoldContinuationContext(trip)) return const {};
 
+  final holdContinuationItemIds = _holdContinuationItemIds(trip);
   final totalsByItemId = <String, _ActualDropDraft>{};
   for (final point in trip.actualDropPoints) {
     if (!_isHoldContinuationStopType(point.stopType)) continue;
     final itemRefs = _deliveryActualDropPointItemRefs(point, trip.cargoItems);
-    if (itemRefs.length != 1) continue;
-    final itemRef = itemRefs.first;
+    final scopedItemRefs = itemRefs
+        .where(holdContinuationItemIds.contains)
+        .toList(growable: false);
+    if (scopedItemRefs.length != 1) continue;
+    final itemRef = scopedItemRefs.first;
     final current = totalsByItemId[itemRef];
     totalsByItemId[itemRef] = _sumDropDraftValues(
       current,
@@ -1767,60 +1843,66 @@ Map<String, _ActualDropDraft> _holdContinuationTotalsByItemId(
   return totalsByItemId;
 }
 
-List<_ActualDropDraft> _buildHoldContinuationDropDrafts(
-  DeliveryTrip trip,
-  List<_ActualCargoDraft> cargoDrafts,
-) {
-  if (!_hasHoldContinuationContext(trip)) return const [];
-
-  final drafts = <_ActualDropDraft>[];
-  for (final point in trip.actualDropPoints) {
-    if (!_isHoldContinuationStopType(point.stopType)) continue;
-    final itemRefs = _deliveryActualDropPointItemRefs(point, trip.cargoItems);
-    if (itemRefs.length != 1) continue;
-    final cargo = _findCargoDraftByItemRef(cargoDrafts, itemRefs.first);
-    if (cargo == null) continue;
-    final destination = _defaultContinuationDestination(trip, point, cargo);
-    drafts.add(
-      _ActualDropDraft.create(
-        stopType: 'DROP',
-        deliveryOrderItemRef: cargo.itemId,
-        deliveryOrderItemRefs: [cargo.itemId],
-        shipperReferenceNumber: point.shipperReferenceNumber ?? '',
-        shipperReferenceKey: point.shipperReferenceKey ?? '',
-        originLocationName: point.locationName,
-        originLocationAddress: point.locationAddress ?? '',
-        locationName: destination.$1,
-        locationAddress: destination.$2,
-        qtyKoli: _formatMetric(point.qtyKoli),
-        weightInputValue: _formatMetric(
-          point.weightInputValue,
-          fractionDigits: mobileWeightInputFractionDigits(
-            point.weightInputUnit ?? 'KG',
-          ),
-        ),
-        weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
-        volumeInputValue: _formatMetric(
-          point.volumeInputValue,
-          fractionDigits:
-              (point.volumeInputUnit ?? 'M3').toUpperCase() == 'LITER' ? 0 : 3,
-        ),
-        volumeInputUnit: (point.volumeInputUnit ?? 'M3').toUpperCase(),
-        note: 'Lanjutan hold dikirim',
-      ),
-    );
-  }
-
-  return drafts;
+bool _hasHoldContinuationContext(DeliveryTrip trip) {
+  return _holdContinuationReferenceCandidates(trip).isNotEmpty;
 }
 
-bool _hasHoldContinuationContext(DeliveryTrip trip) {
-  if (trip.actualDropPoints.isEmpty) return false;
-  return trip.status == TripStatus.partialHold ||
-      trip.shipperReferences.any(
-        (reference) =>
-            (reference.tripStatus ?? '').trim().toUpperCase() == 'PARTIAL_HOLD',
-      );
+Set<String> _holdContinuationItemIds(DeliveryTrip trip) {
+  final referenceCandidates = _holdContinuationReferenceCandidates(trip);
+  if (referenceCandidates.isEmpty) return const {};
+  return trip.cargoItems
+      .where(
+        (item) => _cargoItemReferenceCandidates(
+          trip,
+          item,
+        ).any(referenceCandidates.contains),
+      )
+      .map((item) => item.id)
+      .toSet();
+}
+
+Set<String> _holdContinuationReferenceCandidates(DeliveryTrip trip) {
+  final candidates = <String>{};
+  for (final reference in trip.shipperReferences) {
+    final status = (reference.tripStatus ?? '').trim().toUpperCase();
+    final hasHoldCargo =
+        (reference.holdQtyKoli ?? 0) > 0 ||
+        (reference.holdWeightKg ?? 0) > 0 ||
+        (reference.holdVolumeM3 ?? 0) > 0;
+    if (status != 'PARTIAL_HOLD' && !hasHoldCargo) continue;
+    candidates.addAll(_shipperReferenceCandidates(trip, reference));
+  }
+  return candidates;
+}
+
+Set<String> _shipperReferenceCandidates(
+  DeliveryTrip trip,
+  DeliveryShipperReference reference,
+) {
+  final documentId = reference.documentId?.trim();
+  final key = reference.key?.trim();
+  final number = reference.referenceNumber.trim();
+  return {
+    if (documentId != null && documentId.isNotEmpty) documentId,
+    if (key != null && key.isNotEmpty) key,
+    if (number.isNotEmpty) number,
+    if (key != null && key.isNotEmpty) '${trip.deliveryOrderId}:$key',
+    if (number.isNotEmpty) '${trip.deliveryOrderId}:$number',
+  };
+}
+
+Set<String> _cargoItemReferenceCandidates(
+  DeliveryTrip trip,
+  DeliveryCargoItem item,
+) {
+  final key = item.shipperReferenceKey?.trim();
+  final number = item.shipperReferenceNumber?.trim();
+  return {
+    if (key != null && key.isNotEmpty) key,
+    if (number != null && number.isNotEmpty) number,
+    if (key != null && key.isNotEmpty) '${trip.deliveryOrderId}:$key',
+    if (number != null && number.isNotEmpty) '${trip.deliveryOrderId}:$number',
+  };
 }
 
 bool _isHoldContinuationStopType(String value) {
@@ -1921,44 +2003,6 @@ _ActualDropDraft _sumDropDraftValues(
       fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
     ),
     volumeInputUnit: volumeUnit,
-  );
-}
-
-(String, String) _defaultContinuationDestination(
-  DeliveryTrip trip,
-  DeliveryActualDropPoint point,
-  _ActualCargoDraft cargo,
-) {
-  DeliveryShipperReference? matchingReference;
-  for (final reference in trip.shipperReferences) {
-    final pointKey = (point.shipperReferenceKey ?? '').trim();
-    final pointNumber = (point.shipperReferenceNumber ?? '')
-        .trim()
-        .toUpperCase();
-    final matches =
-        (pointKey.isNotEmpty && reference.key?.trim() == pointKey) ||
-        (pointNumber.isNotEmpty &&
-            reference.referenceNumber.trim().toUpperCase() == pointNumber);
-    if (matches) {
-      matchingReference = reference;
-      break;
-    }
-  }
-  final locationName = matchingReference?.targetLabel.trim() == '-'
-      ? ''
-      : matchingReference?.targetLabel.trim() ??
-            (trip.receiverName ?? '').trim();
-  final locationAddress =
-      (matchingReference?.receiverAddress ?? trip.receiverAddress ?? '').trim();
-  if (locationName.isNotEmpty || locationAddress.isNotEmpty) {
-    return (locationName, locationAddress);
-  }
-  final cargoReferenceNumber = cargo.shipperReferenceNumber.trim();
-  return (
-    cargoReferenceNumber.isNotEmpty
-        ? 'Tujuan SJ $cargoReferenceNumber'
-        : 'Tujuan Invoice',
-    '',
   );
 }
 
@@ -2570,6 +2614,15 @@ List<_ActualDropDraft> _effectiveSubmissionDropDrafts(
   List<_ActualDropDraft> dropDrafts,
   List<_ActualCargoDraft> cargoDrafts,
 ) {
+  if (dropDrafts.length == 1 &&
+      !_dropDraftHasItemSelection(dropDrafts.first) &&
+      _hasActualDropItemValues(dropDrafts.first)) {
+    return _expandGenericDropDraftToCargoAllocations(
+      dropDrafts.first,
+      cargoDrafts,
+    );
+  }
+
   final effective = <_ActualDropDraft>[];
   for (final group in _groupDropDraftsForUi(dropDrafts)) {
     final itemSpecificDrafts = group.drafts
@@ -2591,6 +2644,26 @@ List<_ActualDropDraft> _effectiveSubmissionDropDrafts(
     );
   }
   return effective;
+}
+
+List<_ActualDropDraft> _expandGenericDropDraftToCargoAllocations(
+  _ActualDropDraft sourceDraft,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  if (cargoDrafts.isEmpty) return [sourceDraft];
+  return cargoDrafts.map((cargo) {
+    return sourceDraft.copyWith(
+      deliveryOrderItemRef: cargo.itemId,
+      deliveryOrderItemRefs: [cargo.itemId],
+      shipperReferenceKey: cargo.shipperReferenceKey,
+      shipperReferenceNumber: cargo.shipperReferenceNumber,
+      qtyKoli: cargo.qtyKoli,
+      weightInputValue: cargo.weightInputValue,
+      weightInputUnit: cargo.weightInputUnit,
+      volumeInputValue: cargo.volumeInputValue,
+      volumeInputUnit: cargo.volumeInputUnit,
+    );
+  }).toList(growable: false);
 }
 
 List<_ActualDropDraft> _activeDropDraftsForValidation(
@@ -2652,10 +2725,6 @@ List<_ActualDropDraft> _createNextDropDraftsForSelectedCargo(
       : base.copyWith(
           shipperReferenceNumber: targetReference.referenceNumber,
           shipperReferenceKey: targetReference.key ?? '',
-          locationName: targetReference.targetLabel == '-'
-              ? ''
-              : targetReference.targetLabel,
-          locationAddress: targetReference.receiverAddress ?? '',
         );
   if (selectedCargoDrafts.isEmpty) return [baseWithTarget];
 
@@ -2789,17 +2858,33 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
               usedVolumeM3)
           .clamp(0, double.infinity)
           .toDouble();
+  final remainingWeightInputValue = _convertKgToWeightInputValue(
+    remainingWeightKg,
+    weightUnit,
+  );
+  final remainingVolumeInputValue = _convertM3ToVolumeInputValue(
+    remainingVolumeM3,
+    volumeUnit,
+  );
   return _ActualDropDraft.create(
-    qtyKoli: _formatMetric(remainingQtyKoli),
-    weightInputValue: _formatMetric(
-      _convertKgToWeightInputValue(remainingWeightKg, weightUnit),
-      fractionDigits: mobileWeightInputFractionDigits(weightUnit),
-    ),
+    qtyKoli: remainingQtyKoli <= 0 && cargo.qtyKoliValue > 0
+        ? '0'
+        : _formatMetric(remainingQtyKoli),
+    weightInputValue:
+        remainingWeightInputValue <= 0 && cargo.weightInputValueNumber > 0
+        ? '0'
+        : _formatMetric(
+            remainingWeightInputValue,
+            fractionDigits: mobileWeightInputFractionDigits(weightUnit),
+          ),
     weightInputUnit: weightUnit,
-    volumeInputValue: _formatMetric(
-      _convertM3ToVolumeInputValue(remainingVolumeM3, volumeUnit),
-      fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
-    ),
+    volumeInputValue:
+        remainingVolumeInputValue <= 0 && cargo.volumeInputValueNumber > 0
+        ? '0'
+        : _formatMetric(
+            remainingVolumeInputValue,
+            fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
+          ),
     volumeInputUnit: volumeUnit,
   );
 }
@@ -3845,7 +3930,13 @@ class _DropUiGroup {
 
   _ActualDropDraft get primaryDraft => drafts.first;
   List<_ActualDropDraft> get allocatedDrafts =>
-      drafts.where(_dropDraftHasItemSelection).toList(growable: false);
+      drafts
+          .where(
+            (draft) =>
+                _dropDraftHasItemSelection(draft) &&
+                _hasActualDropItemValues(draft),
+          )
+          .toList(growable: false);
 
   bool containsDraftId(String? draftId) =>
       draftId != null && drafts.any((draft) => draft.id == draftId);
@@ -4092,6 +4183,15 @@ class _DropPointCargoGroupTile extends StatelessWidget {
   final void Function(String draftId, List<_DropAllocationEditResult> results)
   onDetermine;
 
+  List<_ActualDropDraft> get displayAllocationDrafts =>
+      allocationDrafts.isNotEmpty
+      ? allocationDrafts
+      : _implicitFirstDropAllocations(
+          sourceDraftId,
+          allDropDrafts,
+          group.drafts,
+        );
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -4103,16 +4203,19 @@ class _DropPointCargoGroupTile extends StatelessWidget {
         children: [
           ...group.drafts.map((draft) {
             final allocation = _allocationDraftForCargo(
-              allocationDrafts,
+              displayAllocationDrafts,
               draft.itemId,
             );
-            final allocated = allocation != null;
+            final allocated =
+                allocation != null && _hasActualDropItemValues(allocation);
             final description = draft.description.trim().isEmpty
                 ? 'Barang'
                 : draft.description;
             final remaining = _remainingDropValuesForCargoItem(
               draft,
-              allDropDrafts,
+              allDropDrafts.length == 1 && displayAllocationDrafts.isNotEmpty
+                  ? displayAllocationDrafts
+                  : allDropDrafts,
               excludeDraftId: '',
             );
             return ListTile(
@@ -4133,7 +4236,7 @@ class _DropPointCargoGroupTile extends StatelessWidget {
                 children: [
                   Text(
                     allocation == null
-                        ? _formatCargoDraftValues(draft)
+                        ? 'Akan dialokasikan: ${_formatDropDraftValues(remaining)}'
                         : 'Dialokasikan: ${_formatDropDraftValues(allocation)}',
                   ),
                   if (showRemainingHelper)
@@ -4167,7 +4270,14 @@ class _DropPointCargoGroupTile extends StatelessWidget {
       useSafeArea: true,
       builder: (context) => _DropPointCargoDetermineSheet(
         group: group,
-        allocationDrafts: allocationDrafts,
+        allocationDrafts: _allocationDraftsWithRemainingDefaults(
+          allocationDrafts: displayAllocationDrafts,
+          cargoDrafts: group.drafts,
+          allDropDrafts: allDropDrafts.length == 1 &&
+                  displayAllocationDrafts.isNotEmpty
+              ? displayAllocationDrafts
+              : allDropDrafts,
+        ),
         title: modalTitle,
         quantityLabel: quantityLabel,
         weightLabel: weightLabel,
@@ -4389,7 +4499,7 @@ class _DropPointCargoDetermineSheetState
                       const SizedBox(height: 10),
                       Text(
                         selectedAllocation == null
-                            ? 'Sisa/rencana: ${_formatCargoDraftValues(selectedCargo)}'
+                            ? 'Sisa aktual: ${_formatCargoDraftValues(selectedCargo)}'
                             : 'Saat ini: ${_formatDropDraftValues(selectedAllocation)}',
                         style: TextStyle(
                           color: Theme.of(
@@ -4608,6 +4718,46 @@ _ActualDropDraft? _allocationDraftForCargo(
   return null;
 }
 
+List<_ActualDropDraft> _allocationDraftsWithRemainingDefaults({
+  required List<_ActualDropDraft> allocationDrafts,
+  required List<_ActualCargoDraft> cargoDrafts,
+  required List<_ActualDropDraft> allDropDrafts,
+}) {
+  final nextDrafts = [...allocationDrafts];
+  for (final cargo in cargoDrafts) {
+    if (_allocationDraftForCargo(nextDrafts, cargo.itemId) != null) continue;
+    final remaining = _remainingDropValuesForCargoItem(
+      cargo,
+      allDropDrafts,
+      excludeDraftId: '',
+    );
+    nextDrafts.add(
+      remaining.copyWith(
+        deliveryOrderItemRef: cargo.itemId,
+        deliveryOrderItemRefs: [cargo.itemId],
+        shipperReferenceKey: cargo.shipperReferenceKey,
+        shipperReferenceNumber: cargo.shipperReferenceNumber,
+      ),
+    );
+  }
+  return nextDrafts;
+}
+
+List<_ActualDropDraft> _implicitFirstDropAllocations(
+  String sourceDraftId,
+  List<_ActualDropDraft> allDropDrafts,
+  List<_ActualCargoDraft> cargoDrafts,
+) {
+  if (cargoDrafts.isEmpty || allDropDrafts.length != 1) return const [];
+  final sourceDraft = allDropDrafts.first;
+  if (sourceDraft.id != sourceDraftId ||
+      _dropDraftHasItemSelection(sourceDraft) ||
+      !_hasActualDropItemValues(sourceDraft)) {
+    return const [];
+  }
+  return _expandGenericDropDraftToCargoAllocations(sourceDraft, cargoDrafts);
+}
+
 List<_ActualDropDraft> _orderDropDraftsByCargoSequence(
   List<_ActualDropDraft> drafts,
   List<_ActualCargoDraft> cargoDrafts,
@@ -4800,8 +4950,14 @@ class _DropPointAllocationSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final orderedDrafts = _orderDropDraftsByCargoSequence(drafts, cargoDrafts);
-    if (drafts.isEmpty) {
+    final allocatedDrafts = drafts
+        .where(_hasActualDropItemValues)
+        .toList(growable: false);
+    final orderedDrafts = _orderDropDraftsByCargoSequence(
+      allocatedDrafts,
+      cargoDrafts,
+    );
+    if (orderedDrafts.isEmpty) {
       return Text(
         'Belum ada barang ditambahkan di titik ini.',
         style: TextStyle(
@@ -5072,6 +5228,15 @@ String _formatDropDraftValues(_ActualDropDraft draft) {
     if (draft.volumeInputValueNumber > 0)
       '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
   ];
+  if (parts.isEmpty && draft.qtyKoli.trim().isNotEmpty) {
+    parts.add('0 koli');
+  }
+  if (parts.isEmpty && draft.weightInputValue.trim().isNotEmpty) {
+    parts.add('0 ${_normalizeWeightUnit(draft.weightInputUnit)}');
+  }
+  if (parts.isEmpty && draft.volumeInputValue.trim().isNotEmpty) {
+    parts.add('0 ${_normalizeVolumeUnit(draft.volumeInputUnit)}');
+  }
   return parts.isEmpty ? 'Belum diisi' : parts.join(' / ');
 }
 

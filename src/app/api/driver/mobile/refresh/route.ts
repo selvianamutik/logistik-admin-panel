@@ -1,11 +1,12 @@
 import {
+    createDriverMobileSession,
     createDriverRefreshSession,
-    createSession,
     getDriverSessionFromRefreshToken,
 } from '@/lib/auth';
 import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDocumentById } from '@/lib/repositories/document-store';
+import { DRIVER_MOBILE_SESSION_MAX_AGE, DRIVER_REFRESH_SESSION_MAX_AGE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
         }
 
-        const token = await createSession(user);
+        const token = await createDriverMobileSession(user);
         const nextRefreshToken = await createDriverRefreshSession(user);
         const appContext = await getDriverAppContext();
         const driverAccessNotice = await getDriverPortalAccessNotice(driver._id);
@@ -46,8 +47,8 @@ export async function POST(request: Request) {
             success: true,
             token,
             refreshToken: nextRefreshToken,
-            expiresIn: 60 * 60 * 24,
-            refreshExpiresIn: 60 * 60 * 24 * 60,
+            expiresIn: DRIVER_MOBILE_SESSION_MAX_AGE,
+            refreshExpiresIn: DRIVER_REFRESH_SESSION_MAX_AGE,
             user: {
                 _id: user._id,
                 name: user.name,

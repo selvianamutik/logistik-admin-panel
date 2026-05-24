@@ -4793,15 +4793,18 @@ export default function TripDetailPage() {
 
         return selectedWorkingActualDropPoints;
     })();
+    const shouldDeriveSelectedActualCargoFromDropAllocations =
+        showAdvancedDropEditor &&
+        selectedEffectiveActualDropPoints.some(point =>
+            Boolean(point.deliveryOrderItemRef) &&
+            isDeliveryOrderBillableDropType(point.stopType)
+        );
     const selectedDerivedActualCargoItems = selectedActualCargoItems.map(item => {
         const manualValues = actualCargoItemValueMap[item.deliveryOrderItemRef];
-        if (manualValues && (!showAdvancedDropEditor || reviewingDriverRequest)) {
+        if (manualValues && !shouldDeriveSelectedActualCargoFromDropAllocations) {
             return manualValues ? { ...item, ...manualValues } : item;
         }
-        if (reviewingDriverRequest) {
-            return item;
-        }
-        if (!showAdvancedDropEditor) {
+        if (!shouldDeriveSelectedActualCargoFromDropAllocations) {
             return item;
         }
         const itemRealizationAllocations = selectedEffectiveActualDropPoints
@@ -5063,6 +5066,22 @@ export default function TripDetailPage() {
             groupLabel: group.label,
         })),
     }));
+    const summarizeHeldCargoForItem = (item: ActualCargoDraft) => {
+        const sourceItem = doItems.find(doItem => doItem._id === item.deliveryOrderItemRef);
+        return {
+            qtyKoli: parseFormattedNumberish(sourceItem?.heldQtyKoli || 0, { maxFractionDigits: 2 }),
+            weightKg: parseFormattedNumberish(sourceItem?.heldWeight || 0, { maxFractionDigits: 2 }),
+            volumeM3: parseFormattedNumberish(sourceItem?.heldVolume || 0, { maxFractionDigits: 3 }),
+        };
+    };
+    const summarizeHeldCargoForItems = (items: ActualCargoDraft[]) =>
+        items.map(summarizeHeldCargoForItem).reduce((sum, summary) => ({
+            qtyKoli: sum.qtyKoli + summary.qtyKoli,
+            weightKg: sum.weightKg + summary.weightKg,
+            volumeM3: sum.volumeM3 + summary.volumeM3,
+        }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const hasCargoSummaryValue = (summary: { qtyKoli: number; weightKg: number; volumeM3: number }) =>
+        summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
     const getActualDropAllocationSummaryRows = (drop: ActualDropDraft) =>
         selectedActualCargoItems
             .map(cargoItem => {
@@ -5351,6 +5370,16 @@ export default function TripDetailPage() {
         return formatCargoSummary(totals);
     };
     const selectedActualCargoReady = selectedDerivedActualCargoItems.length > 0 && selectedDerivedActualCargoItems.every(item => {
+        if (shouldDeriveSelectedActualCargoFromDropAllocations) {
+            const hasBillableAllocation = selectedEffectiveActualDropPoints.some(point =>
+                point.deliveryOrderItemRef === item.deliveryOrderItemRef &&
+                isDeliveryOrderBillableDropType(point.stopType) &&
+                hasActualDropItemValues(pickActualDropItemValues(point))
+            );
+            if (!hasBillableAllocation) {
+                return true;
+            }
+        }
         const qty = parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 });
         const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
             maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
@@ -5445,8 +5474,20 @@ export default function TripDetailPage() {
         ...suratJalanDocuments.map(document => document._id),
         ...doItems.map(item => item._id),
     ].filter((ref): ref is string => Boolean(ref))));
+    const summarizeHeldDeliveryOrderItem = (item: DeliveryOrderItem) => ({
+        qtyKoli: parseFormattedNumberish(item.heldQtyKoli || 0, { maxFractionDigits: 2 }),
+        weightKg: parseFormattedNumberish(item.heldWeight || 0, { maxFractionDigits: 2 }),
+        volumeM3: parseFormattedNumberish(item.heldVolume || 0, { maxFractionDigits: 3 }),
+    });
+    const summarizeHeldDeliveryOrderItems = (items: DeliveryOrderItem[]) =>
+        items.map(summarizeHeldDeliveryOrderItem).reduce((sum, summary) => ({
+            qtyKoli: sum.qtyKoli + summary.qtyKoli,
+            weightKg: sum.weightKg + summary.weightKg,
+            volumeM3: sum.volumeM3 + summary.volumeM3,
+        }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
     const renderCargoItemRow = (item: DeliveryOrderItem) => {
         const holdContinuationPickups = getItemHoldContinuationPickups(item);
+        const itemHoldSummary = summarizeHeldDeliveryOrderItem(item);
         return (
             <tr key={item._id}>
                 <td>
@@ -5484,6 +5525,10 @@ export default function TripDetailPage() {
                                 ? 'Belum final'
                                 : '-'}
                     </div>
+                    <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Hold</div>
+                    <div className="font-medium">
+                        {hasCargoSummaryValue(itemHoldSummary) ? `${itemHoldSummary.qtyKoli} koli` : '-'}
+                    </div>
                 </td>
                 <td>
                     <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
@@ -5511,6 +5556,10 @@ export default function TripDetailPage() {
                                 volumeInputUnit: item.actualVolumeInputUnit,
                             })
                             : 'Belum final'}
+                    </div>
+                    <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Hold</div>
+                    <div className="font-medium">
+                        {hasCargoSummaryValue(itemHoldSummary) ? formatCargoSummary(itemHoldSummary) : '-'}
                     </div>
                 </td>
                 {canAppendCargoToDo && (
@@ -6562,6 +6611,7 @@ export default function TripDetailPage() {
                                         volumeM3: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
                                     })
                                     : 'Belum final';
+                                const holdSummary = summarizeHeldDeliveryOrderItems(group.items);
                                 const displayReferenceNumber = group.document
                                     ? formatSuratJalanDisplayNumber(group.document.suratJalanNumber, group.document)
                                     : group.shipperReferenceNumber;
@@ -6581,6 +6631,7 @@ export default function TripDetailPage() {
                                                 <span>{group.items.length} item</span>
                                                 <span>Rencana: {plannedSummary}</span>
                                                 <span>Aktual: {actualSummary}</span>
+                                                <span>Hold: {hasCargoSummaryValue(holdSummary) ? formatCargoSummary(holdSummary) : '-'}</span>
                                                 <span>Pickup: {group.pickupLabels.length > 0 ? group.pickupLabels.join(', ') : '-'}</span>
                                             </div>
                                             {group.pickupAddresses.length > 0 && (
@@ -6588,6 +6639,9 @@ export default function TripDetailPage() {
                                                     {group.pickupAddresses.join(' | ')}
                                                 </div>
                                             )}
+                                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                                <ChevronDown className="foldable-chevron" size={18} />
+                                            </div>
                                         </summary>
                                         <div className="trip-sj-accordion-body">
                                             <div className="table-wrapper">
@@ -7662,7 +7716,9 @@ export default function TripDetailPage() {
                                                                     </div>
                                                                 </div>
                                                                 <div style={{ display: 'grid', gap: '0.6rem' }}>
-                                                                    {selectedActualDropPointSjGroups.map(group => (
+                                                                    {selectedActualDropPointSjGroups.map(group => {
+                                                                        const groupHoldSummary = summarizeHeldCargoForItems(group.items);
+                                                                        return (
                                                                         <details
                                                                             key={`default-drop-${group.key}`}
                                                                             open
@@ -7687,11 +7743,16 @@ export default function TripDetailPage() {
                                                                                 <span>
                                                                                     <span className="font-semibold">{group.label}</span>
                                                                                     <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                                                    {hasCargoSummaryValue(groupHoldSummary) && (
+                                                                                        <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>Total hold: {formatCargoSummary(groupHoldSummary)}</span>
+                                                                                    )}
                                                                                 </span>
-                                                                                <ChevronDown size={16} />
+                                                                                <ChevronDown className="foldable-chevron" size={16} />
                                                                             </summary>
                                                                             <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
-                                                                                {group.items.map(cargoItem => (
+                                                                                {group.items.map(cargoItem => {
+                                                                                    const itemHoldSummary = summarizeHeldCargoForItem(cargoItem);
+                                                                                    return (
                                                                                     <div
                                                                                         key={`admin-default-drop-${cargoItem.deliveryOrderItemRef}`}
                                                                                         style={{
@@ -7717,14 +7778,17 @@ export default function TripDetailPage() {
                                                                                             })}
                                                                                         </div>
                                                                                         <div className="text-muted text-sm">Akan direalisasikan: {summarizeActualCargoDraft(cargoItem)}</div>
+                                                                                        <div className="text-muted text-sm">Hold tersimpan: {hasCargoSummaryValue(itemHoldSummary) ? formatCargoSummary(itemHoldSummary) : '-'}</div>
                                                                                         <div className="text-muted text-sm">
                                                                                             Tipe realisasi: {DO_ACTUAL_DROP_TYPE_MAP[selectedAutoActualDropDraft.stopType]?.label || selectedAutoActualDropDraft.stopType}
                                                                                         </div>
                                                                                     </div>
-                                                                                ))}
+                                                                                    );
+                                                                                })}
                                                                             </div>
                                                                         </details>
-                                                                    ))}
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -7827,7 +7891,9 @@ export default function TripDetailPage() {
                                                                     />
                                                                 </div>
                                                                 <div style={{ display: 'grid', gap: '0.6rem', marginBottom: '0.75rem' }}>
-                                                                    {selectedActualDropPointSjGroups.map(group => (
+                                                                    {selectedActualDropPointSjGroups.map(group => {
+                                                                        const groupHoldSummary = summarizeHeldCargoForItems(group.items);
+                                                                        return (
                                                                         <details
                                                                             key={`${item.draftKey}-${group.key}`}
                                                                             open
@@ -7852,12 +7918,16 @@ export default function TripDetailPage() {
                                                                                 <span>
                                                                                     <span className="font-semibold">{group.label}</span>
                                                                                     <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                                                    {hasCargoSummaryValue(groupHoldSummary) && (
+                                                                                        <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>Total hold: {formatCargoSummary(groupHoldSummary)}</span>
+                                                                                    )}
                                                                                 </span>
-                                                                                <ChevronDown size={16} />
+                                                                                <ChevronDown className="foldable-chevron" size={16} />
                                                                             </summary>
                                                                             <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
                                                                                 {group.items.map(cargoItem => {
                                                                                     const helper = getActualDropItemHelper(item, cargoItem);
+                                                                                    const itemHoldSummary = summarizeHeldCargoForItem(cargoItem);
                                                                                     return (
                                                                                         <div
                                                                                             key={`${item.draftKey}-${cargoItem.deliveryOrderItemRef}`}
@@ -7898,6 +7968,7 @@ export default function TripDetailPage() {
                                                                                                     volumeInputValue: cargoItem.plannedVolumeInputValue,
                                                                                                     volumeInputUnit: cargoItem.plannedVolumeInputUnit,
                                                                                                 })}</div>
+                                                                                                <div>Hold tersimpan: {hasCargoSummaryValue(itemHoldSummary) ? formatCargoSummary(itemHoldSummary) : '-'}</div>
                                                                                                 <div>{item.stopType === 'HOLD' ? 'Hold di titik ini' : 'Alokasi titik ini'}: {formatCargoSummary(helper.currentSummary)}</div>
                                                                                                 <div>Total alokasi titik lain: {formatCargoSummary(helper.otherSummary)}</div>
                                                                                                 <div>Sisa setelah titik ini: {formatCargoSummary(helper.remainingAfterCurrent)}</div>
@@ -7933,7 +8004,8 @@ export default function TripDetailPage() {
                                                                                 })}
                                                                             </div>
                                                                         </details>
-                                                                    ))}
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                                 <div className="form-group">
                                                                     <label className="form-label">Catatan Titik Drop</label>
@@ -8105,7 +8177,9 @@ export default function TripDetailPage() {
                                                 <div className="font-semibold">{activeFinalizationReviewDrop.locationName || `Titik Drop ${selectedActualDropPoints.findIndex(drop => drop.draftKey === activeFinalizationReviewDrop.draftKey) + 1}`}</div>
                                                 <div className="text-muted text-sm">{activeFinalizationReviewDrop.locationAddress || 'Alamat belum diisi'} | {DO_ACTUAL_DROP_TYPE_MAP[activeFinalizationReviewDrop.stopType]?.label || activeFinalizationReviewDrop.stopType}</div>
                                             </div>
-                                            {selectedActualDropPointSjGroups.map(group => (
+                                            {selectedActualDropPointSjGroups.map(group => {
+                                                const groupHoldSummary = summarizeHeldCargoForItems(group.items);
+                                                return (
                                                 <details
                                                     key={`final-review-${activeFinalizationReviewDrop.draftKey}-${group.key}`}
                                                     open
@@ -8130,12 +8204,16 @@ export default function TripDetailPage() {
                                                         <span>
                                                             <span className="font-semibold">{group.label}</span>
                                                             <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>{group.items.length} barang</span>
+                                                            {hasCargoSummaryValue(groupHoldSummary) && (
+                                                                <span className="text-muted text-sm" style={{ marginLeft: '0.45rem' }}>Total hold: {formatCargoSummary(groupHoldSummary)}</span>
+                                                            )}
                                                         </span>
-                                                        <ChevronDown size={16} />
+                                                        <ChevronDown className="foldable-chevron" size={16} />
                                                     </summary>
                                                     <div style={{ borderTop: '1px solid var(--color-gray-100)', display: 'grid', gap: '0.55rem', padding: '0.75rem' }}>
                                                         {group.items.map(cargoItem => {
                                                             const helper = getActualDropItemHelper(activeFinalizationReviewDrop, cargoItem);
+                                                            const itemHoldSummary = summarizeHeldCargoForItem(cargoItem);
                                                             return (
                                                                 <div
                                                                     key={`final-review-${activeFinalizationReviewDrop.draftKey}-${cargoItem.deliveryOrderItemRef}`}
@@ -8167,6 +8245,7 @@ export default function TripDetailPage() {
                                                                         </span>
                                                                     </div>
                                                                     <div style={{ display: 'grid', gap: '0.22rem', color: 'var(--color-gray-700)', fontSize: '0.8rem' }}>
+                                                                        <div>Hold tersimpan: {hasCargoSummaryValue(itemHoldSummary) ? formatCargoSummary(itemHoldSummary) : '-'}</div>
                                                                         <div>{activeFinalizationReviewDrop.stopType === 'HOLD' ? 'Aktual hold titik ini' : 'Aktual drop titik ini'}: {formatCargoSummary(helper.currentSummary)}</div>
                                                                     </div>
                                                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -8194,7 +8273,8 @@ export default function TripDetailPage() {
                                                         })}
                                                     </div>
                                                 </details>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     ) : (
                                         <div className="empty-state">

@@ -73,6 +73,9 @@ class DeliveryShipperReference {
     this.documentId,
     this.key,
     this.tripStatus,
+    this.holdQtyKoli,
+    this.holdWeightKg,
+    this.holdVolumeM3,
     this.pickupStopKey,
     this.pickupAddress,
     this.receiverName,
@@ -84,6 +87,9 @@ class DeliveryShipperReference {
   final String? documentId;
   final String? key;
   final String? tripStatus;
+  final double? holdQtyKoli;
+  final double? holdWeightKg;
+  final double? holdVolumeM3;
   final String? pickupStopKey;
   final String? pickupAddress;
   final String? receiverName;
@@ -127,6 +133,9 @@ class DeliveryCargoItem {
     this.weightInputUnit,
     this.volumeInputValue,
     this.volumeInputUnit,
+    this.heldQtyKoli,
+    this.heldWeightKg,
+    this.heldVolumeM3,
     this.actualQtyKoli,
     this.actualWeightInputValue,
     this.actualWeightInputUnit,
@@ -148,6 +157,9 @@ class DeliveryCargoItem {
   final String? weightInputUnit;
   final double? volumeInputValue;
   final String? volumeInputUnit;
+  final double? heldQtyKoli;
+  final double? heldWeightKg;
+  final double? heldVolumeM3;
   final double? actualQtyKoli;
   final double? actualWeightInputValue;
   final String? actualWeightInputUnit;

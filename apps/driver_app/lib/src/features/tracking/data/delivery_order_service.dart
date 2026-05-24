@@ -489,14 +489,10 @@ class DeliveryOrderService {
 
   DeliveryTrip _mapTrip(Map<String, dynamic> json) {
     final status = (json['status'] as String?) ?? 'CREATED';
-    final mappedStatus = switch (status) {
-      'HEADING_TO_PICKUP' => TripStatus.headingToPickup,
-      'ON_DELIVERY' => TripStatus.onDelivery,
-      'ARRIVED' => TripStatus.arrived,
-      'PARTIAL_HOLD' => TripStatus.partialHold,
-      'DELIVERED' => TripStatus.delivered,
-      _ => TripStatus.assigned,
-    };
+    final mappedStatus = _deriveTripStatusFromSuratJalanRecords(
+      json['driverSuratJalanRecords'],
+      fallbackStatus: _mapTripStatus(status),
+    );
 
     final date = (json['date'] as String?)?.trim();
     final pickupAddress = (json['pickupAddress'] as String?)?.trim();
@@ -575,6 +571,50 @@ class DeliveryOrderService {
         json['pendingDriverActualDropPoints'],
       ),
     );
+  }
+
+  TripStatus _mapTripStatus(String status) {
+    return switch (status.trim().toUpperCase()) {
+      'HEADING_TO_PICKUP' => TripStatus.headingToPickup,
+      'ON_DELIVERY' => TripStatus.onDelivery,
+      'ARRIVED' => TripStatus.arrived,
+      'PARTIAL_HOLD' => TripStatus.partialHold,
+      'DELIVERED' => TripStatus.delivered,
+      _ => TripStatus.assigned,
+    };
+  }
+
+  TripStatus _deriveTripStatusFromSuratJalanRecords(
+    dynamic raw, {
+    required TripStatus fallbackStatus,
+  }) {
+    if (raw is! List) return fallbackStatus;
+
+    final statuses = raw
+        .whereType<Map<String, dynamic>>()
+        .where((item) => (_toInt(item['itemCount']) ?? 0) > 0)
+        .map((item) => (item['tripStatus'] as String?)?.trim().toUpperCase())
+        .whereType<String>()
+        .where((status) => status.isNotEmpty)
+        .toList(growable: false);
+    if (statuses.isEmpty) return fallbackStatus;
+
+    if (statuses.every((status) => status == 'DELIVERED')) {
+      return TripStatus.delivered;
+    }
+    if (statuses.any((status) => status == 'PARTIAL_HOLD')) {
+      return TripStatus.partialHold;
+    }
+    if (statuses.any((status) => status == 'ARRIVED')) {
+      return TripStatus.arrived;
+    }
+    if (statuses.any((status) => status == 'ON_DELIVERY')) {
+      return TripStatus.onDelivery;
+    }
+    if (statuses.any((status) => status == 'HEADING_TO_PICKUP')) {
+      return TripStatus.headingToPickup;
+    }
+    return fallbackStatus;
   }
 
   DriverAssignedTripPlan _mapTripPlan(Map<String, dynamic> json) {
@@ -795,6 +835,9 @@ class DeliveryOrderService {
                 ),
             key: referenceKey,
             tripStatus: recordMetadata?.tripStatus,
+            holdQtyKoli: recordMetadata?.holdQtyKoli,
+            holdWeightKg: recordMetadata?.holdWeightKg,
+            holdVolumeM3: recordMetadata?.holdVolumeM3,
             pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
             pickupAddress: pickupAddress?.isNotEmpty == true
                 ? pickupAddress
@@ -820,6 +863,9 @@ class DeliveryOrderService {
               _deriveSuratJalanDocumentId(fallbackDeliveryOrderId, 'primary'),
           key: null,
           tripStatus: recordMetadata?.tripStatus,
+          holdQtyKoli: recordMetadata?.holdQtyKoli,
+          holdWeightKg: recordMetadata?.holdWeightKg,
+          holdVolumeM3: recordMetadata?.holdVolumeM3,
           pickupStopKey: fallbackPickupStopKey,
           pickupAddress: recordMetadata?.pickupAddress,
         ),
@@ -837,10 +883,16 @@ class DeliveryOrderService {
       final pickupAddress = (item['pickupAddress'] as String?)?.trim();
       final documentId = (item['_id'] as String?)?.trim();
       final tripStatus = (item['tripStatus'] as String?)?.trim();
+      final holdCargo = item['holdCargo'] is Map<String, dynamic>
+          ? item['holdCargo'] as Map<String, dynamic>
+          : const <String, dynamic>{};
       final metadata = _SuratJalanRecordMetadata(
         documentId: documentId,
         pickupAddress: pickupAddress?.isNotEmpty == true ? pickupAddress : null,
         tripStatus: tripStatus,
+        holdQtyKoli: _toDouble(holdCargo['qtyKoli']),
+        holdWeightKg: _toDouble(holdCargo['weightKg']),
+        holdVolumeM3: _toDouble(holdCargo['volumeM3']),
       );
       if (documentId != null && documentId.isNotEmpty) {
         result['id:$documentId'] = metadata;
@@ -895,6 +947,9 @@ class DeliveryOrderService {
             volumeInputValue: _toDouble(item['orderItemVolumeInputValue']),
             volumeInputUnit: (item['orderItemVolumeInputUnit'] as String?)
                 ?.trim(),
+            heldQtyKoli: _toDouble(item['heldQtyKoli']),
+            heldWeightKg: _toDouble(item['heldWeight']),
+            heldVolumeM3: _toDouble(item['heldVolume']),
             actualQtyKoli: _toDouble(item['actualQtyKoli']),
             actualWeightInputValue: _toDouble(item['actualWeightInputValue']),
             actualWeightInputUnit: (item['actualWeightInputUnit'] as String?)
@@ -1202,9 +1257,15 @@ class _SuratJalanRecordMetadata {
     required this.documentId,
     required this.pickupAddress,
     required this.tripStatus,
+    this.holdQtyKoli,
+    this.holdWeightKg,
+    this.holdVolumeM3,
   });
 
   final String? documentId;
   final String? pickupAddress;
   final String? tripStatus;
+  final double? holdQtyKoli;
+  final double? holdWeightKg;
+  final double? holdVolumeM3;
 }

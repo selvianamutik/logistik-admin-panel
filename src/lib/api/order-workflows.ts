@@ -5086,8 +5086,13 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
             const nextActualTotalQtyKoli = roundQuantity(nextSplit.delivered.qtyKoli + nextSplit.held.qtyKoli);
             const nextActualTotalWeight = roundQuantity(nextSplit.delivered.weight + nextSplit.held.weight);
             const nextActualTotalVolume = roundQuantity(nextSplit.delivered.volume + nextSplit.held.volume, 3);
+            const nextDeliveredQtyKoli = roundQuantity(nextSplit.delivered.qtyKoli);
+            const nextDeliveredWeight = roundQuantity(nextSplit.delivered.weight);
+            const nextDeliveredVolume = roundQuantity(nextSplit.delivered.volume, 3);
             const nextActualWeightInputValue = convertKgToWeightInputValue(nextActualTotalWeight, nextActualWeightInputUnit);
             const nextActualVolumeInputValue = convertM3ToVolumeInputValue(nextActualTotalVolume, nextActualVolumeInputUnit);
+            const nextDeliveredWeightInputValue = convertKgToWeightInputValue(nextDeliveredWeight, nextActualWeightInputUnit);
+            const nextDeliveredVolumeInputValue = convertM3ToVolumeInputValue(nextDeliveredVolume, nextActualVolumeInputUnit);
 
             const orderItemUpdates: Record<string, unknown> = {
                 assignedQtyKoli: nextProgress.assignedQtyKoli,
@@ -5125,12 +5130,15 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
                 orderItemUpdates,
                 deliveryOrderItemRef: item._id,
                 deliveryOrderItemUpdates: {
-                    actualQtyKoli: requireQty ? nextActualTotalQtyKoli : null,
-                    actualWeightKg: nextActualTotalWeight,
-                    actualVolumeM3: nextActualTotalVolume > 0 ? nextActualTotalVolume : null,
-                    actualWeightInputValue: nextActualWeightInputValue,
+                    actualQtyKoli: requireQty ? nextDeliveredQtyKoli : null,
+                    actualWeightKg: nextDeliveredWeight,
+                    actualVolumeM3: nextDeliveredVolume > 0 ? nextDeliveredVolume : null,
+                    heldQtyKoli: nextProgress.heldQtyKoli,
+                    heldWeight: nextProgress.heldWeight,
+                    heldVolume: nextProgress.heldVolume,
+                    actualWeightInputValue: nextDeliveredWeightInputValue,
                     actualWeightInputUnit: nextActualWeightInputUnit,
-                    actualVolumeInputValue: nextActualVolumeInputValue,
+                    actualVolumeInputValue: nextDeliveredVolumeInputValue,
                     actualVolumeInputUnit: nextActualVolumeInputUnit,
                 },
             });

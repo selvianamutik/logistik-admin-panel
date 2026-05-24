@@ -2200,6 +2200,14 @@ tbody td {
   display: none;
 }
 
+.foldable-chevron {
+  transition: transform 0.16s ease;
+}
+
+details[open] > summary .foldable-chevron {
+  transform: rotate(180deg);
+}
+
 .trip-sj-accordion-title-row {
   display: flex;
   align-items: flex-start;
