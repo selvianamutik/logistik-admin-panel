@@ -337,6 +337,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) => _ManifestItemEditorSheet(
         initialItem: item,
         customerProducts: widget.customerProducts,
@@ -873,9 +877,11 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                               ? SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(
+                                  child: CircularProgressIndicator.adaptive(
                                     strokeWidth: 2,
-                                    color: scheme.onPrimary,
+                                    valueColor: AlwaysStoppedAnimation(
+                                      scheme.onPrimary,
+                                    ),
                                   ),
                                 )
                               : const Icon(Icons.save_rounded),
@@ -1124,7 +1130,7 @@ class _ManifestGroupSelectorField extends StatelessWidget {
     );
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       onTap: groups.length > 1 ? () => _openPicker(context) : null,
       child: InputDecorator(
         decoration: InputDecoration(
@@ -1151,6 +1157,10 @@ class _ManifestGroupSelectorField extends StatelessWidget {
     final selectedId = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Padding(
@@ -1175,7 +1185,13 @@ class _ManifestGroupSelectorField extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final group = groups[index];
                       return ListTile(
-                        contentPadding: EdgeInsets.zero,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         leading: const Icon(Icons.description_outlined),
                         title: Text(_manifestGroupPickerLabel(group)),
                         subtitle: Text(_manifestGroupSummary(group)),
@@ -1233,7 +1249,6 @@ class _ManifestGroupEditorCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1379,7 +1394,7 @@ class _PickupStopSelectorField extends StatelessWidget {
     final canChoose = pickupStops.length > 1;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       onTap: canChoose ? () => _openPicker(context, selectedStop) : null,
       child: InputDecorator(
         decoration: InputDecoration(
@@ -1406,6 +1421,10 @@ class _PickupStopSelectorField extends StatelessWidget {
     final selectedKey = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Padding(
@@ -1423,7 +1442,13 @@ class _PickupStopSelectorField extends StatelessWidget {
                 const SizedBox(height: 8),
                 ...pickupStops.map(
                   (stop) => ListTile(
-                    contentPadding: EdgeInsets.zero,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     title: Text(_pickupStopTitle(stop)),
                     subtitle: _pickupStopSubtitle(stop) == null
                         ? null
@@ -1518,7 +1543,7 @@ class _CustomerProductSelectorField extends StatelessWidget {
     }
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       onTap: () => _openPicker(context),
       child: InputDecorator(
         decoration: InputDecoration(
@@ -1549,6 +1574,10 @@ class _CustomerProductSelectorField extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) => _CustomerProductPickerSheet(
         customerProducts: customerProducts,
         selectedProductId: value,
@@ -1653,7 +1682,13 @@ class _CustomerProductPickerSheetState
                     itemBuilder: (context, index) {
                       if (index == 0) {
                         return ListTile(
-                          contentPadding: EdgeInsets.zero,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           leading: const Icon(Icons.edit_note_rounded),
                           title: const Text('Tanpa master barang'),
                           subtitle: const Text(
@@ -1668,7 +1703,13 @@ class _CustomerProductPickerSheetState
 
                       final product = filteredProducts[index - 1];
                       return ListTile(
-                        contentPadding: EdgeInsets.zero,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         leading: Icon(
                           Icons.inventory_2_outlined,
                           color: scheme.primary,
@@ -1777,14 +1818,14 @@ class _ManifestItemListTile extends StatelessWidget {
 
     return Material(
       color: scheme.surface,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         onTap: onEdit,
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: scheme.outline.withValues(alpha: 0.26)),
           ),
           child: Row(
@@ -2052,7 +2093,7 @@ class _ManifestItemCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
       ),
       child: Column(
@@ -2290,7 +2331,7 @@ class _InfoCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

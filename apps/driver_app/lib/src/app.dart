@@ -160,7 +160,9 @@ class _DriverSessionRestorePage extends StatelessWidget {
             SizedBox(
               width: 34,
               height: 34,
-              child: CircularProgressIndicator(color: scheme.primary),
+              child: CircularProgressIndicator.adaptive(
+                valueColor: AlwaysStoppedAnimation(scheme.primary),
+              ),
             ),
             const SizedBox(height: 16),
             Text(
