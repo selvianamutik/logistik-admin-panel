@@ -8,7 +8,6 @@ import {
   MASTER_DATA_IMPORT_TARGETS,
   type MasterDataImportMode,
   type MasterDataImportTarget,
-  type MasterDataImportTargetConfig,
 } from '@/lib/master-data-import-config';
 import { hasPermission } from '@/lib/rbac';
 
@@ -59,25 +58,10 @@ const STATUS_META: Record<ImportStatus, { label: string; className: string }> = 
   imported: { label: 'Terimport', className: 'badge-success' },
 };
 
-function escapeCsvValue(value: unknown) {
-  const text = value === undefined || value === null ? '' : String(value);
-  if (/[",\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
+const IMPORT_FILE_ACCEPT = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-function buildTemplateCsv(config: MasterDataImportTargetConfig) {
-  const headers = config.fields.map((field) => field.key);
-  const rows = config.templateRows.length > 0 ? config.templateRows : [Object.fromEntries(headers.map((header) => [header, '']))];
-  return [
-    headers.map(escapeCsvValue).join(','),
-    ...rows.map((row) => headers.map((header) => escapeCsvValue(row[header] || '')).join(',')),
-  ].join('\r\n');
-}
-
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+function downloadBinaryFile(filename: string, content: BlobPart, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -86,107 +70,6 @@ function downloadTextFile(filename: string, content: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function countDelimiter(line: string, delimiter: ',' | ';' | '\t') {
-  let count = 0;
-  let inQuotes = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const next = line[index + 1];
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (char === delimiter && !inQuotes) count += 1;
-  }
-
-  return count;
-}
-
-function detectCsvDelimiter(text: string): ',' | ';' | '\t' {
-  const firstDataLine = text.split(/\r?\n/).find((line) => line.trim() !== '') || '';
-  const candidates: Array<',' | ';' | '\t'> = [',', ';', '\t'];
-  const ranked = candidates
-    .map((delimiter) => ({ delimiter, count: countDelimiter(firstDataLine, delimiter) }))
-    .sort((a, b) => b.count - a.count);
-  return ranked[0]?.count > 0 ? ranked[0].delimiter : ',';
-}
-
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  const delimiter = detectCsvDelimiter(text);
-  let current = '';
-  let row: string[] = [];
-  let inQuotes = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === delimiter && !inQuotes) {
-      row.push(current);
-      current = '';
-      continue;
-    }
-
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') index += 1;
-      row.push(current);
-      if (row.some((cell) => cell.trim() !== '')) rows.push(row);
-      row = [];
-      current = '';
-      continue;
-    }
-
-    current += char;
-  }
-
-  row.push(current);
-  if (row.some((cell) => cell.trim() !== '')) rows.push(row);
-  if (inQuotes) {
-    throw new Error('Format CSV tidak valid: tanda kutip belum ditutup');
-  }
-  if (rows.length < 2) {
-    throw new Error('CSV harus memiliki header dan minimal satu baris data');
-  }
-
-  const headers = rows[0].map((header) => header.trim());
-  if (headers.some((header) => !header)) {
-    throw new Error('Header CSV tidak boleh kosong');
-  }
-  const duplicateHeader = headers.find((header, index) => headers.findIndex((item) => item.toLowerCase() === header.toLowerCase()) !== index);
-  if (duplicateHeader) {
-    throw new Error(`Header CSV duplikat: ${duplicateHeader}`);
-  }
-
-  const dataRows = rows.slice(1).map((cells, index) => {
-    if (cells.length > headers.length) {
-      throw new Error(`Baris ${index + 2} memiliki kolom lebih banyak dari header. Jika nilai berisi koma atau titik koma, bungkus nilai dengan tanda kutip.`);
-    }
-    const record: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      record[header] = (cells[index] || '').trim();
-    });
-    return record;
-  });
-
-  return { headers, rows: dataRows };
 }
 
 function formatMessages(row: ImportRowResult) {
@@ -210,6 +93,7 @@ export default function ImportDataPage() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [preview, setPreview] = useState<ImportResult | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -234,8 +118,22 @@ export default function ImportDataPage() {
     setRows([]);
   };
 
-  const handleDownloadTemplate = () => {
-    downloadTextFile(`template-import-${selectedConfig.target}.csv`, buildTemplateCsv(selectedConfig));
+  const handleDownloadTemplate = async () => {
+    setTemplateLoading(true);
+    try {
+      const { MASTER_DATA_IMPORT_XLSX_MIME, buildMasterDataImportTemplateWorkbook } = await import('@/lib/master-data-import-file');
+      const workbookBuffer = await buildMasterDataImportTemplateWorkbook(selectedConfig);
+      downloadBinaryFile(
+        `template-import-${selectedConfig.target}.xlsx`,
+        workbookBuffer as unknown as BlobPart,
+        MASTER_DATA_IMPORT_XLSX_MIME,
+      );
+      addToast('success', `Template Excel ${selectedConfig.label} siap diunduh`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Gagal membuat template Excel');
+    } finally {
+      setTemplateLoading(false);
+    }
   };
 
   const handleFileChange = async (file: File | null) => {
@@ -244,29 +142,33 @@ export default function ImportDataPage() {
       resetUploadedFile();
       return;
     }
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      resetUploadedFile();
-      addToast('error', 'Saat ini import memakai CSV. Download template lalu simpan sebagai CSV.');
-      return;
-    }
     try {
-      const text = await file.text();
-      const parsed = parseCsv(text);
+      const {
+        isMasterDataImportXlsxFile,
+        parseMasterDataImportXlsx,
+      } = await import('@/lib/master-data-import-file');
+      const isXlsx = isMasterDataImportXlsxFile(file);
+      if (!isXlsx) {
+        resetUploadedFile();
+        addToast('error', 'Format file harus Excel .xlsx. Download template Excel terbaru.');
+        return;
+      }
+      const parsed = await parseMasterDataImportXlsx(await file.arrayBuffer(), selectedConfig);
       setFileName(file.name);
       setHeaders(parsed.headers);
       setRows(parsed.rows);
-      addToast('success', `${parsed.rows.length} baris dibaca dari CSV`);
+      addToast('success', `${parsed.rows.length} baris dibaca dari Excel`);
     } catch (error) {
       setFileName('');
       setHeaders([]);
       setRows([]);
-      addToast('error', error instanceof Error ? error.message : 'Gagal membaca CSV');
+      addToast('error', error instanceof Error ? error.message : 'Gagal membaca file import');
     }
   };
 
   const submitImportRequest = async (action: 'preview' | 'commit') => {
     if (rows.length === 0) {
-      addToast('error', 'Upload CSV dulu sebelum validasi');
+      addToast('error', 'Upload file Excel dulu sebelum validasi');
       return;
     }
     if (action === 'preview') setLoadingPreview(true);
@@ -312,8 +214,8 @@ export default function ImportDataPage() {
           <div className="page-subtitle">Import master data memakai staging preview sebelum masuk database.</div>
         </div>
         <div className="page-actions">
-          <button className="btn btn-secondary" onClick={handleDownloadTemplate}>
-            <Download size={16} /> Template CSV
+          <button className="btn btn-secondary" onClick={() => void handleDownloadTemplate()} disabled={templateLoading}>
+            <Download size={16} /> {templateLoading ? 'Menyiapkan...' : 'Template Excel'}
           </button>
         </div>
       </div>
@@ -321,12 +223,12 @@ export default function ImportDataPage() {
       <div className="info-banner" style={{ marginBottom: '1rem' }}>
         <div className="info-banner-title">Batas aman import</div>
         <div className="info-banner-text">
-          Fitur ini hanya untuk master Customer, Supplier, dan Barang Gudang. Stok barang tidak diubah dari import master; stok tetap lewat pembelian atau mutasi stok agar laporan tidak mismatch.
+          Fitur ini hanya untuk master Customer, Supplier, dan Barang Gudang. Pakai template Excel agar kolom terbaca rapi; stok barang tetap tidak diubah dari import master.
         </div>
       </div>
 
       <div className="kpi-grid" style={{ marginBottom: '1rem' }}>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Baris CSV</div><div className="kpi-value">{rows.length}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Baris File</div><div className="kpi-value">{rows.length}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Tambah</div><div className="kpi-value">{preview?.summary.create || 0}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Update</div><div className="kpi-value">{preview?.summary.update || 0}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Error</div><div className="kpi-value">{preview?.summary.errors || 0}</div></div></div>
@@ -368,8 +270,8 @@ export default function ImportDataPage() {
 
         <div className="form-row" style={{ padding: '0 1rem 1rem' }}>
           <div className="form-group">
-            <label className="form-label">Upload CSV</label>
-            <input className="form-input" type="file" accept=".csv,text/csv" onChange={(event) => void handleFileChange(event.target.files?.[0] || null)} />
+            <label className="form-label">Upload Excel (.xlsx)</label>
+            <input className="form-input" type="file" accept={IMPORT_FILE_ACCEPT} onChange={(event) => void handleFileChange(event.target.files?.[0] || null)} />
             <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>{fileName || 'Belum ada file dipilih'}</div>
           </div>
           <div className="form-group">

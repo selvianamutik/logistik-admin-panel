@@ -2,7 +2,13 @@ import { loadScriptEnv } from './_env';
 
 loadScriptEnv();
 
+import ExcelJS from 'exceljs';
 import { handleMasterDataImport } from '../src/lib/api/master-data-import';
+import { MASTER_DATA_IMPORT_TARGETS } from '../src/lib/master-data-import-config';
+import {
+  buildMasterDataImportTemplateWorkbook,
+  parseMasterDataImportXlsx,
+} from '../src/lib/master-data-import-file';
 import {
   deleteDocument,
   getDocumentById,
@@ -70,6 +76,54 @@ async function cleanup(ids: string[]) {
   }
 }
 
+async function expectXlsxParseError(workbook: ExcelJS.Workbook, expectedText: string) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  let rejected = false;
+  try {
+    await parseMasterDataImportXlsx(buffer as unknown as ArrayBuffer, MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'suppliers') || MASTER_DATA_IMPORT_TARGETS[0]);
+  } catch (error) {
+    rejected = true;
+    assert(error instanceof Error && error.message.includes(expectedText), `Pesan error Excel harus memuat "${expectedText}", dapat: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  assert(rejected, `Excel invalid harus ditolak: ${expectedText}`);
+}
+
+async function auditImportFileTemplates() {
+  console.log('[audit-master-data-import] xlsx template and parser guards');
+  for (const config of MASTER_DATA_IMPORT_TARGETS) {
+    const buffer = await buildMasterDataImportTemplateWorkbook(config);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    assert(workbook.worksheets.length === 2, `Template ${config.label} harus punya sheet Template dan Panduan`);
+    assert(Boolean(workbook.getWorksheet('Template')), `Sheet Template ${config.label} tidak ditemukan`);
+    assert(Boolean(workbook.getWorksheet('Panduan')), `Sheet Panduan ${config.label} tidak ditemukan`);
+
+    const template = workbook.getWorksheet('Template');
+    assert(template, `Sheet Template ${config.label} tidak terbaca`);
+    const headerValues = config.fields.map((_, index) => String(template.getCell(5, index + 1).value || ''));
+    assert(headerValues.join('|') === config.fields.map((field) => field.key).join('|'), `Header template ${config.label} mismatch`);
+    assert(template.getCell(5, 1).value === config.fields[0].key, `Header pertama ${config.label} harus di kolom A`);
+    assert(template.getCell(5, 2).value === config.fields[1].key, `Header kedua ${config.label} harus di kolom B, bukan tergabung satu kolom`);
+
+    const parsed = await parseMasterDataImportXlsx(buffer as unknown as ArrayBuffer, config);
+    assert(parsed.headers.length === config.fields.length, `Jumlah header Excel ${config.label} mismatch`);
+    assert(parsed.rows.length === config.templateRows.length, `Jumlah contoh row Excel ${config.label} mismatch`);
+    assert(parsed.rows[0]?.[config.fields[0].key] === config.templateRows[0]?.[config.fields[0].key], `Contoh row Excel ${config.label} mismatch`);
+  }
+
+  const duplicateHeaderWorkbook = new ExcelJS.Workbook();
+  const duplicateSheet = duplicateHeaderWorkbook.addWorksheet('Template');
+  duplicateSheet.addRow(['supplierCode', 'supplierCode', 'name']);
+  duplicateSheet.addRow(['SUP-1', 'SUP-2', 'PT Duplikat']);
+  await expectXlsxParseError(duplicateHeaderWorkbook, 'duplikat');
+
+  const extraColumnWorkbook = new ExcelJS.Workbook();
+  const extraColumnSheet = extraColumnWorkbook.addWorksheet('Template');
+  extraColumnSheet.addRow(['supplierCode', 'name']);
+  extraColumnSheet.addRow(['SUP-1', 'PT Kolom Ekstra', 'tidak boleh']);
+  await expectXlsxParseError(extraColumnWorkbook, 'kolom lebih banyak');
+}
+
 async function main() {
   const suffix = Date.now().toString(36).toUpperCase();
   const createdIds: string[] = [];
@@ -86,6 +140,8 @@ async function main() {
   const customerName = `PT Audit Import ${suffix}`;
 
   try {
+    await auditImportFileTemplates();
+
     console.log('[audit-master-data-import] invalid request guards');
     const invalidAction = await readErrorResponse(await handleMasterDataImport(session, {
       action: 'execute',
