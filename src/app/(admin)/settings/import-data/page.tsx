@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle, Download, RefreshCw, Save, XCircle } from 'lucide-react';
 
 import {
@@ -93,14 +93,17 @@ export default function ImportDataPage() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [preview, setPreview] = useState<ImportResult | null>(null);
+  const [previewVersion, setPreviewVersion] = useState<number | null>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [importing, setImporting] = useState(false);
+  const dataVersionRef = useRef(0);
 
   const selectedConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === target) || MASTER_DATA_IMPORT_TARGETS[0];
   const selectedMode = MASTER_DATA_IMPORT_MODES.find((item) => item.value === mode) || MASTER_DATA_IMPORT_MODES[0];
-  const actionableCount = preview ? preview.summary.create + preview.summary.update : 0;
-  const canCommit = Boolean(preview && preview.summary.errors === 0 && actionableCount > 0 && !importing && !loadingPreview);
+  const currentPreview = previewVersion === dataVersionRef.current ? preview : null;
+  const actionableCount = currentPreview ? currentPreview.summary.create + currentPreview.summary.update : 0;
+  const canCommit = Boolean(currentPreview && rows.length > 0 && currentPreview.summary.errors === 0 && actionableCount > 0 && !importing && !loadingPreview);
 
   useEffect(() => {
     if (availableTargets.length > 0 && !availableTargets.some((item) => item.target === target)) {
@@ -109,7 +112,9 @@ export default function ImportDataPage() {
   }, [availableTargets, target]);
 
   useEffect(() => {
+    dataVersionRef.current += 1;
     setPreview(null);
+    setPreviewVersion(null);
   }, [target, mode, rows]);
 
   const resetUploadedFile = () => {
@@ -137,7 +142,9 @@ export default function ImportDataPage() {
   };
 
   const handleFileChange = async (file: File | null) => {
+    dataVersionRef.current += 1;
     setPreview(null);
+    setPreviewVersion(null);
     if (!file) {
       resetUploadedFile();
       return;
@@ -171,6 +178,7 @@ export default function ImportDataPage() {
       addToast('error', 'Upload file Excel dulu sebelum validasi');
       return;
     }
+    const requestVersion = dataVersionRef.current;
     if (action === 'preview') setLoadingPreview(true);
     if (action === 'commit') setImporting(true);
     try {
@@ -182,7 +190,11 @@ export default function ImportDataPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Import gagal diproses');
       const result = payload.data as ImportResult;
+      if (requestVersion !== dataVersionRef.current) {
+        return;
+      }
       setPreview(result);
+      setPreviewVersion(requestVersion);
       if (action === 'preview') {
         addToast(result.summary.errors > 0 ? 'warning' : 'success', result.summary.errors > 0 ? 'Preview selesai, masih ada error' : 'Preview valid');
       } else {
@@ -229,9 +241,9 @@ export default function ImportDataPage() {
 
       <div className="kpi-grid" style={{ marginBottom: '1rem' }}>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Baris File</div><div className="kpi-value">{rows.length}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Tambah</div><div className="kpi-value">{preview?.summary.create || 0}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Update</div><div className="kpi-value">{preview?.summary.update || 0}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Error</div><div className="kpi-value">{preview?.summary.errors || 0}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Tambah</div><div className="kpi-value">{currentPreview?.summary.create || 0}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap Update</div><div className="kpi-value">{currentPreview?.summary.update || 0}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Error</div><div className="kpi-value">{currentPreview?.summary.errors || 0}</div></div></div>
       </div>
 
       <div className="table-container" style={{ marginBottom: '1rem' }}>
@@ -307,20 +319,20 @@ export default function ImportDataPage() {
         </div>
       </div>
 
-      {preview && (
+      {currentPreview && (
         <div className="table-container">
           <div className="table-toolbar">
             <div className="table-toolbar-left">
               <div>
                 <div className="font-semibold">Preview Import</div>
                 <div className="text-muted text-sm">
-                  {preview.summary.totalRows} baris, {preview.summary.create} tambah, {preview.summary.update} update, {preview.summary.skip} lewati.
-                  {preview.batchId ? ` Batch: ${preview.batchId}` : ''}
+                  {currentPreview.summary.totalRows} baris, {currentPreview.summary.create} tambah, {currentPreview.summary.update} update, {currentPreview.summary.skip} lewati.
+                  {currentPreview.batchId ? ` Batch: ${currentPreview.batchId}` : ''}
                 </div>
               </div>
             </div>
             <div className="table-toolbar-right">
-              {preview.summary.errors > 0 ? (
+              {currentPreview.summary.errors > 0 ? (
                 <span className="badge badge-danger"><XCircle size={14} /> Perbaiki error dulu</span>
               ) : (
                 <span className="badge badge-success"><CheckCircle size={14} /> Valid</span>
@@ -331,7 +343,7 @@ export default function ImportDataPage() {
             <table>
               <thead><tr><th>Baris</th><th>Data</th><th>Aksi</th><th>Status</th><th>Pesan Validasi</th></tr></thead>
               <tbody>
-                {preview.rows.map((row) => {
+                {currentPreview.rows.map((row) => {
                   const meta = STATUS_META[row.status] || STATUS_META.warning;
                   return (
                     <tr key={row.rowNumber}>
