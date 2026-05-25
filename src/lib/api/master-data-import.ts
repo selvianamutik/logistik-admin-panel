@@ -12,12 +12,13 @@ import {
   updateDocument,
 } from '@/lib/repositories/document-store';
 import { hasPermission, type AppModule } from '@/lib/rbac';
-import type { Customer, CustomerProduct, Supplier, UserRole, WarehouseItem } from '@/lib/types';
+import type { Customer, CustomerProduct, Service, Supplier, TripRouteRate, UserRole, WarehouseItem } from '@/lib/types';
 
 import {
   normalizeCustomerProductPayload,
   normalizeCustomerPayload,
   normalizeSupplierPayload,
+  normalizeTripRouteRatePayload,
   normalizeWarehouseItemPayload,
 } from './generic-workflow-support';
 
@@ -77,12 +78,12 @@ export type MasterDataImportResult = {
   batchId?: string;
 };
 
-type ExistingDocument = (Customer | CustomerProduct | Supplier | WarehouseItem) & { _rev?: string };
+type ExistingDocument = (Customer | CustomerProduct | Supplier | WarehouseItem | TripRouteRate) & { _rev?: string };
 
 type TargetRuntimeConfig = {
   target: MasterDataImportTarget;
   entity: string;
-  docType: 'customer' | 'customerProduct' | 'supplier' | 'warehouseItem';
+  docType: 'customer' | 'customerProduct' | 'supplier' | 'warehouseItem' | 'tripRouteRate';
   module: AppModule;
   keyField: string;
   nameField: string;
@@ -94,6 +95,7 @@ type TargetRuntimeConfig = {
       existing?: ExistingDocument;
       customerProductCustomer?: Customer;
       supplierLookup?: SupplierLookup;
+      tripRouteRateService?: Service;
       errors: string[];
       warnings: string[];
     }
@@ -111,6 +113,11 @@ type SupplierLookup = {
 
 type CustomerLookup = {
   byName: Map<string, Customer[]>;
+};
+
+type ServiceLookup = {
+  byCode: Map<string, Service[]>;
+  byName: Map<string, Service[]>;
 };
 
 const TARGETS: Record<MasterDataImportTarget, TargetRuntimeConfig> = {
@@ -158,6 +165,21 @@ const TARGETS: Record<MasterDataImportTarget, TargetRuntimeConfig> = {
     buildPayload: buildWarehouseItemPayload,
     normalizePayload: (data, existing) => normalizeWarehouseItemPayload(data, existing as Record<string, unknown> | undefined),
   },
+  'trip-route-rates': {
+    target: 'trip-route-rates',
+    entity: 'trip-route-rates',
+    docType: 'tripRouteRate',
+    module: 'tripRouteRates',
+    keyField: 'originArea',
+    nameField: 'destinationArea',
+    keyFromExisting: (doc) => buildTripRouteRateImportKey(
+      (doc as TripRouteRate).originArea,
+      (doc as TripRouteRate).destinationArea,
+      (doc as TripRouteRate).serviceRef,
+    ),
+    buildPayload: buildTripRouteRatePayload,
+    normalizePayload: (data, existing) => normalizeTripRouteRatePayload(data, existing as Record<string, unknown> | undefined),
+  },
 };
 
 function normalizeHeader(value: string) {
@@ -184,6 +206,13 @@ function buildCustomerProductImportKey(customerRef: unknown, code: unknown) {
   const normalizedCustomerRef = normalizeTextInput(customerRef);
   const codeKey = normalizeCodeKey(code);
   return normalizedCustomerRef && codeKey ? `${normalizedCustomerRef}::${codeKey}` : '';
+}
+
+function buildTripRouteRateImportKey(originArea: unknown, destinationArea: unknown, serviceRef?: unknown) {
+  const originKey = normalizeNameKey(originArea);
+  const destinationKey = normalizeNameKey(destinationArea);
+  const serviceKey = normalizeTextInput(serviceRef) || '__SEMUA_ARMADA__';
+  return originKey && destinationKey ? `${originKey}->${destinationKey}::${serviceKey}` : '';
 }
 
 function normalizeNameKey(value: unknown) {
@@ -401,6 +430,74 @@ function buildWarehouseItemPayload(
   return payload;
 }
 
+function resolveTripRouteRateServiceReference(
+  raw: Record<string, string>,
+  serviceLookup: ServiceLookup | undefined,
+  errors: string[],
+  warnings: string[]
+) {
+  const code = normalizeCodeKey(raw.serviceCode);
+  const nameKey = normalizeNameKey(raw.serviceName);
+  if (!code && !nameKey) return null;
+  if (!serviceLookup) {
+    errors.push('Lookup kategori armada tarif trip tidak tersedia');
+    return null;
+  }
+
+  const matches = code
+    ? serviceLookup.byCode.get(code) || []
+    : serviceLookup.byName.get(nameKey) || [];
+  if (matches.length === 0) {
+    errors.push(code ? `Kategori armada tarif trip ${code} tidak ditemukan` : `Kategori armada tarif trip ${raw.serviceName} tidak ditemukan`);
+    return null;
+  }
+  if (matches.length > 1) {
+    errors.push(code ? `Kategori armada tarif trip ${code} duplikat` : `Nama kategori armada tarif trip ${raw.serviceName} duplikat. Isi Kode Jenis Armada.`);
+    return null;
+  }
+
+  const service = matches[0];
+  if (service.active === false) {
+    errors.push(`Kategori armada tarif trip ${service.code || service.name} tidak aktif`);
+    return null;
+  }
+  if (!code && nameKey) {
+    warnings.push('Kategori armada tarif trip dicocokkan dari nama. Lebih aman isi Kode Jenis Armada.');
+  }
+  if (code && nameKey && normalizeNameKey(service.name) !== nameKey) {
+    warnings.push(`Jenis armada "${raw.serviceName}" tidak sama persis dengan kode ${service.code}. Import memakai kode jenis armada.`);
+  }
+  return service;
+}
+
+function buildTripRouteRatePayload(
+  raw: Record<string, string>,
+  params: {
+    action: ImportAction;
+    tripRouteRateService?: Service;
+    errors: string[];
+  }
+) {
+  const payload: Record<string, unknown> = {};
+  setIfPresent(payload, 'originArea', raw.originArea);
+  setIfPresent(payload, 'destinationArea', raw.destinationArea);
+  setIfPresent(payload, 'rate', raw.rate);
+  setIfPresent(payload, 'overtonaseDriverRatePerTon', raw.overtonaseDriverRatePerTon);
+  setIfPresent(payload, 'notes', raw.notes);
+  setBooleanIfPresent(payload, 'active', raw.active, 'Status tarif trip', params.errors);
+
+  if (params.tripRouteRateService) {
+    payload.serviceRef = params.tripRouteRateService._id;
+  }
+
+  if (params.action === 'create') {
+    payload.overtonaseDriverRatePerTon = payload.overtonaseDriverRatePerTon ?? 0;
+    payload.active = payload.active ?? true;
+  }
+
+  return payload;
+}
+
 function buildFieldAliasMap(target: MasterDataImportTarget) {
   const config = getMasterDataImportTargetConfig(target);
   const map = new Map<string, string>();
@@ -454,7 +551,7 @@ function resolveMode(value: unknown): MasterDataImportMode | null {
 }
 
 function resolveTarget(value: unknown): MasterDataImportTarget | null {
-  return value === 'customers' || value === 'customer-products' || value === 'suppliers' || value === 'warehouse-items' ? value : null;
+  return value === 'customers' || value === 'customer-products' || value === 'suppliers' || value === 'warehouse-items' || value === 'trip-route-rates' ? value : null;
 }
 
 function resolveRequiredPermission(mode: MasterDataImportMode) {
@@ -528,6 +625,19 @@ async function loadCustomerLookup(): Promise<CustomerLookup> {
   return { byName };
 }
 
+async function loadServiceLookup(): Promise<ServiceLookup> {
+  const services = await getAllDocuments<Service>('service');
+  const byCode = new Map<string, Service[]>();
+  const byName = new Map<string, Service[]>();
+  for (const service of services) {
+    const codeKey = normalizeCodeKey(service.code);
+    const nameKey = normalizeNameKey(service.name);
+    if (codeKey) byCode.set(codeKey, [...(byCode.get(codeKey) || []), service]);
+    if (nameKey) byName.set(nameKey, [...(byName.get(nameKey) || []), service]);
+  }
+  return { byCode, byName };
+}
+
 function resolveRowAction(mode: MasterDataImportMode, existing?: ExistingDocument): ImportAction {
   if (mode === 'createOnly') return existing ? 'skip' : 'create';
   if (mode === 'updateOnly') return existing ? 'update' : 'skip';
@@ -557,6 +667,7 @@ async function evaluateImportRows(params: {
   const existingIndex = await loadExistingIndex(runtime);
   const supplierLookup = params.target === 'warehouse-items' ? await loadSupplierLookup() : undefined;
   const customerLookup = params.target === 'customer-products' ? await loadCustomerLookup() : undefined;
+  const serviceLookup = params.target === 'trip-route-rates' ? await loadServiceLookup() : undefined;
   const seenKeys = new Map<string, number>();
   const results: MasterDataImportRowResult[] = [];
 
@@ -566,6 +677,7 @@ async function evaluateImportRows(params: {
     const errors: string[] = [];
     const warnings: string[] = [];
     let customerProductCustomer: Customer | undefined;
+    let tripRouteRateService: Service | undefined;
     let keyValue = '';
     let displayName = '';
 
@@ -582,6 +694,26 @@ async function evaluateImportRows(params: {
         normalizeTextInput(mapped.code),
         normalizeTextInput(mapped.name),
       ].filter(Boolean).join(' / ');
+    } else if (params.target === 'trip-route-rates') {
+      const originKey = normalizeNameKey(mapped.originArea);
+      const destinationKey = normalizeNameKey(mapped.destinationArea);
+      if (!originKey) {
+        errors.push('Asal area trip wajib diisi');
+      }
+      if (!destinationKey) {
+        errors.push('Tujuan area trip wajib diisi');
+      }
+
+      const serviceInput = normalizeCodeKey(mapped.serviceCode) || normalizeNameKey(mapped.serviceName);
+      const resolvedService = resolveTripRouteRateServiceReference(mapped, serviceLookup, errors, warnings);
+      tripRouteRateService = resolvedService || undefined;
+      if (originKey && destinationKey && (!serviceInput || resolvedService)) {
+        keyValue = buildTripRouteRateImportKey(mapped.originArea, mapped.destinationArea, resolvedService?._id);
+      }
+      displayName = [
+        `${normalizeTextInput(mapped.originArea) || '-'} -> ${normalizeTextInput(mapped.destinationArea) || '-'}`,
+        resolvedService?.name || (serviceInput ? 'Jenis armada tidak valid' : 'Semua armada'),
+      ].filter(Boolean).join(' / ');
     } else {
       keyValue = runtime.target === 'customers'
         ? normalizeNameKey(mapped[runtime.keyField])
@@ -589,7 +721,7 @@ async function evaluateImportRows(params: {
       displayName = normalizeTextInput(mapped[runtime.nameField] || mapped[runtime.keyField]) || keyValue || '-';
     }
 
-    if (!keyValue && params.target !== 'customer-products') {
+    if (!keyValue && params.target !== 'customer-products' && params.target !== 'trip-route-rates') {
       errors.push(`${runtime.keyField === 'name' ? 'Nama customer' : runtime.keyField === 'supplierCode' ? 'Kode supplier' : 'Kode barang'} wajib diisi`);
     }
 
@@ -622,7 +754,9 @@ async function evaluateImportRows(params: {
     if (matches.length > 1) {
       errors.push(params.target === 'customer-products'
         ? 'Kode barang customer sudah ada lebih dari satu untuk customer ini. Perbaiki data master dulu sebelum import.'
-        : `${runtime.keyField === 'name' ? 'Nama customer' : 'Kode'} sudah ada lebih dari satu di database. Perbaiki data master dulu sebelum import.`);
+        : params.target === 'trip-route-rates'
+          ? 'Biaya rute trip sudah ada lebih dari satu untuk kombinasi asal, tujuan, dan jenis armada ini. Perbaiki data master dulu sebelum import.'
+          : `${runtime.keyField === 'name' ? 'Nama customer' : 'Kode'} sudah ada lebih dari satu di database. Perbaiki data master dulu sebelum import.`);
     }
     const existing = matches.length === 1 ? matches[0] : undefined;
     const action = resolveRowAction(params.mode, existing);
@@ -640,6 +774,7 @@ async function evaluateImportRows(params: {
         existing,
         customerProductCustomer,
         supplierLookup,
+        tripRouteRateService,
         errors,
         warnings,
       });

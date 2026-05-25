@@ -1,6 +1,6 @@
 import type { AppModule } from './rbac';
 
-export type MasterDataImportTarget = 'customers' | 'customer-products' | 'suppliers' | 'warehouse-items';
+export type MasterDataImportTarget = 'customers' | 'customer-products' | 'suppliers' | 'warehouse-items' | 'trip-route-rates';
 export type MasterDataImportMode = 'createOnly' | 'updateOnly' | 'upsert';
 
 export type MasterDataImportField = {
@@ -205,6 +205,47 @@ export const MASTER_DATA_IMPORT_TARGETS: MasterDataImportTargetConfig[] = [
         tireBrandDefault: '',
         tireSizeDefault: '',
         notes: '',
+        active: 'Aktif',
+      },
+    ],
+  },
+  {
+    target: 'trip-route-rates',
+    entity: 'trip-route-rates',
+    docType: 'tripRouteRate',
+    module: 'tripRouteRates',
+    label: 'Biaya Rute Trip',
+    description: 'Import master biaya rute operasional trip. Kunci cocok data memakai asal, tujuan, dan jenis armada; ini bukan tarif billing customer.',
+    keyLabel: 'Asal + Tujuan + Jenis Armada',
+    fields: [
+      { key: 'originArea', label: 'Asal Area', required: true, aliases: ['asal', 'asal area', 'area asal', 'origin', 'origin area'], example: 'Surabaya' },
+      { key: 'destinationArea', label: 'Tujuan Area', required: true, aliases: ['tujuan', 'tujuan area', 'area tujuan', 'destination', 'destination area'], example: 'Malang' },
+      { key: 'serviceCode', label: 'Kode Jenis Armada', aliases: ['kode jenis armada', 'kode armada', 'kode kategori armada', 'service code'], example: 'CDD', help: 'Opsional. Lebih aman diisi daripada nama karena nama bisa mirip.' },
+      { key: 'serviceName', label: 'Jenis Armada', aliases: ['jenis armada', 'kategori armada', 'nama jenis armada', 'service', 'service name'], example: 'CDD / Engkel', help: 'Opsional jika Kode Jenis Armada sudah diisi.' },
+      { key: 'rate', label: 'Tarif Trip', required: true, aliases: ['tarif', 'tarif trip', 'biaya', 'biaya trip', 'rate'], example: '1500000' },
+      { key: 'overtonaseDriverRatePerTon', label: 'Overtonase Driver per Ton', aliases: ['overtonase', 'tarif overtonase', 'overtonase driver', 'overtonase per ton'], example: '75000' },
+      { key: 'notes', label: 'Catatan', aliases: ['catatan', 'notes'], example: '' },
+      { key: 'active', label: 'Status Aktif', aliases: ['status', 'aktif', 'active'], example: 'Aktif' },
+    ],
+    templateRows: [
+      {
+        originArea: 'Surabaya',
+        destinationArea: 'Malang',
+        serviceCode: 'CDD',
+        serviceName: '',
+        rate: '1500000',
+        overtonaseDriverRatePerTon: '75000',
+        notes: 'Contoh tarif khusus jenis armada',
+        active: 'Aktif',
+      },
+      {
+        originArea: 'Surabaya',
+        destinationArea: 'Pasuruan',
+        serviceCode: '',
+        serviceName: '',
+        rate: '900000',
+        overtonaseDriverRatePerTon: '0',
+        notes: 'Contoh tarif umum semua armada',
         active: 'Aktif',
       },
     ],

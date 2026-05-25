@@ -15,7 +15,7 @@ import {
   getDocumentById,
   listDocumentsByFilter,
 } from '../src/lib/repositories/document-store';
-import type { Customer, CustomerProduct, Supplier, WarehouseItem } from '../src/lib/types';
+import type { Customer, CustomerProduct, Service, Supplier, TripRouteRate, WarehouseItem } from '../src/lib/types';
 
 type ImportPayload = {
   data?: {
@@ -71,6 +71,7 @@ async function cleanup(ids: string[]) {
     await deleteRows('auditLog', auditLogs);
   }
   for (const id of ids) {
+    await deleteDocument(id, 'tripRouteRate').catch(() => undefined);
     await deleteDocument(id, 'customerProduct').catch(() => undefined);
     await deleteDocument(id, 'warehouseItem').catch(() => undefined);
     await deleteDocument(id, 'supplier').catch(() => undefined);
@@ -183,12 +184,16 @@ async function main() {
     email: ownerUser.email,
     role: 'OWNER' as const,
   };
+  const [activeService] = await listDocumentsByFilter<Service>('service', { active: true });
+  assert(activeService?._id && activeService.code, 'Audit import biaya rute trip membutuhkan Jenis Armada aktif dengan kode');
   const supplierCode = `AUD-SUP-${suffix}`;
   const itemCode = `AUD-BRG-${suffix}`;
   const customerName = `PT Audit Import ${suffix}`;
   const secondCustomerName = `PT Audit Import 2 ${suffix}`;
   const inactiveCustomerName = `PT Audit Inactive ${suffix}`;
   const customerProductCode = `AUD-PRD-${suffix}`;
+  const tripOriginArea = `Audit Origin ${suffix}`;
+  const tripDestinationArea = `Audit Destination ${suffix}`;
 
   try {
     await auditImportFileTemplates();
@@ -349,6 +354,141 @@ async function main() {
       }],
     }) as Response, 'preview invalid tire');
     assert(invalidTire.data?.summary.errors === 1, 'Ban tertracking tanpa merk harus error');
+
+    console.log('[audit-master-data-import] preview trip route rate create');
+    const tripRatePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{
+        originArea: tripOriginArea,
+        destinationArea: tripDestinationArea,
+        serviceCode: activeService.code,
+        rate: '1500000',
+        overtonaseDriverRatePerTon: '75000',
+        notes: 'Audit biaya rute trip',
+        active: 'Aktif',
+      }],
+    }) as Response, 'preview trip route rate');
+    assert(tripRatePreview.data?.summary.errors === 0, 'Preview biaya rute trip harus valid');
+    assert(tripRatePreview.data.summary.create === 1, 'Preview biaya rute trip harus siap create');
+
+    console.log('[audit-master-data-import] commit trip route rate create');
+    const tripRateCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{
+        originArea: tripOriginArea,
+        destinationArea: tripDestinationArea,
+        serviceCode: activeService.code,
+        rate: '1500000',
+        overtonaseDriverRatePerTon: '75000',
+        notes: 'Audit biaya rute trip',
+        active: 'Aktif',
+      }],
+    }) as Response, 'commit trip route rate');
+    const tripRateId = tripRateCommit.data?.rows[0]?.importedId;
+    assert(tripRateId, 'Commit biaya rute trip harus mengembalikan importedId');
+    createdIds.push(tripRateId);
+    const tripRate = await getDocumentById<TripRouteRate>(tripRateId, 'tripRouteRate');
+    assert(tripRate?.originArea === tripOriginArea, 'Asal biaya rute trip mismatch');
+    assert(tripRate.destinationArea === tripDestinationArea, 'Tujuan biaya rute trip mismatch');
+    assert(tripRate.serviceRef === activeService._id, 'Biaya rute trip harus tertaut ke jenis armada');
+    assert(tripRate.rate === 1500000, 'Tarif biaya rute trip mismatch');
+    assert(tripRate.overtonaseDriverRatePerTon === 75000, 'Overtonase biaya rute trip mismatch');
+
+    console.log('[audit-master-data-import] preview duplicate trip route create-only skip');
+    const duplicateTripRatePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{
+        originArea: tripOriginArea.toLowerCase(),
+        destinationArea: tripDestinationArea.toUpperCase(),
+        serviceCode: activeService.code,
+        rate: '1600000',
+      }],
+    }) as Response, 'preview duplicate trip route rate');
+    assert(duplicateTripRatePreview.data?.summary.skip === 1, 'Biaya rute trip existing harus dilewati di createOnly');
+
+    console.log('[audit-master-data-import] commit trip route rate update-only');
+    const tripRateUpdate = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'trip-route-rates',
+      mode: 'updateOnly',
+      rows: [{
+        originArea: tripOriginArea,
+        destinationArea: tripDestinationArea,
+        serviceCode: activeService.code,
+        rate: '1750000',
+        overtonaseDriverRatePerTon: '90000',
+        notes: 'Audit biaya rute trip updated',
+      }],
+    }) as Response, 'commit trip route rate update');
+    assert(tripRateUpdate.data?.summary.update === 1 && tripRateUpdate.data.summary.imported === 1, 'Biaya rute trip update harus imported');
+    const tripRateAfterUpdate = await getDocumentById<TripRouteRate>(tripRateId, 'tripRouteRate');
+    assert(tripRateAfterUpdate?.rate === 1750000, 'Tarif biaya rute trip tidak terupdate');
+    assert(tripRateAfterUpdate.overtonaseDriverRatePerTon === 90000, 'Overtonase biaya rute trip tidak terupdate');
+
+    console.log('[audit-master-data-import] commit generic trip route rate same route');
+    const genericTripRateCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{
+        originArea: tripOriginArea,
+        destinationArea: tripDestinationArea,
+        rate: '1100000',
+        overtonaseDriverRatePerTon: '0',
+        notes: 'Audit biaya rute umum semua armada',
+      }],
+    }) as Response, 'commit generic trip route rate');
+    const genericTripRateId = genericTripRateCommit.data?.rows[0]?.importedId;
+    assert(genericTripRateId, 'Biaya rute umum semua armada harus bisa dibuat terpisah dari tarif khusus armada');
+    createdIds.push(genericTripRateId);
+    const genericTripRate = await getDocumentById<TripRouteRate>(genericTripRateId, 'tripRouteRate');
+    assert(!genericTripRate?.serviceRef, 'Biaya rute umum tidak boleh tertaut ke jenis armada');
+
+    console.log('[audit-master-data-import] preview trip route validation guards');
+    const duplicateTripRateFilePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'upsert',
+      rows: [
+        { originArea: `${tripOriginArea} Dupe`, destinationArea: `${tripDestinationArea} Dupe`, serviceCode: activeService.code, rate: '1000000' },
+        { originArea: `${tripOriginArea} Dupe`, destinationArea: `${tripDestinationArea} Dupe`, serviceCode: activeService.code, rate: '1200000' },
+      ],
+    }) as Response, 'preview duplicate trip route file');
+    assert(duplicateTripRateFilePreview.data?.summary.errors === 1, 'Duplikat biaya rute trip dalam file harus error');
+    assert(duplicateTripRateFilePreview.data.rows[1]?.errors.some((error) => error.includes('Duplikat')), 'Pesan duplikat biaya rute trip tidak muncul');
+
+    const invalidTripServicePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{ originArea: `${tripOriginArea} Invalid`, destinationArea: `${tripDestinationArea} Invalid`, serviceCode: `NO-SVC-${suffix}`, rate: '1000000' }],
+    }) as Response, 'preview invalid trip service');
+    assert(invalidTripServicePreview.data?.summary.errors === 1, 'Jenis armada biaya rute trip invalid harus error');
+    assert(invalidTripServicePreview.data.rows[0]?.errors.some((error) => error.includes('tidak ditemukan')), 'Pesan jenis armada trip tidak ditemukan tidak muncul');
+
+    const invalidTripRatePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{ originArea: `${tripOriginArea} Rate`, destinationArea: `${tripDestinationArea} Rate`, rate: '0' }],
+    }) as Response, 'preview invalid trip rate');
+    assert(invalidTripRatePreview.data?.summary.errors === 1, 'Tarif trip nol harus error');
+    assert(invalidTripRatePreview.data.rows[0]?.errors.some((error) => error.includes('Tarif trip')), 'Pesan tarif trip invalid tidak muncul');
+
+    const invalidTripOvertonasePreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'trip-route-rates',
+      mode: 'createOnly',
+      rows: [{ originArea: `${tripOriginArea} Over`, destinationArea: `${tripDestinationArea} Over`, rate: '1000000', overtonaseDriverRatePerTon: '-1' }],
+    }) as Response, 'preview invalid trip overtonase');
+    assert(invalidTripOvertonasePreview.data?.summary.errors === 1, 'Overtonase trip negatif harus error');
+    assert(invalidTripOvertonasePreview.data.rows[0]?.errors.some((error) => error.includes('overtonase')), 'Pesan overtonase trip invalid tidak muncul');
 
     console.log('[audit-master-data-import] commit customer create and update');
     const customerCommit = await readResponse(await handleMasterDataImport(session, {
