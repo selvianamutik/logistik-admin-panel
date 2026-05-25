@@ -246,7 +246,7 @@ export default function ImportDataPage() {
       <div className="empty-state">
         <AlertTriangle size={48} className="empty-state-icon" />
         <div className="empty-state-title">Tidak ada akses import</div>
-        <div className="empty-state-text">Akses import mengikuti hak tambah atau update pada modul Customer, Supplier, dan Barang Gudang.</div>
+        <div className="empty-state-text">Akses import mengikuti hak tambah atau update pada modul Customer, Master Barang Customer, Supplier, dan Barang Gudang.</div>
       </div>
     );
   }
@@ -268,7 +268,7 @@ export default function ImportDataPage() {
       <div className="info-banner" style={{ marginBottom: '1rem' }}>
         <div className="info-banner-title">Batas aman import</div>
         <div className="info-banner-text">
-          Fitur ini hanya untuk master Customer, Supplier, dan Barang Gudang. Pakai template Excel agar kolom terbaca rapi; stok barang tetap tidak diubah dari import master.
+          Fitur ini hanya untuk master Customer, Master Barang Customer, Supplier, dan Barang Gudang. Pakai template Excel agar kolom terbaca rapi; stok barang gudang tetap tidak diubah dari import master.
         </div>
       </div>
 

@@ -12,9 +12,10 @@ import {
   updateDocument,
 } from '@/lib/repositories/document-store';
 import { hasPermission, type AppModule } from '@/lib/rbac';
-import type { Customer, Supplier, UserRole, WarehouseItem } from '@/lib/types';
+import type { Customer, CustomerProduct, Supplier, UserRole, WarehouseItem } from '@/lib/types';
 
 import {
+  normalizeCustomerProductPayload,
   normalizeCustomerPayload,
   normalizeSupplierPayload,
   normalizeWarehouseItemPayload,
@@ -76,12 +77,12 @@ export type MasterDataImportResult = {
   batchId?: string;
 };
 
-type ExistingDocument = (Customer | Supplier | WarehouseItem) & { _rev?: string };
+type ExistingDocument = (Customer | CustomerProduct | Supplier | WarehouseItem) & { _rev?: string };
 
 type TargetRuntimeConfig = {
   target: MasterDataImportTarget;
   entity: string;
-  docType: 'customer' | 'supplier' | 'warehouseItem';
+  docType: 'customer' | 'customerProduct' | 'supplier' | 'warehouseItem';
   module: AppModule;
   keyField: string;
   nameField: string;
@@ -91,6 +92,7 @@ type TargetRuntimeConfig = {
     params: {
       action: ImportAction;
       existing?: ExistingDocument;
+      customerProductCustomer?: Customer;
       supplierLookup?: SupplierLookup;
       errors: string[];
       warnings: string[];
@@ -107,6 +109,10 @@ type SupplierLookup = {
   byName: Map<string, Supplier[]>;
 };
 
+type CustomerLookup = {
+  byName: Map<string, Customer[]>;
+};
+
 const TARGETS: Record<MasterDataImportTarget, TargetRuntimeConfig> = {
   customers: {
     target: 'customers',
@@ -118,6 +124,17 @@ const TARGETS: Record<MasterDataImportTarget, TargetRuntimeConfig> = {
     keyFromExisting: (doc) => normalizeNameKey((doc as Customer).name),
     buildPayload: buildCustomerPayload,
     normalizePayload: (data, existing) => normalizeCustomerPayload(data, existing as Record<string, unknown> | undefined),
+  },
+  'customer-products': {
+    target: 'customer-products',
+    entity: 'customer-products',
+    docType: 'customerProduct',
+    module: 'customers',
+    keyField: 'code',
+    nameField: 'name',
+    keyFromExisting: (doc) => buildCustomerProductImportKey((doc as CustomerProduct).customerRef, (doc as CustomerProduct).code),
+    buildPayload: buildCustomerProductPayload,
+    normalizePayload: (data, existing) => normalizeCustomerProductPayload(data, existing as Record<string, unknown> | undefined),
   },
   suppliers: {
     target: 'suppliers',
@@ -161,6 +178,12 @@ function normalizeCodeKey(value: unknown) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function buildCustomerProductImportKey(customerRef: unknown, code: unknown) {
+  const normalizedCustomerRef = normalizeTextInput(customerRef);
+  const codeKey = normalizeCodeKey(code);
+  return normalizedCustomerRef && codeKey ? `${normalizedCustomerRef}::${codeKey}` : '';
 }
 
 function normalizeNameKey(value: unknown) {
@@ -233,6 +256,69 @@ function buildSupplierPayload(
 
   if (params.action === 'create') {
     payload.defaultTermDays = payload.defaultTermDays ?? 14;
+    payload.active = payload.active ?? true;
+  }
+
+  return payload;
+}
+
+function resolveCustomerReference(
+  raw: Record<string, string>,
+  customerLookup: CustomerLookup | undefined,
+  errors: string[]
+) {
+  const nameKey = normalizeNameKey(raw.customerName);
+  if (!nameKey) {
+    errors.push('Nama customer wajib diisi');
+    return null;
+  }
+  if (!customerLookup) {
+    errors.push('Lookup customer tidak tersedia');
+    return null;
+  }
+
+  const matches = customerLookup.byName.get(nameKey) || [];
+  if (matches.length === 0) {
+    errors.push(`Customer ${raw.customerName} tidak ditemukan`);
+    return null;
+  }
+  if (matches.length > 1) {
+    errors.push(`Nama customer ${raw.customerName} duplikat. Rapikan master customer dulu sebelum import barang customer.`);
+    return null;
+  }
+  return matches[0];
+}
+
+function buildCustomerProductPayload(
+  raw: Record<string, string>,
+  params: {
+    action: ImportAction;
+    customerProductCustomer?: Customer;
+    errors: string[];
+  }
+) {
+  const payload: Record<string, unknown> = {};
+  if (!params.customerProductCustomer) {
+    params.errors.push('Customer barang tidak ditemukan');
+    return payload;
+  }
+
+  payload.customerRef = params.customerProductCustomer._id;
+  setIfPresent(payload, 'code', raw.code);
+  setIfPresent(payload, 'name', raw.name);
+  setIfPresent(payload, 'description', raw.description);
+  setIfPresent(payload, 'defaultQtyKoli', raw.defaultQtyKoli);
+  setIfPresent(payload, 'defaultWeightInputValue', raw.defaultWeightInputValue);
+  setIfPresent(payload, 'defaultWeightInputUnit', raw.defaultWeightInputUnit);
+  setIfPresent(payload, 'defaultVolumeInputValue', raw.defaultVolumeInputValue);
+  setIfPresent(payload, 'defaultVolumeInputUnit', raw.defaultVolumeInputUnit);
+  setIfPresent(payload, 'notes', raw.notes);
+  setBooleanIfPresent(payload, 'active', raw.active, 'Status barang customer', params.errors);
+
+  if (params.action === 'create') {
+    payload.defaultQtyKoli = payload.defaultQtyKoli ?? 1;
+    payload.defaultWeightInputUnit = payload.defaultWeightInputUnit ?? 'KG';
+    payload.defaultVolumeInputUnit = payload.defaultVolumeInputUnit ?? 'M3';
     payload.active = payload.active ?? true;
   }
 
@@ -368,7 +454,7 @@ function resolveMode(value: unknown): MasterDataImportMode | null {
 }
 
 function resolveTarget(value: unknown): MasterDataImportTarget | null {
-  return value === 'customers' || value === 'suppliers' || value === 'warehouse-items' ? value : null;
+  return value === 'customers' || value === 'customer-products' || value === 'suppliers' || value === 'warehouse-items' ? value : null;
 }
 
 function resolveRequiredPermission(mode: MasterDataImportMode) {
@@ -432,6 +518,16 @@ async function loadSupplierLookup(): Promise<SupplierLookup> {
   return { byCode, byName };
 }
 
+async function loadCustomerLookup(): Promise<CustomerLookup> {
+  const customers = await getAllDocuments<Customer>('customer');
+  const byName = new Map<string, Customer[]>();
+  for (const customer of customers) {
+    const nameKey = normalizeNameKey(customer.name);
+    if (nameKey) byName.set(nameKey, [...(byName.get(nameKey) || []), customer]);
+  }
+  return { byName };
+}
+
 function resolveRowAction(mode: MasterDataImportMode, existing?: ExistingDocument): ImportAction {
   if (mode === 'createOnly') return existing ? 'skip' : 'create';
   if (mode === 'updateOnly') return existing ? 'update' : 'skip';
@@ -460,6 +556,7 @@ async function evaluateImportRows(params: {
   const runtime = TARGETS[params.target];
   const existingIndex = await loadExistingIndex(runtime);
   const supplierLookup = params.target === 'warehouse-items' ? await loadSupplierLookup() : undefined;
+  const customerLookup = params.target === 'customer-products' ? await loadCustomerLookup() : undefined;
   const seenKeys = new Map<string, number>();
   const results: MasterDataImportRowResult[] = [];
 
@@ -468,11 +565,31 @@ async function evaluateImportRows(params: {
     const { mapped, unknownColumns, duplicateColumns } = mapInputRow(params.target, params.rows[index]);
     const errors: string[] = [];
     const warnings: string[] = [];
-    const keyValue = runtime.target === 'customers'
-      ? normalizeNameKey(mapped[runtime.keyField])
-      : normalizeCodeKey(mapped[runtime.keyField]);
+    let customerProductCustomer: Customer | undefined;
+    let keyValue = '';
+    let displayName = '';
 
-    if (!keyValue) {
+    if (params.target === 'customer-products') {
+      const resolvedCustomer = resolveCustomerReference(mapped, customerLookup, errors);
+      customerProductCustomer = resolvedCustomer || undefined;
+      const codeKey = normalizeCodeKey(mapped.code);
+      if (!codeKey) {
+        errors.push('Kode barang customer wajib diisi untuk import');
+      }
+      keyValue = resolvedCustomer ? buildCustomerProductImportKey(resolvedCustomer._id, mapped.code) : '';
+      displayName = [
+        resolvedCustomer?.name || normalizeTextInput(mapped.customerName),
+        normalizeTextInput(mapped.code),
+        normalizeTextInput(mapped.name),
+      ].filter(Boolean).join(' / ');
+    } else {
+      keyValue = runtime.target === 'customers'
+        ? normalizeNameKey(mapped[runtime.keyField])
+        : normalizeCodeKey(mapped[runtime.keyField]);
+      displayName = normalizeTextInput(mapped[runtime.nameField] || mapped[runtime.keyField]) || keyValue || '-';
+    }
+
+    if (!keyValue && params.target !== 'customer-products') {
       errors.push(`${runtime.keyField === 'name' ? 'Nama customer' : runtime.keyField === 'supplierCode' ? 'Kode supplier' : 'Kode barang'} wajib diisi`);
     }
 
@@ -503,10 +620,15 @@ async function evaluateImportRows(params: {
 
     const matches = keyValue ? existingIndex.get(keyValue) || [] : [];
     if (matches.length > 1) {
-      errors.push(`${runtime.keyField === 'name' ? 'Nama customer' : 'Kode'} sudah ada lebih dari satu di database. Perbaiki data master dulu sebelum import.`);
+      errors.push(params.target === 'customer-products'
+        ? 'Kode barang customer sudah ada lebih dari satu untuk customer ini. Perbaiki data master dulu sebelum import.'
+        : `${runtime.keyField === 'name' ? 'Nama customer' : 'Kode'} sudah ada lebih dari satu di database. Perbaiki data master dulu sebelum import.`);
     }
     const existing = matches.length === 1 ? matches[0] : undefined;
     const action = resolveRowAction(params.mode, existing);
+    if (params.target === 'customer-products' && customerProductCustomer?.active === false && action === 'create') {
+      errors.push(`Customer ${customerProductCustomer.name} tidak aktif dan tidak bisa dipakai untuk master barang baru`);
+    }
     if (action === 'skip') {
       warnings.push(existing ? 'Data sudah ada, dilewati oleh mode Tambah baru saja' : 'Data belum ada, dilewati oleh mode Update data yang sudah ada');
     }
@@ -516,6 +638,7 @@ async function evaluateImportRows(params: {
       const payload = runtime.buildPayload(mapped, {
         action,
         existing,
+        customerProductCustomer,
         supplierLookup,
         errors,
         warnings,
@@ -527,14 +650,13 @@ async function evaluateImportRows(params: {
       }
     }
 
-    const displayName = normalizeTextInput(mapped[runtime.nameField] || mapped[runtime.keyField]) || keyValue || '-';
     const status: ImportStatus = errors.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'ready';
     results.push({
       rowNumber,
       status,
       action,
       keyValue,
-      displayName,
+      displayName: displayName || keyValue || '-',
       existingId: existing?._id,
       errors,
       warnings,

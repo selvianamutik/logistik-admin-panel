@@ -15,7 +15,7 @@ import {
   getDocumentById,
   listDocumentsByFilter,
 } from '../src/lib/repositories/document-store';
-import type { Customer, Supplier, WarehouseItem } from '../src/lib/types';
+import type { Customer, CustomerProduct, Supplier, WarehouseItem } from '../src/lib/types';
 
 type ImportPayload = {
   data?: {
@@ -71,6 +71,7 @@ async function cleanup(ids: string[]) {
     await deleteRows('auditLog', auditLogs);
   }
   for (const id of ids) {
+    await deleteDocument(id, 'customerProduct').catch(() => undefined);
     await deleteDocument(id, 'warehouseItem').catch(() => undefined);
     await deleteDocument(id, 'supplier').catch(() => undefined);
     await deleteDocument(id, 'customer').catch(() => undefined);
@@ -185,6 +186,9 @@ async function main() {
   const supplierCode = `AUD-SUP-${suffix}`;
   const itemCode = `AUD-BRG-${suffix}`;
   const customerName = `PT Audit Import ${suffix}`;
+  const secondCustomerName = `PT Audit Import 2 ${suffix}`;
+  const inactiveCustomerName = `PT Audit Inactive ${suffix}`;
+  const customerProductCode = `AUD-PRD-${suffix}`;
 
   try {
     await auditImportFileTemplates();
@@ -380,6 +384,183 @@ async function main() {
     const customerAfterUpdate = await getDocumentById<Customer>(customerId, 'customer');
     assert(customerAfterUpdate?.phone === '0819999999', 'Phone customer tidak terupdate');
     assert(customerAfterUpdate.creditLimitAmount === 2000000, 'Limit customer tidak terupdate');
+
+    console.log('[audit-master-data-import] commit second customer for customer-product isolation');
+    const secondCustomerCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'customers',
+      mode: 'createOnly',
+      rows: [{
+        name: secondCustomerName,
+        address: 'Audit Address 2',
+        contactPerson: 'Audit PIC 2',
+        active: 'Aktif',
+      }],
+    }) as Response, 'commit second customer');
+    const secondCustomerId = secondCustomerCommit.data?.rows[0]?.importedId;
+    assert(secondCustomerId, 'Commit customer kedua harus mengembalikan importedId');
+    createdIds.push(secondCustomerId);
+
+    console.log('[audit-master-data-import] commit inactive customer for customer-product guard');
+    const inactiveCustomerCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'customers',
+      mode: 'createOnly',
+      rows: [{
+        name: inactiveCustomerName,
+        address: 'Audit Inactive Address',
+        contactPerson: 'Audit Inactive PIC',
+        active: 'Nonaktif',
+      }],
+    }) as Response, 'commit inactive customer');
+    const inactiveCustomerId = inactiveCustomerCommit.data?.rows[0]?.importedId;
+    assert(inactiveCustomerId, 'Commit customer nonaktif harus mengembalikan importedId');
+    createdIds.push(inactiveCustomerId);
+
+    console.log('[audit-master-data-import] preview customer product create');
+    const productPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{
+        customerName,
+        code: customerProductCode,
+        name: 'Audit Barang Customer',
+        description: 'Audit barang untuk order',
+        defaultQtyKoli: '2',
+        defaultWeightInputValue: '12.5',
+        defaultWeightInputUnit: 'KG',
+        defaultVolumeInputValue: '50',
+        defaultVolumeInputUnit: 'LITER',
+        active: 'Aktif',
+      }],
+    }) as Response, 'preview customer product');
+    assert(productPreview.data?.summary.errors === 0, 'Preview barang customer harus valid');
+    assert(productPreview.data.summary.create === 1, 'Preview barang customer harus siap create');
+
+    console.log('[audit-master-data-import] commit customer product create');
+    const productCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{
+        customerName,
+        code: customerProductCode,
+        name: 'Audit Barang Customer',
+        description: 'Audit barang untuk order',
+        defaultQtyKoli: '2',
+        defaultWeightInputValue: '12.5',
+        defaultWeightInputUnit: 'KG',
+        defaultVolumeInputValue: '50',
+        defaultVolumeInputUnit: 'LITER',
+        active: 'Aktif',
+      }],
+    }) as Response, 'commit customer product');
+    const productId = productCommit.data?.rows[0]?.importedId;
+    assert(productId, 'Commit barang customer harus mengembalikan importedId');
+    createdIds.push(productId);
+    const customerProduct = await getDocumentById<CustomerProduct>(productId, 'customerProduct');
+    assert(customerProduct?.customerRef === customerId, 'Barang customer harus tertaut ke customer yang benar');
+    assert(customerProduct.code === customerProductCode, 'Kode barang customer mismatch');
+    assert(customerProduct.defaultQtyKoli === 2, 'Default koli barang customer mismatch');
+    assert(customerProduct.defaultWeightInputValue === 12.5 && customerProduct.defaultWeight === 12.5, 'Default berat barang customer mismatch');
+    assert(customerProduct.defaultVolumeInputValue === 50 && customerProduct.defaultVolume === 0.05, 'Default volume barang customer mismatch');
+
+    console.log('[audit-master-data-import] preview duplicate customer product in same file');
+    const duplicateProductPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'upsert',
+      rows: [
+        { customerName, code: customerProductCode, name: 'Audit Barang Customer A' },
+        { customerName, code: customerProductCode, name: 'Audit Barang Customer B' },
+      ],
+    }) as Response, 'preview duplicate customer product');
+    assert(duplicateProductPreview.data?.summary.errors === 1, 'Duplikat barang customer dalam file harus error');
+    assert(duplicateProductPreview.data.rows[1]?.errors.some((error) => error.includes('Duplikat')), 'Pesan duplikat barang customer tidak muncul');
+
+    console.log('[audit-master-data-import] commit customer product update-only');
+    const productUpdate = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'customer-products',
+      mode: 'updateOnly',
+      rows: [{
+        customerName,
+        code: customerProductCode,
+        name: 'Audit Barang Customer Updated',
+        defaultWeightInputValue: '1',
+        defaultWeightInputUnit: 'TON',
+        active: 'Nonaktif',
+      }],
+    }) as Response, 'commit customer product update');
+    assert(productUpdate.data?.summary.update === 1 && productUpdate.data.summary.imported === 1, 'Barang customer update harus imported');
+    const customerProductAfterUpdate = await getDocumentById<CustomerProduct>(productId, 'customerProduct');
+    assert(customerProductAfterUpdate?.name === 'Audit Barang Customer Updated', 'Nama barang customer tidak terupdate');
+    assert(customerProductAfterUpdate.defaultWeightInputValue === 1 && customerProductAfterUpdate.defaultWeight === 1000, 'Update berat TON barang customer mismatch');
+    assert(customerProductAfterUpdate.active === false, 'Status barang customer tidak terupdate');
+
+    console.log('[audit-master-data-import] commit same customer product code for different customer');
+    const secondProductCommit = await readResponse(await handleMasterDataImport(session, {
+      action: 'commit',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{
+        customerName: secondCustomerName,
+        code: customerProductCode,
+        name: 'Audit Barang Customer Kedua',
+        defaultQtyKoli: '1',
+        active: 'Aktif',
+      }],
+    }) as Response, 'commit second customer product');
+    const secondProductId = secondProductCommit.data?.rows[0]?.importedId;
+    assert(secondProductId, 'Kode barang customer yang sama di customer berbeda harus bisa dibuat');
+    createdIds.push(secondProductId);
+    const secondCustomerProduct = await getDocumentById<CustomerProduct>(secondProductId, 'customerProduct');
+    assert(secondCustomerProduct?.customerRef === secondCustomerId, 'Barang customer kedua harus tertaut ke customer kedua');
+    assert(secondCustomerProduct.code === customerProductCode, 'Kode barang customer kedua mismatch');
+
+    console.log('[audit-master-data-import] preview customer product validation guards');
+    const missingCustomerProductPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{ customerName: `PT Tidak Ada ${suffix}`, code: `AUD-MISS-${suffix}`, name: 'Barang Missing Customer' }],
+    }) as Response, 'preview missing customer product');
+    assert(missingCustomerProductPreview.data?.summary.errors === 1, 'Customer tidak ditemukan harus error');
+    assert(missingCustomerProductPreview.data.rows[0]?.errors.some((error) => error.includes('tidak ditemukan')), 'Pesan customer tidak ditemukan tidak muncul');
+
+    const missingCodeProductPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{ customerName, name: 'Barang Tanpa Kode' }],
+    }) as Response, 'preview missing customer product code');
+    assert(missingCodeProductPreview.data?.summary.errors === 1, 'Kode barang customer kosong harus error');
+    assert(missingCodeProductPreview.data.rows[0]?.errors.some((error) => error.includes('Kode barang customer wajib')), 'Pesan kode barang customer wajib tidak muncul');
+
+    const invalidUnitProductPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{
+        customerName,
+        code: `AUBU-${suffix}`,
+        name: 'Barang Unit Invalid',
+        defaultWeightInputValue: '1',
+        defaultWeightInputUnit: 'GRAM',
+      }],
+    }) as Response, 'preview invalid customer product unit');
+    assert(invalidUnitProductPreview.data?.summary.errors === 1, 'Satuan barang customer invalid harus error');
+    assert(invalidUnitProductPreview.data.rows[0]?.errors.some((error) => error.includes('Satuan default berat')), 'Pesan satuan berat invalid tidak muncul');
+
+    const inactiveCustomerProductPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'customer-products',
+      mode: 'createOnly',
+      rows: [{ customerName: inactiveCustomerName, code: `AUIN-${suffix}`, name: 'Barang Customer Nonaktif' }],
+    }) as Response, 'preview inactive customer product');
+    assert(inactiveCustomerProductPreview.data?.summary.errors === 1, 'Tambah barang untuk customer nonaktif harus error');
+    assert(inactiveCustomerProductPreview.data.rows[0]?.errors.some((error) => error.includes('tidak aktif')), 'Pesan customer nonaktif tidak muncul');
 
     console.log('[audit-master-data-import] PASS');
   } finally {

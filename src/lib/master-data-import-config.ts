@@ -1,6 +1,6 @@
 import type { AppModule } from './rbac';
 
-export type MasterDataImportTarget = 'customers' | 'suppliers' | 'warehouse-items';
+export type MasterDataImportTarget = 'customers' | 'customer-products' | 'suppliers' | 'warehouse-items';
 export type MasterDataImportMode = 'createOnly' | 'updateOnly' | 'upsert';
 
 export type MasterDataImportField = {
@@ -108,6 +108,43 @@ export const MASTER_DATA_IMPORT_TARGETS: MasterDataImportTargetConfig[] = [
         phone: '0811111111',
         address: 'Jl. Raya Gudang',
         defaultTermDays: '14',
+        notes: '',
+        active: 'Aktif',
+      },
+    ],
+  },
+  {
+    target: 'customer-products',
+    entity: 'customer-products',
+    docType: 'customerProduct',
+    module: 'customers',
+    label: 'Master Barang Customer',
+    description: 'Import master barang milik customer untuk pilihan item Order/SJ. Kunci cocok data memakai nama customer dan kode barang customer; tidak terkait stok gudang.',
+    keyLabel: 'Customer + Kode Barang Customer',
+    fields: [
+      { key: 'customerName', label: 'Nama Customer', required: true, aliases: ['customer', 'nama customer', 'customer name'], example: 'PT Contoh Logistik', help: 'Harus sama dengan master Customer yang sudah ada. Customer nonaktif tidak bisa dipakai untuk tambah barang baru.' },
+      { key: 'code', label: 'Kode Barang Customer', required: true, aliases: ['kode', 'kode barang customer', 'product code', 'kode barang'], example: 'BRG-CUST-001', help: 'Wajib untuk import agar update aman per customer. Kode boleh sama di customer berbeda.' },
+      { key: 'name', label: 'Nama Barang Customer', required: true, aliases: ['nama', 'nama barang', 'nama barang customer', 'product name'], example: 'Karton Produk A' },
+      { key: 'description', label: 'Deskripsi Default', aliases: ['deskripsi', 'description', 'deskripsi default'], example: 'Karton Produk A', help: 'Akan mengisi deskripsi item order/SJ saat barang dipilih.' },
+      { key: 'defaultQtyKoli', label: 'Default Koli', aliases: ['koli default', 'qty koli default', 'default qty koli', 'qty', 'koli'], example: '1' },
+      { key: 'defaultWeightInputValue', label: 'Default Berat per Koli', aliases: ['berat default', 'berat per koli', 'default weight', 'default berat', 'weight'], example: '10', help: 'Nilai berat per koli. Sistem mengalikan dengan qty koli saat barang dipakai.' },
+      { key: 'defaultWeightInputUnit', label: 'Satuan Berat', aliases: ['satuan berat', 'weight unit', 'unit berat'], example: 'KG', help: 'Pilihan: KG atau TON.' },
+      { key: 'defaultVolumeInputValue', label: 'Default Volume per Koli', aliases: ['volume default', 'volume per koli', 'default volume', 'volume'], example: '0.05', help: 'Nilai volume per koli. Sistem mengalikan dengan qty koli saat barang dipakai.' },
+      { key: 'defaultVolumeInputUnit', label: 'Satuan Volume', aliases: ['satuan volume', 'volume unit', 'unit volume'], example: 'M3', help: 'Pilihan: M3, LITER, atau KL.' },
+      { key: 'notes', label: 'Catatan Internal', aliases: ['catatan', 'notes', 'catatan internal'], example: '' },
+      { key: 'active', label: 'Status Aktif', aliases: ['status', 'aktif', 'active'], example: 'Aktif' },
+    ],
+    templateRows: [
+      {
+        customerName: 'PT Contoh Logistik',
+        code: 'BRG-CUST-001',
+        name: 'Karton Produk A',
+        description: 'Karton Produk A',
+        defaultQtyKoli: '1',
+        defaultWeightInputValue: '10',
+        defaultWeightInputUnit: 'KG',
+        defaultVolumeInputValue: '0.05',
+        defaultVolumeInputUnit: 'M3',
         notes: '',
         active: 'Aktif',
       },
