@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Car } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 
 import { useApp, useToast } from '../../layout';
 import {
-    buildVehiclePrintHtml,
     buildVehiclesQuery,
     getAvailableVehicleServiceOptions,
     getVehicleNextAction,
@@ -18,8 +17,6 @@ import {
     type VehicleTireSummary,
 } from '@/lib/fleet-vehicle-page-support';
 import { formatDate, formatQuantity, VEHICLE_STATUS_MAP } from '@/lib/utils';
-import { exportVehicles } from '@/lib/export';
-import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -42,8 +39,6 @@ export default function VehiclesPage() {
     const [tireSummaryByVehicle, setTireSummaryByVehicle] = useState<Record<string, VehicleTireSummary>>({});
     const canCreateVehicle = user ? hasPermission(user.role, 'vehicles', 'create') : false;
     const canManageVehicle = user ? hasPermission(user.role, 'vehicles', 'update') : false;
-    const canExportVehicles = user ? hasPermission(user.role, 'vehicles', 'export') : false;
-    const canPrintVehicles = user ? hasPermission(user.role, 'vehicles', 'print') : false;
 
     useEffect(() => {
         setPage(1);
@@ -137,46 +132,6 @@ export default function VehiclesPage() {
                     <h1 className="page-title">Kendaraan</h1>
                 </div>
                 <div className="page-actions">
-                    {canExportVehicles && <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={async () => {
-                            try {
-                                await exportVehicles(await fetchAllMatchingVehicles() as unknown as Record<string, unknown>[]);
-                                addToast('success', 'Excel kendaraan berhasil di-download');
-                            } catch (error) {
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel kendaraan');
-                            }
-                        }}
-                    >
-                        <FileDown size={15} /> Excel
-                    </button>}
-                    {canPrintVehicles && <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={async () => {
-                            const printWindow = openPrintWindow('Menyiapkan print kendaraan...');
-                            if (!printWindow) {
-                                addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-                                return;
-                            }
-                            try {
-                                const company = await fetchCompanyProfile().catch(() => null);
-                                const printableVehicles = await fetchAllMatchingVehicles();
-                                openBrandedPrint({
-                                    title: 'Daftar Kendaraan',
-                                    company,
-                                    targetWindow: printWindow,
-                                    bodyHtml: buildVehiclePrintHtml(printableVehicles, services),
-                                });
-                            } catch (error) {
-                                try {
-                                    printWindow.close();
-                                } catch {}
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print kendaraan');
-                            }
-                        }}
-                    >
-                        <Printer size={15} /> Print
-                    </button>}
                     {canCreateVehicle && <Link href="/fleet/vehicles/new" className="btn btn-primary"><Plus size={18} /> Tambah Kendaraan</Link>}
                 </div>
             </div>

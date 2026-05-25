@@ -3,14 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useApp, useToast } from '../layout';
-import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Users, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
-import { getBusinessDateValue } from '@/lib/business-date';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatCreditLimitCurrency } from '@/lib/customer-credit-limit';
-import { exportToExcel } from '@/lib/export';
-import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { Customer } from '@/lib/types';
@@ -37,8 +34,6 @@ export default function CustomersPage() {
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const canCreateCustomers = user ? hasPermission(user.role, 'customers', 'create') : false;
     const canManageCustomers = user ? hasPermission(user.role, 'customers', 'update') : false;
-    const canExportCustomers = user ? hasPermission(user.role, 'customers', 'export') : false;
-    const canPrintCustomers = user ? hasPermission(user.role, 'customers', 'print') : false;
 
     const buildCustomersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -236,87 +231,6 @@ export default function CustomersPage() {
                     <h1 className="page-title">Customer</h1>
                 </div>
                 <div className="page-actions">
-                    {canExportCustomers && <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={async () => {
-                            try {
-                                await exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
-                                    { header: 'Nama', key: 'name', width: 25 },
-                                    { header: 'Kontak', key: 'contactPerson', width: 20 },
-                                    { header: 'Telepon', key: 'phone', width: 18 },
-                                    { header: 'Email', key: 'email', width: 25 },
-                                    { header: 'Alamat', key: 'address', width: 35 },
-                                    { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
-                                    { header: 'Limit Piutang', key: 'creditLimitAmount', width: 16 },
-                                ], `customer-${getBusinessDateValue()}`, 'Customer');
-                                addToast('success', 'Excel customer berhasil di-download');
-                            } catch (error) {
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel customer');
-                            }
-                        }}
-                    >
-                        <FileDown size={15} /> Excel
-                    </button>}
-                    {canPrintCustomers && <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={async () => {
-                            const printWindow = openPrintWindow('Menyiapkan print customer...');
-                            if (!printWindow) {
-                                addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-                                return;
-                            }
-                            try {
-                                const company = await fetchCompanyProfile().catch(() => null);
-                                const printableCustomers = await fetchAllMatchingCustomers();
-                                const printableIds = printableCustomers.map(customer => customer._id).join(',');
-                                const summaryRes = await fetch(`/api/data?entity=customers-summary${printableIds ? `&ids=${encodeURIComponent(printableIds)}` : ''}`);
-                                const summaryPayload = await summaryRes.json();
-                                if (!summaryRes.ok) {
-                                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
-                                }
-                                const printableCounts = summaryPayload.data?.productCounts || {};
-                                openBrandedPrint({
-                                    title: 'Daftar Customer',
-                                    company,
-                                    targetWindow: printWindow,
-                                    bodyHtml: `
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Nama</th>
-                                                <th>Kontak</th>
-                                                <th>Telepon</th>
-                                                <th>Email</th>
-                                                <th>Alamat</th>
-                                                <th>Format SJ</th>
-                                                <th>Limit Piutang</th>
-                                                <th>Master Barang</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${printableCustomers.map(customer => `<tr>
-                                                <td class="b">${customer.name}</td>
-                                                <td>${customer.contactPerson || '-'}</td>
-                                                <td>${customer.phone || '-'}</td>
-                                                <td>${customer.email || '-'}</td>
-                                                <td>${customer.address || '-'}</td>
-                                                <td>${customer.deliveryOrderPrefix || 'SJ'}</td>
-                                                <td>${customer.creditLimitAmount ? formatCreditLimitCurrency(customer.creditLimitAmount) : 'Tanpa limit'}</td>
-                                                <td>${printableCounts[customer._id] || 0} barang</td>
-                                            </tr>`).join('')}
-                                        </tbody>
-                                    </table>`,
-                                });
-                            } catch (error) {
-                                try {
-                                    printWindow.close();
-                                } catch {}
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print customer');
-                            }
-                        }}
-                    >
-                        <Printer size={15} /> Print
-                    </button>}
                     {canCreateCustomers && <button className="btn btn-primary" onClick={openNew}>
                         <Plus size={18} /> Tambah Customer
                     </button>}
