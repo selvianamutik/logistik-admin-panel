@@ -137,4 +137,4 @@ CALLMEBOT_ENABLED=true
 `SUPABASE_PROJECT_URL` can be used instead of `SUPABASE_URL`. `SUPABASE_SERVICE_KEY`, `SUPABASE_SECRET_KEY`, or `SUPABASE_SERVICE_ROLE` are accepted as service-role key aliases, but keep them server-side only.
 
 CallMeBot is only used after successful driver actions that Admin Operasional may need to see, such as incident reports, driver incident resolution requests, SJ/trip status updates, and trip closure requests. If CallMeBot is not configured or fails, the main workflow still succeeds and the failure is logged server-side.
-Activate the Admin Operasional WhatsApp number in CallMeBot first, then put the generated API key in `CALLMEBOT_API_KEY`. Keep this for low-volume operational alerts; it is not a replacement for the official WhatsApp Business API.
+Activate the Admin Operasional WhatsApp number in CallMeBot first by following the CallMeBot WhatsApp setup and sending `I allow callmebot to send me messages` from that WhatsApp number. Put the generated API key in `CALLMEBOT_API_KEY`. Keep this for low-volume operational alerts; it is not a replacement for the official WhatsApp Business API.
