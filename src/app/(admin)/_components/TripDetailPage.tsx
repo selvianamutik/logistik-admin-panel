@@ -26,7 +26,6 @@ import {
     applyActualCargoAutoWeightFromQty,
     applyActualDropAutoWeightFromQty,
     shouldLockActualCargoVolume,
-    shouldLockActualDropVolume,
     getAssignableTripDrivers,
     getAssignableTripVehicles,
     getNextDeliveryOrderStatuses,
@@ -45,7 +44,6 @@ import {
     getDeliveryOrderBillableCargoSummary,
     getDeliveryOrderDisplayStatusMeta,
     getDeliveryOrderHoldCargoSummary,
-    getDeliveryOrderReturnCargoSummary,
     isDeliveryOrderBillableDropType,
     isDeliveryOrderHoldDropType,
     isDeliveryOrderReturnDropType,
@@ -105,6 +103,7 @@ type ShipperReferenceDraft = {
     draftKey: string;
     referenceKey: string;
     referenceNumber: string;
+    date: string;
     pickupStopKey: string;
     pickupAddress: string;
     selectedRecipientId: string;
@@ -134,6 +133,7 @@ type ResolvedShipperReferenceEntry = {
     draftKey: string;
     referenceKey: string;
     referenceNumber: string;
+    date: string;
     pickupStopKey: string;
     pickupLabel: string;
     pickupAddress: string;
@@ -445,7 +445,8 @@ function buildResolvedShipperReferenceEntries(
         pickupStopKey = '',
         pickupAddress = '',
         draftKeyHint = '',
-        referenceKeyHint = ''
+        referenceKeyHint = '',
+        date = ''
     ) => {
         const normalizedReference = referenceNumber.trim();
         if (!normalizedReference) {
@@ -471,6 +472,7 @@ function buildResolvedShipperReferenceEntries(
                 draftKey: current.draftKey || resolvedEntryKey,
                 referenceKey: current.referenceKey || referenceKeyHint,
                 referenceNumber: current.referenceNumber || normalizedReference,
+                date: current.date || date,
                 pickupStopKey: current.pickupStopKey || pickupStopKey,
                 pickupLabel: current.pickupLabel || resolvedPickupLabel,
                 pickupAddress: current.pickupAddress || resolvedPickupAddress,
@@ -482,6 +484,7 @@ function buildResolvedShipperReferenceEntries(
             draftKey: draftKeyHint || resolvedEntryKey,
             referenceKey: referenceKeyHint,
             referenceNumber: normalizedReference,
+            date,
             pickupStopKey,
             pickupLabel: resolvedPickupLabel,
             pickupAddress: resolvedPickupAddress,
@@ -501,7 +504,8 @@ function buildResolvedShipperReferenceEntries(
             reference.pickupStopKey || '',
             reference.pickupAddress || '',
             reference._key || `shipper-reference-${index + 1}`,
-            reference._key || ''
+            reference._key || '',
+            reference.date || ''
         );
         const entryKey =
             reference._key
@@ -512,6 +516,7 @@ function buildResolvedShipperReferenceEntries(
             entries.set(entryKey, {
                 ...current,
                 referenceKey: reference._key || current.referenceKey,
+                date: reference.date || current.date,
                 billingCustomerRef: reference.billingCustomerRef || current.billingCustomerRef,
                 billingCustomerName: reference.billingCustomerName || current.billingCustomerName,
                 receiverName: reference.receiverName || current.receiverName,
@@ -681,6 +686,7 @@ export default function TripDetailPage() {
         draftKey: crypto.randomUUID(),
         referenceKey: '',
         referenceNumber: '',
+        date: getBusinessDateValue(),
         pickupStopKey: '',
         pickupAddress: '',
         selectedRecipientId: '',
@@ -1191,6 +1197,7 @@ export default function TripDetailPage() {
                 draftKey: reference.draftKey,
                 referenceKey: reference.referenceKey,
                 referenceNumber: reference.referenceNumber,
+                date: reference.date || getBusinessDateValue(),
                 pickupStopKey: reference.pickupStopKey,
                 pickupAddress: reference.pickupAddress,
                 selectedRecipientId: resolveMatchingRecipientId(reference.billingCustomerRef || doData?.customerRef, {
@@ -1214,6 +1221,7 @@ export default function TripDetailPage() {
                 draftKey: crypto.randomUUID(),
                 referenceKey: '',
                 referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
+                date: getBusinessDateValue(),
                 pickupStopKey: '',
                 pickupAddress: doData?.pickupAddress || '',
                 selectedRecipientId: '',
@@ -1231,6 +1239,7 @@ export default function TripDetailPage() {
                     draftKey: crypto.randomUUID(),
                     referenceKey: '',
                     referenceNumber: '',
+                    date: getBusinessDateValue(),
                     pickupStopKey: defaultShipperReferencePickupOption?.key || '',
                     pickupAddress: defaultShipperReferencePickupOption?.address || '',
                     selectedRecipientId: '',
@@ -1306,6 +1315,7 @@ export default function TripDetailPage() {
                 draftKey: crypto.randomUUID(),
                 referenceKey: '',
                 referenceNumber: '',
+                date: getBusinessDateValue(),
                 pickupStopKey: defaultShipperReferencePickupOption?.key || '',
                 pickupAddress: defaultShipperReferencePickupOption?.address || '',
                 selectedRecipientId: '',
@@ -1863,10 +1873,12 @@ export default function TripDetailPage() {
             || statusModalDOData?.receiverName?.trim()
             || statusModalDOData?.receiverCompany?.trim()
             || '';
-        const defaultPodDate = statusModalDOData?.podReceivedDate?.trim()
-            ? statusModalDOData.podReceivedDate.trim().slice(0, 10)
-            : fromDriverRequest && (driverRequest?.podReceivedDate?.trim() || statusModalDOData?.pendingDriverPodReceivedDate?.trim())
-                ? (driverRequest?.podReceivedDate?.trim() || statusModalDOData?.pendingDriverPodReceivedDate?.trim() || '').slice(0, 10)
+        const driverRequestPodDate =
+            driverRequest?.podReceivedDate?.trim() ||
+            statusModalDOData?.pendingDriverPodReceivedDate?.trim() ||
+            '';
+        const defaultPodDate = fromDriverRequest
+            ? (driverRequestPodDate ? driverRequestPodDate.slice(0, 10) : getBusinessDateValue())
             : getBusinessDateValue();
         const defaultPodNote = (fromDriverRequest ? (driverRequest?.podNote || statusModalDOData?.pendingDriverPodNote) : '') || statusModalDOData?.podNote || '';
 
@@ -2404,9 +2416,6 @@ export default function TripDetailPage() {
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
             }
-            if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
-                return item;
-            }
             return { ...item, [field]: value };
         };
         if (currentItem) {
@@ -2632,9 +2641,6 @@ export default function TripDetailPage() {
             if (field === 'actualQtyKoli') {
                 return applyActualCargoAutoWeightFromQty(item, value);
             }
-            if (field === 'actualVolumeInputValue' && shouldLockActualCargoVolume(item)) {
-                return item;
-            }
             return { ...item, [field]: value };
         }));
     };
@@ -2761,9 +2767,6 @@ export default function TripDetailPage() {
             if (field === 'weightInputUnit') {
                 return updateActualDropDraftWeightUnit(drop, value as ActualDropDraft['weightInputUnit']);
             }
-            if (field === 'volumeInputValue' && shouldLockActualDropVolume(selectedCargoItem)) {
-                return drop;
-            }
             return { ...drop, [field]: value };
         };
         if (field === 'qtyKoli' || field === 'weightInputValue' || field === 'weightInputUnit' || field === 'volumeInputValue' || field === 'volumeInputUnit') {
@@ -2841,8 +2844,6 @@ export default function TripDetailPage() {
                 ? applyActualDropAutoWeightFromQty(currentAllocation, cargoItem, value)
                 : field === 'weightInputUnit'
                     ? updateActualDropDraftWeightUnit(currentAllocation, value as ActualDropDraft['weightInputUnit'])
-                    : field === 'volumeInputValue' && shouldLockActualDropVolume(cargoItem)
-                        ? currentAllocation
                     : { ...currentAllocation, [field]: value };
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         setActualDropItemValueMap(previous => ({
@@ -3255,6 +3256,9 @@ export default function TripDetailPage() {
                                 actualDropPoints: selectedSubmissionActualDropPoints.map(item => ({
                                     stopType: item.stopType,
                                     deliveryOrderItemRef: item.deliveryOrderItemRef,
+                                    deliveryOrderItemRefs: Array.isArray((item as ActualDropDraft & { deliveryOrderItemRefs?: string[] }).deliveryOrderItemRefs)
+                                        ? (item as ActualDropDraft & { deliveryOrderItemRefs?: string[] }).deliveryOrderItemRefs
+                                        : undefined,
                                     actualDropGroupKey: reviewingDriverRequest ? (item.actualDropGroupKey || item.draftKey) : undefined,
                                     shipperReferenceKey: item.shipperReferenceKey,
                                     shipperReferenceNumber: item.shipperReferenceNumber,
@@ -3907,6 +3911,7 @@ export default function TripDetailPage() {
             .map(entry => ({
                 referenceKey: entry.referenceKey.trim(),
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
+                date: entry.date.trim() || getBusinessDateValue(),
                 pickupStopKey: entry.pickupStopKey.trim(),
                 pickupAddress: entry.pickupAddress.trim(),
                 billingCustomerRef: '',
@@ -4029,6 +4034,7 @@ export default function TripDetailPage() {
                         shipperReferences: normalizedReferences.map(reference => ({
                             _key: reference.referenceKey || undefined,
                             referenceNumber: reference.referenceNumber,
+                            date: reference.date || undefined,
                             pickupStopKey: pickupStopMap.has(reference.pickupStopKey) ? reference.pickupStopKey : undefined,
                             pickupAddress: reference.pickupAddress || undefined,
                             billingCustomerRef: reference.billingCustomerRef || undefined,
@@ -4636,7 +4642,6 @@ export default function TripDetailPage() {
     const completionOutcome = deriveDeliveryOrderCompletionOutcome(doData);
     const billableCargoSummary = getDeliveryOrderBillableCargoSummary(doData);
     const holdCargoSummary = getDeliveryOrderHoldCargoSummary(doData);
-    const returnCargoSummary = getDeliveryOrderReturnCargoSummary(doData);
     const displayTripNumber = tripData?.tripNumber || formatInternalDeliveryOrderNumber(doData);
     const suratJalanStatusOptions = suratJalanDocuments.filter(document => document.itemCount > 0);
     const getEligibleStatusesForSuratJalan = (document: SuratJalanDocument) =>
@@ -4964,6 +4969,7 @@ export default function TripDetailPage() {
             } as ActualDropDraft & { deliveryOrderItemRefs?: string[] };
             if (selectedItemRefs.length > 1) {
                 scopedAutoDrop.deliveryOrderItemRefs = selectedItemRefs;
+                scopedAutoDrop.deliveryOrderItemRef = '';
             }
             return [scopedAutoDrop];
         }
@@ -5495,6 +5501,237 @@ export default function TripDetailPage() {
     const billableDropCount = actualDropSummary.filter(point => isDeliveryOrderBillableDropType(point.stopType)).length;
     const holdDropCount = actualDropSummary.filter(point => isDeliveryOrderHoldDropType(point.stopType)).length;
     const returnDropCount = actualDropSummary.filter(point => isDeliveryOrderReturnDropType(point.stopType)).length;
+    type ActualDropSummaryPoint = NonNullable<DeliveryOrder['actualDropPoints']>[number];
+    const getActualDropPointCargoSummary = (point: ActualDropSummaryPoint) => ({
+        qtyKoli: point.qtyKoli,
+        weightKg: point.weightKg,
+        weightInputValue: point.weightInputValue,
+        weightInputUnit: point.weightInputUnit,
+        volumeM3: point.volumeM3,
+        volumeInputValue: point.volumeInputValue,
+        volumeInputUnit: point.volumeInputUnit,
+    });
+    const getActualDropPointItemRefs = (point: ActualDropSummaryPoint) => Array.from(new Set([
+        point.deliveryOrderItemRef,
+        ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+    ].map(value => (value || '').trim()).filter(Boolean)));
+    const getActualDropPointItems = (point: ActualDropSummaryPoint) => {
+        const itemRefs = getActualDropPointItemRefs(point);
+        if (itemRefs.length > 0) {
+            const itemRefSet = new Set(itemRefs);
+            return doItems.filter(item => itemRefSet.has(item._id));
+        }
+
+        const pointReferenceKey = (point.shipperReferenceKey || '').trim();
+        const pointReferenceNumber = (point.shipperReferenceNumber || '').trim().toUpperCase();
+        if (!pointReferenceKey && !pointReferenceNumber) {
+            return [];
+        }
+
+        return doItems.filter(item => {
+            const itemReferenceKey = (item.shipperReferenceKey || '').trim();
+            const itemReferenceNumber = (item.shipperReferenceNumber || '').trim().toUpperCase();
+            return (
+                (pointReferenceKey && itemReferenceKey === pointReferenceKey) ||
+                (pointReferenceNumber && itemReferenceNumber === pointReferenceNumber)
+            );
+        });
+    };
+    const getDeliveryOrderItemPlannedCargoBase = (item: DeliveryOrderItem) => ({
+        qtyKoli: item.orderItemQtyKoli || item.actualQtyKoli || 0,
+        weightKg: item.orderItemWeight || item.actualWeightKg || 0,
+        volumeM3: item.orderItemVolumeM3 || item.actualVolumeM3 || 0,
+    });
+    const getAllocatedActualDropCargoSummary = (
+        point: ActualDropSummaryPoint,
+        groupItems: DeliveryOrderItem[],
+        allPointItems: DeliveryOrderItem[]
+    ) => {
+        const pointSummary = getActualDropPointCargoSummary(point);
+        if (allPointItems.length <= 1) {
+            return pointSummary;
+        }
+
+        const getRatio = (field: 'qtyKoli' | 'weightKg' | 'volumeM3') => {
+            const allTotal = allPointItems.reduce((sum, item) => sum + getDeliveryOrderItemPlannedCargoBase(item)[field], 0);
+            const groupTotal = groupItems.reduce((sum, item) => sum + getDeliveryOrderItemPlannedCargoBase(item)[field], 0);
+            if (allTotal > 0) {
+                return groupTotal / allTotal;
+            }
+            return groupItems.length / allPointItems.length;
+        };
+
+        const qtyKoli = (point.qtyKoli || 0) * getRatio('qtyKoli');
+        const weightKg = (point.weightKg || 0) * getRatio('weightKg');
+        const volumeM3 = (point.volumeM3 || 0) * getRatio('volumeM3');
+        return {
+            qtyKoli: qtyKoli > 0 ? qtyKoli : undefined,
+            weightKg: weightKg > 0 ? weightKg : undefined,
+            weightInputValue: undefined,
+            weightInputUnit: undefined,
+            volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
+            volumeInputValue: undefined,
+            volumeInputUnit: undefined,
+        };
+    };
+    const getDeliveryOrderItemSjNumber = (item: DeliveryOrderItem) => {
+        const itemNumber = (item.shipperReferenceNumber || '').trim();
+        if (itemNumber) {
+            return itemNumber;
+        }
+        return 'SJ tidak terpetakan';
+    };
+    const getActualDropPointSjNumber = (point: ActualDropSummaryPoint, items: DeliveryOrderItem[]) => {
+        const explicitNumber = (point.shipperReferenceNumber || '').trim();
+        if (explicitNumber) {
+            return explicitNumber;
+        }
+        const itemNumbers = Array.from(new Set(
+            items
+                .map(item => (item.shipperReferenceNumber || '').trim())
+                .filter(Boolean)
+        ));
+        if (itemNumbers.length === 1) {
+            return itemNumbers[0];
+        }
+        if (itemNumbers.length > 1) {
+            return 'Gabungan SJ';
+        }
+        return doData.customerDoNumber || 'SJ utama';
+    };
+    const getActualDropPointSjEntries = (point: ActualDropSummaryPoint) => {
+        const matchedItems = getActualDropPointItems(point);
+        if (matchedItems.length <= 1) {
+            const sjNumber = getActualDropPointSjNumber(point, matchedItems);
+            return [{
+                key: `${point.shipperReferenceKey || sjNumber}-${sjNumber}`,
+                sjNumber,
+                label: matchedItems.length === 1
+                    ? (() => {
+                        const item = matchedItems[0];
+                        const identity = getDeliveryOrderItemIdentity(item);
+                        return formatItemCodeNameLabel(identity.code, identity.name || item.orderItemDescription || '', 'Item 1');
+                    })()
+                    : 'Muatan aktual titik ini',
+                cargoSummary: getActualDropPointCargoSummary(point),
+            }];
+        }
+
+        const groupedItems = matchedItems.reduce((map, item) => {
+            const sjNumber = getDeliveryOrderItemSjNumber(item);
+            const key = `${item.shipperReferenceKey || sjNumber}-${sjNumber}`;
+            const current = map.get(key) || {
+                key,
+                sjNumber,
+                items: [] as DeliveryOrderItem[],
+            };
+            current.items.push(item);
+            map.set(key, current);
+            return map;
+        }, new Map<string, { key: string; sjNumber: string; items: DeliveryOrderItem[] }>());
+
+        return Array.from(groupedItems.values()).map(group => ({
+            key: group.key,
+            sjNumber: group.sjNumber,
+            label: group.items.map((item, index) => {
+                const identity = getDeliveryOrderItemIdentity(item);
+                return formatItemCodeNameLabel(identity.code, identity.name || item.orderItemDescription || '', `Item ${index + 1}`);
+            }).join(', '),
+            cargoSummary: getAllocatedActualDropCargoSummary(point, group.items, matchedItems),
+        }));
+    };
+    const getActualDropPointPodInfo = (point: ActualDropSummaryPoint) => ({
+        receiverName: (point.podReceiverName || '').trim() || doData.podReceiverName || '',
+        receivedDate: (point.podReceivedDate || '').trim() || doData.podReceivedDate || '',
+        note: (point.podNote || '').trim() || '',
+    });
+    const getActualDropDisplayGroupKey = (point: ActualDropSummaryPoint) => {
+        const groupKey = (point.actualDropGroupKey || '').trim();
+        const podInfo = getActualDropPointPodInfo(point);
+        return [
+            groupKey || point.sequence,
+            point.stopType,
+            point.billingCustomerRef || '',
+            point.billingCustomerName || '',
+            point.originLocationName || '',
+            point.originLocationAddress || '',
+            point.locationName || '',
+            point.locationAddress || '',
+            podInfo.receiverName,
+            podInfo.receivedDate,
+            podInfo.note,
+            point.note || '',
+        ].join('|');
+    };
+    const actualDropDisplayGroups = Array.from(
+        actualDropSummary
+            .slice()
+            .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+            .reduce((groups, point) => {
+                const key = getActualDropDisplayGroupKey(point);
+                const current = groups.get(key);
+                if (current) {
+                    current.points.push(point);
+                    current.sequence = Math.min(current.sequence, point.sequence || current.sequence);
+                } else {
+                    groups.set(key, {
+                        key,
+                        sequence: point.sequence || groups.size + 1,
+                        points: [point],
+                    });
+                }
+                return groups;
+            }, new Map<string, { key: string; sequence: number; points: ActualDropSummaryPoint[] }>())
+            .values()
+    ).map(group => {
+        const sortedPoints = group.points.slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+        const firstPoint = sortedPoints[0];
+        const totals = sortedPoints.reduce((sum, point) => ({
+            qtyKoli: sum.qtyKoli + (point.qtyKoli || 0),
+            weightKg: sum.weightKg + (point.weightKg || 0),
+            volumeM3: sum.volumeM3 + (point.volumeM3 || 0),
+        }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+        const sjGroups = Array.from(sortedPoints.reduce((map, point) => {
+            getActualDropPointSjEntries(point).forEach(entry => {
+                const current = map.get(entry.key) || {
+                    key: entry.key,
+                    sjNumber: entry.sjNumber,
+                    rows: [] as Array<{
+                        key: string;
+                        label: string;
+                        cargoSummary: ReturnType<typeof getActualDropPointCargoSummary>;
+                        note: string;
+                    }>,
+                };
+                current.rows.push({
+                    key: `${point._key || point.sequence}-${entry.key}-${current.rows.length}`,
+                    label: entry.label,
+                    cargoSummary: entry.cargoSummary,
+                    note: point.note || '',
+                });
+                map.set(entry.key, current);
+            });
+            return map;
+        }, new Map<string, {
+            key: string;
+            sjNumber: string;
+            rows: Array<{
+                key: string;
+                label: string;
+                cargoSummary: ReturnType<typeof getActualDropPointCargoSummary>;
+                note: string;
+            }>;
+        }>()).values());
+
+        return {
+            ...group,
+            firstPoint,
+            sortedPoints,
+            totals,
+            podInfo: getActualDropPointPodInfo(firstPoint),
+            sjGroups,
+        };
+    });
     const auditTrailEntityRefs = Array.from(new Set([
         doData._id,
         tripData?._id,
@@ -6213,31 +6450,17 @@ export default function TripDetailPage() {
                     </div>
                 </div>
 
-                {doData.podReceiverName && (
-                    <div className="card">
-                        <div className="card-header">
-                            <span className="card-header-title">Proof of Delivery (POD)</span>
-                        </div>
-                        <div className="card-body" style={{ background: 'var(--color-success-light)' }}>
-                            <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">Diterima Oleh</div><div className="detail-value">{doData.podReceiverName}</div></div>
-                                <div className="detail-item"><div className="detail-label">Tanggal Terima</div><div className="detail-value">{formatDate(doData.podReceivedDate)}</div></div>
-                            </div>
-                            {doData.podNote && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.podNote}</div></div>}
-                        </div>
-                    </div>
-                )}
             </div>
 
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
             <CollapsibleCard title="Muatan & Realisasi Trip">
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                             <div className="detail-label">Hasil Realisasi</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{completionOutcome?.label || displayStatusMeta.label}</div>
                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                 {actualDropSummary.length > 0
-                                    ? `${billableDropCount} titik invoice${holdDropCount > 0 ? ` • ${holdDropCount} hold/transit` : ''}${returnDropCount > 0 ? ` • ${returnDropCount} retur` : ''}`
+                                    ? `${actualDropDisplayGroups.length} titik drop aktual, ${billableDropCount} masuk invoice${holdDropCount > 0 ? ` • ${holdDropCount} hold/transit` : ''}${returnDropCount > 0 ? ` • ${returnDropCount} retur` : ''}`
                                     : 'Belum ada realisasi drop'}
                             </div>
                         </div>
@@ -6250,11 +6473,6 @@ export default function TripDetailPage() {
                             <div className="detail-label">Hold / Transit</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(holdCargoSummary)}</div>
                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang ini tidak ikut invoice sampai dikirim lagi.</div>
-                        </div>
-                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                            <div className="detail-label">Retur</div>
-                            <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(returnCargoSummary)}</div>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Barang retur tidak ikut invoice DO ini.</div>
                         </div>
                     </div>
                     <div className="detail-row">
@@ -6269,63 +6487,95 @@ export default function TripDetailPage() {
                     </div>
                     <div style={{ marginTop: '1rem' }}>
                         <div className="detail-label" style={{ marginBottom: '0.5rem' }}>
-                            Titik Drop Aktual {actualDropSummary.length > 0 ? `(${actualDropSummary.length})` : ''}
+                            Detail Titik Drop Aktual {actualDropDisplayGroups.length > 0 ? `(${actualDropDisplayGroups.length})` : ''}
                         </div>
                         {actualDropSummary.length === 0 ? (
                             <div className="text-muted text-sm">Belum ada realisasi drop. Saat DO diselesaikan, sistem akan mencatat tujuan aktual per titik.</div>
                         ) : (
                             <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                {actualDropSummary
+                                {actualDropDisplayGroups
                                     .slice()
                                     .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
-                                    .map(point => (
-                                        <div key={point._key || `${point.sequence}-${point.locationName}`} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                                <div style={{ fontWeight: 600 }}>
-                                                    {point.sequence}. {point.locationName}
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                    <span className={`badge badge-${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.color || 'gray'}`}>
-                                                        {DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}
-                                                    </span>
-                                                    <span className={`badge badge-${isDeliveryOrderBillableDropType(point.stopType) ? 'success' : isDeliveryOrderReturnDropType(point.stopType) ? 'danger' : 'warning'}`}>
-                                                        {isDeliveryOrderBillableDropType(point.stopType) ? 'Masuk Invoice' : isDeliveryOrderReturnDropType(point.stopType) ? 'Retur / Tidak Masuk Invoice' : 'Hold / Tidak Masuk Invoice'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            {point.locationAddress && (
-                                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                                    {point.locationAddress}
-                                                </div>
-                                            )}
-                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                                SJ Pengirim: {point.shipperReferenceNumber || 'Mengikuti DO'}
-                                            </div>
-                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                                Barang: {summarizeDeliveryOrderItemDescriptionsForDrop(point, doItems)}
-                                            </div>
-                                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
-                                                <div className="detail-item">
-                                                    <div className="detail-label">Muatan</div>
-                                                    <div className="detail-value">
-                                                        {formatCargoSummary({
-                                                            qtyKoli: point.qtyKoli,
-                                                            weightKg: point.weightKg,
-                                                            weightInputValue: point.weightInputValue,
-                                                            weightInputUnit: point.weightInputUnit,
-                                                            volumeM3: point.volumeM3,
-                                                            volumeInputValue: point.volumeInputValue,
-                                                            volumeInputUnit: point.volumeInputUnit,
-                                                        })}
+                                    .map((group, index) => {
+                                        const point = group.firstPoint;
+                                        const stopTypeLabels = Array.from(new Set(group.sortedPoints.map(item => DO_ACTUAL_DROP_TYPE_MAP[item.stopType]?.label || item.stopType)));
+                                        return (
+                                            <div key={group.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)', display: 'grid', gap: '0.85rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                    <div style={{ fontWeight: 600 }}>
+                                                        Titik {index + 1}: {point.locationName || 'Lokasi belum diisi'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                        <span className={`badge badge-${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.color || 'gray'}`}>
+                                                            {stopTypeLabels.join(', ')}
+                                                        </span>
+                                                        <span className={`badge badge-${isDeliveryOrderBillableDropType(point.stopType) ? 'success' : isDeliveryOrderReturnDropType(point.stopType) ? 'danger' : 'warning'}`}>
+                                                            {isDeliveryOrderBillableDropType(point.stopType) ? 'Masuk Invoice' : isDeliveryOrderReturnDropType(point.stopType) ? 'Retur / Tidak Masuk Invoice' : 'Hold / Tidak Masuk Invoice'}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                                <div className="detail-item">
-                                                    <div className="detail-label">Catatan</div>
-                                                    <div className="detail-value">{point.note || '-'}</div>
+                                                <div className="detail-row">
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">Nama Drop Point</div>
+                                                        <div className="detail-value">{point.locationName || '-'}</div>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">Alamat Drop Point</div>
+                                                        <div className="detail-value">{point.locationAddress || '-'}</div>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">Total Aktual Titik</div>
+                                                        <div className="detail-value">{formatCargoSummary(group.totals)}</div>
+                                                    </div>
                                                 </div>
+                                                <div className="detail-row">
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">POD Diterima Oleh</div>
+                                                        <div className="detail-value">{group.podInfo.receiverName || '-'}</div>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">Tanggal POD</div>
+                                                        <div className="detail-value">{group.podInfo.receivedDate ? formatDate(group.podInfo.receivedDate) : '-'}</div>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <div className="detail-label">Catatan POD</div>
+                                                        <div className="detail-value">{group.podInfo.note || '-'}</div>
+                                                    </div>
+                                                </div>
+                                                {group.sjGroups.length === 0 ? (
+                                                    <div className="text-muted text-sm">Belum ada rincian SJ untuk titik ini.</div>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gap: '0.6rem' }}>
+                                                        {group.sjGroups.map(sjGroup => (
+                                                            <div key={sjGroup.key} style={{ border: '1px solid var(--color-gray-100)', borderRadius: '0.65rem', padding: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                                    <div>
+                                                                        <div className="detail-label">Surat Jalan</div>
+                                                                        <div className="detail-value font-mono">{sjGroup.sjNumber}</div>
+                                                                    </div>
+                                                                    <span className="badge badge-gray">{sjGroup.rows.length} rincian barang</span>
+                                                                </div>
+                                                                <div style={{ display: 'grid', gap: '0.45rem', marginTop: '0.65rem' }}>
+                                                                    {sjGroup.rows.map(row => (
+                                                                        <div key={row.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(12rem, auto)', gap: '0.75rem', alignItems: 'start', paddingTop: '0.45rem', borderTop: '1px solid var(--color-gray-200)' }}>
+                                                                            <div>
+                                                                                <div className="font-medium">{row.label}</div>
+                                                                                {row.note && <div className="text-muted text-xs" style={{ marginTop: '0.2rem' }}>Catatan: {row.note}</div>}
+                                                                            </div>
+                                                                            <div style={{ textAlign: 'right' }}>
+                                                                                <div className="detail-label">Aktual Cargo Load</div>
+                                                                                <div className="detail-value">{formatCargoSummary(row.cargoSummary)}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                             </div>
                         )}
                     </div>
@@ -8466,7 +8716,7 @@ export default function TripDetailPage() {
                                                         }
                                                         updateActualCargoDraft(activeFinalizationCargoItem.deliveryOrderItemRef, 'actualVolumeInputValue', String(value));
                                                     }}
-                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop) || (activeFinalizationDrop ? shouldLockActualDropVolume(activeFinalizationCargoItem) : shouldLockActualCargoVolume(activeFinalizationCargoItem))}
+                                                    disabled={updatingStatus || (showAdvancedDropEditor && !activeFinalizationDrop)}
                                                 />
                                                 <select
                                                     className="form-select"
@@ -8828,7 +9078,7 @@ export default function TripDetailPage() {
                             )}
                             {selectedShipperReferenceDraft && (
                                 <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                    <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: 'minmax(0, 1fr) minmax(10rem, 0.42fr) auto', alignItems: 'center' }}>
                                         <input
                                             className="form-input"
                                             value={selectedShipperReferenceDraft.referenceNumber}
@@ -8838,6 +9088,14 @@ export default function TripDetailPage() {
                                             }}
                                             placeholder={`Contoh: ${shipperReferenceExample}`}
                                             disabled={savingShipperReference}
+                                        />
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={selectedShipperReferenceDraft.date || getBusinessDateValue()}
+                                            onChange={event => updateShipperReferenceDraft(selectedShipperReferenceDraft.draftKey, { date: event.target.value })}
+                                            disabled={savingShipperReference}
+                                            title="Tanggal SJ"
                                         />
                                         {!isCreatingNewShipperReference && shipperReferenceDrafts.length > 1 && (
                                             <button

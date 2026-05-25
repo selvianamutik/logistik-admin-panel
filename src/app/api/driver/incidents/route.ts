@@ -14,6 +14,7 @@ const DRIVER_ALLOWED_COST_CATEGORIES = new Set<IncidentSettlementCategory>([
     'TIRE',
     'MEDICAL',
     'THIRD_PARTY_DAMAGE',
+    'ADMINISTRATION',
     'POLICE_ADMIN',
     'ACCOMMODATION',
     'CARGO_HANDLING',
@@ -34,6 +35,9 @@ function normalizeCostAmount(value: unknown) {
 
 function normalizeCostCategory(value: unknown): IncidentSettlementCategory {
     const category = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    if (category === 'POLICE_ADMIN') {
+        return 'ADMINISTRATION';
+    }
     return DRIVER_ALLOWED_COST_CATEGORIES.has(category as IncidentSettlementCategory)
         ? category as IncidentSettlementCategory
         : 'OTHER';
@@ -264,25 +268,6 @@ export async function PATCH(request: Request) {
             return access.error;
         }
         const incident = access.incident;
-        if (incident.status === 'CLOSED' || incident.status === 'RESOLVED') {
-            return jsonNoStore({ error: 'Insiden ini sudah masuk tahap final admin.' }, { status: 409 });
-        }
-
-        const existingDriverLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
-            incidentRef: incident._id,
-        })).filter(line => line.status !== 'VOID' && line.createdBy === auth.session._id);
-        const hasReviewedDriverLine = existingDriverLines.some(line => line.status !== 'DRAFT');
-        if (hasReviewedDriverLine) {
-            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tunggu review admin.' }, { status: 409 });
-        }
-
-        const resolutionNote = typeof parsedBody.data.resolutionNote === 'string'
-            ? parsedBody.data.resolutionNote.trim()
-            : '';
-        if (!resolutionNote) {
-            return jsonNoStore({ error: 'Catatan penyelesaian insiden wajib diisi.' }, { status: 400 });
-        }
-
         const normalizedCosts = (parsedBody.data.costs || [])
             .map(cost => ({
                 category: normalizeCostCategory(cost.category),
@@ -297,6 +282,18 @@ export async function PATCH(request: Request) {
         if (invalidCostIndex >= 0) {
             return jsonNoStore({ error: `Biaya insiden baris ${invalidCostIndex + 1} wajib berisi nominal dan deskripsi.` }, { status: 400 });
         }
+        const isCostOnlySubmission = normalizedCosts.length > 0;
+        if (incident.status === 'CLOSED' || (incident.status === 'RESOLVED' && !isCostOnlySubmission)) {
+            return jsonNoStore({ error: 'Insiden ini sudah masuk tahap final admin.' }, { status: 409 });
+        }
+
+        const resolutionNote = typeof parsedBody.data.resolutionNote === 'string'
+            ? parsedBody.data.resolutionNote.trim()
+            : '';
+        if (!resolutionNote) {
+            return jsonNoStore({ error: 'Catatan penyelesaian insiden wajib diisi.' }, { status: 400 });
+        }
+
         const existingActionLogs = await listDocumentsByFilter<IncidentActionLog>('incidentActionLog', {
             incidentRef: incident._id,
         });
@@ -309,17 +306,17 @@ export async function PATCH(request: Request) {
         }
 
         const now = new Date().toISOString();
-        const pendingDriverResolutionPatch = {
+        const pendingDriverResolutionPatch = isCostOnlySubmission ? {} : {
             pendingDriverResolutionRequestedAt: now,
             pendingDriverResolutionRequestedBy: auth.session._id,
             pendingDriverResolutionRequestedByName: auth.session.name,
             pendingDriverResolutionNote: resolutionNote,
-            pendingDriverResolutionCostCount: normalizedCosts.length,
-            pendingDriverResolutionAmount: normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0),
+            pendingDriverResolutionCostCount: 0,
+            pendingDriverResolutionAmount: 0,
         };
-        if (incident.status === 'OPEN') {
+        if (!isCostOnlySubmission && incident.status === 'OPEN') {
             await updateDocument<Incident>(incident._id, { status: 'IN_PROGRESS', ...pendingDriverResolutionPatch }, 'incident');
-        } else {
+        } else if (!isCostOnlySubmission) {
             await updateDocument<Incident>(incident._id, pendingDriverResolutionPatch, 'incident');
         }
 
@@ -330,8 +327,10 @@ export async function PATCH(request: Request) {
             ? parsedBody.data.resolutionOdometer
             : 0;
         const contextNotes = [
-            `Driver mengajukan penyelesaian insiden: ${resolutionNote}`,
-            locationText ? `Lokasi akhir: ${locationText}` : '',
+            isCostOnlySubmission
+                ? `Driver menambahkan biaya insiden: ${resolutionNote}`
+                : `Driver mengajukan penyelesaian insiden: ${resolutionNote}`,
+            !isCostOnlySubmission && locationText ? `Lokasi akhir: ${locationText}` : '',
             odometer > 0 ? `Odometer akhir: ${odometer.toLocaleString('id-ID')} km` : '',
             normalizedCosts.length > 0
                 ? `Biaya diajukan: ${normalizedCosts.length} baris / Rp ${normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0).toLocaleString('id-ID')}`
@@ -361,9 +360,9 @@ export async function PATCH(request: Request) {
                 payeeName: cost.payeeName || undefined,
                 recipientType: 'OTHER',
                 note: [
-                    'Diajukan driver, perlu review admin.',
+                    'Tambahan biaya driver, perlu review admin.',
                     cost.note,
-                    locationText ? `Lokasi akhir: ${locationText}` : '',
+                    !isCostOnlySubmission && locationText ? `Lokasi akhir: ${locationText}` : '',
                     odometer > 0 ? `Odometer akhir: ${odometer.toLocaleString('id-ID')} km` : '',
                 ].filter(Boolean).join(' | '),
                 status: 'DRAFT',
@@ -379,12 +378,14 @@ export async function PATCH(request: Request) {
             'UPDATE',
             'incidents',
             incident._id,
-            `Driver ajukan penyelesaian insiden ${incident.incidentNumber}${createdLines.length > 0 ? ` dengan ${createdLines.length} biaya draft` : ''}`
+            isCostOnlySubmission
+                ? `Driver tambah ${createdLines.length} biaya draft insiden ${incident.incidentNumber}`
+                : `Driver ajukan penyelesaian insiden ${incident.incidentNumber}`
         );
 
         return jsonNoStore({
             data: {
-                incident: incident.status === 'OPEN'
+                incident: !isCostOnlySubmission && incident.status === 'OPEN'
                     ? { ...incident, status: 'IN_PROGRESS' as const, ...pendingDriverResolutionPatch }
                     : { ...incident, ...pendingDriverResolutionPatch },
                 settlementLines: createdLines,

@@ -274,8 +274,7 @@ export default function IncidentDetailPage() {
         [lines]
     );
     const hasPendingDriverResolution = Boolean(
-        incident?.pendingDriverResolutionRequestedAt ||
-        pendingDriverReviewLines.length > 0
+        incident?.pendingDriverResolutionRequestedAt
     );
     const expenseCategoryOptions = useMemo(() => {
         const allowedScopes = getExpenseCategoryRouteScopes(expenseForm.incidentExpenseRoute);
@@ -387,6 +386,32 @@ export default function IncidentDetailPage() {
             await loadDetail();
         } catch {
             addToast('error', 'Gagal memperbarui status insiden');
+        } finally {
+            setSavingStatus(false);
+        }
+    };
+
+    const approveDriverResolution = async () => {
+        if (!incident?._id || !incident._rev) {
+            addToast('error', 'Data insiden tidak lengkap. Refresh lalu coba lagi.');
+            return;
+        }
+        setSavingStatus(true);
+        try {
+            const note = incident.pendingDriverResolutionNote
+                ? `Admin menyetujui pengajuan selesai driver: ${incident.pendingDriverResolutionNote}`
+                : 'Admin menyetujui pengajuan selesai driver';
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'incidents', action: 'set-status', data: { id: incident._id, revision: incident._rev, status: 'RESOLVED', note } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) return addToast('error', payload.error || 'Gagal menyetujui pengajuan selesai driver');
+            addToast('success', 'Pengajuan selesai driver disetujui');
+            await loadDetail();
+        } catch {
+            addToast('error', 'Gagal menyetujui pengajuan selesai driver');
         } finally {
             setSavingStatus(false);
         }
@@ -746,10 +771,14 @@ export default function IncidentDetailPage() {
                             <div className="font-semibold">Menunggu review admin dari pengajuan driver</div>
                             <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
                                 {incident.pendingDriverResolutionRequestedByName || incident.driverName || 'Driver'} mengajukan penyelesaian insiden
-                                {incident.pendingDriverResolutionAmount ? ` dengan biaya ${formatCurrency(incident.pendingDriverResolutionAmount)}` : ''}
-                                {pendingDriverReviewLines.length > 0 ? `. ${pendingDriverReviewLines.length} detail biaya masih draft dan perlu disetujui / ditolak.` : '. Tidak ada biaya draft, lanjutkan review status insiden.'}
+                                {incident.pendingDriverResolutionNote ? `: ${incident.pendingDriverResolutionNote}` : ''}
                             </div>
                         </div>
+                        {canManageIncident && incident.status === 'IN_PROGRESS' && (
+                            <button className="btn btn-primary" onClick={() => void approveDriverResolution()} disabled={savingStatus}>
+                                <CheckCircle2 size={16} /> {savingStatus ? 'Menyetujui...' : 'Setujui Selesai'}
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

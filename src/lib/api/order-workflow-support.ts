@@ -834,11 +834,19 @@ export function normalizeDeliveryActualDropPoints(
 ) {
     const actualTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
     const rawDropPoints = Array.isArray(data.actualDropPoints) ? data.actualDropPoints : [];
+    const fallbackPodReceiverName = normalizeOptionalText(data.podReceiverName);
+    const fallbackPodReceivedDate = normalizeOptionalText(data.podReceivedDate);
+    const fallbackPodNote = normalizeOptionalText(data.podNote);
     const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
     const knownDeliveryOrderItemRefs = new Set(actualCargoByDoItemId.keys());
 
     if (rawDropPoints.length === 0) {
-        return [buildDefaultActualDropPoint(actualTotals)];
+        return [{
+            ...buildDefaultActualDropPoint(actualTotals),
+            podReceiverName: fallbackPodReceiverName || undefined,
+            podReceivedDate: fallbackPodReceivedDate || undefined,
+            podNote: fallbackPodNote || undefined,
+        }];
     }
 
     const normalized: NormalizedDeliveryActualDropPoint[] = [];
@@ -870,6 +878,9 @@ export function normalizeDeliveryActualDropPoints(
         const billingCustomerName = normalizeOptionalText(rawPoint.billingCustomerName);
         const originLocationName = normalizeOptionalText(rawPoint.originLocationName);
         const originLocationAddress = normalizeOptionalText(rawPoint.originLocationAddress);
+        const podReceiverName = normalizeOptionalText(rawPoint.podReceiverName) || fallbackPodReceiverName;
+        const podReceivedDate = normalizeOptionalText(rawPoint.podReceivedDate) || fallbackPodReceivedDate;
+        const podNote = normalizeOptionalText(rawPoint.podNote) || fallbackPodNote;
         const stopType = normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`);
         const resolvedActualDropGroupKey = actualDropGroupKey || (
             normalizedDeliveryOrderItemRefs.length > 0
@@ -994,12 +1005,20 @@ export function normalizeDeliveryActualDropPoints(
             volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
             volumeInputValue: rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
             volumeInputUnit: rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
+            podReceiverName: podReceiverName || undefined,
+            podReceivedDate: podReceivedDate || undefined,
+            podNote: podNote || undefined,
             note,
         });
     });
 
     if (normalized.length === 0) {
-        return [buildDefaultActualDropPoint(actualTotals)];
+        return [{
+            ...buildDefaultActualDropPoint(actualTotals),
+            podReceiverName: fallbackPodReceiverName || undefined,
+            podReceivedDate: fallbackPodReceivedDate || undefined,
+            podNote: fallbackPodNote || undefined,
+        }];
     }
 
     return normalized;

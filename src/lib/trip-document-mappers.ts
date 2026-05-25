@@ -357,6 +357,7 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
     const resolvedHoldCargo = hasCargo(holdCargo) ? holdCargo : fallbackHoldCargo;
     const resolvedReturnCargo = hasCargo(returnCargo) ? returnCargo : fallbackReturnCargo;
     const holdPickupAddress = findHoldPickupAddressForItems(deliveryOrder, matchedItemRefs, referenceKey, suratJalanNumber);
+    const suratJalanDate = reference?.date || deliveryOrder.date;
 
     return {
         _id: `${deliveryOrder._id}:${referenceKey || 'primary'}`,
@@ -374,7 +375,7 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
         receiverName: reference?.receiverName || deliveryOrder.receiverName,
         receiverCompany: reference?.receiverCompany || deliveryOrder.receiverCompany,
         receiverAddress: reference?.receiverAddress || deliveryOrder.receiverAddress,
-        tripDate: deliveryOrder.date,
+        tripDate: suratJalanDate,
         tripStatus: deriveSuratJalanDocumentStatus(deliveryOrder.status, {
             billableCargo: resolvedBillableCargo,
             holdCargo: resolvedHoldCargo,

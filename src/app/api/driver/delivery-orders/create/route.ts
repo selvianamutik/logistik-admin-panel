@@ -57,6 +57,7 @@ export async function POST(request: Request) {
             customerDoNumber?: string;
             shipperReferences?: Array<{
                 referenceNumber?: string;
+                date?: string;
                 pickupStopKey?: string;
             }>;
             notes?: string;

@@ -73,6 +73,7 @@ class DeliveryShipperReference {
     this.documentId,
     this.key,
     this.tripStatus,
+    this.date,
     this.holdQtyKoli,
     this.holdWeightKg,
     this.holdVolumeM3,
@@ -87,6 +88,7 @@ class DeliveryShipperReference {
   final String? documentId;
   final String? key;
   final String? tripStatus;
+  final String? date;
   final double? holdQtyKoli;
   final double? holdWeightKg;
   final double? holdVolumeM3;
@@ -114,6 +116,24 @@ class DeliveryShipperReference {
     final address = (receiverAddress ?? '').trim();
     if (address.isNotEmpty) return address;
     return '-';
+  }
+
+  DeliveryShipperReference copyWith({String? tripStatus}) {
+    return DeliveryShipperReference(
+      referenceNumber: referenceNumber,
+      documentId: documentId,
+      key: key,
+      tripStatus: tripStatus ?? this.tripStatus,
+      date: date,
+      holdQtyKoli: holdQtyKoli,
+      holdWeightKg: holdWeightKg,
+      holdVolumeM3: holdVolumeM3,
+      pickupStopKey: pickupStopKey,
+      pickupAddress: pickupAddress,
+      receiverName: receiverName,
+      receiverCompany: receiverCompany,
+      receiverAddress: receiverAddress,
+    );
   }
 }
 
@@ -522,18 +542,9 @@ class DriverIncident {
   bool get hasPendingDriverResolutionRequest =>
       pendingDriverResolutionRequestedAt?.trim().isNotEmpty == true;
 
-  bool get hasSubmittedResolution =>
-      hasPendingDriverResolutionRequest ||
-      settlementLines.any(
-        (line) => line.isDriverSubmitted && line.status != 'VOID',
-      );
+  bool get hasSubmittedResolution => hasPendingDriverResolutionRequest;
 
-  bool get hasReviewedResolution => settlementLines.any(
-    (line) =>
-        line.isDriverSubmitted &&
-        line.status != 'VOID' &&
-        line.status != 'DRAFT',
-  );
+  bool get hasReviewedResolution => isFinalAdminStage;
 
   bool get hasPostedResolution => settlementLines.any(
     (line) => line.isDriverSubmitted && line.status == 'POSTED',
@@ -547,9 +558,7 @@ class DriverIncident {
   bool get canSubmitResolution => !isFinalAdminStage && !hasSubmittedResolution;
 
   bool get canAddResolutionCost =>
-      !isFinalAdminStage &&
-      hasPendingDriverResolutionRequest &&
-      !hasReviewedResolution;
+      !isFinalAdminStage;
 
   bool get canOpenResolutionForm => canSubmitResolution || canAddResolutionCost;
 
@@ -738,6 +747,7 @@ class DeliveryTrip {
     String? trackingState,
     String? pendingDriverStatus,
     String? statusNote,
+    List<DeliveryShipperReference>? shipperReferences,
   }) {
     final nextStatus = status ?? this.status;
     final nextPendingDriverStatus =
@@ -773,7 +783,7 @@ class DeliveryTrip {
       receiverAddress: receiverAddress,
       itemSummary: itemSummary,
       pickupStops: pickupStops,
-      shipperReferences: shipperReferences,
+      shipperReferences: shipperReferences ?? this.shipperReferences,
       cargoItems: cargoItems,
       actualDropPoints: actualDropPoints,
       pendingActualCargoItems: pendingActualCargoItems,

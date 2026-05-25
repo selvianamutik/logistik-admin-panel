@@ -142,7 +142,7 @@ const DRIVER_INCIDENT_COST_CATEGORY_OPTIONS: Array<{ value: IncidentSettlementCa
     { value: 'TIRE', label: 'Ban' },
     { value: 'TOWING', label: 'Derek / Evakuasi' },
     { value: 'MEDICAL', label: 'Medis' },
-    { value: 'POLICE_ADMIN', label: 'Polisi / Administrasi' },
+    { value: 'ADMINISTRATION', label: 'Administrasi' },
     { value: 'ACCOMMODATION', label: 'Akomodasi' },
     { value: 'CARGO_HANDLING', label: 'Bongkar / Handling' },
     { value: 'THIRD_PARTY_DAMAGE', label: 'Kerusakan Pihak Ketiga' },

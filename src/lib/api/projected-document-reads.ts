@@ -215,14 +215,6 @@ function formatTripRouteKey(rate: TripRouteRate) {
     return `${rate.originArea || ''} ${rate.destinationArea || ''} ${rate.serviceName || ''}`.trim();
 }
 
-function hasAnyCargo(cargo?: { qtyKoli?: number; weightKg?: number; volumeM3?: number } | null) {
-    return Boolean(
-        (cargo?.qtyKoli || 0) > 0 ||
-        (cargo?.weightKg || 0) > 0 ||
-        (cargo?.volumeM3 || 0) > 0
-    );
-}
-
 function mergeSuratJalanDocumentWithLiveCargo(
     document: ProjectedSuratJalanDocument,
     liveDocument?: ProjectedSuratJalanDocument
@@ -233,13 +225,7 @@ function mergeSuratJalanDocumentWithLiveCargo(
 
     const shouldPreserveDraftStatus =
         document.tripStatus === 'CREATED' &&
-        ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveDocument.tripStatus || '') &&
-        !hasAnyCargo(document.billableCargo) &&
-        !hasAnyCargo(document.holdCargo) &&
-        !hasAnyCargo(document.returnCargo) &&
-        !hasAnyCargo(liveDocument.billableCargo) &&
-        !hasAnyCargo(liveDocument.holdCargo) &&
-        !hasAnyCargo(liveDocument.returnCargo);
+        ['ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveDocument.tripStatus || '');
 
     const liveHasHoldCargo =
         (liveDocument.holdCargo?.qtyKoli || 0) > 0 ||
