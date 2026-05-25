@@ -5,6 +5,7 @@ loadScriptEnv();
 import ExcelJS from 'exceljs';
 import { handleMasterDataImport } from '../src/lib/api/master-data-import';
 import { MASTER_DATA_IMPORT_TARGETS } from '../src/lib/master-data-import-config';
+import type { MasterDataImportTargetConfig } from '../src/lib/master-data-import-config';
 import {
   buildMasterDataImportTemplateWorkbook,
   parseMasterDataImportXlsx,
@@ -76,16 +77,20 @@ async function cleanup(ids: string[]) {
   }
 }
 
-async function expectXlsxParseError(workbook: ExcelJS.Workbook, expectedText: string) {
-  const buffer = await workbook.xlsx.writeBuffer();
+async function expectXlsxBufferParseError(buffer: unknown, config: MasterDataImportTargetConfig, expectedText: string) {
   let rejected = false;
   try {
-    await parseMasterDataImportXlsx(buffer as unknown as ArrayBuffer, MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'suppliers') || MASTER_DATA_IMPORT_TARGETS[0]);
+    await parseMasterDataImportXlsx(buffer as ArrayBuffer, config);
   } catch (error) {
     rejected = true;
     assert(error instanceof Error && error.message.includes(expectedText), `Pesan error Excel harus memuat "${expectedText}", dapat: ${error instanceof Error ? error.message : String(error)}`);
   }
   assert(rejected, `Excel invalid harus ditolak: ${expectedText}`);
+}
+
+async function expectXlsxParseError(workbook: ExcelJS.Workbook, config: MasterDataImportTargetConfig, expectedText: string) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  await expectXlsxBufferParseError(buffer, config, expectedText);
 }
 
 async function auditImportFileTemplates() {
@@ -111,17 +116,50 @@ async function auditImportFileTemplates() {
     assert(parsed.rows[0]?.[config.fields[0].key] === config.templateRows[0]?.[config.fields[0].key], `Contoh row Excel ${config.label} mismatch`);
   }
 
+  const supplierConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'suppliers') || MASTER_DATA_IMPORT_TARGETS[0];
+  const customerConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'customers') || MASTER_DATA_IMPORT_TARGETS[0];
+
+  const supplierTemplateBuffer = await buildMasterDataImportTemplateWorkbook(supplierConfig);
+  await expectXlsxBufferParseError(supplierTemplateBuffer, customerConfig, 'Header Excel tidak dikenali');
+
+  const aliasHeaderWorkbook = new ExcelJS.Workbook();
+  const aliasHeaderSheet = aliasHeaderWorkbook.addWorksheet('Template');
+  aliasHeaderSheet.addRow(['Kode Supplier', 'Nama Supplier', 'Status Aktif']);
+  aliasHeaderSheet.addRow(['SUP-ALIAS', 'PT Alias Supplier', 'Aktif']);
+  const aliasHeaderBuffer = await aliasHeaderWorkbook.xlsx.writeBuffer();
+  const aliasParsed = await parseMasterDataImportXlsx(aliasHeaderBuffer as unknown as ArrayBuffer, supplierConfig);
+  assert(aliasParsed.headers.join('|') === 'Kode Supplier|Nama Supplier|Status Aktif', 'Header alias Excel harus tetap diterima');
+  assert(aliasParsed.rows[0]?.['Kode Supplier'] === 'SUP-ALIAS', 'Row alias Excel supplier mismatch');
+
+  const unknownHeaderWorkbook = new ExcelJS.Workbook();
+  const unknownHeaderSheet = unknownHeaderWorkbook.addWorksheet('Template');
+  unknownHeaderSheet.addRow(['supplierCode', 'name', 'kolomAnehTidakAda']);
+  unknownHeaderSheet.addRow(['SUP-1', 'PT Header Aneh', 'harus ditolak']);
+  await expectXlsxParseError(unknownHeaderWorkbook, supplierConfig, 'Header Excel tidak dikenali');
+
+  const missingRequiredHeaderWorkbook = new ExcelJS.Workbook();
+  const missingRequiredHeaderSheet = missingRequiredHeaderWorkbook.addWorksheet('Template');
+  missingRequiredHeaderSheet.addRow(['name', 'contactPerson']);
+  missingRequiredHeaderSheet.addRow(['PT Tanpa Kode', 'PIC']);
+  await expectXlsxParseError(missingRequiredHeaderWorkbook, supplierConfig, 'Header Excel wajib belum ada');
+
   const duplicateHeaderWorkbook = new ExcelJS.Workbook();
   const duplicateSheet = duplicateHeaderWorkbook.addWorksheet('Template');
   duplicateSheet.addRow(['supplierCode', 'supplierCode', 'name']);
   duplicateSheet.addRow(['SUP-1', 'SUP-2', 'PT Duplikat']);
-  await expectXlsxParseError(duplicateHeaderWorkbook, 'duplikat');
+  await expectXlsxParseError(duplicateHeaderWorkbook, supplierConfig, 'duplikat');
+
+  const duplicateAliasHeaderWorkbook = new ExcelJS.Workbook();
+  const duplicateAliasHeaderSheet = duplicateAliasHeaderWorkbook.addWorksheet('Template');
+  duplicateAliasHeaderSheet.addRow(['supplierCode', 'Kode Supplier', 'name']);
+  duplicateAliasHeaderSheet.addRow(['SUP-1', 'SUP-2', 'PT Duplikat Alias']);
+  await expectXlsxParseError(duplicateAliasHeaderWorkbook, supplierConfig, 'duplikat');
 
   const extraColumnWorkbook = new ExcelJS.Workbook();
   const extraColumnSheet = extraColumnWorkbook.addWorksheet('Template');
   extraColumnSheet.addRow(['supplierCode', 'name']);
   extraColumnSheet.addRow(['SUP-1', 'PT Kolom Ekstra', 'tidak boleh']);
-  await expectXlsxParseError(extraColumnWorkbook, 'kolom lebih banyak');
+  await expectXlsxParseError(extraColumnWorkbook, supplierConfig, 'kolom lebih banyak');
 }
 
 async function main() {
@@ -186,6 +224,20 @@ async function main() {
     }) as Response, 'preview duplicate alias');
     assert(duplicateAliasPreview.data?.summary.errors === 1, 'Kolom alias duplikat harus error');
     assert(duplicateAliasPreview.data.rows[0]?.errors.some((error) => error.includes('duplikat')), 'Pesan kolom alias duplikat tidak muncul');
+
+    console.log('[audit-master-data-import] preview unknown api column');
+    const unknownColumnPreview = await readResponse(await handleMasterDataImport(session, {
+      action: 'preview',
+      target: 'suppliers',
+      mode: 'createOnly',
+      rows: [{
+        supplierCode,
+        name: 'Audit Supplier Import',
+        kolomAnehTidakAda: 'harus ditolak',
+      }],
+    }) as Response, 'preview unknown api column');
+    assert(unknownColumnPreview.data?.summary.errors === 1, 'Kolom asing dari API harus error');
+    assert(unknownColumnPreview.data.rows[0]?.errors.some((error) => error.includes('tidak dikenali')), 'Pesan kolom asing API tidak muncul');
 
     console.log('[audit-master-data-import] commit supplier create');
     const supplierCommit = await readResponse(await handleMasterDataImport(session, {

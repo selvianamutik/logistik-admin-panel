@@ -28,7 +28,12 @@ function clampWidth(length: number) {
 }
 
 function normalizeHeader(value: string) {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+  return value
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 function buildKnownHeaderSet(config: MasterDataImportTargetConfig) {
@@ -39,6 +44,54 @@ function buildKnownHeaderSet(config: MasterDataImportTargetConfig) {
     field.aliases?.forEach((alias) => known.add(normalizeHeader(alias)));
   });
   return known;
+}
+
+function buildHeaderFieldMap(config: MasterDataImportTargetConfig) {
+  const headerFieldMap = new Map<string, MasterDataImportField>();
+  config.fields.forEach((field) => {
+    headerFieldMap.set(normalizeHeader(field.key), field);
+    headerFieldMap.set(normalizeHeader(field.label), field);
+    field.aliases?.forEach((alias) => headerFieldMap.set(normalizeHeader(alias), field));
+  });
+  return headerFieldMap;
+}
+
+function validateHeaderSchema(headers: string[], config: MasterDataImportTargetConfig) {
+  const headerFieldMap = buildHeaderFieldMap(config);
+  const unknownHeaders: string[] = [];
+  const seenFields = new Map<string, string>();
+  const duplicateFieldHeaders: string[] = [];
+
+  headers.forEach((header) => {
+    const field = headerFieldMap.get(normalizeHeader(header));
+    if (!field) {
+      unknownHeaders.push(header);
+      return;
+    }
+
+    const firstHeader = seenFields.get(field.key);
+    if (firstHeader) {
+      duplicateFieldHeaders.push(`${header} duplikat dengan ${firstHeader} untuk kolom ${field.label}`);
+      return;
+    }
+
+    seenFields.set(field.key, header);
+  });
+
+  if (unknownHeaders.length > 0) {
+    throw new Error(`Header Excel tidak dikenali untuk ${config.label}: ${unknownHeaders.join(', ')}. Pastikan target data sesuai dengan template yang dipakai.`);
+  }
+
+  if (duplicateFieldHeaders.length > 0) {
+    throw new Error(`Header Excel duplikat: ${duplicateFieldHeaders.join(' | ')}`);
+  }
+
+  const missingRequiredHeaders = config.fields
+    .filter((field) => field.required && !seenFields.has(field.key))
+    .map((field) => field.label);
+  if (missingRequiredHeaders.length > 0) {
+    throw new Error(`Header Excel wajib belum ada untuk ${config.label}: ${missingRequiredHeaders.join(', ')}`);
+  }
 }
 
 function fieldGuideText(field: MasterDataImportField) {
@@ -233,6 +286,7 @@ export async function parseMasterDataImportXlsx(buffer: ArrayBuffer, config: Mas
   if (duplicateHeader) {
     throw new Error(`Header Excel duplikat: ${duplicateHeader}`);
   }
+  validateHeaderSchema(headers, config);
 
   const rows: Record<string, string>[] = [];
   for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {

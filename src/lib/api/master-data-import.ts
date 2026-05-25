@@ -21,6 +21,18 @@ import {
 } from './generic-workflow-support';
 
 const MAX_IMPORT_ROWS = 1000;
+const WAREHOUSE_ITEM_STOCK_HEADERS = new Set([
+  'stok',
+  'stock',
+  'stok awal',
+  'stock awal',
+  'stok qty',
+  'stock qty',
+  'jumlah stok',
+  'current stock qty',
+  'currentstockqty',
+  'stok saat ini',
+]);
 
 type ApiSession = {
   _id: string;
@@ -316,6 +328,10 @@ function buildFieldAliasMap(target: MasterDataImportTarget) {
   return map;
 }
 
+function isIgnoredWarehouseStockHeader(header: string) {
+  return WAREHOUSE_ITEM_STOCK_HEADERS.has(normalizeHeader(header));
+}
+
 function mapInputRow(target: MasterDataImportTarget, row: ImportRowInput) {
   const aliasMap = buildFieldAliasMap(target);
   const mapped: Record<string, string> = {};
@@ -470,14 +486,17 @@ async function evaluateImportRows(params: {
     }
 
     for (const column of unknownColumns) {
-      warnings.push(`Kolom "${column}" tidak dipakai`);
+      if (params.target === 'warehouse-items' && isIgnoredWarehouseStockHeader(column)) {
+        continue;
+      }
+      errors.push(`Kolom "${column}" tidak dikenali untuk import ${runtime.entity}. Pakai template Excel terbaru atau hapus kolom tersebut.`);
     }
     for (const column of duplicateColumns) {
       errors.push(column);
     }
     if (params.target === 'warehouse-items') {
       const lowerHeaders = Object.keys(params.rows[index]).map(normalizeHeader);
-      if (lowerHeaders.some((header) => ['stok', 'stock', 'stok awal', 'stock awal', 'stok qty', 'stock qty', 'jumlah stok', 'current stock qty', 'currentstockqty', 'stok saat ini'].includes(header))) {
+      if (lowerHeaders.some((header) => WAREHOUSE_ITEM_STOCK_HEADERS.has(header))) {
         warnings.push('Kolom stok diabaikan. Stok awal harus lewat pembelian atau mutasi stok.');
       }
     }
