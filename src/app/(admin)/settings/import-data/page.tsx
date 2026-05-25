@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle, Download, RefreshCw, Save, XCircle } from 'lucide-react';
 
 import {
@@ -98,18 +98,42 @@ export default function ImportDataPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [importing, setImporting] = useState(false);
   const dataVersionRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === target) || MASTER_DATA_IMPORT_TARGETS[0];
   const selectedMode = MASTER_DATA_IMPORT_MODES.find((item) => item.value === mode) || MASTER_DATA_IMPORT_MODES[0];
   const currentPreview = previewVersion === dataVersionRef.current ? preview : null;
-  const actionableCount = currentPreview ? currentPreview.summary.create + currentPreview.summary.update : 0;
+  const actionableCount = currentPreview
+    ? currentPreview.rows.filter((row) => row.action !== 'skip' && row.status !== 'error' && row.status !== 'imported').length
+    : 0;
   const canCommit = Boolean(currentPreview && rows.length > 0 && currentPreview.summary.errors === 0 && actionableCount > 0 && !importing && !loadingPreview);
+
+  const clearFileInput = useCallback(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
+
+  const resetPreviewState = useCallback(() => {
+    dataVersionRef.current += 1;
+    setPreview(null);
+    setPreviewVersion(null);
+  }, []);
+
+  const resetUploadedFile = useCallback((options?: { clearInput?: boolean }) => {
+    setFileName('');
+    setHeaders([]);
+    setRows([]);
+    if (options?.clearInput) clearFileInput();
+  }, [clearFileInput]);
 
   useEffect(() => {
     if (availableTargets.length > 0 && !availableTargets.some((item) => item.target === target)) {
+      resetPreviewState();
+      resetUploadedFile({ clearInput: true });
       setTarget(availableTargets[0].target);
     }
-  }, [availableTargets, target]);
+  }, [availableTargets, resetPreviewState, resetUploadedFile, target]);
 
   useEffect(() => {
     dataVersionRef.current += 1;
@@ -117,10 +141,17 @@ export default function ImportDataPage() {
     setPreviewVersion(null);
   }, [target, mode, rows]);
 
-  const resetUploadedFile = () => {
-    setFileName('');
-    setHeaders([]);
-    setRows([]);
+  const handleTargetChange = (nextTarget: MasterDataImportTarget) => {
+    if (nextTarget === target) return;
+    resetPreviewState();
+    resetUploadedFile({ clearInput: true });
+    setTarget(nextTarget);
+  };
+
+  const handleModeChange = (nextMode: MasterDataImportMode) => {
+    if (nextMode === mode) return;
+    resetPreviewState();
+    setMode(nextMode);
   };
 
   const handleDownloadTemplate = async () => {
@@ -142,7 +173,8 @@ export default function ImportDataPage() {
   };
 
   const handleFileChange = async (file: File | null) => {
-    dataVersionRef.current += 1;
+    const requestVersion = dataVersionRef.current + 1;
+    dataVersionRef.current = requestVersion;
     setPreview(null);
     setPreviewVersion(null);
     if (!file) {
@@ -156,19 +188,20 @@ export default function ImportDataPage() {
       } = await import('@/lib/master-data-import-file');
       const isXlsx = isMasterDataImportXlsxFile(file);
       if (!isXlsx) {
-        resetUploadedFile();
+        if (requestVersion !== dataVersionRef.current) return;
+        resetUploadedFile({ clearInput: true });
         addToast('error', 'Format file harus Excel .xlsx. Download template Excel terbaru.');
         return;
       }
       const parsed = await parseMasterDataImportXlsx(await file.arrayBuffer(), selectedConfig);
+      if (requestVersion !== dataVersionRef.current) return;
       setFileName(file.name);
       setHeaders(parsed.headers);
       setRows(parsed.rows);
       addToast('success', `${parsed.rows.length} baris dibaca dari Excel`);
     } catch (error) {
-      setFileName('');
-      setHeaders([]);
-      setRows([]);
+      if (requestVersion !== dataVersionRef.current) return;
+      resetUploadedFile({ clearInput: true });
       addToast('error', error instanceof Error ? error.message : 'Gagal membaca file import');
     }
   };
@@ -267,13 +300,13 @@ export default function ImportDataPage() {
         <div className="form-row" style={{ padding: '1rem 1rem 0' }}>
           <div className="form-group">
             <label className="form-label">Target Data</label>
-            <select className="form-select" value={target} onChange={(event) => setTarget(event.target.value as MasterDataImportTarget)}>
+            <select className="form-select" value={target} onChange={(event) => handleTargetChange(event.target.value as MasterDataImportTarget)}>
               {availableTargets.map((item) => <option key={item.target} value={item.target}>{item.label}</option>)}
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Mode Import</label>
-            <select className="form-select" value={mode} onChange={(event) => setMode(event.target.value as MasterDataImportMode)}>
+            <select className="form-select" value={mode} onChange={(event) => handleModeChange(event.target.value as MasterDataImportMode)}>
               {MASTER_DATA_IMPORT_MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
             <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>{selectedMode.description}</div>
@@ -283,7 +316,7 @@ export default function ImportDataPage() {
         <div className="form-row" style={{ padding: '0 1rem 1rem' }}>
           <div className="form-group">
             <label className="form-label">Upload Excel (.xlsx)</label>
-            <input className="form-input" type="file" accept={IMPORT_FILE_ACCEPT} onChange={(event) => void handleFileChange(event.target.files?.[0] || null)} />
+            <input ref={fileInputRef} className="form-input" type="file" accept={IMPORT_FILE_ACCEPT} onChange={(event) => void handleFileChange(event.target.files?.[0] || null)} />
             <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>{fileName || 'Belum ada file dipilih'}</div>
           </div>
           <div className="form-group">

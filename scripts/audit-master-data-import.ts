@@ -118,6 +118,7 @@ async function auditImportFileTemplates() {
 
   const supplierConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'suppliers') || MASTER_DATA_IMPORT_TARGETS[0];
   const customerConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'customers') || MASTER_DATA_IMPORT_TARGETS[0];
+  const warehouseConfig = MASTER_DATA_IMPORT_TARGETS.find((item) => item.target === 'warehouse-items') || MASTER_DATA_IMPORT_TARGETS[0];
 
   const supplierTemplateBuffer = await buildMasterDataImportTemplateWorkbook(supplierConfig);
   await expectXlsxBufferParseError(supplierTemplateBuffer, customerConfig, 'Header Excel tidak dikenali');
@@ -136,6 +137,14 @@ async function auditImportFileTemplates() {
   unknownHeaderSheet.addRow(['supplierCode', 'name', 'kolomAnehTidakAda']);
   unknownHeaderSheet.addRow(['SUP-1', 'PT Header Aneh', 'harus ditolak']);
   await expectXlsxParseError(unknownHeaderWorkbook, supplierConfig, 'Header Excel tidak dikenali');
+
+  const stockHeaderWorkbook = new ExcelJS.Workbook();
+  const stockHeaderSheet = stockHeaderWorkbook.addWorksheet('Template');
+  stockHeaderSheet.addRow(['itemCode', 'name', 'stock']);
+  stockHeaderSheet.addRow(['BRG-STOCK', 'Barang Dengan Stok Diabaikan', '99']);
+  const stockHeaderBuffer = await stockHeaderWorkbook.xlsx.writeBuffer();
+  const stockHeaderParsed = await parseMasterDataImportXlsx(stockHeaderBuffer as unknown as ArrayBuffer, warehouseConfig);
+  assert(stockHeaderParsed.headers.includes('stock'), 'Header stok Barang Gudang harus tetap terbaca agar backend bisa memberi warning');
 
   const missingRequiredHeaderWorkbook = new ExcelJS.Workbook();
   const missingRequiredHeaderSheet = missingRequiredHeaderWorkbook.addWorksheet('Template');

@@ -16,6 +16,18 @@ const MAX_HEADER_SCAN_ROWS = 20;
 const HEADER_FILL = 'FF0F766E';
 const REQUIRED_FILL = 'FFFFF7D6';
 const OPTIONAL_FILL = 'FFF8FAFC';
+const WAREHOUSE_ITEM_STOCK_HEADERS = new Set([
+  'stok',
+  'stock',
+  'stok awal',
+  'stock awal',
+  'stok qty',
+  'stock qty',
+  'jumlah stok',
+  'current stock qty',
+  'currentstockqty',
+  'stok saat ini',
+]);
 const BORDER_STYLE: Partial<ExcelJS.Borders> = {
   top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
   right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
@@ -56,6 +68,10 @@ function buildHeaderFieldMap(config: MasterDataImportTargetConfig) {
   return headerFieldMap;
 }
 
+function isIgnoredWarehouseStockHeader(header: string, config: MasterDataImportTargetConfig) {
+  return config.target === 'warehouse-items' && WAREHOUSE_ITEM_STOCK_HEADERS.has(normalizeHeader(header));
+}
+
 function validateHeaderSchema(headers: string[], config: MasterDataImportTargetConfig) {
   const headerFieldMap = buildHeaderFieldMap(config);
   const unknownHeaders: string[] = [];
@@ -65,6 +81,9 @@ function validateHeaderSchema(headers: string[], config: MasterDataImportTargetC
   headers.forEach((header) => {
     const field = headerFieldMap.get(normalizeHeader(header));
     if (!field) {
+      if (isIgnoredWarehouseStockHeader(header, config)) {
+        return;
+      }
       unknownHeaders.push(header);
       return;
     }
