@@ -3,15 +3,13 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast, useApp } from '../layout';
-import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
+import { Plus, Search, Wallet, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
-    buildInventoryReportPeriodLabel,
     getDefaultInventoryReportPeriod,
     getInventoryReportDateRange,
     getInventoryReportYearOptions,
@@ -19,8 +17,6 @@ import {
     type InventoryReportPeriodMode,
 } from '@/lib/inventory-report-period';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { exportExpenses } from '@/lib/export';
-import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, DriverBorongan, DriverVoucher, Expense, ExpenseCategory, Incident, Maintenance, Vehicle } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -185,32 +181,6 @@ function getExpenseRelatedDocuments(
     return links;
 }
 
-function formatExpenseRelatedDocumentsForPlainText(
-    expense: Expense,
-    maps: ExpenseReferenceMaps,
-    permissions: ExpenseLinkPermissions
-) {
-    return getExpenseRelatedDocuments(expense, maps, permissions)
-        .map(doc => `${doc.kind}: ${doc.label}`)
-        .join(' | ');
-}
-
-function enrichExpensesForExport(
-    expenses: Expense[],
-    maps: ExpenseReferenceMaps,
-    permissions: ExpenseLinkPermissions
-) {
-    return expenses.map(expense => {
-        const relatedDocs = formatExpenseRelatedDocumentsForPlainText(expense, maps, permissions);
-        return {
-            ...expense,
-            accountLabel: getExpenseAccountLabel(expense, maps.accountMap),
-            descriptionLabel: [getExpenseDescriptionLabel(expense), relatedDocs].filter(Boolean).join('\n'),
-            vehicleLabel: getExpenseVehicleLabel(expense, maps.vehicleMap),
-        };
-    });
-}
-
 export default function ExpensesPage() {
     const { addToast } = useToast();
     const { user } = useApp();
@@ -246,8 +216,6 @@ export default function ExpensesPage() {
 
     const isOwner = user?.role === 'OWNER';
     const canCreateExpenses = user ? hasPermission(user.role, 'expenses', 'create') : false;
-    const canExportExpenses = user ? hasPermission(user.role, 'expenses', 'export') : false;
-    const canPrintExpenses = user ? hasPermission(user.role, 'expenses', 'print') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenBankAccountPage = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
@@ -286,29 +254,6 @@ export default function ExpensesPage() {
         [dateFrom, dateTo, monthIndex, periodMode, year]
     );
     const isValidDateRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
-    const periodLabel = buildInventoryReportPeriodLabel({
-        mode: periodMode,
-        monthIndex,
-        year,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-    });
-    const categoryFilterLabel = categoryFilter
-        ? categories.find(category => category._id === categoryFilter)?.name || 'Kategori terpilih'
-        : 'Semua kategori';
-    const bankAccountFilterLabel = bankAccountFilter
-        ? (() => {
-            const account = accountMap.get(bankAccountFilter);
-            return account ? `${account.bankName} - ${account.accountNumber}` : 'Rekening terpilih';
-        })()
-        : 'Semua rekening/kas';
-    const privacyFilterLabel = !isOwner
-        ? 'Internal'
-        : privacyFilter === 'ownerOnly'
-            ? 'Owner Only'
-            : privacyFilter === 'internal'
-                ? 'Internal'
-                : 'Semua privasi';
     const isFormValid = Boolean(
         form.categoryRef
         && manualCategories.some(category => category._id === form.categoryRef)
@@ -386,27 +331,6 @@ export default function ExpensesPage() {
 
         return params.toString();
     }, [bankAccountFilter, categoryFilter, dateRange.endDate, dateRange.startDate, isOwner, isValidDateRange, privacyFilter, search]);
-
-    const fetchAllMatchingExpenses = useCallback(async () => {
-        const pageSize = 200;
-        let currentPage = 1;
-        let total = 0;
-        const allItems: Expense[] = [];
-
-        do {
-            const payload = await fetchAdminListPayload<Expense>(
-                `/api/data?${buildExpensesQuery(currentPage, pageSize)}`,
-                'Gagal memuat data pengeluaran'
-            );
-            const nextItems = (payload.data || []) as Expense[];
-            total = payload.meta?.total || nextItems.length;
-            allItems.push(...nextItems);
-            if (nextItems.length === 0) break;
-            currentPage += 1;
-        } while (allItems.length < total);
-
-        return allItems;
-    }, [buildExpensesQuery]);
 
     const loadExpenses = useCallback(async () => {
         if (!user) return;
@@ -522,80 +446,6 @@ export default function ExpensesPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1></div>
                 <div className="page-actions">
-                    {canExportExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        if (periodMode === 'custom' && !isValidDateRange) {
-                            addToast('error', 'Rentang tanggal tidak valid');
-                            return;
-                        }
-                        try {
-                            const exportRows = await fetchAllMatchingExpenses();
-                            const referenceRows = await fetchExpenseReferences(exportRows);
-                            const exportReferenceMaps: ExpenseReferenceMaps = {
-                                accountMap,
-                                boronganMap: mapById(referenceRows.boronganRows),
-                                incidentMap: mapById(referenceRows.incidentRows),
-                                maintenanceMap: mapById(referenceRows.maintenanceRows),
-                                vehicleMap,
-                                voucherMap: mapById(referenceRows.voucherRows),
-                            };
-                            await exportExpenses(enrichExpensesForExport(exportRows, exportReferenceMaps, linkPermissions) as unknown as Record<string, unknown>[]);
-                            addToast('success', 'Excel pengeluaran berhasil di-download');
-                        } catch (error) {
-                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel pengeluaran');
-                        }
-                    }}><FileDown size={15} /> Excel</button>}
-                    {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        if (periodMode === 'custom' && !isValidDateRange) {
-                            addToast('error', 'Rentang tanggal tidak valid');
-                            return;
-                        }
-                        const printWindow = openPrintWindow('Menyiapkan print pengeluaran...');
-                        if (!printWindow) {
-                            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-                            return;
-                        }
-                        try {
-                            const company = await fetchCompanyProfile().catch(() => null);
-                            const printableExpenses = await fetchAllMatchingExpenses();
-                            const referenceRows = await fetchExpenseReferences(printableExpenses);
-                            const printReferenceMaps: ExpenseReferenceMaps = {
-                                accountMap,
-                                boronganMap: mapById(referenceRows.boronganRows),
-                                incidentMap: mapById(referenceRows.incidentRows),
-                                maintenanceMap: mapById(referenceRows.maintenanceRows),
-                                vehicleMap,
-                                voucherMap: mapById(referenceRows.voucherRows),
-                            };
-                            const printableGrandTotal = printableExpenses.reduce(
-                                (sum, expense) => sum + Math.max(parseFormattedNumberish(expense.amount ?? 0, { maxFractionDigits: 0 }), 0),
-                                0,
-                            );
-                            const describeExpense = (expense: Expense) => {
-                                const vehicleLabel = getExpenseVehicleLabel(expense, printReferenceMaps.vehicleMap);
-                                const accountLabel = getExpenseAccountLabel(expense, printReferenceMaps.accountMap);
-                                const relatedDocs = formatExpenseRelatedDocumentsForPlainText(expense, printReferenceMaps, linkPermissions);
-                                const detailLines = [
-                                    getExpenseDescriptionLabel(expense),
-                                    relatedDocs ? `Dokumen: ${relatedDocs}` : '',
-                                    vehicleLabel ? `Kendaraan: ${vehicleLabel}` : '',
-                                    accountLabel ? `Via: ${accountLabel}` : '',
-                                ].filter(Boolean);
-                                return detailLines.join('<br/>');
-                            };
-                            openBrandedPrint({
-                                title: 'Daftar Pengeluaran', company, targetWindow: printWindow, bodyHtml: `
-                                <div style="margin-bottom:12px;font-size:12px;color:#475569">Periode: <strong>${periodLabel}</strong> | Kategori: <strong>${categoryFilterLabel}</strong> | Rekening/Kas: <strong>${bankAccountFilterLabel}</strong> | Privasi: <strong>${privacyFilterLabel}</strong></div>
-                                <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
-                                <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
-                                <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(printableGrandTotal)}</td></tr></tbody></table>`
-                            });
-                        } catch (error) {
-                            try {
-                                printWindow.close();
-                            } catch {}
-                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print pengeluaran');
-                        }
-                    }}><Printer size={15} /> Print</button>}
                     {canCreateExpenses && <button className="btn btn-primary" onClick={openCreateModal}><Plus size={18} /> Tambah Pengeluaran</button>}
                 </div></div>
 

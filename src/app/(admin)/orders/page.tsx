@@ -4,12 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../layout';
-import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Package } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
-import { exportOrders } from '@/lib/export';
-import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { DeliveryOrder, DriverVoucher, Order, Service } from '@/lib/types';
@@ -268,37 +266,6 @@ export default function OrdersPage() {
                     <h1 className="page-title">Order / Resi</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        try {
-                            await exportOrders(await fetchAllMatchingOrders() as unknown as Record<string, unknown>[]);
-                            addToast('success', 'Excel order berhasil di-download');
-                        } catch (error) {
-                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel order');
-                        }
-                    }}>
-                        <FileDown size={15} /> Excel
-                    </button>
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const printWindow = openPrintWindow('Menyiapkan print order...');
-                        if (!printWindow) {
-                            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-                            return;
-                        }
-                        try {
-                            const co = await fetchCompanyProfile().catch(() => null);
-                            const printableOrders = await fetchAllMatchingOrders();
-                            openBrandedPrint({
-                                title: 'Daftar Order / Resi', company: co, targetWindow: printWindow, bodyHtml: `
-                                <table><thead><tr><th>Resi</th><th>Customer</th><th>Pickup</th><th>Kategori</th><th>Tanggal</th><th>Status</th></tr></thead>
-                                <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.pickupAddress || '-'}</td><td>${getServiceLabel(o)}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
-                            });
-                        } catch (error) {
-                            try {
-                                printWindow.close();
-                            } catch {}
-                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print order');
-                        }
-                    }}><Printer size={15} /> Print</button>
                     <Link href="/orders/new" className="btn btn-primary">
                         <Plus size={18} className="btn-icon" /> Buat Order Baru
                     </Link>

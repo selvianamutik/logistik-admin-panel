@@ -3,13 +3,12 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Building2, Edit, FileDown, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
+import { Building2, Edit, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { exportToExcel } from '@/lib/export';
 import { getMonthPrefix } from '@/lib/inventory-material-usage';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { hasPermission } from '@/lib/rbac';
@@ -46,7 +45,6 @@ export default function SuppliersPage() {
     const { user } = useApp();
     const { addToast } = useToast();
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-    const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState(searchParams.get('q') || '');
     const [page, setPage] = useState(1);
@@ -61,7 +59,6 @@ export default function SuppliersPage() {
     const [form, setForm] = useState<SupplierFormState>(createDefaultForm());
 
     const canManage = user ? hasPermission(user.role, 'suppliers', 'create') || hasPermission(user.role, 'suppliers', 'update') : false;
-    const canExport = user ? hasPermission(user.role, 'suppliers', 'export') : false;
     const activeSuppliers = totalSuppliers - inactiveSuppliers;
     const today = getBusinessDateValue();
     const currentMonthPrefix = getMonthPrefix(today);
@@ -84,11 +81,10 @@ export default function SuppliersPage() {
     const loadSuppliers = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, totalRes, inactiveRes, supplierRows, purchaseRows] = await Promise.all([
+            const [listRes, totalRes, inactiveRes, purchaseRows] = await Promise.all([
                 fetch(`/api/data?${buildQuery()}`),
                 fetch('/api/data?entity=suppliers&countOnly=1'),
                 fetch(`/api/data?entity=suppliers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
-                fetchAllAdminCollectionData<Supplier>('/api/data?entity=suppliers&pageSize=200', 'Gagal memuat supplier', 200),
                 fetchAllAdminCollectionData<Purchase>('/api/data?entity=purchases&pageSize=200&sortField=orderDate&sortDir=desc', 'Gagal memuat pembelian supplier', 200),
             ]);
             const [listPayload, totalPayload, inactivePayload] = await Promise.all([
@@ -103,7 +99,6 @@ export default function SuppliersPage() {
             setFilteredTotal(listPayload.meta?.total || 0);
             setTotalSuppliers(totalPayload.meta?.total || 0);
             setInactiveSuppliers(inactivePayload.meta?.total || 0);
-            setAllSuppliers(supplierRows || []);
             setAllPurchases(purchaseRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat supplier');
@@ -151,43 +146,6 @@ export default function SuppliersPage() {
         setShowModal(false);
         setEditSupplier(null);
         setForm(createDefaultForm());
-    };
-
-    const handleExport = async () => {
-        if (!canExport) return;
-        try {
-            await exportToExcel(
-                allSuppliers.map(supplier => ({
-                    kode: supplier.supplierCode,
-                    nama: supplier.name,
-                    pic: supplier.contactPerson || '-',
-                    telepon: supplier.phone || '-',
-                    alamat: supplier.address || '-',
-                    terminDefault: Number(supplier.defaultTermDays || 0),
-                    status: supplier.active !== false ? 'Aktif' : 'Nonaktif',
-                    catatan: supplier.notes || '',
-                })),
-                [
-                    { header: 'Kode Supplier', key: 'kode', width: 18 },
-                    { header: 'Nama Supplier', key: 'nama', width: 28 },
-                    { header: 'PIC', key: 'pic', width: 20 },
-                    { header: 'Telepon', key: 'telepon', width: 18 },
-                    { header: 'Alamat', key: 'alamat', width: 30 },
-                    { header: 'Termin Default', key: 'terminDefault', width: 16 },
-                    { header: 'Status', key: 'status', width: 12 },
-                    { header: 'Catatan', key: 'catatan', width: 30 },
-                ],
-                `supplier-${getBusinessDateValue()}`,
-                'Supplier',
-                {
-                    title: 'Master Supplier',
-                    subtitle: `Total data: ${allSuppliers.length}`,
-                }
-            );
-            addToast('success', 'Excel supplier berhasil di-download');
-        } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel supplier');
-        }
     };
 
     const openCreate = () => {
@@ -288,11 +246,6 @@ export default function SuppliersPage() {
                     <h1 className="page-title">Supplier</h1>
                 </div>
                 <div className="page-actions">
-                    {canExport && (
-                        <button className="btn btn-secondary" onClick={() => void handleExport()}>
-                            <FileDown size={18} /> Excel
-                        </button>
-                    )}
                     {canManage && (
                         <button className="btn btn-primary" onClick={openCreate}>
                             <Plus size={18} /> Tambah Supplier

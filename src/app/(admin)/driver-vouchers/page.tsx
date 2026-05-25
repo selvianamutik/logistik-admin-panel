@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
+import { Eye, Plus, Search, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 
 import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/lib/utils';
 import { formatDriverVoucherRouteForDisplay } from '@/lib/driver-voucher-route';
 import { buildDriverVoucherSettlementDisplay, inferDriverVoucherDisbursementCount } from '@/lib/driver-voucher-detail-support';
-import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { DriverVoucher } from '@/lib/types';
@@ -52,7 +51,6 @@ export default function DriverVouchersPage() {
     const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canCreateVoucher = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
-    const canPrintVoucher = user ? hasPermission(user.role, 'driverVouchers', 'print') : false;
 
     const buildVoucherQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -134,93 +132,6 @@ export default function DriverVouchersPage() {
                     <h1 className="page-title">Uang Jalan Trip</h1>
                 </div>
                 <div className="page-actions">
-                    {canPrintVoucher && (
-                        <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={async () => {
-                                const printWindow = openPrintWindow('Menyiapkan print uang jalan trip...');
-                                if (!printWindow) {
-                                    addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-                                    return;
-                                }
-                                try {
-                                    const company = await fetchCompanyProfile().catch(() => null);
-                                    const printableVouchers = await fetchAllMatchingVouchers();
-                                    openBrandedPrint({
-                                        title: 'Daftar Uang Jalan Trip',
-                                        company,
-                                        targetWindow: printWindow,
-                                        bodyHtml: `
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>No. Bon</th>
-                                                    <th>Supir</th>
-                                                    <th>Tanggal</th>
-                                                    <th>No. DO Internal</th>
-                                                    <th>Rute</th>
-                                                    <th class="r">Bon Pertama</th>
-                                                    <th class="r">Total Bon Tambahan</th>
-                                                    <th class="r">Total Diberikan</th>
-                                                    <th class="r">Biaya Lain-lain</th>
-                                                    <th class="r">Upah Borongan</th>
-                                                    <th class="r">Total Klaim Trip</th>
-                                                    <th class="r">Sisa Bon Operasional</th>
-                                                    <th class="r">Penyelesaian Uang Jalan</th>
-                                                    <th>Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${printableVouchers.map(v => {
-                                                    const {
-                                                        totalSpent,
-                                                        driverFeeAmount,
-                                                        totalClaimAmount,
-                                                        initialCashGiven,
-                                                        topUpAmount,
-                                                        totalIssuedAmount,
-                                                        operationalBalance,
-                                                        balance,
-                                                    } = getDriverVoucherFinancialSummary(v);
-                                                    const routeLabel = formatDriverVoucherRouteForDisplay(v.route) || v.route || '-';
-                                                    const settlementDisplay = buildDriverVoucherSettlementDisplay({
-                                                        balance,
-                                                        fallbackDisbursementCount: inferDriverVoucherDisbursementCount({
-                                                            ...v,
-                                                            topUpAmount,
-                                                        }),
-                                                    });
-                                                    return `<tr>
-                                                        <td class="b">${v.bonNumber}</td>
-                                                        <td>${v.driverName || '-'}</td>
-                                                        <td>${formatDate(v.issuedDate)}</td>
-                                                        <td>${v.doNumber || '-'}</td>
-                                                        <td>${routeLabel}</td>
-                                                        <td class="r">${formatCurrency(initialCashGiven)}</td>
-                                                        <td class="r">${formatCurrency(topUpAmount)}</td>
-                                                        <td class="r">${formatCurrency(totalIssuedAmount)}</td>
-                                                        <td class="r">${formatCurrency(totalSpent)}</td>
-                                                        <td class="r">${formatCurrency(driverFeeAmount)}</td>
-                                                        <td class="r">${formatCurrency(totalClaimAmount)}</td>
-                                                        <td class="r">${formatCurrency(operationalBalance)}</td>
-                                                        <td class="r b">${settlementDisplay.label}: ${formatCurrency(balance)}</td>
-                                                        <td>${STATUS_MAP[v.status]?.label || v.status}</td>
-                                                    </tr>`;
-                                                }).join('')}
-                                            </tbody>
-                                        </table>`,
-                                    });
-                                } catch (error) {
-                                    try {
-                                        printWindow.close();
-                                    } catch {}
-                                    addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print uang jalan trip');
-                                }
-                            }}
-                        >
-                            <Printer size={15} /> Print
-                        </button>
-                    )}
                     {canCreateVoucher && (
                         <button className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
                             <Plus size={18} /> Terbitkan Uang Jalan

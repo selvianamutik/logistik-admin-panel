@@ -13,7 +13,7 @@ import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpe
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
-import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
+import { exportFreightNotaDetail } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -670,37 +670,6 @@ export default function NotaListPage() {
         }
     };
 
-    const handlePrintInvoiceList = async () => {
-        const printWindow = openPrintWindow('Menyiapkan print daftar invoice...');
-        if (!printWindow) {
-            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
-            return;
-        }
-        try {
-            const [allMatchingNotas, co] = await Promise.all([
-                fetchAllMatchingInvoices(),
-                company ? Promise.resolve(company) : fetchCompanyProfile().catch(() => null),
-            ]);
-            setCompany(co);
-            const grandTotal = allMatchingNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
-            openBrandedPrint({
-                title: 'Daftar Invoice Ongkos Angkut', company: co, bodyHtml: `
-                    <table><thead><tr><th>No. Invoice</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Invoice</th><th class="r">Invoice Transfer Final</th><th>Status</th></tr></thead>
-                    <tbody>${allMatchingNotas.map(n => {
-                        const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
-                        return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
-                    }).join('')}
-                    <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`,
-                targetWindow: printWindow,
-            });
-        } catch (error) {
-            try {
-                printWindow.close();
-            } catch {}
-            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print daftar invoice');
-        }
-    };
-
     const handleExportNota = async (nota: FreightNota) => {
         try {
             const [resolvedCompany, notaItems] = await Promise.all([
@@ -723,22 +692,7 @@ export default function NotaListPage() {
                 </div>
                 <div className="page-actions">
                     {canCreateReceipt && <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>}
-                    {canExportInvoices && <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={async () => {
-                            try {
-                                const allMatchingNotas = await fetchAllMatchingInvoices();
-                                await exportInvoices(allMatchingNotas as unknown as Record<string, unknown>[]);
-                                addToast('success', 'Excel daftar invoice berhasil di-download');
-                            } catch (error) {
-                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel daftar invoice');
-                            }
-                        }}
-                    >
-                        <FileDown size={15} /> Excel
-                    </button>}
-                    {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={() => void handlePrintInvoiceList()}><Printer size={15} /> Print</button>}
-                        {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Invoice Baru</button>}
+                    {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Invoice Baru</button>}
                 </div>
             </div>
 

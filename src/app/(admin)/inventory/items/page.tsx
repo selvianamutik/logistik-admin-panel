@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowDownCircle, ArrowUpCircle, Edit, FileDown, Package, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Edit, Package, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { exportToExcel } from '@/lib/export';
 import {
   formatInventoryQuantity,
   INVENTORY_UNIT_OPTIONS,
@@ -102,7 +101,6 @@ export default function WarehouseItemsPage() {
   const [movementForm, setMovementForm] = useState<MovementFormState>(createMovementForm());
 
   const canManage = user ? hasPermission(user.role, 'warehouseItems', 'create') || hasPermission(user.role, 'warehouseItems', 'update') : false;
-  const canExport = user ? hasPermission(user.role, 'warehouseItems', 'export') : false;
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const canOpenItemDetail = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.active !== false), [suppliers]);
@@ -235,58 +233,11 @@ export default function WarehouseItemsPage() {
     }
   };
 
-  const handleExport = async () => {
-    if (!canExport) return;
-    try {
-      await exportToExcel(
-        allItems.map((item) => ({
-          kode: item.itemCode,
-          nama: item.name,
-          kategori: item.category || '-',
-          trackingMode: WAREHOUSE_ITEM_TRACKING_MODE_LABELS[item.trackingMode || 'STANDARD'],
-          satuan: item.unit,
-          stokSaatIni: Number(item.currentStockQty || 0),
-          stokMinimum: Number(item.minStockQty || 0),
-          supplierDefault: item.defaultSupplierName || '-',
-          hargaBeliDefault: Number(item.defaultPurchasePrice || 0),
-          tireBrandDefault: item.tireBrandDefault || '-',
-          tireSizeDefault: item.tireSizeDefault || '-',
-          tireTypeDefault: isTireTrackedWarehouseItem(item) ? normalizeTireType(item.tireTypeDefault) : '-',
-          status: item.active !== false ? 'Aktif' : 'Nonaktif',
-          catatan: item.notes || '',
-        })),
-        [
-          { header: 'Kode Barang', key: 'kode', width: 18 },
-          { header: 'Nama Barang', key: 'nama', width: 28 },
-          { header: 'Kategori', key: 'kategori', width: 18 },
-          { header: 'Mode Tracking', key: 'trackingMode', width: 18 },
-          { header: 'Satuan', key: 'satuan', width: 12 },
-          { header: 'Stok Saat Ini', key: 'stokSaatIni', width: 14 },
-          { header: 'Stok Minimum', key: 'stokMinimum', width: 14 },
-          { header: 'Supplier Default', key: 'supplierDefault', width: 24 },
-          { header: 'Harga Beli Default', key: 'hargaBeliDefault', width: 18 },
-          { header: 'Merk Ban Default', key: 'tireBrandDefault', width: 24 },
-          { header: 'Ukuran Ban Default', key: 'tireSizeDefault', width: 20 },
-          { header: 'Jenis Ban Default', key: 'tireTypeDefault', width: 16 },
-          { header: 'Status', key: 'status', width: 12 },
-          { header: 'Catatan', key: 'catatan', width: 30 },
-        ],
-        `barang-gudang-${getBusinessDateValue()}`,
-        'Barang Gudang',
-        { title: 'Master Barang Gudang', subtitle: `Total data: ${allItems.length}`, metadata: [{ label: 'Barang Aktif', value: activeItemCount }, { label: 'Barang Menipis', value: lowStockCount }, { label: 'Barang Habis', value: outOfStockCount }] },
-      );
-      addToast('success', 'Excel barang gudang berhasil di-download');
-    } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel barang gudang');
-    }
-  };
-
   return (
     <div>
       <div className="page-header">
         <div className="page-header-left"><h1 className="page-title">Barang Gudang</h1></div>
         <div className="page-actions">
-          {canExport && <button className="btn btn-secondary" onClick={() => void handleExport()}><FileDown size={18} /> Excel</button>}
           {canManage && <button className="btn btn-primary" onClick={openCreate}><Plus size={18} /> Tambah Barang</button>}
         </div>
       </div>
