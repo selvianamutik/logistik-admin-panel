@@ -2,6 +2,11 @@ import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/r
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
 import { handleIncidentCreate } from '@/lib/api/operations-workflows';
+import {
+    buildDriverIncidentCreatedMessage,
+    buildDriverIncidentResolutionMessage,
+    scheduleOperationalAdminWhatsApp,
+} from '@/lib/api/operational-admin-notifications';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import { clearRelationalReadCache } from '@/lib/supabase-relational';
@@ -192,7 +197,7 @@ export async function POST(request: Request) {
             );
         }
 
-        return await handleIncidentCreate(
+        const response = await handleIncidentCreate(
             auth.session,
             {
                 relatedDeliveryOrderRef,
@@ -209,6 +214,20 @@ export async function POST(request: Request) {
             },
             addAuditLog
         );
+        if (response.ok) {
+            const body = await response.clone().json().catch(() => null) as { data?: Incident } | null;
+            scheduleOperationalAdminWhatsApp(buildDriverIncidentCreatedMessage({
+                incidentNumber: body?.data?.incidentNumber,
+                driverName: auth.driver.name,
+                doNumber: deliveryOrder.doNumber,
+                vehiclePlate: deliveryOrder.vehiclePlate,
+                incidentType: parsedBody.data.incidentType,
+                urgency: parsedBody.data.urgency,
+                locationText: parsedBody.data.locationText,
+                odometer: parsedBody.data.odometer,
+            }));
+        }
+        return response;
     } catch (error) {
         console.error('Driver incident report error:', error);
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
@@ -382,6 +401,14 @@ export async function PATCH(request: Request) {
                 ? `Driver tambah ${createdLines.length} biaya draft insiden ${incident.incidentNumber}`
                 : `Driver ajukan penyelesaian insiden ${incident.incidentNumber}`
         );
+        scheduleOperationalAdminWhatsApp(buildDriverIncidentResolutionMessage({
+            incidentNumber: incident.incidentNumber,
+            driverName: incident.driverName || auth.driver.name,
+            doNumber: incident.relatedDONumber,
+            costCount: createdLines.length,
+            amount: normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0),
+            mode: isCostOnlySubmission ? 'COST_ADDITION' : 'RESOLUTION',
+        }));
 
         return jsonNoStore({
             data: {

@@ -1,5 +1,9 @@
 import { extractRefId } from '@/lib/api/data-helpers';
 import { handleDeliveryOrderBatchSuratJalanStatusUpdate } from '@/lib/api/order-workflows';
+import {
+    buildDriverDeliveryStatusMessage,
+    scheduleOperationalAdminWhatsApp,
+} from '@/lib/api/operational-admin-notifications';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { createDocument, getDocumentById } from '@/lib/repositories/document-store';
@@ -118,7 +122,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'SJ yang dipilih masih punya permintaan driver yang menunggu approval admin.' }, { status: 409 });
         }
 
-        return await handleDeliveryOrderBatchSuratJalanStatusUpdate(
+        const response = await handleDeliveryOrderBatchSuratJalanStatusUpdate(
             auth.session,
             {
                 id,
@@ -128,6 +132,16 @@ export async function POST(request: Request) {
             },
             addAuditLog
         );
+        if (response.ok) {
+            scheduleOperationalAdminWhatsApp(buildDriverDeliveryStatusMessage({
+                driverName: auth.driver.name,
+                doNumber: deliveryOrder.doNumber,
+                status,
+                targetCount: targetSuratJalanRefs.length,
+                note: parsedBody.data.note,
+            }));
+        }
+        return response;
     } catch (error) {
         console.error('Driver batch SJ status error:', error);
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });

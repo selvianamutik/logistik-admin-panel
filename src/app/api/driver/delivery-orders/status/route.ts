@@ -4,6 +4,11 @@ import {
     handleDeliveryOrderDriverStatusRequest,
     handleDeliveryOrderStatusUpdate,
 } from '@/lib/api/order-workflows';
+import {
+    buildDriverDeliveryStatusMessage,
+    buildDriverTripClosureMessage,
+    scheduleOperationalAdminWhatsApp,
+} from '@/lib/api/operational-admin-notifications';
 import { validateDriverStatusTransition } from '@/lib/api/driver-status-guards';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
@@ -227,6 +232,13 @@ export async function POST(request: Request) {
                 id,
                 `Driver mengajukan tutup trip ${deliveryOrder.doNumber || id}; odometer akhir ${tripEndOdometerKm.toLocaleString('id-ID')} km${note ? ` | ${note}` : ''}`
             );
+            scheduleOperationalAdminWhatsApp(buildDriverTripClosureMessage({
+                driverName: auth.driver.name,
+                doNumber: deliveryOrder.doNumber,
+                tripEndOdometerKm,
+                targetCount: selectedSuratJalanRefs.length,
+                note,
+            }));
             return jsonNoStore({
                 data: {
                     ...deliveryOrder,
@@ -236,7 +248,7 @@ export async function POST(request: Request) {
         }
 
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
-            return await handleDeliveryOrderDriverStatusRequest(
+            const response = await handleDeliveryOrderDriverStatusRequest(
                 auth.session,
                 {
                     id,
@@ -252,13 +264,32 @@ export async function POST(request: Request) {
                 },
                 addAuditLog
             );
+            if (response.ok) {
+                scheduleOperationalAdminWhatsApp(buildDriverDeliveryStatusMessage({
+                    driverName: auth.driver.name,
+                    doNumber: deliveryOrder.doNumber,
+                    status,
+                    targetCount: Array.isArray(body.selectedSuratJalanRefs) ? body.selectedSuratJalanRefs.length : undefined,
+                    note,
+                }));
+            }
+            return response;
         }
 
-        return await handleDeliveryOrderStatusUpdate(
+        const response = await handleDeliveryOrderStatusUpdate(
             auth.session,
             { id, status, note },
             addAuditLog
         );
+        if (response.ok) {
+            scheduleOperationalAdminWhatsApp(buildDriverDeliveryStatusMessage({
+                driverName: auth.driver.name,
+                doNumber: deliveryOrder.doNumber,
+                status,
+                note,
+            }));
+        }
+        return response;
     } catch (error) {
         console.error('Driver delivery status update error:', error);
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });

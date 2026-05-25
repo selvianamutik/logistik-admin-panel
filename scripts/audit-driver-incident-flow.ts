@@ -307,22 +307,22 @@ async function main() {
             description: 'Duplicate incident harus ditolak',
         }, { expectStatus: 409 });
 
-        auditStep('driver list melihat incident dan submit penyelesaian dengan biaya draft');
+        auditStep('driver list melihat incident dan menambah biaya draft');
         const incidentList = await driverRequest<IncidentLike[]>('GET', driverToken, '/api/driver/incidents');
         assert(
             (incidentList.data || []).some(item => item._id === createdIncidentId),
             'Incident baru tidak muncul di list mobile driver'
         );
 
-        const resolution = await driverRequest<{ incident: IncidentLike; settlementLines: IncidentSettlementLineLike[] }>(
+        const costSubmission = await driverRequest<{ incident: IncidentLike; settlementLines: IncidentSettlementLineLike[] }>(
             'PATCH',
             driverToken,
             '/api/driver/incidents',
             {
                 action: 'submit-resolution',
                 incidentRef: createdIncidentId,
-                resolutionNote: `Audit resolution ${AUDIT_SUFFIX}`,
-                resolutionLocationText: `Audit resolution location ${AUDIT_SUFFIX}`,
+                resolutionNote: `Audit additional cost ${AUDIT_SUFFIX}`,
+                resolutionLocationText: `Audit cost location ${AUDIT_SUFFIX}`,
                 resolutionOdometer: 12400,
                 costs: [
                     {
@@ -335,13 +335,32 @@ async function main() {
                 ],
             }
         );
-        const createdLine = resolution.data?.settlementLines?.[0];
-        assert(resolution.data?.incident?.status === 'IN_PROGRESS', 'Submit penyelesaian driver harus menaikkan incident ke IN_PROGRESS');
-        assert(createdLine?._id, 'Submit penyelesaian driver harus membuat settlement line draft');
+        const createdLine = costSubmission.data?.settlementLines?.[0];
+        assert(
+            costSubmission.data?.incident?.status === 'OPEN',
+            'Tambahan biaya driver tidak boleh otomatis mengubah status incident'
+        );
+        assert(createdLine?._id, 'Tambahan biaya driver harus membuat settlement line draft');
         assert(createdLine.status === 'DRAFT', 'Biaya dari driver harus masuk sebagai DRAFT untuk approval admin');
         assert(createdLine.amount === 125000, 'Nominal biaya incident dari driver berubah sebelum approval admin');
 
-        auditStep('driver tidak boleh submit penyelesaian incident yang sama dua kali');
+        auditStep('driver submit penyelesaian tanpa biaya dan tidak boleh dobel');
+        const resolution = await driverRequest<{ incident: IncidentLike; settlementLines: IncidentSettlementLineLike[] }>(
+            'PATCH',
+            driverToken,
+            '/api/driver/incidents',
+            {
+                action: 'submit-resolution',
+                incidentRef: createdIncidentId,
+                resolutionNote: `Audit resolution ${AUDIT_SUFFIX}`,
+                resolutionLocationText: `Audit resolution location ${AUDIT_SUFFIX}`,
+                resolutionOdometer: 12450,
+                costs: [],
+            }
+        );
+        assert(resolution.data?.incident?.status === 'IN_PROGRESS', 'Submit penyelesaian driver harus menaikkan incident ke IN_PROGRESS');
+        assert((resolution.data?.settlementLines || []).length === 0, 'Submit penyelesaian tanpa biaya tidak boleh membuat settlement line tambahan');
+
         await driverRequest('PATCH', driverToken, '/api/driver/incidents', {
             action: 'submit-resolution',
             incidentRef: createdIncidentId,
