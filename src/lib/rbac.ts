@@ -45,7 +45,8 @@ export type AppModule =
     | 'driverVouchers'
     | 'freightNotas'
     | 'driverBorongans'
-    | 'driverScores';
+    | 'driverScores'
+    | 'dataImports';
 
 const DENY_ALL: ModulePermissions = {
     view: false,
@@ -177,6 +178,10 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
     },
     auditLogs: {
         OWNER: { ...DENY_ALL, view: true, export: true },
+    },
+    dataImports: {
+        OWNER: { ...DENY_ALL, view: true, create: true, update: true },
+        OPERASIONAL: { ...DENY_ALL, view: true, create: true, update: true },
     },
     profile: {
         OWNER: { ...DENY_ALL, view: true, update: true },
@@ -343,6 +348,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             items: [
                 { label: 'Akun Saya', href: '/settings/profile', icon: 'User', module: 'profile' },
                 { label: 'Perusahaan & Dokumen', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
+                { label: 'Import Data', href: '/settings/import-data', icon: 'Upload', module: 'dataImports' },
                 { label: 'Pengguna Internal', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
                 { label: 'Audit Aktivitas', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
             ],

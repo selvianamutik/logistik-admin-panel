@@ -30,6 +30,7 @@
     "audit:mobile-incident-voucher-integrity": "npx tsx --conditions react-server scripts/audit-mobile-incident-voucher-integrity.ts",
     "audit:mobile-timezone-consistency": "node scripts/audit-mobile-timezone-consistency.mjs",
     "audit:driver-trip-closure-flow": "node scripts/audit-driver-trip-closure-flow.mjs",
+    "audit:master-data-import": "npx tsx --conditions react-server scripts/audit-master-data-import.ts",
     "audit:freight-nota-revision-flow": "npx tsx scripts/audit-freight-nota-revision-flow.ts",
     "audit:order-to-nota-e2e": "npx tsx scripts/audit-order-to-nota-e2e.ts",
     "audit:order-status-consistency": "npx tsx scripts/audit-order-status-consistency.ts",
