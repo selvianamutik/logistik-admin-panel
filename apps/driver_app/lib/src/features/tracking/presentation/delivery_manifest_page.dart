@@ -103,6 +103,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     void upsertGroup({
       String? referenceKey,
       String? referenceNumber,
+      String? date,
       String? pickupStopKey,
       _ManifestItemDraft? item,
     }) {
@@ -120,6 +121,8 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
             resolvedPickup,
             initialReferenceKey: (referenceKey ?? '').trim(),
             initialReferenceNumber: (referenceNumber ?? '').trim(),
+            initialDate:
+                _normalizeDateInput(date) ?? _currentJakartaDateValue(),
             initialItems: item != null ? [item] : const [],
             createBlankItem: item == null ? false : true,
           ),
@@ -131,6 +134,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         referenceKey: (referenceKey ?? group.referenceKey).trim(),
         shipperReferenceNumber:
             (referenceNumber ?? group.shipperReferenceNumber).trim(),
+        date: _normalizeDateInput(date) ?? group.date,
         pickupStopKey: resolvedPickup,
         items: item != null ? [...group.items, item] : group.items,
       );
@@ -140,6 +144,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       upsertGroup(
         referenceKey: reference.key,
         referenceNumber: reference.referenceNumber,
+        date: reference.date,
         pickupStopKey: reference.pickupStopKey,
       );
     }
@@ -233,6 +238,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     String groupId, {
     String? pickupStopKey,
     String? shipperReferenceNumber,
+    String? date,
   }) {
     setState(() {
       _groups = _groups
@@ -241,6 +247,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                 ? group.copyWith(
                     pickupStopKey: pickupStopKey,
                     shipperReferenceNumber: shipperReferenceNumber,
+                    date: date,
                   )
                 : group,
           )
@@ -483,7 +490,33 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           const CustomerProductOption(id: '', customerRef: '', name: ''),
     );
     if (selectedProduct.id.isEmpty) {
-      return patched;
+      if (qtyKoli == null || volumeInputValue != null) {
+        return patched;
+      }
+      final previousQty = item.qtyKoliValue;
+      final previousVolumeM3 = _convertVolumeToM3(
+        item.volumeInputValueNumber,
+        item.volumeInputUnit,
+      );
+      if (previousQty <= 0 || previousVolumeM3 <= 0) {
+        return patched;
+      }
+      final nextQty = patched.qtyKoliValue;
+      final nextVolumeUnit = patched.volumeInputUnit.toUpperCase();
+      return patched.copyWith(
+        volumeInputValue: nextQty > 0
+            ? _formatNumber(
+                _convertM3ToVolumeInputValue(
+                  (previousVolumeM3 / previousQty) * nextQty,
+                  nextVolumeUnit,
+                ),
+                fractionDigits: mobileVolumeInputFractionDigits(
+                  nextVolumeUnit,
+                ),
+              )
+            : patched.volumeInputValue,
+        volumeInputUnit: nextVolumeUnit,
+      );
     }
 
     final nextQty = patched.qtyKoliValue;
@@ -604,6 +637,12 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     return unit.toUpperCase() == 'LITER' ? valueM3 * 1000 : valueM3;
   }
 
+  String? _normalizeDateInput(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return _parseDateValue(trimmed) == null ? null : trimmed;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -629,6 +668,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           key: group.referenceKey.trim().isNotEmpty
               ? group.referenceKey.trim()
               : null,
+          date: _normalizeDateInput(group.date),
           pickupStopKey: group.pickupStopKey.trim().isNotEmpty
               ? group.pickupStopKey.trim()
               : null,
@@ -801,6 +841,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
               'referenceKey': group.referenceKey.trim(),
               'pickupStopKey': group.pickupStopKey.trim(),
               'shipperReferenceNumber': group.shipperReferenceNumber.trim(),
+              'date': group.date.trim(),
               'items': group.items
                   .map(
                     (item) => {
@@ -864,23 +905,6 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                       children: [
-                        if (widget.existingCargoItems.isNotEmpty) ...[
-                          _InfoCard(
-                            title: 'Muatan saat ini',
-                            message:
-                                '${widget.existingCargoItems.length} barang sudah tercatat. Tambahan dari halaman ini akan ditambahkan ke DO yang sama.',
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        _InfoCard(
-                          title: widget.allowsDirectCargoInput
-                              ? 'Kelola SJ dan barang'
-                              : 'Kelola SJ',
-                          message: widget.allowsDirectCargoInput
-                              ? 'Pilih satu SJ, lalu edit barang di dalamnya. Data baru dikirim setelah tombol simpan ditekan.'
-                              : 'Edit nomor SJ sebelum approval/final; barang mengikuti order/resi admin.',
-                        ),
-                        const SizedBox(height: 16),
                         _ManifestGroupSelectorField(
                           groups: _groups,
                           selectedGroupId: selectedGroup?.id,
@@ -982,6 +1006,7 @@ class _ManifestGroupDraft {
     required this.referenceKey,
     required this.pickupStopKey,
     required this.shipperReferenceNumber,
+    required this.date,
     required this.items,
   });
 
@@ -989,12 +1014,14 @@ class _ManifestGroupDraft {
   final String referenceKey;
   final String pickupStopKey;
   final String shipperReferenceNumber;
+  final String date;
   final List<_ManifestItemDraft> items;
 
   factory _ManifestGroupDraft.create(
     String pickupStopKey, {
     String initialReferenceKey = '',
     String initialReferenceNumber = '',
+    String? initialDate,
     List<_ManifestItemDraft> initialItems = const [],
     bool createBlankItem = true,
   }) {
@@ -1003,6 +1030,7 @@ class _ManifestGroupDraft {
       referenceKey: initialReferenceKey,
       pickupStopKey: pickupStopKey,
       shipperReferenceNumber: initialReferenceNumber,
+      date: _normalizeDateInput(initialDate) ?? _currentJakartaDateValue(),
       items: initialItems.isNotEmpty
           ? initialItems
           : (createBlankItem ? [_ManifestItemDraft.create()] : const []),
@@ -1013,6 +1041,7 @@ class _ManifestGroupDraft {
     String? referenceKey,
     String? pickupStopKey,
     String? shipperReferenceNumber,
+    String? date,
     List<_ManifestItemDraft>? items,
   }) {
     return _ManifestGroupDraft(
@@ -1021,6 +1050,7 @@ class _ManifestGroupDraft {
       pickupStopKey: pickupStopKey ?? this.pickupStopKey,
       shipperReferenceNumber:
           shipperReferenceNumber ?? this.shipperReferenceNumber,
+      date: date ?? this.date,
       items: items ?? this.items,
     );
   }
@@ -1293,6 +1323,7 @@ class _ManifestGroupEditorCard extends StatelessWidget {
     String groupId, {
     String? pickupStopKey,
     String? shipperReferenceNumber,
+    String? date,
   })
   onGroupChanged;
   final void Function(String groupId) onAddItem;
@@ -1341,6 +1372,11 @@ class _ManifestGroupEditorCard extends StatelessWidget {
               validator: (_) => null,
               onChanged: (value) =>
                   onGroupChanged(group.id, shipperReferenceNumber: value),
+            ),
+            const SizedBox(height: 12),
+            _ManifestDateField(
+              value: group.date,
+              onChanged: (value) => onGroupChanged(group.id, date: value),
             ),
             const SizedBox(height: 12),
             _PickupStopSelectorField(
@@ -1413,6 +1449,48 @@ String _manifestGroupPickerLabel(_ManifestGroupDraft group) {
 String _manifestGroupSummary(_ManifestGroupDraft group) {
   final filledCount = group.items.where((item) => item.isFilled).length;
   return '$filledCount/${group.items.length} terisi';
+}
+
+class _ManifestDateField extends StatelessWidget {
+  const _ManifestDateField({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _pickDate(context),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Tanggal SJ',
+          suffixIcon: Icon(Icons.calendar_today_rounded),
+        ),
+        child: Text(
+          value.trim().isNotEmpty ? value.trim() : _currentJakartaDateValue(),
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate(BuildContext context) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final initialDate =
+        _parseDateValue(value) ?? _jakartaDateTimeNow();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(_jakartaDateTimeNow().year + 2, 12, 31),
+    );
+    if (picked == null) return;
+    onChanged(_formatDateValue(picked));
+  }
 }
 
 class _PickupStopSelectorField extends StatelessWidget {
@@ -1541,6 +1619,35 @@ String? _pickupStopSubtitle(DeliveryPickupStop stop) {
   final address = stop.pickupAddress.trim();
   if (address.isEmpty || address.toLowerCase() == title) return null;
   return address;
+}
+
+DateTime _jakartaDateTimeNow() =>
+    DateTime.now().toUtc().add(const Duration(hours: 7));
+
+String _currentJakartaDateValue() => _formatDateValue(_jakartaDateTimeNow());
+
+String _formatDateValue(DateTime date) {
+  final year = date.year.toString().padLeft(4, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+DateTime? _parseDateValue(String value) {
+  final parts = value.trim().split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return DateTime(year, month, day);
+}
+
+String? _normalizeDateInput(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return _parseDateValue(trimmed) == null ? null : trimmed;
 }
 
 List<CustomerProductOption> _dedupeCustomerProducts(

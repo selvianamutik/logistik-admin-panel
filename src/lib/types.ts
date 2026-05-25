@@ -271,6 +271,7 @@ export interface DeliveryOrderShipperReference {
   _key?: string;
   sequence: number;
   referenceNumber: string;
+  date?: string;
   pickupStopKey?: string;
   pickupAddress?: string;
   billingCustomerRef?: string;
@@ -686,6 +687,9 @@ export interface DeliveryActualDropPoint {
   volumeM3?: number;
   volumeInputValue?: number;
   volumeInputUnit?: VolumeInputUnit;
+  podReceiverName?: string;
+  podReceivedDate?: string;
+  podNote?: string;
   note?: string;
 }
 
@@ -1464,6 +1468,7 @@ export type IncidentSettlementCategory =
   | 'TIRE'
   | 'MEDICAL'
   | 'THIRD_PARTY_DAMAGE'
+  | 'ADMINISTRATION'
   | 'POLICE_ADMIN'
   | 'ACCOMMODATION'
   | 'CARGO_HANDLING'

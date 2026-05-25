@@ -70,3 +70,7 @@ skills-lock.json
 
 # supabase cli local link/cache state
 supabase/.temp/
+
+# rtk
+AGENTS.md
+RTK.md

@@ -297,13 +297,7 @@ function mergeDriverSuratJalanRecordWithLiveCargo(
     }
     const shouldPreserveDraftStatus =
         record.tripStatus === 'CREATED' &&
-        ['ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveRecord.tripStatus || '') &&
-        !hasDriverSuratJalanCargo(record.billableCargo) &&
-        !hasDriverSuratJalanCargo(record.holdCargo) &&
-        !hasDriverSuratJalanCargo(record.returnCargo) &&
-        !hasDriverSuratJalanCargo(liveRecord.billableCargo) &&
-        !hasDriverSuratJalanCargo(liveRecord.holdCargo) &&
-        !hasDriverSuratJalanCargo(liveRecord.returnCargo);
+        ['ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'PARTIAL_HOLD'].includes(liveRecord.tripStatus || '');
     const liveHasHoldCargo = hasDriverSuratJalanCargo(liveRecord.holdCargo);
     const resolvedTripStatus =
         shouldPreserveDraftStatus

@@ -3002,9 +3002,13 @@ String? _autoVolumeInputValueForQty({
       currentVolumeM3 <= 0 ||
       previousAutoVolumeM3 <= 0 ||
       (currentVolumeM3 - previousAutoVolumeM3).abs() <= 0.001;
-  if (!shouldRefresh) return null;
+  final nextVolumeM3 = shouldRefresh
+      ? basisVolumeM3 * qtyKoli / basisQtyKoli
+      : (currentQtyKoli > 0 && currentVolumeM3 > 0
+            ? currentVolumeM3 * qtyKoli / currentQtyKoli
+            : 0.0);
+  if (nextVolumeM3 <= 0) return null;
 
-  final nextVolumeM3 = basisVolumeM3 * qtyKoli / basisQtyKoli;
   final normalizedUnit = _normalizeVolumeUnit(nextVolumeUnit);
   return _formatMetric(
     _convertM3ToVolumeInputValue(nextVolumeM3, normalizedUnit),

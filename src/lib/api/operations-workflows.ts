@@ -52,7 +52,7 @@ const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
     CLOSED: [],
 };
 const INCIDENT_SETTLEMENT_ALLOWED_CATEGORIES: Record<string, Set<string>> = {
-    COST: new Set(['TOWING', 'REPAIR', 'SPAREPART', 'TIRE', 'MEDICAL', 'THIRD_PARTY_DAMAGE', 'POLICE_ADMIN', 'ACCOMMODATION', 'CARGO_HANDLING', 'OTHER']),
+    COST: new Set(['TOWING', 'REPAIR', 'SPAREPART', 'TIRE', 'MEDICAL', 'THIRD_PARTY_DAMAGE', 'ADMINISTRATION', 'POLICE_ADMIN', 'ACCOMMODATION', 'CARGO_HANDLING', 'OTHER']),
     COMPENSATION: new Set(['COMPENSATION_DRIVER', 'COMPENSATION_CREW', 'COMPENSATION_THIRD_PARTY', 'COMPENSATION_FAMILY', 'OTHER']),
     RECOVERY: new Set(['INSURANCE_CLAIM', 'THIRD_PARTY_RECOVERY', 'VENDOR_RECOVERY', 'INTERNAL_RECOVERY', 'OTHER']),
 };
@@ -169,6 +169,44 @@ function getAllowedClosedIncidentSettlementTargetStatuses(line: Pick<IncidentSet
         return ['POSTED', 'VOID'];
     }
     return ['VOID'];
+}
+
+function isDriverSubmittedIncidentSettlementLine(
+    line: Pick<IncidentSettlementLine, 'note' | 'createdBy'>,
+    incident?: { pendingDriverResolutionRequestedBy?: string | null } | null
+) {
+    return (line.note || '').includes('Diajukan driver') ||
+        Boolean(incident?.pendingDriverResolutionRequestedBy && line.createdBy === incident.pendingDriverResolutionRequestedBy);
+}
+
+async function clearPendingDriverResolutionIfNoDraftLines(incidentRef: string, excludeLineId?: string) {
+    const incident = await getDocumentById<{
+        _id: string;
+        pendingDriverResolutionRequestedBy?: string | null;
+    }>(incidentRef, 'incident');
+    if (!incident?.pendingDriverResolutionRequestedBy) {
+        return;
+    }
+
+    const remainingDriverDraftLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
+        incidentRef,
+    })).filter(line =>
+        line._id !== excludeLineId &&
+        line.status === 'DRAFT' &&
+        isDriverSubmittedIncidentSettlementLine(line, incident)
+    );
+    if (remainingDriverDraftLines.length > 0) {
+        return;
+    }
+
+    await updateDocument(incidentRef, {
+        pendingDriverResolutionRequestedAt: null,
+        pendingDriverResolutionRequestedBy: null,
+        pendingDriverResolutionRequestedByName: null,
+        pendingDriverResolutionNote: null,
+        pendingDriverResolutionCostCount: null,
+        pendingDriverResolutionAmount: null,
+    }, 'incident');
 }
 
 export async function handleIncidentCreate(
@@ -575,7 +613,7 @@ export async function handleIncidentSettlementLineDelete(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await getDocumentById<{ _id: string; status?: string }>(existing.incidentRef, 'incident');
+    const incident = await getDocumentById<{ _id: string; status?: string; pendingDriverResolutionRequestedBy?: string | null }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -594,6 +632,9 @@ export async function handleIncidentSettlementLineDelete(
 
     const now = new Date().toISOString();
     await deleteDocument(id);
+    if (existing.status === 'DRAFT' && isDriverSubmittedIncidentSettlementLine(existing, incident)) {
+        await clearPendingDriverResolutionIfNoDraftLines(existing.incidentRef, id);
+    }
     await createDocument({
         _id: crypto.randomUUID(),
         _type: 'incidentActionLog',
@@ -623,7 +664,7 @@ export async function handleIncidentSettlementLineStatusUpdate(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await getDocumentById<{ _id: string; status?: string }>(existing.incidentRef, 'incident');
+    const incident = await getDocumentById<{ _id: string; status?: string; pendingDriverResolutionRequestedBy?: string | null }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -681,24 +722,8 @@ export async function handleIncidentSettlementLineStatusUpdate(
             ...sanitizePatchSet(patch),
             ...unsetPatch,
         });
-        if (existing.status === 'DRAFT' && status !== 'DRAFT' && (existing.note || '').includes('Diajukan driver')) {
-            const remainingDriverDraftLines = (await listDocumentsByFilter<IncidentSettlementLine>('incidentSettlementLine', {
-                incidentRef: existing.incidentRef,
-            })).filter(line =>
-                line._id !== id &&
-                line.status === 'DRAFT' &&
-                (line.note || '').includes('Diajukan driver')
-            );
-            if (remainingDriverDraftLines.length === 0) {
-                await updateDocument(existing.incidentRef, {
-                    pendingDriverResolutionRequestedAt: null,
-                    pendingDriverResolutionRequestedBy: null,
-                    pendingDriverResolutionRequestedByName: null,
-                    pendingDriverResolutionNote: null,
-                    pendingDriverResolutionCostCount: null,
-                    pendingDriverResolutionAmount: null,
-                }, 'incident');
-            }
+        if (existing.status === 'DRAFT' && status !== 'DRAFT' && isDriverSubmittedIncidentSettlementLine(existing, incident)) {
+            await clearPendingDriverResolutionIfNoDraftLines(existing.incidentRef, id);
         }
         await createDocument({
             _id: crypto.randomUUID(),

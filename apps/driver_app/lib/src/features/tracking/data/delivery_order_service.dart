@@ -558,6 +558,7 @@ class DeliveryOrderService {
         suratJalanRecords: json['driverSuratJalanRecords'],
         fallbackDeliveryOrderId: json['_id'] as String? ?? '',
         fallbackCustomerDoNumber: (json['customerDoNumber'] as String?)?.trim(),
+        fallbackDate: date,
         fallbackPickupStopKey: pickupStops.isNotEmpty
             ? pickupStops.first.key
             : null,
@@ -803,12 +804,15 @@ class DeliveryOrderService {
     dynamic suratJalanRecords,
     String? fallbackDeliveryOrderId,
     String? fallbackCustomerDoNumber,
+    String? fallbackDate,
     String? fallbackPickupStopKey,
   }) {
     final suratJalanRecordByKey = _mapSuratJalanRecordMetadata(
       suratJalanRecords,
     );
     final references = <DeliveryShipperReference>[];
+    final seenReferenceKeys = <String>{};
+    final seenReferenceNumbers = <String>{};
     if (raw is List) {
       for (final item in raw.whereType<Map<String, dynamic>>()) {
         final referenceNumber = (item['referenceNumber'] as String?)?.trim();
@@ -822,6 +826,7 @@ class DeliveryOrderService {
         final pickupAddress =
             recordMetadata?.pickupAddress ??
             (item['pickupAddress'] as String?)?.trim();
+        final referenceDate = (item['date'] as String?)?.trim();
         references.add(
           DeliveryShipperReference(
             referenceNumber: referenceNumber,
@@ -835,6 +840,9 @@ class DeliveryOrderService {
                 ),
             key: referenceKey,
             tripStatus: recordMetadata?.tripStatus,
+            date: referenceDate?.isNotEmpty == true
+                ? referenceDate
+                : (recordMetadata?.tripDate ?? fallbackDate),
             holdQtyKoli: recordMetadata?.holdQtyKoli,
             holdWeightKg: recordMetadata?.holdWeightKg,
             holdVolumeM3: recordMetadata?.holdVolumeM3,
@@ -847,6 +855,60 @@ class DeliveryOrderService {
             receiverAddress: (item['receiverAddress'] as String?)?.trim(),
           ),
         );
+        if (referenceKey != null && referenceKey.isNotEmpty) {
+          seenReferenceKeys.add(referenceKey);
+        }
+        seenReferenceNumbers.add(referenceNumber.toUpperCase());
+      }
+    }
+    if (suratJalanRecords is List) {
+      for (final item in suratJalanRecords.whereType<Map<String, dynamic>>()) {
+        final referenceNumber = (item['suratJalanNumber'] as String?)?.trim();
+        if (referenceNumber == null || referenceNumber.isEmpty) continue;
+        final referenceKey = (item['referenceKey'] as String?)?.trim();
+        if ((referenceKey != null &&
+                referenceKey.isNotEmpty &&
+                seenReferenceKeys.contains(referenceKey)) ||
+            seenReferenceNumbers.contains(referenceNumber.toUpperCase())) {
+          continue;
+        }
+        final documentId = (item['_id'] as String?)?.trim();
+        final tripDate = (item['tripDate'] as String?)?.trim();
+        final pickupAddress = (item['pickupAddress'] as String?)?.trim();
+        final tripStatus = (item['tripStatus'] as String?)?.trim();
+        final holdCargo = item['holdCargo'] is Map<String, dynamic>
+            ? item['holdCargo'] as Map<String, dynamic>
+            : const <String, dynamic>{};
+        references.add(
+          DeliveryShipperReference(
+            referenceNumber: referenceNumber,
+            documentId: documentId?.isNotEmpty == true
+                ? documentId
+                : _deriveSuratJalanDocumentId(
+                    fallbackDeliveryOrderId,
+                    referenceKey?.isNotEmpty == true
+                        ? referenceKey
+                        : referenceNumber,
+                  ),
+            key: referenceKey,
+            tripStatus: tripStatus,
+            date: tripDate?.isNotEmpty == true ? tripDate : fallbackDate,
+            holdQtyKoli: _toDouble(holdCargo['qtyKoli']),
+            holdWeightKg: _toDouble(holdCargo['weightKg']),
+            holdVolumeM3: _toDouble(holdCargo['volumeM3']),
+            pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
+            pickupAddress: pickupAddress?.isNotEmpty == true
+                ? pickupAddress
+                : null,
+            receiverName: (item['receiverName'] as String?)?.trim(),
+            receiverCompany: (item['receiverCompany'] as String?)?.trim(),
+            receiverAddress: (item['receiverAddress'] as String?)?.trim(),
+          ),
+        );
+        if (referenceKey != null && referenceKey.isNotEmpty) {
+          seenReferenceKeys.add(referenceKey);
+        }
+        seenReferenceNumbers.add(referenceNumber.toUpperCase());
       }
     }
     if (references.isEmpty &&
@@ -863,6 +925,7 @@ class DeliveryOrderService {
               _deriveSuratJalanDocumentId(fallbackDeliveryOrderId, 'primary'),
           key: null,
           tripStatus: recordMetadata?.tripStatus,
+          date: recordMetadata?.tripDate ?? fallbackDate,
           holdQtyKoli: recordMetadata?.holdQtyKoli,
           holdWeightKg: recordMetadata?.holdWeightKg,
           holdVolumeM3: recordMetadata?.holdVolumeM3,
@@ -883,6 +946,7 @@ class DeliveryOrderService {
       final pickupAddress = (item['pickupAddress'] as String?)?.trim();
       final documentId = (item['_id'] as String?)?.trim();
       final tripStatus = (item['tripStatus'] as String?)?.trim();
+      final tripDate = (item['tripDate'] as String?)?.trim();
       final holdCargo = item['holdCargo'] is Map<String, dynamic>
           ? item['holdCargo'] as Map<String, dynamic>
           : const <String, dynamic>{};
@@ -890,6 +954,7 @@ class DeliveryOrderService {
         documentId: documentId,
         pickupAddress: pickupAddress?.isNotEmpty == true ? pickupAddress : null,
         tripStatus: tripStatus,
+        tripDate: tripDate?.isNotEmpty == true ? tripDate : null,
         holdQtyKoli: _toDouble(holdCargo['qtyKoli']),
         holdWeightKg: _toDouble(holdCargo['weightKg']),
         holdVolumeM3: _toDouble(holdCargo['volumeM3']),
@@ -1093,16 +1158,19 @@ class DriverManifestShipperReferenceInput {
   const DriverManifestShipperReferenceInput({
     required this.referenceNumber,
     this.key,
+    this.date,
     this.pickupStopKey,
   });
 
   final String referenceNumber;
   final String? key;
+  final String? date;
   final String? pickupStopKey;
 
   Map<String, dynamic> toJson() => {
     if (key != null && key!.isNotEmpty) '_key': key,
     'referenceNumber': referenceNumber,
+    if (date != null && date!.isNotEmpty) 'date': date,
     if (pickupStopKey != null && pickupStopKey!.isNotEmpty)
       'pickupStopKey': pickupStopKey,
   };
@@ -1257,6 +1325,7 @@ class _SuratJalanRecordMetadata {
     required this.documentId,
     required this.pickupAddress,
     required this.tripStatus,
+    this.tripDate,
     this.holdQtyKoli,
     this.holdWeightKg,
     this.holdVolumeM3,
@@ -1265,6 +1334,7 @@ class _SuratJalanRecordMetadata {
   final String? documentId;
   final String? pickupAddress;
   final String? tripStatus;
+  final String? tripDate;
   final double? holdQtyKoli;
   final double? holdWeightKg;
   final double? holdVolumeM3;

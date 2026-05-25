@@ -80,6 +80,7 @@ const INCIDENT_SETTLEMENT_CATEGORIES = new Set([
     'TIRE',
     'MEDICAL',
     'THIRD_PARTY_DAMAGE',
+    'ADMINISTRATION',
     'POLICE_ADMIN',
     'ACCOMMODATION',
     'CARGO_HANDLING',
@@ -401,8 +402,11 @@ export async function normalizeIncidentSettlementLinePayload(
     }
 
     if (!partial || hasOwnKey(data, 'category')) {
-        const category = typeof data.category === 'string' && INCIDENT_SETTLEMENT_CATEGORIES.has(data.category)
-            ? data.category
+        const normalizedCategory = typeof data.category === 'string' && data.category.trim().toUpperCase() === 'POLICE_ADMIN'
+            ? 'ADMINISTRATION'
+            : data.category;
+        const category = typeof normalizedCategory === 'string' && INCIDENT_SETTLEMENT_CATEGORIES.has(normalizedCategory)
+            ? normalizedCategory
             : '';
         if (!category) {
             throw new Error('Kategori detail insiden tidak valid');

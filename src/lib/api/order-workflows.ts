@@ -1175,6 +1175,7 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
             _key?: string;
             sequence?: number;
             referenceNumber?: string;
+            date?: string;
             pickupStopKey?: string;
             pickupAddress?: string;
             billingCustomerRef?: string;
@@ -1273,6 +1274,10 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
                 _key: resolvedReferenceKey,
                 sequence: index + 1,
                 referenceNumber,
+                date:
+                    hasReferenceField('date')
+                        ? normalizeOptionalText(reference.date)
+                        : normalizeOptionalText(existingReference?.date),
                 pickupStopKey: pickupStop ? resolvedPickupStopKey : undefined,
                 pickupAddress:
                     normalizeOptionalText(pickupStop?.pickupAddress)
@@ -1314,6 +1319,7 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
 function areDeliveryOrderShipperReferencesEquivalent(
     left: Array<{
         referenceNumber?: string;
+        date?: string;
         pickupStopKey?: string;
         billingCustomerRef?: string;
         billingCustomerName?: string;
@@ -1325,6 +1331,7 @@ function areDeliveryOrderShipperReferencesEquivalent(
     }> | undefined,
     right: Array<{
         referenceNumber?: string;
+        date?: string;
         pickupStopKey?: string;
         billingCustomerRef?: string;
         billingCustomerName?: string;
@@ -1340,6 +1347,7 @@ function areDeliveryOrderShipperReferencesEquivalent(
             .map((reference, index) => ({
                 sequence: index + 1,
                 referenceNumber: normalizeOptionalText(reference.referenceNumber)?.toUpperCase() || '',
+                date: normalizeOptionalText(reference.date) || '',
                 pickupStopKey: normalizeOptionalText(reference.pickupStopKey) || '',
                 billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef) || '',
                 billingCustomerName: normalizeOptionalText(reference.billingCustomerName) || '',

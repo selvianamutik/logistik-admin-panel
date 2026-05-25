@@ -51,6 +51,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   List<CustomerRecipientOption> _customerRecipients = const [];
   List<DriverTripVoucher> _driverVouchers = const [];
   List<DriverIncident> _driverIncidents = const [];
+  final Set<String> _createdShipperReferenceStatusOverrides = <String>{};
   _DriverHomeSection _activeSection = _DriverHomeSection.trips;
   DeliveryTrip? _selectedTrip;
   DeliveryTrip? _activeTrip;
@@ -381,7 +382,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         // Incident status is supplementary; do not block the driver's trip list
         // if this lightweight refresh fails.
       }
-      final trips = portalData.trips;
+      final trips = _applyCreatedShipperReferenceStatusOverrides(
+        portalData.trips,
+      );
       if (!mounted) return;
       final activeId = _trackingDeliveryOrderId ?? _activeTrip?.deliveryOrderId;
       final selectedId = _selectedTrip?.deliveryOrderId;
@@ -430,6 +433,123 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         _loadingTrips = false;
         _loadError = 'Tidak bisa memuat trip driver dari server';
       });
+    }
+  }
+
+  List<DeliveryTrip> _applyCreatedShipperReferenceStatusOverrides(
+    List<DeliveryTrip> trips,
+  ) {
+    if (_createdShipperReferenceStatusOverrides.isEmpty) return trips;
+
+    return trips
+        .map((trip) {
+          if (trip.shipperReferences.isEmpty) return trip;
+          var changed = false;
+          final references = trip.shipperReferences.map((reference) {
+            final shouldForceCreated = _referenceIdentityCandidates(
+              trip.deliveryOrderId,
+              documentId: reference.documentId,
+              referenceKey: reference.key,
+              referenceNumber: reference.referenceNumber,
+            ).any(_createdShipperReferenceStatusOverrides.contains);
+            if (!shouldForceCreated) return reference;
+            if ((reference.tripStatus ?? '').trim().toUpperCase() ==
+                'CREATED') {
+              return reference;
+            }
+            changed = true;
+            return reference.copyWith(tripStatus: 'CREATED');
+          }).toList(growable: false);
+          return changed ? trip.copyWith(shipperReferences: references) : trip;
+        })
+        .toList(growable: false);
+  }
+
+  Set<String> _referenceIdentityCandidates(
+    String deliveryOrderId, {
+    String? documentId,
+    String? referenceKey,
+    String? referenceNumber,
+  }) {
+    final normalizedOrderId = deliveryOrderId.trim();
+    final normalizedDocumentId = documentId?.trim();
+    final normalizedKey = referenceKey?.trim();
+    final normalizedNumber = referenceNumber?.trim().toUpperCase();
+    return <String>{
+      if (normalizedDocumentId?.isNotEmpty == true) normalizedDocumentId!,
+      if (normalizedOrderId.isNotEmpty &&
+          normalizedKey?.isNotEmpty == true)
+        '$normalizedOrderId:$normalizedKey',
+      if (normalizedOrderId.isNotEmpty &&
+          normalizedNumber?.isNotEmpty == true)
+        '$normalizedOrderId:$normalizedNumber',
+      if (normalizedKey?.isNotEmpty == true) normalizedKey!,
+      if (normalizedNumber?.isNotEmpty == true) normalizedNumber!,
+    };
+  }
+
+  Set<String> _newShipperReferenceStatusOverrideKeys(
+    DeliveryTrip trip,
+    List<DriverManifestShipperReferenceInput> nextReferences,
+  ) {
+    final existingKeys = <String>{};
+    for (final reference in trip.shipperReferences) {
+      existingKeys.addAll(
+        _referenceIdentityCandidates(
+          trip.deliveryOrderId,
+          documentId: reference.documentId,
+          referenceKey: reference.key,
+          referenceNumber: reference.referenceNumber,
+        ),
+      );
+    }
+
+    final newKeys = <String>{};
+    for (final reference in nextReferences) {
+      final candidates = _referenceIdentityCandidates(
+        trip.deliveryOrderId,
+        referenceKey: reference.key,
+        referenceNumber: reference.referenceNumber,
+      );
+      if (candidates.isEmpty ||
+          candidates.any(existingKeys.contains) ||
+          _createdShipperReferenceStatusOverrides.any(candidates.contains)) {
+        continue;
+      }
+      newKeys.addAll(candidates);
+    }
+    return newKeys;
+  }
+
+  void _clearCreatedStatusOverridesForRefs(
+    DeliveryTrip trip,
+    Iterable<String> targetRefs,
+  ) {
+    for (final targetRef in targetRefs) {
+      final normalizedTarget = targetRef.trim();
+      if (normalizedTarget.isEmpty) continue;
+      final reference = trip.shipperReferences.firstWhereOrNull(
+        (item) => _referenceIdentityCandidates(
+          trip.deliveryOrderId,
+          documentId: item.documentId,
+          referenceKey: item.key,
+          referenceNumber: item.referenceNumber,
+        ).contains(normalizedTarget),
+      );
+      final candidates = reference == null
+          ? _referenceIdentityCandidates(
+              trip.deliveryOrderId,
+              documentId: normalizedTarget,
+              referenceKey: normalizedTarget,
+              referenceNumber: normalizedTarget,
+            )
+          : _referenceIdentityCandidates(
+              trip.deliveryOrderId,
+              documentId: reference.documentId,
+              referenceKey: reference.key,
+              referenceNumber: reference.referenceNumber,
+            );
+      _createdShipperReferenceStatusOverrides.removeAll(candidates);
     }
   }
 
@@ -818,6 +938,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       return;
     }
 
+    final newStatusOverrideKeys = _newShipperReferenceStatusOverrideKeys(
+      trip,
+      result.shipperReferences,
+    );
     setState(() => _submittingManifest = true);
     try {
       for (final itemId in result.deletedCargoItemIds) {
@@ -848,6 +972,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           cargoItems: result.cargoItems,
         );
       }
+      _createdShipperReferenceStatusOverrides.addAll(newStatusOverrideKeys);
       await _loadTrips();
       if (!mounted) return;
       _showSuccess(
@@ -1056,6 +1181,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           note: _statusNoteForUpdate(result.status),
         ),
       );
+      _clearCreatedStatusOverridesForRefs(trip, result.targetSuratJalanRefs);
       await _loadTrips();
       if (!mounted) return;
       final refreshedTrip = _trips.firstWhereOrNull(
@@ -1376,10 +1502,13 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       decoration: InputDecoration(
                         labelText: 'Odometer Akhir Trip',
                         suffixText: 'km',
-                        errorText: errorText,
                       ),
                       onSubmitted: (_) => unawaited(submit()),
                     ),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 8),
+                      _TripClosureWarning(message: errorText!),
+                    ],
                     const SizedBox(height: 12),
                     TextField(
                       controller: noteController,
@@ -1712,22 +1841,148 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           ? incident.locationText
           : '${_latestLocation!.latitude.toStringAsFixed(6)}, ${_latestLocation!.longitude.toStringAsFixed(6)}',
     );
-    final odometerController = TextEditingController(
-      text: (trip.tripEndOdometerKm != null && trip.tripEndOdometerKm! > 0)
-          ? _formatWholeNumberInput(trip.tripEndOdometerKm)
-          : (trip.vehicleLastOdometer != null && trip.vehicleLastOdometer! > 0)
-          ? _formatWholeNumberInput(trip.vehicleLastOdometer)
-          : (incident.odometer != null && incident.odometer! > 0)
-          ? _formatWholeNumberInput(incident.odometer)
-          : '',
-    );
-    final isAddingCostOnly =
-        incident.canAddResolutionCost && !incident.canSubmitResolution;
-    final costRows = <_IncidentCostDraftController>[
-      if (isAddingCostOnly) _IncidentCostDraftController(),
-    ];
 
     final result = await showDialog<_IncidentResolutionSubmitResult>(
+      context: context,
+      builder: (context) {
+        String? errorText;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> submit() async {
+              final note = noteController.text.trim();
+              if (note.isEmpty) {
+                setDialogState(
+                  () => errorText = 'Catatan penyelesaian wajib diisi.',
+                );
+                return;
+              }
+
+              await _popDialogAfterKeyboardDismiss<
+                _IncidentResolutionSubmitResult
+              >(
+                context,
+                _IncidentResolutionSubmitResult(
+                  note: note,
+                  locationText: locationController.text.trim(),
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: Text('Ajukan Selesai ${incident.incidentNumber}'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${trip.doNumber} | ${trip.vehiclePlate}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      if (errorText != null) ...[
+                        Text(
+                          errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextField(
+                        controller: noteController,
+                        minLines: 3,
+                        maxLines: 5,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Catatan Selesai',
+                          hintText: 'Jelaskan tindakan yang sudah dilakukan',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: locationController,
+                        minLines: 1,
+                        maxLines: 3,
+                        scrollPadding: _keyboardAwareScrollPadding(context),
+                        decoration: const InputDecoration(
+                          labelText: 'Lokasi Akhir',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => unawaited(
+                    _popDialogAfterKeyboardDismiss<
+                      _IncidentResolutionSubmitResult
+                    >(context),
+                  ),
+                  child: const Text('Batal'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => unawaited(submit()),
+                  icon: const Icon(Icons.task_alt_rounded),
+                  label: const Text('Ajukan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
+    locationController.dispose();
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _submittingIncidentResolution = true);
+    try {
+      await _deliveryOrderService.submitIncidentResolution(
+        sessionToken: sessionToken,
+        incidentRef: incident.id,
+        resolutionNote: result.note,
+        resolutionLocationText: result.locationText,
+        costs: const [],
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      _showSuccess(
+        'Penyelesaian insiden dikirim. Menunggu review admin.',
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      _showError(err.message);
+    } finally {
+      if (mounted) {
+        setState(() => _submittingIncidentResolution = false);
+      }
+    }
+  }
+
+  Future<void> _openIncidentCostSubmission(
+    DeliveryTrip trip,
+    DriverIncident incident,
+  ) async {
+    final sessionToken = _session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+
+    final costRows = <_IncidentCostDraftController>[
+      _IncidentCostDraftController(),
+    ];
+
+    final result = await showDialog<_IncidentCostSubmitResult>(
       context: context,
       builder: (context) {
         String? errorText;
@@ -1742,11 +1997,17 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
             Future<void> removeCostRow(int index) async {
               if (index < 0 || index >= costRows.length) return;
+              if (costRows.length == 1) {
+                setDialogState(
+                  () => errorText = 'Minimal satu biaya wajib diisi.',
+                );
+                return;
+              }
               final confirmed = await showMobileActionConfirmation(
                 context,
                 title: 'Hapus biaya ini?',
                 message:
-                    'Baris biaya driver ini akan dihapus dari draft penyelesaian insiden. Data belum dikirim sebelum kamu menekan Kirim ke Admin.',
+                    'Baris biaya driver ini akan dihapus dari draft tambahan biaya. Data belum dikirim sebelum kamu menekan Kirim Biaya.',
                 confirmLabel: 'Hapus Biaya',
                 icon: Icons.delete_outline_rounded,
                 destructive: true,
@@ -1758,14 +2019,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             }
 
             Future<void> submit() async {
-              final note = noteController.text.trim();
-              if (note.isEmpty) {
-                setDialogState(
-                  () => errorText = 'Catatan penyelesaian wajib diisi.',
-                );
-                return;
-              }
-
               final costs = <DriverIncidentCostInput>[];
               for (var index = 0; index < costRows.length; index++) {
                 final row = costRows[index];
@@ -1799,33 +2052,22 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                 );
               }
 
-              if (isAddingCostOnly && costs.isEmpty) {
+              if (costs.isEmpty) {
                 setDialogState(
                   () => errorText =
-                      'Tambahkan minimal satu biaya baru sebelum dikirim ke admin.',
+                      'Tambahkan minimal satu biaya sebelum dikirim ke admin.',
                 );
                 return;
               }
 
-              await _popDialogAfterKeyboardDismiss<
-                _IncidentResolutionSubmitResult
-              >(
+              await _popDialogAfterKeyboardDismiss<_IncidentCostSubmitResult>(
                 context,
-                _IncidentResolutionSubmitResult(
-                  note: note,
-                  locationText: locationController.text.trim(),
-                  odometer: _parseOdometerInput(odometerController.text),
-                  costs: costs,
-                ),
+                _IncidentCostSubmitResult(costs: costs),
               );
             }
 
             return AlertDialog(
-              title: Text(
-                isAddingCostOnly
-                    ? 'Tambah Biaya ${incident.incidentNumber}'
-                    : 'Ajukan Selesai ${incident.incidentNumber}',
-              ),
+              title: Text('Tambah Biaya ${incident.incidentNumber}'),
               content: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 460),
                 child: SingleChildScrollView(
@@ -1848,42 +2090,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                         ),
                         const SizedBox(height: 12),
                       ],
-                      TextField(
-                        controller: noteController,
-                        minLines: 3,
-                        maxLines: 5,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: InputDecoration(
-                          labelText: isAddingCostOnly
-                              ? 'Catatan Tambahan Biaya'
-                              : 'Catatan Penyelesaian',
-                          hintText: isAddingCostOnly
-                              ? 'Jelaskan perubahan atau biaya tambahan'
-                              : 'Jelaskan tindakan yang sudah dilakukan',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: locationController,
-                        minLines: 1,
-                        maxLines: 3,
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Lokasi Akhir',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: odometerController,
-                        keyboardType: mobileNumberKeyboardType(0),
-                        inputFormatters: mobileNumberInputFormatters(0),
-                        scrollPadding: _keyboardAwareScrollPadding(context),
-                        decoration: const InputDecoration(
-                          labelText: 'Odometer Akhir',
-                          suffixText: 'km',
-                        ),
-                      ),
-                      const SizedBox(height: 18),
                       Row(
                         children: [
                           const Expanded(
@@ -1899,18 +2105,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                           ),
                         ],
                       ),
-                      if (costRows.isEmpty)
-                        Text(
-                          isAddingCostOnly
-                              ? 'Tambahkan minimal satu biaya baru. Biaya tetap menunggu review admin.'
-                              : 'Kosongkan jika tidak ada biaya. Admin tetap bisa menambahkan atau koreksi biaya dari panel.',
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.58),
-                            fontSize: 12.5,
-                          ),
-                        ),
                       for (var index = 0; index < costRows.length; index++) ...[
                         const SizedBox(height: 10),
                         _IncidentCostInputCard(
@@ -1927,18 +2121,16 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               actions: [
                 TextButton(
                   onPressed: () => unawaited(
-                    _popDialogAfterKeyboardDismiss<
-                      _IncidentResolutionSubmitResult
-                    >(context),
+                    _popDialogAfterKeyboardDismiss<_IncidentCostSubmitResult>(
+                      context,
+                    ),
                   ),
                   child: const Text('Batal'),
                 ),
                 FilledButton.icon(
                   onPressed: () => unawaited(submit()),
-                  icon: const Icon(Icons.task_alt_rounded),
-                  label: Text(
-                    isAddingCostOnly ? 'Kirim Biaya' : 'Kirim ke Admin',
-                  ),
+                  icon: const Icon(Icons.receipt_long_rounded),
+                  label: const Text('Kirim Biaya'),
                 ),
               ],
             );
@@ -1947,9 +2139,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       },
     );
 
-    noteController.dispose();
-    locationController.dispose();
-    odometerController.dispose();
     for (final row in costRows) {
       row.dispose();
     }
@@ -1963,18 +2152,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       await _deliveryOrderService.submitIncidentResolution(
         sessionToken: sessionToken,
         incidentRef: incident.id,
-        resolutionNote: result.note,
-        resolutionLocationText: result.locationText,
-        resolutionOdometer: result.odometer,
+        resolutionNote: 'Driver menambahkan biaya insiden',
         costs: result.costs,
       );
       await _loadTrips();
       if (!mounted) return;
-      _showSuccess(
-        isAddingCostOnly
-            ? 'Biaya tambahan insiden dikirim. Menunggu review admin.'
-            : 'Penyelesaian insiden dikirim. Menunggu review admin.',
-      );
+      _showSuccess('Biaya tambahan insiden dikirim. Menunggu review admin.');
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
       _showError(err.message);
@@ -2185,6 +2368,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                       _DriverIncidentCard(
                         incidents: _incidentsForTrip(_selectedTrip!),
                         busy: _submittingIncidentResolution,
+                        onAddCost: (incident) => unawaited(
+                          _openIncidentCostSubmission(_selectedTrip!, incident),
+                        ),
                         onSubmitResolution: (incident) => unawaited(
                           _openIncidentResolution(_selectedTrip!, incident),
                         ),
@@ -2533,13 +2719,15 @@ class _IncidentResolutionSubmitResult {
   const _IncidentResolutionSubmitResult({
     required this.note,
     required this.locationText,
-    required this.odometer,
-    required this.costs,
   });
 
   final String note;
   final String locationText;
-  final double? odometer;
+}
+
+class _IncidentCostSubmitResult {
+  const _IncidentCostSubmitResult({required this.costs});
+
   final List<DriverIncidentCostInput> costs;
 }
 
@@ -2568,6 +2756,49 @@ class _TripClosureSubmitResult {
 
   final double odometerKm;
   final String note;
+}
+
+class _TripClosureWarning extends StatelessWidget {
+  const _TripClosureWarning({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: scheme.error,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              softWrap: true,
+              style: TextStyle(
+                color: scheme.onErrorContainer,
+                fontSize: 12.5,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 double? _parseOdometerInput(String value) {
@@ -2985,7 +3216,8 @@ String _incidentCostCategoryLabel(String category) {
     'TIRE' => 'Ban',
     'TOWING' => 'Derek / Evakuasi',
     'MEDICAL' => 'Medis',
-    'POLICE_ADMIN' => 'Polisi / Administrasi',
+    'ADMINISTRATION' => 'Administrasi',
+    'POLICE_ADMIN' => 'Administrasi',
     'ACCOMMODATION' => 'Akomodasi',
     'CARGO_HANDLING' => 'Bongkar / Handling',
     'THIRD_PARTY_DAMAGE' => 'Kerusakan Pihak Ketiga',
@@ -4476,16 +4708,21 @@ class _DriverIncidentCard extends StatelessWidget {
   const _DriverIncidentCard({
     required this.incidents,
     required this.busy,
+    required this.onAddCost,
     required this.onSubmitResolution,
   });
 
   final List<DriverIncident> incidents;
   final bool busy;
+  final void Function(DriverIncident incident) onAddCost;
   final void Function(DriverIncident incident) onSubmitResolution;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final actionIncident = incidents.firstWhereOrNull(
+      (incident) => incident.canOpenResolutionForm,
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -4573,35 +4810,7 @@ class _DriverIncidentCard extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 8),
                       ],
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.tonalIcon(
-                          onPressed: busy
-                              ? null
-                              : () => onSubmitResolution(incident),
-                          icon: busy
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator.adaptive(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(
-                                      scheme.primary,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.task_alt_rounded),
-                          label: Text(
-                            busy
-                                ? 'Mengirim...'
-                                : incident.canAddResolutionCost
-                                ? 'Tambah Biaya Insiden'
-                                : 'Ajukan Selesai Insiden',
-                          ),
-                        ),
-                      ),
                     ],
                     if (!incident.canOpenResolutionForm &&
                         incident.hasSubmittedResolution) ...[
@@ -4626,6 +4835,48 @@ class _DriverIncidentCard extends StatelessWidget {
                 ),
               );
             }),
+            if (actionIncident != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: busy ? null : () => onAddCost(actionIncident),
+                  icon: busy
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator.adaptive(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(
+                              scheme.primary,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.receipt_long_rounded),
+                  label: Text(busy ? 'Mengirim...' : 'Tambah Biaya Insiden'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: busy ? null : () => onSubmitResolution(actionIncident),
+                  icon: busy
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator.adaptive(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(
+                              scheme.onPrimary,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.task_alt_rounded),
+                  label: Text(busy ? 'Mengirim...' : 'Ajukan Selesai Insiden'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -4656,7 +4907,7 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
     'TIRE',
     'TOWING',
     'MEDICAL',
-    'POLICE_ADMIN',
+    'ADMINISTRATION',
     'ACCOMMODATION',
     'CARGO_HANDLING',
     'THIRD_PARTY_DAMAGE',
@@ -4693,12 +4944,17 @@ class _IncidentCostInputCardState extends State<_IncidentCostInputCard> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: widget.row.category,
+            isExpanded: true,
             decoration: const InputDecoration(labelText: 'Kategori'),
             items: _categoryOptions
                 .map(
                   (category) => DropdownMenuItem(
                     value: category,
-                    child: Text(_incidentCostCategoryLabel(category)),
+                    child: Text(
+                      _incidentCostCategoryLabel(category),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 )
                 .toList(growable: false),

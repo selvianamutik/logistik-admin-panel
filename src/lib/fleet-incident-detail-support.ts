@@ -35,7 +35,7 @@ const INCIDENT_SETTLEMENT_NEXT_STATUS_MAP: Record<IncidentSettlementLineStatus, 
 };
 
 const INCIDENT_SETTLEMENT_CATEGORY_OPTIONS: Record<IncidentSettlementLineType, IncidentSettlementCategory[]> = {
-    COST: ['TOWING', 'REPAIR', 'SPAREPART', 'TIRE', 'MEDICAL', 'THIRD_PARTY_DAMAGE', 'POLICE_ADMIN', 'ACCOMMODATION', 'CARGO_HANDLING', 'OTHER'],
+    COST: ['TOWING', 'REPAIR', 'SPAREPART', 'TIRE', 'MEDICAL', 'THIRD_PARTY_DAMAGE', 'ADMINISTRATION', 'ACCOMMODATION', 'CARGO_HANDLING', 'OTHER'],
     COMPENSATION: ['COMPENSATION_DRIVER', 'COMPENSATION_CREW', 'COMPENSATION_THIRD_PARTY', 'COMPENSATION_FAMILY', 'OTHER'],
     RECOVERY: ['INSURANCE_CLAIM', 'THIRD_PARTY_RECOVERY', 'VENDOR_RECOVERY', 'INTERNAL_RECOVERY', 'OTHER'],
 };
@@ -56,11 +56,7 @@ export function getAvailableIncidentStatusesForContext(
     status: Incident['status'],
     settlementLines: IncidentSettlementLine[] = []
 ) {
-    const nextStatuses = getAvailableIncidentStatuses(status);
-    if (status === 'RESOLVED' && hasUnsettledIncidentSettlementLines(settlementLines)) {
-        return nextStatuses.filter(nextStatus => nextStatus !== 'CLOSED');
-    }
-    return nextStatuses;
+    return getAvailableIncidentStatuses(status);
 }
 
 export function sortIncidentSettlementLines(lines: IncidentSettlementLine[]) {
