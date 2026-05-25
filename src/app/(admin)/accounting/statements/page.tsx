@@ -14,7 +14,7 @@ import {
   type LedgerAccountSummary,
 } from "@/lib/accounting-reports";
 import { getBusinessCalendarDateParts } from "@/lib/business-date";
-import { openBrandedPrint } from "@/lib/print";
+import { escapePrintHtml, openBrandedPrint } from "@/lib/print";
 import type { ChartOfAccount, CompanyProfile, JournalEntry, JournalLine } from "@/lib/types";
 import { useToast } from "../../layout";
 
@@ -59,14 +59,147 @@ function getPeriodLabel(mode: PeriodMode, year: number, month: number) {
   return mode === "year" ? `Tahun ${year}` : `${MONTH_NAMES[month]} ${year}`;
 }
 
-function buildRowsHtml(rows: LedgerAccountSummary[]) {
+function formatStatementDateLabel(dateValue: string) {
+  const [year, month, day] = dateValue.split("-").map(value => Number(value));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return dateValue;
+  }
+  return `${day} ${MONTH_NAMES[Math.max(month - 1, 0)] || String(month)} ${year}`;
+}
+
+function buildStatementRowsHtml(rows: LedgerAccountSummary[]) {
   if (rows.length === 0) {
-    return `<tr><td colspan="2">Tidak ada data</td></tr>`;
+    return `<tr class="statement-empty-row"><td colspan="2">Tidak ada data</td></tr>`;
   }
   return rows
-    .map(row => `<tr><td>${row.account.code} - ${row.account.name}</td><td class="r">${formatAccountingCurrency(row.balance)}</td></tr>`)
+    .map(row => `<tr>
+      <td>${escapePrintHtml(row.account.code)} - ${escapePrintHtml(row.account.name)}</td>
+      <td class="r amount">${escapePrintHtml(formatAccountingCurrency(row.balance))}</td>
+    </tr>`)
     .join("");
 }
+
+function buildStatementSectionHtml(title: string, total: number, rows: LedgerAccountSummary[]) {
+  return `
+    <tr class="statement-section-row">
+      <td>${escapePrintHtml(title)}</td>
+      <td class="r amount">${escapePrintHtml(formatAccountingCurrency(total))}</td>
+    </tr>
+    ${buildStatementRowsHtml(rows)}
+  `;
+}
+
+function buildStatementMetaHtml(items: Array<{ label: string; value: string }>) {
+  return `
+    <div class="statement-meta-grid">
+      ${items.map(item => `
+        <div class="statement-meta-item">
+          <div>${escapePrintHtml(item.label)}</div>
+          <strong>${escapePrintHtml(item.value)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildSummaryBoxHtml(label: string, value: number, tone: "neutral" | "success" | "danger" = "neutral") {
+  return `
+    <div class="stat-box statement-stat-box">
+      <div class="stat-label">${escapePrintHtml(label)}</div>
+      <div class="stat-value ${tone === "success" ? "s" : tone === "danger" ? "d" : ""}">
+        ${escapePrintHtml(formatAccountingCurrency(value))}
+      </div>
+    </div>
+  `;
+}
+
+const accountingStatementPrintStyles = `
+  @page { size: A4; margin: 12mm; }
+  body { max-width: none; font-size: 12px; color: #0f172a; }
+  .print-header { margin-bottom: 1rem; padding-bottom: 0.75rem; }
+  .print-footer { margin-top: 1rem; }
+  .statement-print { margin-top: 0.25rem; }
+  .statement-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    margin-bottom: 0.75rem;
+  }
+  .statement-meta-item {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    background: #f8fafc;
+  }
+  .statement-meta-item div {
+    color: #64748b;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.15rem;
+  }
+  .statement-meta-item strong { font-size: 0.85rem; }
+  .stats-row.statement-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    margin: 0 0 0.85rem;
+  }
+  .statement-stat-box {
+    min-height: 58px;
+    text-align: left;
+    padding: 0.55rem 0.65rem;
+    border-radius: 6px;
+    background: #ffffff;
+  }
+  .statement-stat-box .stat-value {
+    font-size: 1.05rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .statement-table {
+    margin-top: 0;
+    border: 1px solid #cbd5e1;
+    table-layout: fixed;
+  }
+  .statement-table th,
+  .statement-table td {
+    padding: 0.48rem 0.6rem;
+    vertical-align: top;
+  }
+  .statement-table th:first-child,
+  .statement-table td:first-child { width: 68%; }
+  .statement-table th:last-child,
+  .statement-table td:last-child { width: 32%; }
+  .statement-section-row td {
+    background: #f1f5f9;
+    font-weight: 800;
+    color: #0f172a;
+    border-top: 1px solid #cbd5e1;
+  }
+  .statement-empty-row td {
+    color: #94a3b8;
+    font-style: italic;
+  }
+  .statement-total-row td {
+    background: #e2e8f0;
+    border-top: 2px solid #0f172a;
+    font-weight: 900;
+    font-size: 0.9rem;
+  }
+  .amount {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  @media print {
+    body { padding: 0; }
+    .statement-meta-item,
+    .statement-stat-box,
+    .statement-table tr { break-inside: avoid; page-break-inside: avoid; }
+    .statement-section-row { break-after: avoid; page-break-after: avoid; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+`;
 
 export default function AccountingStatementsPage() {
   const { addToast } = useToast();
@@ -149,15 +282,76 @@ export default function AccountingStatementsPage() {
 
   const handlePrint = () => {
     const isProfitLoss = tab === "profit-loss";
+    const statementTitle = isProfitLoss ? "Laporan Laba Rugi" : "Neraca";
+    const statementSubtitle = isProfitLoss ? periodLabel : `Per ${formatStatementDateLabel(period.endDate)}`;
     const bodyHtml = isProfitLoss
-      ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan Bersih</div><div class="stat-value s">${formatAccountingCurrency(profitLoss.netRevenue)}</div></div><div class="stat-box"><div class="stat-label">Total Beban</div><div class="stat-value d">${formatAccountingCurrency(profitLoss.expenses)}</div></div><div class="stat-box"><div class="stat-label">Laba / Rugi</div><div class="stat-value ${profitLoss.netProfit >= 0 ? "s" : "d"}">${formatAccountingCurrency(profitLoss.netProfit)}</div></div></div><table><thead><tr><th>Akun</th><th class="r">Nilai</th></tr></thead><tbody><tr class="b"><td>Pendapatan</td><td class="r">${formatAccountingCurrency(profitLoss.revenue)}</td></tr>${buildRowsHtml(revenueRows)}<tr class="b"><td>Potongan/Klaim</td><td class="r">${formatAccountingCurrency(profitLoss.deductions)}</td></tr>${buildRowsHtml(deductionRows)}<tr class="b"><td>Beban</td><td class="r">${formatAccountingCurrency(profitLoss.expenses)}</td></tr>${buildRowsHtml(expenseRows)}<tr class="b"><td>Laba / Rugi Bersih</td><td class="r">${formatAccountingCurrency(profitLoss.netProfit)}</td></tr></tbody></table>`
-      : `<div class="stats-row"><div class="stat-box"><div class="stat-label">Total Aktiva</div><div class="stat-value s">${formatAccountingCurrency(balanceSheet.assets)}</div></div><div class="stat-box"><div class="stat-label">Total Pasiva</div><div class="stat-value s">${formatAccountingCurrency(balanceSheet.liabilitiesAndEquity)}</div></div><div class="stat-box"><div class="stat-label">Selisih</div><div class="stat-value ${Math.abs(balanceSheet.balanceGap) <= 0.01 ? "s" : "d"}">${formatAccountingCurrency(balanceSheet.balanceGap)}</div></div></div><table><thead><tr><th>Akun</th><th class="r">Nilai</th></tr></thead><tbody><tr class="b"><td>Aktiva</td><td class="r">${formatAccountingCurrency(balanceSheet.assets)}</td></tr>${buildRowsHtml(assetRows)}<tr class="b"><td>Hutang</td><td class="r">${formatAccountingCurrency(balanceSheet.liabilities)}</td></tr>${buildRowsHtml(liabilityRows)}<tr class="b"><td>Modal</td><td class="r">${formatAccountingCurrency(balanceSheet.totalEquity)}</td></tr>${buildRowsHtml(equityRows)}<tr><td>Laba Tahun Berjalan</td><td class="r">${formatAccountingCurrency(balanceSheet.currentEarnings)}</td></tr><tr class="b"><td>Total Pasiva</td><td class="r">${formatAccountingCurrency(balanceSheet.liabilitiesAndEquity)}</td></tr></tbody></table>`;
+      ? `
+        <div class="statement-print">
+          ${buildStatementMetaHtml([
+            { label: "Jenis Laporan", value: "Laba Rugi" },
+            { label: "Periode", value: periodLabel },
+            { label: "Rentang Tanggal", value: `${formatStatementDateLabel(period.startDate)} - ${formatStatementDateLabel(period.endDate)}` },
+          ])}
+          <div class="stats-row statement-summary">
+            ${buildSummaryBoxHtml("Pendapatan Bersih", profitLoss.netRevenue, "success")}
+            ${buildSummaryBoxHtml("Total Beban", profitLoss.expenses, "danger")}
+            ${buildSummaryBoxHtml("Laba / Rugi", profitLoss.netProfit, profitLoss.netProfit >= 0 ? "success" : "danger")}
+          </div>
+          <table class="statement-table">
+            <thead>
+              <tr><th>Akun</th><th class="r">Nilai</th></tr>
+            </thead>
+            <tbody>
+              ${buildStatementSectionHtml("Pendapatan", profitLoss.revenue, revenueRows)}
+              ${buildStatementSectionHtml("Potongan / Klaim", profitLoss.deductions, deductionRows)}
+              ${buildStatementSectionHtml("Beban", profitLoss.expenses, expenseRows)}
+              <tr class="statement-total-row">
+                <td>Laba / Rugi Bersih</td>
+                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(profitLoss.netProfit))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="statement-print">
+          ${buildStatementMetaHtml([
+            { label: "Jenis Laporan", value: "Neraca" },
+            { label: "Posisi", value: formatStatementDateLabel(period.endDate) },
+            { label: "Mode Periode", value: periodMode === "year" ? "Tahunan" : "Bulanan" },
+          ])}
+          <div class="stats-row statement-summary">
+            ${buildSummaryBoxHtml("Total Aktiva", balanceSheet.assets, "success")}
+            ${buildSummaryBoxHtml("Total Pasiva", balanceSheet.liabilitiesAndEquity, "success")}
+            ${buildSummaryBoxHtml("Selisih", balanceSheet.balanceGap, Math.abs(balanceSheet.balanceGap) <= 0.01 ? "success" : "danger")}
+          </div>
+          <table class="statement-table">
+            <thead>
+              <tr><th>Akun</th><th class="r">Nilai</th></tr>
+            </thead>
+            <tbody>
+              ${buildStatementSectionHtml("Aktiva", balanceSheet.assets, assetRows)}
+              ${buildStatementSectionHtml("Hutang", balanceSheet.liabilities, liabilityRows)}
+              ${buildStatementSectionHtml("Modal", balanceSheet.equity, equityRows)}
+              <tr>
+                <td>Laba Tahun Berjalan</td>
+                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(balanceSheet.currentEarnings))}</td>
+              </tr>
+              <tr class="statement-total-row">
+                <td>Total Pasiva</td>
+                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(balanceSheet.liabilitiesAndEquity))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
 
     openBrandedPrint({
-      title: isProfitLoss ? "Laporan Laba Rugi" : "Neraca",
-      subtitle: isProfitLoss ? periodLabel : `Per ${period.endDate}`,
+      title: statementTitle,
+      subtitle: statementSubtitle,
       company,
       bodyHtml,
+      extraStyles: accountingStatementPrintStyles,
     });
   };
 
