@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 
+import AppPagination from "@/components/AppPagination";
 import FormattedNumberInput from "@/components/FormattedNumberInput";
-import { fetchAllAdminCollectionData } from "@/lib/api/admin-client";
+import { fetchAdminListPayload, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import { formatAccountingCurrency } from "@/lib/accounting-reports";
 import { getBusinessDateValue } from "@/lib/business-date";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { hasPermission } from "@/lib/rbac";
 import type { ChartOfAccount, JournalEntry, JournalLine } from "@/lib/types";
 import { useApp, useToast } from "../../layout";
@@ -19,6 +21,12 @@ type DraftLine = {
   debit: number;
   credit: number;
   memo: string;
+};
+
+type JournalEntrySummary = {
+  posted: number;
+  void: number;
+  all: number;
 };
 
 function createDraftLine(): DraftLine {
@@ -51,9 +59,13 @@ export default function JournalEntriesPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [lines, setLines] = useState<JournalLine[]>([]);
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
+  const [entryPage, setEntryPage] = useState(1);
+  const [entryTotal, setEntryTotal] = useState(0);
+  const [entrySummary, setEntrySummary] = useState<JournalEntrySummary>({ posted: 0, void: 0, all: 0 });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JournalStatusFilter>("POSTED");
   const [loading, setLoading] = useState(true);
+  const [referenceLoading, setReferenceLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
@@ -67,32 +79,105 @@ export default function JournalEntriesPage() {
   const canCreateManualJournal = user ? hasPermission(user.role, "reports", "create") : false;
   const canVoidManualJournal = user ? hasPermission(user.role, "reports", "update") : false;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const buildJournalEntryQuery = useCallback((targetPage: number, targetPageSize = DEFAULT_PAGE_SIZE) => {
+    const params = new URLSearchParams({
+      entity: "journal-entries",
+      sortField: "entryDate",
+      sortDir: "desc",
+      page: String(targetPage),
+      pageSize: String(targetPageSize),
+    });
+
+    const keyword = search.trim();
+    if (keyword) {
+      params.set("q", keyword);
+      params.set("searchFields", "entryNumber,memo,sourceType,sourceNumber,sourceLabel");
+    }
+
+    if (statusFilter === "POSTED") {
+      params.set("filter", JSON.stringify({ status: { neq: "VOID" } }));
+    } else if (statusFilter === "VOID") {
+      params.set("filter", JSON.stringify({ status: "VOID" }));
+    }
+
+    return `/api/data?${params.toString()}`;
+  }, [search, statusFilter]);
+
+  const fetchJournalEntryCount = useCallback(async (filter?: Record<string, unknown>) => {
+    const params = new URLSearchParams({
+      entity: "journal-entries",
+      countOnly: "1",
+      page: "1",
+      pageSize: "1",
+    });
+    if (filter) {
+      params.set("filter", JSON.stringify(filter));
+    }
+    const payload = await fetchAdminListPayload<JournalEntry>(
+      `/api/data?${params.toString()}`,
+      "Gagal memuat ringkasan jurnal",
+    );
+    return payload.meta?.total ?? 0;
+  }, []);
+
+  const loadReferenceData = useCallback(async () => {
+    setReferenceLoading(true);
     try {
-      const [entryRows, lineRows, accountRows] = await Promise.all([
-        fetchAllAdminCollectionData<JournalEntry>(
-          "/api/data?entity=journal-entries&sortField=entryDate&sortDir=desc",
-          "Gagal memuat jurnal",
-        ),
-        fetchAllAdminCollectionData<JournalLine>(
-          "/api/data?entity=journal-lines&sortField=lineNumber&sortDir=asc",
-          "Gagal memuat detail jurnal",
-        ),
+      const [accountRows, posted, voided, all] = await Promise.all([
         fetchAllAdminCollectionData<ChartOfAccount>(
           "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
           "Gagal memuat akun perkiraan",
         ),
+        fetchJournalEntryCount({ status: { neq: "VOID" } }),
+        fetchJournalEntryCount({ status: "VOID" }),
+        fetchJournalEntryCount(),
       ]);
-      setEntries(entryRows || []);
-      setLines(lineRows || []);
       setAccounts((accountRows || []).filter(account => account.active !== false));
+      setEntrySummary({ posted, void: voided, all });
+    } catch (error) {
+      addToast("error", error instanceof Error ? error.message : "Gagal memuat data jurnal");
+    } finally {
+      setReferenceLoading(false);
+    }
+  }, [addToast, fetchJournalEntryCount]);
+
+  useEffect(() => {
+    void loadReferenceData();
+  }, [loadReferenceData]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const payload = await fetchAdminListPayload<JournalEntry>(
+        buildJournalEntryQuery(entryPage, DEFAULT_PAGE_SIZE),
+        "Gagal memuat jurnal",
+      );
+      const entryRows = payload.data || [];
+      const total = payload.meta?.total ?? entryRows.length;
+      const totalPages = Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE));
+      if (entryPage > totalPages) {
+        setEntryPage(totalPages);
+        return;
+      }
+
+      const entryIds = entryRows.map(entry => entry._id).filter(Boolean);
+      const lineRows = entryIds.length > 0
+        ? await fetchAllAdminCollectionData<JournalLine>(
+          `/api/data?entity=journal-lines&filter=${encodeURIComponent(JSON.stringify({ journalEntryRef: entryIds }))}&sortField=lineNumber&sortDir=asc`,
+          "Gagal memuat detail jurnal",
+          200,
+        )
+        : [];
+
+      setEntries(entryRows);
+      setEntryTotal(total);
+      setLines(lineRows || []);
     } catch (error) {
       addToast("error", error instanceof Error ? error.message : "Gagal memuat jurnal");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, buildJournalEntryQuery, entryPage]);
 
   useEffect(() => {
     void load();
@@ -116,21 +201,6 @@ export default function JournalEntriesPage() {
     }
     return grouped;
   }, [lines]);
-
-  const postedCount = useMemo(() => entries.filter(entry => entry.status !== "VOID").length, [entries]);
-  const voidCount = useMemo(() => entries.filter(entry => entry.status === "VOID").length, [entries]);
-
-  const filtered = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return entries.filter(entry => {
-      if (statusFilter === "POSTED" && entry.status === "VOID") return false;
-      if (statusFilter === "VOID" && entry.status !== "VOID") return false;
-      if (!keyword) return true;
-      return `${entry.entryNumber} ${entry.memo} ${entry.sourceType || ""} ${entry.sourceNumber || ""} ${entry.sourceLabel || ""}`
-        .toLowerCase()
-        .includes(keyword);
-    });
-  }, [entries, search, statusFilter]);
 
   const draftTotals = useMemo(() => {
     const debit = form.lines.reduce((sum, line) => sum + Math.max(Number(line.debit || 0), 0), 0);
@@ -225,6 +295,8 @@ export default function JournalEntriesPage() {
       addToast("success", "Jurnal manual dibuat");
       setShowModal(false);
       resetForm();
+      setEntryPage(1);
+      await loadReferenceData();
       await load();
     } catch {
       addToast("error", "Gagal membuat jurnal");
@@ -254,6 +326,7 @@ export default function JournalEntriesPage() {
         return;
       }
       addToast("success", "Jurnal manual dibatalkan");
+      await loadReferenceData();
       await load();
     } catch {
       addToast("error", "Gagal membatalkan jurnal");
@@ -288,24 +361,41 @@ export default function JournalEntriesPage() {
                 className="form-input"
                 style={{ paddingLeft: "2.5rem" }}
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setEntryPage(1);
+                }}
                 placeholder="Cari nomor jurnal, memo, sumber..."
               />
             </label>
             <select
               className="form-select accounting-filter"
               value={statusFilter}
-              onChange={event => setStatusFilter(event.target.value as JournalStatusFilter)}
+              onChange={event => {
+                setStatusFilter(event.target.value as JournalStatusFilter);
+                setEntryPage(1);
+              }}
             >
-              <option value="POSTED">Posted ({postedCount})</option>
-              <option value="VOID">Dibatalkan ({voidCount})</option>
-              <option value="ALL">Semua Jurnal ({entries.length})</option>
+              <option value="POSTED">Posted ({entrySummary.posted})</option>
+              <option value="VOID">Dibatalkan ({entrySummary.void})</option>
+              <option value="ALL">Semua Jurnal ({entrySummary.all})</option>
             </select>
           </div>
         </div>
 
         <div>
-          {filtered.map(entry => {
+          {loading || referenceLoading ? (
+            <div style={{ display: "grid", gap: "0", borderTop: "1px solid var(--color-gray-100)" }}>
+              {[1, 2, 3].map(row => (
+                <article key={row} style={{ padding: "1.25rem", borderBottom: "1px solid var(--color-gray-100)" }}>
+                  <div className="skeleton skeleton-text" style={{ width: "35%", marginBottom: "0.75rem" }} />
+                  <div className="skeleton skeleton-text" style={{ width: "55%", marginBottom: "1rem" }} />
+                  <div className="skeleton skeleton-text" />
+                  <div className="skeleton skeleton-text" />
+                </article>
+              ))}
+            </div>
+          ) : entries.map(entry => {
             const entryLines = linesByEntry.get(entry._id) || [];
             const isVoid = entry.status === "VOID";
             const isManual = entry.sourceType === "MANUAL_JOURNAL";
@@ -408,10 +498,21 @@ export default function JournalEntriesPage() {
               </article>
             );
           })}
-          {!loading && filtered.length === 0 && (
+          {!loading && !referenceLoading && entries.length === 0 && (
             <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-gray-500)" }}>Belum ada jurnal.</div>
           )}
         </div>
+        <AppPagination
+          page={entryPage}
+          pageSize={DEFAULT_PAGE_SIZE}
+          totalItems={entryTotal}
+          onPageChange={setEntryPage}
+          info={({ startIndex, endIndex, totalItems }) =>
+            totalItems === 0
+              ? "Belum ada jurnal"
+              : `Menampilkan ${startIndex}-${endIndex} dari ${totalItems} jurnal`
+          }
+        />
       </div>
 
       {showModal && (
