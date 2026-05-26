@@ -12,24 +12,31 @@ import {
   getJournalLinesForPeriod,
   getJournalLinesUntil,
 } from "@/lib/accounting-reports";
+import {
+  buildFinancePeriodLabel,
+  FINANCE_PERIOD_MONTH_NAMES,
+  getDefaultFinanceCustomDateFrom,
+  getDefaultFinanceCustomDateTo,
+  getDefaultFinancePeriod,
+  getFinancePeriodDateRange,
+  getFinancePeriodYearOptions,
+  isFinancePeriodRangeReady,
+  type FinancePeriodMode,
+} from "@/lib/finance-period";
 import type { ChartOfAccount, JournalEntry, JournalLine } from "@/lib/types";
 
-function todayYear() {
-  return new Date().getFullYear();
-}
-
-function getYearPeriod(year: number) {
-  return {
-    startDate: `${year}-01-01`,
-    endDate: `${year}-12-31`,
-  };
-}
+type LedgerPeriodMode = Exclude<FinancePeriodMode, "all">;
 
 export default function LedgerPage() {
+  const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [lines, setLines] = useState<JournalLine[]>([]);
-  const [year, setYear] = useState(todayYear());
+  const [periodMode, setPeriodMode] = useState<LedgerPeriodMode>("year");
+  const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+  const [year, setYear] = useState(defaultPeriod.year);
+  const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+  const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,7 +67,7 @@ export default function LedgerPage() {
   }, []);
 
   const yearOptions = useMemo(() => {
-    const years = new Set<number>([todayYear(), year]);
+    const years = new Set<number>([...getFinancePeriodYearOptions(year), year]);
     entries.forEach(entry => {
       const parsed = Number(String(entry.entryDate || "").slice(0, 4));
       if (Number.isFinite(parsed)) years.add(parsed);
@@ -68,16 +75,24 @@ export default function LedgerPage() {
     return [...years].sort((left, right) => right - left);
   }, [entries, year]);
 
-  const period = useMemo(() => getYearPeriod(year), [year]);
+  const period = useMemo(
+    () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+    [dateFrom, dateTo, monthIndex, periodMode, year],
+  );
+  const isPeriodReady = isFinancePeriodRangeReady(periodMode, period.startDate, period.endDate);
+  const periodLabel = useMemo(
+    () => buildFinancePeriodLabel({ mode: periodMode, monthIndex, year, startDate: period.startDate, endDate: period.endDate }),
+    [monthIndex, period.endDate, period.startDate, periodMode, year],
+  );
 
   const periodLines = useMemo(
-    () => getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate),
-    [entries, lines, period.endDate, period.startDate],
+    () => isPeriodReady ? getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate) : [],
+    [entries, isPeriodReady, lines, period.endDate, period.startDate],
   );
 
   const cumulativeLines = useMemo(
-    () => getJournalLinesUntil(entries, lines, period.endDate),
-    [entries, lines, period.endDate],
+    () => isPeriodReady ? getJournalLinesUntil(entries, lines, period.endDate) : [],
+    [entries, isPeriodReady, lines, period.endDate],
   );
 
   const periodSummaries = useMemo(() => buildLedgerSummary(accounts, periodLines), [accounts, periodLines]);
@@ -106,18 +121,43 @@ export default function LedgerPage() {
 
       <div className="page-toolbar">
         <div className="page-toolbar-main">
-          <span className="period-label-pill">Tahun {year}</span>
+          <span className="period-label-pill">{periodLabel}</span>
         </div>
         <div className="page-toolbar-side">
           <div className="period-controls">
-            <select className="form-select accounting-period-filter" value={year} onChange={(event) => setYear(Number(event.target.value))}>
-              {yearOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
+            <select className="form-select accounting-period-filter" value={periodMode} onChange={(event) => setPeriodMode(event.target.value as LedgerPeriodMode)}>
+              <option value="month">Bulanan</option>
+              <option value="year">Tahunan</option>
+              <option value="custom">Rentang Tanggal</option>
             </select>
+            {periodMode === "month" && (
+              <select className="form-select accounting-period-filter" value={monthIndex} onChange={(event) => setMonthIndex(Number(event.target.value))}>
+                {FINANCE_PERIOD_MONTH_NAMES.map((name, index) => (
+                  <option key={name} value={index}>{name}</option>
+                ))}
+              </select>
+            )}
+            {periodMode !== "custom" && (
+              <select className="form-select accounting-period-filter" value={year} onChange={(event) => setYear(Number(event.target.value))}>
+                {yearOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            )}
+            {periodMode === "custom" && (
+              <>
+                <input className="form-input accounting-period-filter" type="date" value={dateFrom} onInput={(event) => setDateFrom(event.currentTarget.value)} onChange={(event) => setDateFrom(event.target.value)} />
+                <input className="form-input accounting-period-filter" type="date" value={dateTo} onInput={(event) => setDateTo(event.currentTarget.value)} onChange={(event) => setDateTo(event.target.value)} />
+              </>
+            )}
           </div>
         </div>
       </div>
+      {!isPeriodReady && (
+        <div className="info-banner" style={{ marginBottom: "1rem" }}>
+          <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+        </div>
+      )}
 
       <div className="kpi-grid">
         <div className="kpi-card">
@@ -140,7 +180,7 @@ export default function LedgerPage() {
         </div>
         <div className="kpi-card">
           <div className="kpi-content">
-            <p className="kpi-label">Selisih Neraca per 31/12/{year}</p>
+            <p className="kpi-label">Selisih Neraca per {period.endDate || "-"}</p>
             <p className="kpi-value" style={{ color: Math.abs(balanceSheet.balanceGap) > 0.01 ? "var(--color-danger)" : "var(--color-success)" }}>
               {formatAccountingCurrency(balanceSheet.balanceGap)}
             </p>
@@ -150,7 +190,7 @@ export default function LedgerPage() {
 
       <div className="card" style={{ marginTop: "1.5rem" }}>
         <div className="card-header">
-          <h2 className="card-header-title">Mutasi Akun {year}</h2>
+          <h2 className="card-header-title">Mutasi Akun {periodLabel}</h2>
         </div>
         <div className="table-wrapper table-desktop-only">
           <table>

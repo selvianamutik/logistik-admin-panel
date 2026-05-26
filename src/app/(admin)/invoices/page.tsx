@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
@@ -15,6 +15,17 @@ import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, get
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import {
+    buildFinanceDateFilter,
+    FINANCE_PERIOD_MONTH_NAMES,
+    getDefaultFinanceCustomDateFrom,
+    getDefaultFinanceCustomDateTo,
+    getDefaultFinancePeriod,
+    getFinancePeriodDateRange,
+    getFinancePeriodYearOptions,
+    isFinancePeriodRangeReady,
+    type FinancePeriodMode,
+} from '@/lib/finance-period';
 import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
@@ -50,6 +61,7 @@ export default function NotaListPage() {
     const searchParams = useSearchParams();
     const { user } = useApp();
     const { addToast } = useToast();
+    const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
     const [items, setItems] = useState<FreightNota[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -60,6 +72,11 @@ export default function NotaListPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState(searchParams.get('q') || '');
     const [statusFilter, setStatusFilter] = useState('');
+    const [periodMode, setPeriodMode] = useState<FinancePeriodMode>('all');
+    const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+    const [year, setYear] = useState(defaultPeriod.year);
+    const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+    const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
     const [page, setPage] = useState(1);
     const [totalInvoices, setTotalInvoices] = useState(0);
     const [summary, setSummary] = useState({
@@ -96,6 +113,12 @@ export default function NotaListPage() {
     const canPrintInvoices = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
     const canManageOverpayments = canCreateReceipt;
     const canOpenCustomers = user ? hasPageAccess(user.role, 'customers') : false;
+    const dateRange = useMemo(
+        () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+        [dateFrom, dateTo, monthIndex, periodMode, year]
+    );
+    const isPeriodReady = isFinancePeriodRangeReady(periodMode, dateRange.startDate, dateRange.endDate);
+    const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -116,12 +139,20 @@ export default function NotaListPage() {
             params.set('searchFields', 'notaNumber,customerName');
         }
 
+        const filter: Record<string, unknown> = {};
         if (statusFilter) {
-            params.set('filter', JSON.stringify({ status: statusFilter }));
+            filter.status = statusFilter;
+        }
+        const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
+        if (periodMode !== 'all' && dateFilter) {
+            filter.issueDate = dateFilter;
+        }
+        if (Object.keys(filter).length > 0) {
+            params.set('filter', JSON.stringify(filter));
         }
 
         return params.toString();
-    }, [dateSortDir, page, search, statusFilter]);
+    }, [dateRange.endDate, dateRange.startDate, dateSortDir, page, periodMode, search, statusFilter]);
 
     const fetchAllMatchingInvoices = useCallback(async () => {
         const pageSize = 200;
@@ -151,6 +182,21 @@ export default function NotaListPage() {
 
     const reloadData = useCallback(async () => {
         setLoading(true);
+        if (!isPeriodReady) {
+            setItems([]);
+            setPayments([]);
+            setQueueOverpayments([]);
+            setTotalInvoices(0);
+            setSummary({
+                filteredNetTotal: 0,
+                filteredOutstandingTotal: 0,
+                unpaidCount: 0,
+                partialCount: 0,
+                paidCount: 0,
+                overpaymentTotal: 0,
+            });
+            return;
+        }
         const [notaPayload, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
             fetchAdminListPayload<FreightNota>(`/api/data?${buildInvoicesQuery()}`, 'Gagal memuat invoice'),
             fetchAllMatchingInvoices(),
@@ -248,7 +294,7 @@ export default function NotaListPage() {
         setQueueOverpayments(matchingOverpayments);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
-    }, [buildInvoicesQuery, fetchAllMatchingInvoices, search]);
+    }, [buildInvoicesQuery, fetchAllMatchingInvoices, isPeriodReady, search]);
 
     useEffect(() => {
         reloadData()
@@ -262,7 +308,7 @@ export default function NotaListPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [search, statusFilter]);
+    }, [dateFrom, dateTo, monthIndex, periodMode, search, statusFilter, year]);
 
     const paymentTotalsByInvoice = payments.reduce<Record<string, number>>((acc, payment) => {
         acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
@@ -864,8 +910,52 @@ export default function NotaListPage() {
                             <option value="">Semua Status</option>
                             {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
+                        <select className="form-select finance-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as FinancePeriodMode)}>
+                            <option value="all">Semua Tanggal</option>
+                            <option value="month">Bulanan</option>
+                            <option value="year">Tahunan</option>
+                            <option value="custom">Rentang Tanggal</option>
+                        </select>
+                        {periodMode === 'month' && (
+                            <select className="form-select finance-filter" value={monthIndex} onChange={event => setMonthIndex(Number(event.target.value))}>
+                                {FINANCE_PERIOD_MONTH_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                            </select>
+                        )}
+                        {periodMode !== 'all' && periodMode !== 'custom' && (
+                            <select className="form-select finance-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+                                {yearOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        )}
+                        {periodMode === 'custom' && (
+                            <>
+                                <input className="form-input finance-filter" type="date" value={dateFrom} onInput={event => setDateFrom(event.currentTarget.value)} onChange={event => setDateFrom(event.target.value)} />
+                                <input className="form-input finance-filter" type="date" value={dateTo} onInput={event => setDateTo(event.currentTarget.value)} onChange={event => setDateTo(event.target.value)} />
+                            </>
+                        )}
+                        {(search || statusFilter || periodMode !== 'all') && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    setSearch('');
+                                    setStatusFilter('');
+                                    setPeriodMode('all');
+                                    setMonthIndex(defaultPeriod.monthIndex);
+                                    setYear(defaultPeriod.year);
+                                    setDateFrom(getDefaultFinanceCustomDateFrom());
+                                    setDateTo(getDefaultFinanceCustomDateTo());
+                                    setPage(1);
+                                }}
+                            >
+                                Reset
+                            </button>
+                        )}
                     </div>
                 </div>
+                {!isPeriodReady && (
+                    <div className="info-banner" style={{ margin: '0 1rem 1rem' }}>
+                        <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+                    </div>
+                )}
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Invoice</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Dasar Invoice</th><th>Invoice Transfer Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>

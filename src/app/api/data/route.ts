@@ -696,9 +696,20 @@ export async function GET(request: Request) {
         }
 
         try {
-            const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'type' | 'amount'>>('bankTransaction', {
-                bankAccountRef,
-            });
+            const dateFrom = searchParams.get('dateFrom')?.trim().slice(0, 10);
+            const dateTo = searchParams.get('dateTo')?.trim().slice(0, 10);
+            const txFilter: Record<string, unknown> = { bankAccountRef };
+            const dateFilter: Record<string, string> = {};
+            if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+                dateFilter.gte = dateFrom;
+            }
+            if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+                dateFilter.lte = dateTo;
+            }
+            if (Object.keys(dateFilter).length > 0) {
+                txFilter.date = dateFilter;
+            }
+            const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'type' | 'amount'>>('bankTransaction', txFilter);
             const summary = txRows.reduce(
                 (acc, tx) => {
                     const amount = parseFormattedNumberish(tx.amount ?? 0, { maxFractionDigits: 0 });

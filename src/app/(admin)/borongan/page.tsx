@@ -1,11 +1,22 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency, formatQuantity } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import {
+    buildFinanceDateFilter,
+    FINANCE_PERIOD_MONTH_NAMES,
+    getDefaultFinanceCustomDateFrom,
+    getDefaultFinanceCustomDateTo,
+    getDefaultFinancePeriod,
+    getFinancePeriodDateRange,
+    getFinancePeriodYearOptions,
+    isFinancePeriodRangeReady,
+    type FinancePeriodMode,
+} from '@/lib/finance-period';
 import { normalizeUserRole } from '@/lib/rbac';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { DriverBorongan } from '@/lib/types';
@@ -20,16 +31,28 @@ export default function BoronganListPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const { user } = useApp();
+    const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
     const [items, setItems] = useState<DriverBorongan[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [periodMode, setPeriodMode] = useState<FinancePeriodMode>('all');
+    const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+    const [year, setYear] = useState(defaultPeriod.year);
+    const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+    const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
     const [page, setPage] = useState(1);
     const [filteredTotalBorongans, setFilteredTotalBorongans] = useState(0);
     const [totalUpah, setTotalUpah] = useState(0);
     const [unpaidCount, setUnpaidCount] = useState(0);
     const [paidCount, setPaidCount] = useState(0);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const dateRange = useMemo(
+        () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+        [dateFrom, dateTo, monthIndex, periodMode, year]
+    );
+    const isPeriodReady = isFinancePeriodRangeReady(periodMode, dateRange.startDate, dateRange.endDate);
+    const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
     useEffect(() => {
         if (normalizedRole && normalizedRole !== 'OWNER') {
@@ -49,12 +72,21 @@ export default function BoronganListPage() {
             params.set('q', search.trim());
             params.set('searchFields', 'boronganNumber,driverName');
         }
+        const filter: Record<string, unknown> = {};
         if (statusFilter) {
-            params.set('filter', JSON.stringify({ status: statusFilter }));
+            filter.status = statusFilter;
             params.set('status', statusFilter);
         }
+        const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
+        if (periodMode !== 'all' && dateFilter) {
+            filter.periodEnd = { gte: dateFilter.gte };
+            filter.periodStart = { lte: dateFilter.lte };
+        }
+        if (Object.keys(filter).length > 0) {
+            params.set('filter', JSON.stringify(filter));
+        }
         return params.toString();
-    }, [page, search, statusFilter]);
+    }, [dateRange.endDate, dateRange.startDate, page, periodMode, search, statusFilter]);
 
     const fetchAllMatchingBorongans = useCallback(async () => {
         const pageSize = 200;
@@ -87,6 +119,14 @@ export default function BoronganListPage() {
             }
             setLoading(true);
             try {
+                if (!isPeriodReady) {
+                    setItems([]);
+                    setFilteredTotalBorongans(0);
+                    setTotalUpah(0);
+                    setUnpaidCount(0);
+                    setPaidCount(0);
+                    return;
+                }
                 const [listRes, matchingBorongans] = await Promise.all([
                     fetch(`/api/data?${buildBoronganQuery()}`),
                     fetchAllMatchingBorongans(),
@@ -108,11 +148,11 @@ export default function BoronganListPage() {
         };
 
         void loadBorongan();
-    }, [addToast, buildBoronganQuery, fetchAllMatchingBorongans, normalizedRole, search, statusFilter]);
+    }, [addToast, buildBoronganQuery, fetchAllMatchingBorongans, isPeriodReady, normalizedRole, search, statusFilter]);
 
     useEffect(() => {
         setPage(1);
-    }, [search, statusFilter]);
+    }, [dateFrom, dateTo, monthIndex, periodMode, search, statusFilter, year]);
 
     if (normalizedRole && normalizedRole !== 'OWNER') {
         return null;
@@ -168,17 +208,61 @@ export default function BoronganListPage() {
 
             <div className="table-container">
                 <div className="table-toolbar">
-                    <div className="table-toolbar-left">
-                        <div className="table-search">
+                    <div className="table-toolbar-left finance-filter-toolbar">
+                        <div className="table-search finance-search">
                             <Search size={16} className="table-search-icon" />
                             <input placeholder="Cari slip, supir..." value={search} onChange={event => setSearch(event.target.value)} />
                         </div>
-                        <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                        <select className="form-select finance-filter" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
                         </select>
+                        <select className="form-select finance-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as FinancePeriodMode)}>
+                            <option value="all">Semua Tanggal</option>
+                            <option value="month">Bulanan</option>
+                            <option value="year">Tahunan</option>
+                            <option value="custom">Rentang Tanggal</option>
+                        </select>
+                        {periodMode === 'month' && (
+                            <select className="form-select finance-filter" value={monthIndex} onChange={event => setMonthIndex(Number(event.target.value))}>
+                                {FINANCE_PERIOD_MONTH_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                            </select>
+                        )}
+                        {periodMode !== 'all' && periodMode !== 'custom' && (
+                            <select className="form-select finance-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+                                {yearOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        )}
+                        {periodMode === 'custom' && (
+                            <>
+                                <input className="form-input finance-filter" type="date" value={dateFrom} onInput={event => setDateFrom(event.currentTarget.value)} onChange={event => setDateFrom(event.target.value)} />
+                                <input className="form-input finance-filter" type="date" value={dateTo} onInput={event => setDateTo(event.currentTarget.value)} onChange={event => setDateTo(event.target.value)} />
+                            </>
+                        )}
+                        {(search || statusFilter || periodMode !== 'all') && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    setSearch('');
+                                    setStatusFilter('');
+                                    setPeriodMode('all');
+                                    setMonthIndex(defaultPeriod.monthIndex);
+                                    setYear(defaultPeriod.year);
+                                    setDateFrom(getDefaultFinanceCustomDateFrom());
+                                    setDateTo(getDefaultFinanceCustomDateTo());
+                                    setPage(1);
+                                }}
+                            >
+                                Reset
+                            </button>
+                        )}
                     </div>
                 </div>
+                {!isPeriodReady && (
+                    <div className="info-banner" style={{ margin: '0 1rem 1rem' }}>
+                        <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+                    </div>
+                )}
                 <div className="table-wrapper">
                     <table>
                         <thead>

@@ -23,6 +23,7 @@ import {
 import {
   formatBusinessDate,
   getBusinessCalendarDateParts,
+  getBusinessDateValue,
 } from "@/lib/business-date";
 import {
   buildCashflowExportRows,
@@ -99,6 +100,8 @@ export default function ReportsPage() {
   const [month, setMonth] = useState(defaultBusinessMonthIndex);
   const [year, setYear] = useState(defaultBusinessYear);
   const [periodMode, setPeriodMode] = useState<ReportPeriodMode>("month");
+  const [dateFrom, setDateFrom] = useState(`${defaultBusinessYear}-${String(defaultBusinessMonthIndex + 1).padStart(2, "0")}-01`);
+  const [dateTo, setDateTo] = useState(getBusinessDateValue());
   const monthNames = [
     "Januari",
     "Februari",
@@ -179,7 +182,8 @@ export default function ReportsPage() {
 
     void loadReportData();
   }, [addToast]);
-  const periodLabel = buildPeriodLabel(periodMode, month, year, monthNames);
+  const isPeriodReady = periodMode !== "custom" || Boolean(dateFrom && dateTo && dateFrom <= dateTo);
+  const periodLabel = buildPeriodLabel(periodMode, month, year, monthNames, dateFrom, dateTo);
   const {
     filteredPayments,
     filteredOverpaymentRefunds,
@@ -210,6 +214,8 @@ export default function ReportsPage() {
     periodMode,
     month,
     year,
+    dateFrom,
+    dateTo,
   });
   const paymentsById = useMemo(() => buildPaymentLookup(payments), [payments]);
   const refundsById = useMemo(
@@ -244,20 +250,24 @@ export default function ReportsPage() {
 
   const prevPeriod = () => {
     if (periodMode === "year") setYear((value) => value - 1);
-    else if (month === 0) {
+    else if (periodMode === "month" && month === 0) {
       setMonth(11);
       setYear((value) => value - 1);
-    } else setMonth((value) => value - 1);
+    } else if (periodMode === "month") setMonth((value) => value - 1);
   };
   const nextPeriod = () => {
     if (periodMode === "year") setYear((value) => value + 1);
-    else if (month === 11) {
+    else if (periodMode === "month" && month === 11) {
       setMonth(0);
       setYear((value) => value + 1);
-    } else setMonth((value) => value + 1);
+    } else if (periodMode === "month") setMonth((value) => value + 1);
   };
 
   const handleExportExcel = async () => {
+    if (!isPeriodReady) {
+      addToast("error", "Rentang tanggal belum valid");
+      return;
+    }
     try {
       if (tab === "pnl") {
         const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses, filteredOverpaymentRefunds);
@@ -301,6 +311,10 @@ export default function ReportsPage() {
   };
 
   const handleBrandedPrint = () => {
+    if (!isPeriodReady) {
+      addToast("error", "Rentang tanggal belum valid");
+      return;
+    }
     try {
       const isPnl = tab === "pnl";
       openBrandedPrint({
@@ -390,11 +404,12 @@ export default function ReportsPage() {
             className="form-select"
             value={periodMode}
             onChange={(event) =>
-              setPeriodMode(event.target.value as "month" | "year" | "all")
+              setPeriodMode(event.target.value as ReportPeriodMode)
             }
           >
             <option value="month">Bulanan</option>
             <option value="year">Tahunan</option>
+            <option value="custom">Rentang Tanggal</option>
             <option value="all">Semua</option>
           </select>
           {periodMode === "month" && (
@@ -410,7 +425,13 @@ export default function ReportsPage() {
               ))}
             </select>
           )}
-          {periodMode !== "all" && (
+          {periodMode === "custom" && (
+            <>
+              <input className="form-input" type="date" value={dateFrom} onInput={(event) => setDateFrom(event.currentTarget.value)} onChange={(event) => setDateFrom(event.target.value)} />
+              <input className="form-input" type="date" value={dateTo} onInput={(event) => setDateTo(event.currentTarget.value)} onChange={(event) => setDateTo(event.target.value)} />
+            </>
+          )}
+          {periodMode !== "all" && periodMode !== "custom" && (
             <div className="period-nav-group">
               <button
                 className="btn btn-secondary btn-sm"
@@ -443,6 +464,11 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+      {!isPeriodReady && (
+        <div className="info-banner" style={{ marginBottom: "1rem" }}>
+          <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+        </div>
+      )}
 
       {tab === "pnl" ? (
         <div>

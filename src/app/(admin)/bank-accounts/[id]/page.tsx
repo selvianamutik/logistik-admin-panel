@@ -8,7 +8,7 @@ import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'luc
 import AppPagination from '@/components/AppPagination';
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
-import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
+import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildExpenseLookup,
@@ -21,6 +21,18 @@ import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { escapePrintHtml, fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import {
+    buildFinanceDateFilter,
+    buildFinancePeriodLabel,
+    FINANCE_PERIOD_MONTH_NAMES,
+    getDefaultFinanceCustomDateFrom,
+    getDefaultFinanceCustomDateTo,
+    getDefaultFinancePeriod,
+    getFinancePeriodDateRange,
+    getFinancePeriodYearOptions,
+    isFinancePeriodRangeReady,
+    type FinancePeriodMode,
+} from '@/lib/finance-period';
 import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
@@ -99,6 +111,7 @@ export default function BankAccountDetailPage() {
     const { user } = useApp();
     const { addToast } = useToast();
     const accountId = params.id as string;
+    const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [transactionPage, setTransactionPage] = useState(1);
@@ -114,6 +127,11 @@ export default function BankAccountDetailPage() {
     const [relatedPurchases, setRelatedPurchases] = useState<Array<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>>([]);
     const [relatedFreightNotas, setRelatedFreightNotas] = useState<Array<Pick<FreightNota, '_id'>>>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
+    const [periodMode, setPeriodMode] = useState<FinancePeriodMode>('all');
+    const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+    const [year, setYear] = useState(defaultPeriod.year);
+    const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+    const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
     const [loading, setLoading] = useState(true);
     const [transactionsLoading, setTransactionsLoading] = useState(true);
     const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
@@ -124,6 +142,16 @@ export default function BankAccountDetailPage() {
     const canOpenVehicles = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenIncidents = user ? hasPageAccess(user.role, 'incidents') : false;
     const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
+    const dateRange = useMemo(
+        () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+        [dateFrom, dateTo, monthIndex, periodMode, year]
+    );
+    const isPeriodReady = isFinancePeriodRangeReady(periodMode, dateRange.startDate, dateRange.endDate);
+    const periodLabel = useMemo(
+        () => buildFinancePeriodLabel({ mode: periodMode, monthIndex, year, startDate: dateRange.startDate, endDate: dateRange.endDate }),
+        [dateRange.endDate, dateRange.startDate, monthIndex, periodMode, year]
+    );
+    const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
     const paymentsById = useMemo(() => buildPaymentLookup(relatedPayments), [relatedPayments]);
     const refundsById = useMemo(() => buildRefundLookup(relatedRefunds), [relatedRefunds]);
@@ -132,39 +160,67 @@ export default function BankAccountDetailPage() {
     const invoiceIdsWithPages = useMemo(() => new Set(relatedFreightNotas.map(nota => nota._id)), [relatedFreightNotas]);
 
     const buildTransactionListUrl = useCallback((page?: number, pageSize?: number) => {
+        const filter: Record<string, unknown> = { bankAccountRef: accountId };
+        const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
+        if (periodMode !== 'all' && dateFilter) {
+            filter.date = dateFilter;
+        }
         const params = new URLSearchParams({
             entity: 'bank-transactions',
-            filter: JSON.stringify({ bankAccountRef: accountId }),
+            filter: JSON.stringify(filter),
             sortField: 'date',
             sortDir: 'desc',
         });
         if (page) params.set('page', String(page));
         if (pageSize) params.set('pageSize', String(pageSize));
         return `/api/data?${params.toString()}`;
-    }, [accountId]);
+    }, [accountId, dateRange.endDate, dateRange.startDate, periodMode]);
 
-    const fetchAllAccountTransactions = useCallback(
-        () => fetchAdminCollectionData<BankTransaction[]>(
-            buildTransactionListUrl(),
-            'Gagal memuat mutasi rekening'
-        ),
-        [buildTransactionListUrl]
-    );
+    const fetchAllAccountTransactions = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const rows: BankTransaction[] = [];
+
+        do {
+            const payload = await fetchAdminListPayload<BankTransaction>(
+                buildTransactionListUrl(currentPage, pageSize),
+                'Gagal memuat mutasi rekening'
+            );
+            const nextRows = payload.data || [];
+            total = payload.meta?.total ?? nextRows.length;
+            rows.push(...nextRows);
+            if (nextRows.length === 0) break;
+            currentPage += 1;
+        } while (rows.length < total);
+
+        return rows;
+    }, [buildTransactionListUrl]);
 
     useEffect(() => {
         setTransactionPage(1);
-    }, [accountId]);
+    }, [accountId, dateFrom, dateTo, monthIndex, periodMode, year]);
 
     useEffect(() => {
         const loadAccountOverview = async () => {
             setLoading(true);
             try {
+                const summaryParams = new URLSearchParams({
+                    entity: 'bank-transactions-summary',
+                    bankAccountRef: accountId,
+                });
+                if (periodMode !== 'all' && isPeriodReady) {
+                    summaryParams.set('dateFrom', dateRange.startDate);
+                    summaryParams.set('dateTo', dateRange.endDate);
+                }
                 const [accountData, summaryData, companyData] = await Promise.all([
                     fetchEntity<BankAccount | null>(`/api/data?entity=bank-accounts&id=${accountId}`),
-                    fetchAdminData<BankTransactionSummary>(
-                        `/api/data?entity=bank-transactions-summary&bankAccountRef=${encodeURIComponent(accountId)}`,
-                        'Gagal memuat ringkasan mutasi rekening'
-                    ),
+                    isPeriodReady
+                        ? fetchAdminData<BankTransactionSummary>(
+                            `/api/data?${summaryParams.toString()}`,
+                            'Gagal memuat ringkasan mutasi rekening'
+                        )
+                        : Promise.resolve({ totalIn: 0, totalOut: 0, totalTransactions: 0 }),
                     fetchCompanyProfile().catch(() => null),
                 ]);
 
@@ -180,12 +236,22 @@ export default function BankAccountDetailPage() {
         };
 
         void loadAccountOverview();
-    }, [accountId, addToast]);
+    }, [accountId, addToast, dateRange.endDate, dateRange.startDate, isPeriodReady, periodMode]);
 
     useEffect(() => {
         const loadTransactionPage = async () => {
             setTransactionsLoading(true);
             try {
+                if (!isPeriodReady) {
+                    setTransactions([]);
+                    setTransactionTotal(0);
+                    setRelatedPayments([]);
+                    setRelatedRefunds([]);
+                    setRelatedExpenses([]);
+                    setRelatedPurchases([]);
+                    setRelatedFreightNotas([]);
+                    return;
+                }
                 const payload = await fetchAdminListPayload<BankTransaction>(
                     buildTransactionListUrl(transactionPage, BANK_TRANSACTION_PAGE_SIZE),
                     'Gagal memuat mutasi rekening'
@@ -230,7 +296,7 @@ export default function BankAccountDetailPage() {
         };
 
         void loadTransactionPage();
-    }, [addToast, buildTransactionListUrl, transactionPage]);
+    }, [addToast, buildTransactionListUrl, isPeriodReady, transactionPage]);
 
     const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
     const fmtN = (n: number) => new Intl.NumberFormat('id-ID').format(n);
@@ -252,6 +318,10 @@ export default function BankAccountDetailPage() {
     };
 
     const handleExportExcel = async () => {
+        if (!isPeriodReady) {
+            addToast('error', 'Rentang tanggal belum valid');
+            return;
+        }
         try {
             const allTransactions = await fetchAllAccountTransactions();
             await exportToExcel(
@@ -299,6 +369,10 @@ export default function BankAccountDetailPage() {
     const totalTransactions = transactionSummary.totalTransactions || transactionTotal;
 
     const handlePrint = async () => {
+        if (!isPeriodReady) {
+            addToast('error', 'Rentang tanggal belum valid');
+            return;
+        }
         const printWindow = openPrintWindow('Menyiapkan print rekening...');
         if (!printWindow) {
             addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
@@ -408,8 +482,54 @@ export default function BankAccountDetailPage() {
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="card-header-title">Riwayat Transaksi</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{totalTransactions} transaksi</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{periodLabel} | {totalTransactions} transaksi</span>
                 </div>
+                <div className="table-toolbar">
+                    <div className="table-toolbar-left finance-filter-toolbar">
+                        <select className="form-select finance-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as FinancePeriodMode)}>
+                            <option value="all">Semua Tanggal</option>
+                            <option value="month">Bulanan</option>
+                            <option value="year">Tahunan</option>
+                            <option value="custom">Rentang Tanggal</option>
+                        </select>
+                        {periodMode === 'month' && (
+                            <select className="form-select finance-filter" value={monthIndex} onChange={event => setMonthIndex(Number(event.target.value))}>
+                                {FINANCE_PERIOD_MONTH_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                            </select>
+                        )}
+                        {periodMode !== 'all' && periodMode !== 'custom' && (
+                            <select className="form-select finance-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+                                {yearOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        )}
+                        {periodMode === 'custom' && (
+                            <>
+                                <input className="form-input finance-filter" type="date" value={dateFrom} onInput={event => setDateFrom(event.currentTarget.value)} onChange={event => setDateFrom(event.target.value)} />
+                                <input className="form-input finance-filter" type="date" value={dateTo} onInput={event => setDateTo(event.currentTarget.value)} onChange={event => setDateTo(event.target.value)} />
+                            </>
+                        )}
+                        {periodMode !== 'all' && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    setPeriodMode('all');
+                                    setMonthIndex(defaultPeriod.monthIndex);
+                                    setYear(defaultPeriod.year);
+                                    setDateFrom(getDefaultFinanceCustomDateFrom());
+                                    setDateTo(getDefaultFinanceCustomDateTo());
+                                    setTransactionPage(1);
+                                }}
+                            >
+                                Reset
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {!isPeriodReady && (
+                    <div className="info-banner" style={{ margin: '0 1rem 1rem' }}>
+                        <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+                    </div>
+                )}
                 <div className="table-wrapper table-desktop-only" style={{ overflowX: 'auto' }}>
                     <table className="bank-transaction-table">
                         <thead>

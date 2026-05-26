@@ -1080,9 +1080,39 @@ export function applyDerivedCustomerReceiptAllocations<
     });
 }
 
+function isFilterOperatorObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function compareFilterValues(left: unknown, right: unknown) {
+    const normalizedLeft = left ?? '';
+    const normalizedRight = right ?? '';
+
+    if (typeof normalizedLeft === 'number' && typeof normalizedRight === 'number') {
+        return normalizedLeft - normalizedRight;
+    }
+
+    return String(normalizedLeft).localeCompare(String(normalizedRight));
+}
+
 function matchesScalarFilter(actualValue: unknown, expectedValue: unknown) {
     if (Array.isArray(expectedValue)) {
         return expectedValue.includes(actualValue as never);
+    }
+    if (isFilterOperatorObject(expectedValue)) {
+        return Object.entries(expectedValue).every(([operator, operatorValue]) => {
+            if (operatorValue === '' || operatorValue === null || operatorValue === undefined) {
+                return true;
+            }
+            const comparison = compareFilterValues(actualValue, operatorValue);
+            if (operator === 'eq') return comparison === 0;
+            if (operator === 'neq') return comparison !== 0;
+            if (operator === 'gt') return comparison > 0;
+            if (operator === 'gte') return comparison >= 0;
+            if (operator === 'lt') return comparison < 0;
+            if (operator === 'lte') return comparison <= 0;
+            return false;
+        });
     }
     return actualValue === expectedValue;
 }

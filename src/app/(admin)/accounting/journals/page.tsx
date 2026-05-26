@@ -8,6 +8,17 @@ import FormattedNumberInput from "@/components/FormattedNumberInput";
 import { fetchAdminListPayload, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import { formatAccountingCurrency } from "@/lib/accounting-reports";
 import { getBusinessDateValue } from "@/lib/business-date";
+import {
+  buildFinanceDateFilter,
+  FINANCE_PERIOD_MONTH_NAMES,
+  getDefaultFinanceCustomDateFrom,
+  getDefaultFinanceCustomDateTo,
+  getDefaultFinancePeriod,
+  getFinancePeriodDateRange,
+  getFinancePeriodYearOptions,
+  isFinancePeriodRangeReady,
+  type FinancePeriodMode,
+} from "@/lib/finance-period";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { hasPermission } from "@/lib/rbac";
 import type { ChartOfAccount, JournalEntry, JournalLine } from "@/lib/types";
@@ -56,6 +67,7 @@ function isWorkflowControlAccount(account?: ChartOfAccount) {
 export default function JournalEntriesPage() {
   const { user } = useApp();
   const { addToast } = useToast();
+  const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [lines, setLines] = useState<JournalLine[]>([]);
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
@@ -64,6 +76,11 @@ export default function JournalEntriesPage() {
   const [entrySummary, setEntrySummary] = useState<JournalEntrySummary>({ posted: 0, void: 0, all: 0 });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JournalStatusFilter>("POSTED");
+  const [periodMode, setPeriodMode] = useState<FinancePeriodMode>("all");
+  const [monthIndex, setMonthIndex] = useState(defaultPeriod.monthIndex);
+  const [year, setYear] = useState(defaultPeriod.year);
+  const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+  const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
   const [loading, setLoading] = useState(true);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -78,6 +95,12 @@ export default function JournalEntriesPage() {
 
   const canCreateManualJournal = user ? hasPermission(user.role, "reports", "create") : false;
   const canVoidManualJournal = user ? hasPermission(user.role, "reports", "update") : false;
+  const dateRange = useMemo(
+    () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
+    [dateFrom, dateTo, monthIndex, periodMode, year],
+  );
+  const isPeriodReady = isFinancePeriodRangeReady(periodMode, dateRange.startDate, dateRange.endDate);
+  const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
   const buildJournalEntryQuery = useCallback((targetPage: number, targetPageSize = DEFAULT_PAGE_SIZE) => {
     const params = new URLSearchParams({
@@ -94,14 +117,24 @@ export default function JournalEntriesPage() {
       params.set("searchFields", "entryNumber,memo,sourceType,sourceNumber,sourceLabel");
     }
 
+    const filter: Record<string, unknown> = {};
+    const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
+    if (periodMode !== "all" && dateFilter) {
+      filter.entryDate = dateFilter;
+    }
+
     if (statusFilter === "POSTED") {
-      params.set("filter", JSON.stringify({ status: { neq: "VOID" } }));
+      filter.status = { neq: "VOID" };
     } else if (statusFilter === "VOID") {
-      params.set("filter", JSON.stringify({ status: "VOID" }));
+      filter.status = "VOID";
+    }
+
+    if (Object.keys(filter).length > 0) {
+      params.set("filter", JSON.stringify(filter));
     }
 
     return `/api/data?${params.toString()}`;
-  }, [search, statusFilter]);
+  }, [dateRange.endDate, dateRange.startDate, periodMode, search, statusFilter]);
 
   const fetchJournalEntryCount = useCallback(async (filter?: Record<string, unknown>) => {
     const params = new URLSearchParams({
@@ -123,14 +156,25 @@ export default function JournalEntriesPage() {
   const loadReferenceData = useCallback(async () => {
     setReferenceLoading(true);
     try {
+      if (!isPeriodReady) {
+        const accountRows = await fetchAllAdminCollectionData<ChartOfAccount>(
+          "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
+          "Gagal memuat akun perkiraan",
+        );
+        setAccounts((accountRows || []).filter(account => account.active !== false));
+        setEntrySummary({ posted: 0, void: 0, all: 0 });
+        return;
+      }
+      const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
+      const periodFilter = periodMode !== "all" && dateFilter ? { entryDate: dateFilter } : {};
       const [accountRows, posted, voided, all] = await Promise.all([
         fetchAllAdminCollectionData<ChartOfAccount>(
           "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
           "Gagal memuat akun perkiraan",
         ),
-        fetchJournalEntryCount({ status: { neq: "VOID" } }),
-        fetchJournalEntryCount({ status: "VOID" }),
-        fetchJournalEntryCount(),
+        fetchJournalEntryCount({ ...periodFilter, status: { neq: "VOID" } }),
+        fetchJournalEntryCount({ ...periodFilter, status: "VOID" }),
+        fetchJournalEntryCount(periodFilter),
       ]);
       setAccounts((accountRows || []).filter(account => account.active !== false));
       setEntrySummary({ posted, void: voided, all });
@@ -139,7 +183,7 @@ export default function JournalEntriesPage() {
     } finally {
       setReferenceLoading(false);
     }
-  }, [addToast, fetchJournalEntryCount]);
+  }, [addToast, dateRange.endDate, dateRange.startDate, fetchJournalEntryCount, isPeriodReady, periodMode]);
 
   useEffect(() => {
     void loadReferenceData();
@@ -148,6 +192,12 @@ export default function JournalEntriesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      if (!isPeriodReady) {
+        setEntries([]);
+        setEntryTotal(0);
+        setLines([]);
+        return;
+      }
       const payload = await fetchAdminListPayload<JournalEntry>(
         buildJournalEntryQuery(entryPage, DEFAULT_PAGE_SIZE),
         "Gagal memuat jurnal",
@@ -177,7 +227,7 @@ export default function JournalEntriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [addToast, buildJournalEntryQuery, entryPage]);
+  }, [addToast, buildJournalEntryQuery, entryPage, isPeriodReady]);
 
   useEffect(() => {
     void load();
@@ -380,8 +430,101 @@ export default function JournalEntriesPage() {
               <option value="VOID">Dibatalkan ({entrySummary.void})</option>
               <option value="ALL">Semua Jurnal ({entrySummary.all})</option>
             </select>
+            <select
+              className="form-select accounting-filter"
+              value={periodMode}
+              onChange={event => {
+                setPeriodMode(event.target.value as FinancePeriodMode);
+                setEntryPage(1);
+              }}
+            >
+              <option value="all">Semua Tanggal</option>
+              <option value="month">Bulanan</option>
+              <option value="year">Tahunan</option>
+              <option value="custom">Rentang Tanggal</option>
+            </select>
+            {periodMode === "month" && (
+              <select
+                className="form-select accounting-filter"
+                value={monthIndex}
+                onChange={event => {
+                  setMonthIndex(Number(event.target.value));
+                  setEntryPage(1);
+                }}
+              >
+                {FINANCE_PERIOD_MONTH_NAMES.map((name, index) => (
+                  <option key={name} value={index}>{name}</option>
+                ))}
+              </select>
+            )}
+            {periodMode !== "all" && periodMode !== "custom" && (
+              <select
+                className="form-select accounting-filter"
+                value={year}
+                onChange={event => {
+                  setYear(Number(event.target.value));
+                  setEntryPage(1);
+                }}
+              >
+                {yearOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            )}
+            {periodMode === "custom" && (
+              <>
+                <input
+                  className="form-input accounting-filter"
+                  type="date"
+                  value={dateFrom}
+                  onInput={event => {
+                    setDateFrom(event.currentTarget.value);
+                    setEntryPage(1);
+                  }}
+                  onChange={event => {
+                    setDateFrom(event.target.value);
+                    setEntryPage(1);
+                  }}
+                />
+                <input
+                  className="form-input accounting-filter"
+                  type="date"
+                  value={dateTo}
+                  onInput={event => {
+                    setDateTo(event.currentTarget.value);
+                    setEntryPage(1);
+                  }}
+                  onChange={event => {
+                    setDateTo(event.target.value);
+                    setEntryPage(1);
+                  }}
+                />
+              </>
+            )}
+            {(search || statusFilter !== "POSTED" || periodMode !== "all") && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("POSTED");
+                  setPeriodMode("all");
+                  setMonthIndex(defaultPeriod.monthIndex);
+                  setYear(defaultPeriod.year);
+                  setDateFrom(getDefaultFinanceCustomDateFrom());
+                  setDateTo(getDefaultFinanceCustomDateTo());
+                  setEntryPage(1);
+                }}
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
+        {!isPeriodReady && (
+          <div className="info-banner" style={{ margin: "0 1rem 1rem" }}>
+            <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+          </div>
+        )}
 
         <div>
           {loading || referenceLoading ? (

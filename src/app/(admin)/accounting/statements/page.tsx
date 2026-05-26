@@ -13,51 +13,25 @@ import {
   getJournalLinesUntil,
   type LedgerAccountSummary,
 } from "@/lib/accounting-reports";
-import { getBusinessCalendarDateParts } from "@/lib/business-date";
+import {
+  buildFinancePeriodLabel,
+  FINANCE_PERIOD_MONTH_NAMES,
+  getDefaultFinanceCustomDateFrom,
+  getDefaultFinanceCustomDateTo,
+  getDefaultFinancePeriod,
+  getFinancePeriodDateRange,
+  getFinancePeriodYearOptions,
+  isFinancePeriodRangeReady,
+  type FinancePeriodMode,
+} from "@/lib/finance-period";
 import { escapePrintHtml, openBrandedPrint } from "@/lib/print";
 import type { ChartOfAccount, CompanyProfile, JournalEntry, JournalLine } from "@/lib/types";
 import { useToast } from "../../layout";
 
 type StatementTab = "profit-loss" | "balance-sheet";
-type PeriodMode = "month" | "year";
+type PeriodMode = Exclude<FinancePeriodMode, "all">;
 
-const MONTH_NAMES = [
-  "Januari",
-  "Februari",
-  "Maret",
-  "April",
-  "Mei",
-  "Juni",
-  "Juli",
-  "Agustus",
-  "September",
-  "Oktober",
-  "November",
-  "Desember",
-];
-
-function getDefaultPeriod() {
-  const businessToday = getBusinessCalendarDateParts();
-  const now = new Date();
-  const year = Number(businessToday?.year || now.getFullYear());
-  const month = Math.max(Number(businessToday?.month || now.getMonth() + 1) - 1, 0);
-  return { year, month };
-}
-
-function getPeriodRange(mode: PeriodMode, year: number, month: number) {
-  const startDate = mode === "year"
-    ? `${year}-01-01`
-    : `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const endDay = new Date(year, month + 1, 0).getDate();
-  const endDate = mode === "year"
-    ? `${year}-12-31`
-    : `${year}-${String(month + 1).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
-  return { startDate, endDate };
-}
-
-function getPeriodLabel(mode: PeriodMode, year: number, month: number) {
-  return mode === "year" ? `Tahun ${year}` : `${MONTH_NAMES[month]} ${year}`;
-}
+const MONTH_NAMES = FINANCE_PERIOD_MONTH_NAMES;
 
 function formatStatementDateLabel(dateValue: string) {
   const [year, month, day] = dateValue.split("-").map(value => Number(value));
@@ -304,11 +278,13 @@ const accountingStatementPrintStyles = `
 
 export default function AccountingStatementsPage() {
   const { addToast } = useToast();
-  const defaultPeriod = getDefaultPeriod();
+  const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
   const [tab, setTab] = useState<StatementTab>("profit-loss");
   const [periodMode, setPeriodMode] = useState<PeriodMode>("month");
   const [year, setYear] = useState(defaultPeriod.year);
-  const [month, setMonth] = useState(defaultPeriod.month);
+  const [month, setMonth] = useState(defaultPeriod.monthIndex);
+  const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
+  const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [lines, setLines] = useState<JournalLine[]>([]);
@@ -348,7 +324,7 @@ export default function AccountingStatementsPage() {
   }, [addToast]);
 
   const yearOptions = useMemo(() => {
-    const years = new Set<number>([defaultPeriod.year, year]);
+    const years = new Set<number>([...getFinancePeriodYearOptions(year), defaultPeriod.year, year]);
     entries.forEach(entry => {
       const parsed = Number(String(entry.entryDate || "").slice(0, 4));
       if (Number.isFinite(parsed)) years.add(parsed);
@@ -356,17 +332,24 @@ export default function AccountingStatementsPage() {
     return [...years].sort((left, right) => right - left);
   }, [defaultPeriod.year, entries, year]);
 
-  const period = useMemo(() => getPeriodRange(periodMode, year, month), [month, periodMode, year]);
-  const periodLabel = useMemo(() => getPeriodLabel(periodMode, year, month), [month, periodMode, year]);
+  const period = useMemo(
+    () => getFinancePeriodDateRange({ mode: periodMode, monthIndex: month, year, dateFrom, dateTo }),
+    [dateFrom, dateTo, month, periodMode, year],
+  );
+  const isPeriodReady = isFinancePeriodRangeReady(periodMode, period.startDate, period.endDate);
+  const periodLabel = useMemo(
+    () => buildFinancePeriodLabel({ mode: periodMode, monthIndex: month, year, startDate: period.startDate, endDate: period.endDate }),
+    [month, period.endDate, period.startDate, periodMode, year],
+  );
 
   const periodLines = useMemo(
-    () => getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate),
-    [entries, lines, period.endDate, period.startDate],
+    () => isPeriodReady ? getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate) : [],
+    [entries, isPeriodReady, lines, period.endDate, period.startDate],
   );
 
   const cumulativeLines = useMemo(
-    () => getJournalLinesUntil(entries, lines, period.endDate),
-    [entries, lines, period.endDate],
+    () => isPeriodReady ? getJournalLinesUntil(entries, lines, period.endDate) : [],
+    [entries, isPeriodReady, lines, period.endDate],
   );
 
   const pnlSummaries = useMemo(() => buildLedgerSummary(accounts, periodLines), [accounts, periodLines]);
@@ -382,6 +365,10 @@ export default function AccountingStatementsPage() {
   const equityRows = balanceSummaries.filter(row => row.account.accountType === "EQUITY" && row.balance !== 0);
 
   const handlePrint = () => {
+    if (!isPeriodReady) {
+      addToast("error", "Rentang tanggal belum valid");
+      return;
+    }
     const isProfitLoss = tab === "profit-loss";
     const statementTitle = isProfitLoss ? "Laporan Laba Rugi" : "Neraca";
     const statementSubtitle = isProfitLoss ? periodLabel : `Per ${formatStatementDateLabel(period.endDate)}`;
@@ -419,7 +406,7 @@ export default function AccountingStatementsPage() {
           ${buildStatementMetaHtml([
             { label: "Jenis Laporan", value: "Neraca" },
             { label: "Posisi", value: formatStatementDateLabel(period.endDate) },
-            { label: "Mode Periode", value: periodMode === "year" ? "Tahunan" : "Bulanan" },
+            { label: "Mode Periode", value: periodMode === "year" ? "Tahunan" : periodMode === "custom" ? "Rentang Tanggal" : "Bulanan" },
           ])}
           <div class="stats-row statement-summary">
             ${buildSummaryBoxHtml("Total Aktiva", balanceSheet.assets, "success")}
@@ -498,6 +485,7 @@ export default function AccountingStatementsPage() {
             <select className="form-select accounting-period-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as PeriodMode)}>
               <option value="month">Bulanan</option>
               <option value="year">Tahunan</option>
+              <option value="custom">Rentang Tanggal</option>
             </select>
             {periodMode === "month" && (
               <select className="form-select accounting-period-filter" value={month} onChange={event => setMonth(Number(event.target.value))}>
@@ -506,14 +494,27 @@ export default function AccountingStatementsPage() {
                 ))}
               </select>
             )}
-            <select className="form-select accounting-period-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
-              {yearOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
+            {periodMode !== "custom" && (
+              <select className="form-select accounting-period-filter" value={year} onChange={event => setYear(Number(event.target.value))}>
+                {yearOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            )}
+            {periodMode === "custom" && (
+              <>
+                <input className="form-input accounting-period-filter" type="date" value={dateFrom} onInput={event => setDateFrom(event.currentTarget.value)} onChange={event => setDateFrom(event.target.value)} />
+                <input className="form-input accounting-period-filter" type="date" value={dateTo} onInput={event => setDateTo(event.currentTarget.value)} onChange={event => setDateTo(event.target.value)} />
+              </>
+            )}
           </div>
         </div>
       </div>
+      {!isPeriodReady && (
+        <div className="info-banner" style={{ marginBottom: "1rem" }}>
+          <div className="info-banner-text">Lengkapi tanggal awal dan akhir, lalu pastikan tanggal awal tidak melebihi tanggal akhir.</div>
+        </div>
+      )}
 
       {tab === "profit-loss" ? (
         <div>

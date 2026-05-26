@@ -38,7 +38,7 @@ function getDateSortTime(value?: string) {
     return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
-export type ReportPeriodMode = 'month' | 'year' | 'all';
+export type ReportPeriodMode = 'month' | 'year' | 'custom' | 'all';
 
 export type CashFlowByBankEntry = {
     bankName: string;
@@ -74,10 +74,19 @@ export type ReportsSnapshot = {
 export function createPeriodMatcher(
     periodMode: ReportPeriodMode,
     month: number,
-    year: number
+    year: number,
+    dateFrom = '',
+    dateTo = ''
 ) {
     return (dateStr: string) => {
         if (periodMode === 'all') return true;
+        if (periodMode === 'custom') {
+            if (!dateFrom || !dateTo || dateFrom > dateTo) return false;
+            const normalizedDate = typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)
+                ? dateStr.slice(0, 10)
+                : '';
+            return Boolean(normalizedDate && normalizedDate >= dateFrom && normalizedDate <= dateTo);
+        }
         const parts = getBusinessCalendarDateParts(dateStr);
         if (!parts) return false;
         const itemYear = Number(parts.year);
@@ -91,10 +100,14 @@ export function buildPeriodLabel(
     periodMode: ReportPeriodMode,
     month: number,
     year: number,
-    monthNames: string[]
+    monthNames: string[],
+    dateFrom = '',
+    dateTo = ''
 ) {
     return periodMode === 'all'
         ? 'Semua Periode'
+        : periodMode === 'custom'
+            ? `${dateFrom || '-'} s.d. ${dateTo || '-'}`
         : periodMode === 'year'
             ? `Tahun ${year}`
             : `${monthNames[month]} ${year}`;
@@ -111,6 +124,8 @@ export function buildReportsSnapshot(params: {
     periodMode: ReportPeriodMode;
     month: number;
     year: number;
+    dateFrom?: string;
+    dateTo?: string;
 }) : ReportsSnapshot {
     const {
         payments,
@@ -123,9 +138,11 @@ export function buildReportsSnapshot(params: {
         periodMode,
         month,
         year,
+        dateFrom = '',
+        dateTo = '',
     } = params;
 
-    const inPeriod = createPeriodMatcher(periodMode, month, year);
+    const inPeriod = createPeriodMatcher(periodMode, month, year, dateFrom, dateTo);
     const filteredPayments = payments.filter(item => inPeriod(item.date));
     const filteredOverpaymentRefunds = overpaymentRefunds.filter(
         item => isInvoiceOverpaymentRefund(item) && inPeriod(item.date)
