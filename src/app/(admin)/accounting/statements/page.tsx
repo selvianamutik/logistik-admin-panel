@@ -89,6 +89,47 @@ function buildStatementSectionHtml(title: string, total: number, rows: LedgerAcc
   `;
 }
 
+function buildBalanceSheetPanelHtml(
+  title: string,
+  total: number,
+  sections: Array<{ title?: string; total?: number; rows?: LedgerAccountSummary[]; lineLabel?: string; lineValue?: number }>,
+) {
+  return `
+    <section class="balance-panel">
+      <div class="balance-panel-title">
+        <span>${escapePrintHtml(title)}</span>
+        <strong>${escapePrintHtml(formatAccountingCurrency(total))}</strong>
+      </div>
+      <table class="balance-table">
+        <tbody>
+          ${sections.map(section => {
+            if (section.lineLabel) {
+              return `<tr>
+                <td>${escapePrintHtml(section.lineLabel)}</td>
+                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(section.lineValue || 0))}</td>
+              </tr>`;
+            }
+
+            return `
+              <tr class="balance-section-row">
+                <td>${escapePrintHtml(section.title || "")}</td>
+                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(section.total || 0))}</td>
+              </tr>
+              ${buildStatementRowsHtml(section.rows || [])}
+            `;
+          }).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total ${escapePrintHtml(title)}</td>
+            <td class="r amount">${escapePrintHtml(formatAccountingCurrency(total))}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+  `;
+}
+
 function buildStatementMetaHtml(items: Array<{ label: string; value: string }>) {
   return `
     <div class="statement-meta-grid">
@@ -187,6 +228,64 @@ const accountingStatementPrintStyles = `
     font-weight: 900;
     font-size: 0.9rem;
   }
+  .balance-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    align-items: start;
+  }
+  .balance-panel {
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .balance-panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.62rem 0.7rem;
+    background: #0f172a;
+    color: #ffffff;
+    font-weight: 900;
+  }
+  .balance-panel-title strong { white-space: nowrap; }
+  .balance-table {
+    margin: 0;
+    border: 0;
+    table-layout: fixed;
+  }
+  .balance-table td {
+    padding: 0.46rem 0.6rem;
+    vertical-align: top;
+  }
+  .balance-table td:first-child { width: 62%; }
+  .balance-table td:last-child { width: 38%; }
+  .balance-section-row td {
+    background: #f1f5f9;
+    font-weight: 800;
+    color: #0f172a;
+    border-top: 1px solid #cbd5e1;
+  }
+  .balance-table tfoot td {
+    background: #e2e8f0;
+    border-top: 2px solid #0f172a;
+    font-weight: 900;
+    font-size: 0.9rem;
+  }
+  .balance-check-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    background: #f8fafc;
+    font-weight: 800;
+  }
   .amount {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -195,6 +294,8 @@ const accountingStatementPrintStyles = `
     body { padding: 0; }
     .statement-meta-item,
     .statement-stat-box,
+    .balance-panel,
+    .balance-check-row,
     .statement-table tr { break-inside: avoid; page-break-inside: avoid; }
     .statement-section-row { break-after: avoid; page-break-after: avoid; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -325,24 +426,22 @@ export default function AccountingStatementsPage() {
             ${buildSummaryBoxHtml("Total Pasiva", balanceSheet.liabilitiesAndEquity, "success")}
             ${buildSummaryBoxHtml("Selisih", balanceSheet.balanceGap, Math.abs(balanceSheet.balanceGap) <= 0.01 ? "success" : "danger")}
           </div>
-          <table class="statement-table">
-            <thead>
-              <tr><th>Akun</th><th class="r">Nilai</th></tr>
-            </thead>
-            <tbody>
-              ${buildStatementSectionHtml("Aktiva", balanceSheet.assets, assetRows)}
-              ${buildStatementSectionHtml("Hutang", balanceSheet.liabilities, liabilityRows)}
-              ${buildStatementSectionHtml("Modal", balanceSheet.equity, equityRows)}
-              <tr>
-                <td>Laba Tahun Berjalan</td>
-                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(balanceSheet.currentEarnings))}</td>
-              </tr>
-              <tr class="statement-total-row">
-                <td>Total Pasiva</td>
-                <td class="r amount">${escapePrintHtml(formatAccountingCurrency(balanceSheet.liabilitiesAndEquity))}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="balance-sheet-grid">
+            ${buildBalanceSheetPanelHtml("Aktiva", balanceSheet.assets, [
+              { title: "Aktiva", total: balanceSheet.assets, rows: assetRows },
+            ])}
+            ${buildBalanceSheetPanelHtml("Pasiva", balanceSheet.liabilitiesAndEquity, [
+              { title: "Hutang", total: balanceSheet.liabilities, rows: liabilityRows },
+              { title: "Modal", total: balanceSheet.equity, rows: equityRows },
+              { lineLabel: "Laba Tahun Berjalan", lineValue: balanceSheet.currentEarnings },
+            ])}
+          </div>
+          <div class="balance-check-row">
+            <span>Status Neraca</span>
+            <span class="amount ${Math.abs(balanceSheet.balanceGap) <= 0.01 ? "s" : "d"}">
+              ${Math.abs(balanceSheet.balanceGap) <= 0.01 ? "Seimbang" : `Selisih ${escapePrintHtml(formatAccountingCurrency(balanceSheet.balanceGap))}`}
+            </span>
+          </div>
         </div>
       `;
 
