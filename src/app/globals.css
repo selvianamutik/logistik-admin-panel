@@ -627,6 +627,93 @@ a:hover {
   gap: var(--space-4);
 }
 
+.bank-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.bank-detail-header {
+  align-items: flex-end;
+  margin-bottom: 0;
+}
+
+.bank-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  flex: 1 1 420px;
+}
+
+.bank-detail-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.bank-detail-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bank-detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.bank-detail-account-line {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.03em;
+}
+
+.bank-detail-actions {
+  flex-shrink: 0;
+}
+
+.bank-detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+
+.bank-detail-balance-card {
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+.bank-transaction-table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.bank-transaction-table th:nth-child(1),
+.bank-transaction-table td:nth-child(1) {
+  width: 120px;
+}
+
+.bank-transaction-table th:nth-child(2),
+.bank-transaction-table td:nth-child(2) {
+  width: 150px;
+}
+
+.bank-transaction-table th:nth-child(4),
+.bank-transaction-table td:nth-child(4),
+.bank-transaction-table th:nth-child(5),
+.bank-transaction-table td:nth-child(5) {
+  width: 170px;
+}
+
+.bank-transaction-table td:nth-child(3) {
+  overflow-wrap: anywhere;
+}
+
 .mobile-record-list {
   display: none;
 }
@@ -3362,6 +3449,28 @@ details[open] > summary .foldable-chevron {
     gap: var(--space-2);
   }
 
+  .bank-detail-header {
+    align-items: stretch;
+  }
+
+  .bank-detail-main {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .bank-detail-identity {
+    align-items: flex-start;
+  }
+
+  .bank-detail-actions {
+    width: 100%;
+  }
+
+  .bank-detail-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
   .employees-kpi-grid,
   .attendance-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3542,6 +3651,18 @@ details[open] > summary .foldable-chevron {
 }
 
 @media (max-width: 480px) {
+  .bank-detail-identity {
+    align-items: center;
+  }
+
+  .bank-detail-title {
+    font-size: var(--font-size-xl);
+  }
+
+  .bank-detail-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .employees-kpi-grid,
   .attendance-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

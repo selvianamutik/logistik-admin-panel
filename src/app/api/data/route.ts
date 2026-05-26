@@ -685,6 +685,40 @@ export async function GET(request: Request) {
         }
     }
 
+    if (entity === 'bank-transactions-summary') {
+        if (!hasPermission(session.role, 'bankAccounts', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        const bankAccountRef = searchParams.get('bankAccountRef')?.trim();
+        if (!bankAccountRef) {
+            return jsonNoStore({ error: 'Rekening / kas wajib dipilih' }, { status: 400 });
+        }
+
+        try {
+            const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'type' | 'amount'>>('bankTransaction', {
+                bankAccountRef,
+            });
+            const summary = txRows.reduce(
+                (acc, tx) => {
+                    const amount = parseFormattedNumberish(tx.amount ?? 0, { maxFractionDigits: 0 });
+                    if (tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN') {
+                        acc.totalIn += amount;
+                    } else if (tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT') {
+                        acc.totalOut += amount;
+                    }
+                    acc.totalTransactions += 1;
+                    return acc;
+                },
+                { totalIn: 0, totalOut: 0, totalTransactions: 0 }
+            );
+            return jsonNoStore({ data: summary });
+        } catch (err) {
+            console.error('API GET Bank Transaction Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
     if (entity === 'audit-logs-summary') {
         if (!hasPermission(session.role, 'auditLogs', 'view')) {
             return jsonNoStore({ error: 'Forbidden' }, { status: 403 });

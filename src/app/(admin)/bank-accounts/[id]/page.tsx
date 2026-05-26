@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'lucide-react';
 
+import AppPagination from '@/components/AppPagination';
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildExpenseLookup,
@@ -18,9 +19,18 @@ import {
 } from '@/lib/bank-transaction-links';
 import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
-import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
+import { escapePrintHtml, fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+
+const BANK_TRANSACTION_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+
+type BankTransactionSummary = {
+    totalIn: number;
+    totalOut: number;
+    totalTransactions: number;
+};
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
     CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)', logo: '' },
@@ -61,6 +71,29 @@ function BankDetailLogo({ name, size = 48 }: { name: string; size?: number }) {
     );
 }
 
+async function fetchEntity<T>(url: string) {
+    const res = await fetch(url, { cache: 'no-store' });
+    const result = await res.json();
+    if (!res.ok) {
+        throw new Error(result.error || 'Gagal memuat detail rekening');
+    }
+    return result.data as T;
+}
+
+async function fetchEntityByIds<T extends { _id: string }>(entity: string, ids: string[]) {
+    const uniqueIds = Array.from(new Set(ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
+    if (uniqueIds.length === 0) {
+        return [] as T[];
+    }
+
+    const rows = await Promise.all(
+        uniqueIds.map(id =>
+            fetchAdminData<T | null>(`/api/data?entity=${entity}&id=${id}`, `Gagal memuat relasi ${entity}`).catch(() => null)
+        )
+    );
+    return rows.filter((row) => Boolean(row?._id)) as T[];
+}
+
 export default function BankAccountDetailPage() {
     const params = useParams();
     const { user } = useApp();
@@ -68,6 +101,13 @@ export default function BankAccountDetailPage() {
     const accountId = params.id as string;
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+    const [transactionPage, setTransactionPage] = useState(1);
+    const [transactionTotal, setTransactionTotal] = useState(0);
+    const [transactionSummary, setTransactionSummary] = useState<BankTransactionSummary>({
+        totalIn: 0,
+        totalOut: 0,
+        totalTransactions: 0,
+    });
     const [relatedPayments, setRelatedPayments] = useState<Array<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>>([]);
     const [relatedRefunds, setRelatedRefunds] = useState<Array<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>>([]);
     const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>>([]);
@@ -75,6 +115,7 @@ export default function BankAccountDetailPage() {
     const [relatedFreightNotas, setRelatedFreightNotas] = useState<Array<Pick<FreightNota, '_id'>>>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
+    const [transactionsLoading, setTransactionsLoading] = useState(true);
     const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
     const canPrintBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'print') : false;
     const canOpenInvoices = user ? hasPageAccess(user.role, 'invoices') : false;
@@ -90,77 +131,46 @@ export default function BankAccountDetailPage() {
     const purchasesById = useMemo(() => buildPurchaseLookup(relatedPurchases), [relatedPurchases]);
     const invoiceIdsWithPages = useMemo(() => new Set(relatedFreightNotas.map(nota => nota._id)), [relatedFreightNotas]);
 
+    const buildTransactionListUrl = useCallback((page?: number, pageSize?: number) => {
+        const params = new URLSearchParams({
+            entity: 'bank-transactions',
+            filter: JSON.stringify({ bankAccountRef: accountId }),
+            sortField: 'date',
+            sortDir: 'desc',
+        });
+        if (page) params.set('page', String(page));
+        if (pageSize) params.set('pageSize', String(pageSize));
+        return `/api/data?${params.toString()}`;
+    }, [accountId]);
+
+    const fetchAllAccountTransactions = useCallback(
+        () => fetchAdminCollectionData<BankTransaction[]>(
+            buildTransactionListUrl(),
+            'Gagal memuat mutasi rekening'
+        ),
+        [buildTransactionListUrl]
+    );
+
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const result = await res.json();
-            if (!res.ok) {
-                throw new Error(result.error || 'Gagal memuat detail rekening');
-            }
-            return result.data as T;
-        };
+        setTransactionPage(1);
+    }, [accountId]);
 
-        const fetchEntityByIds = async <T extends { _id: string }>(entity: string, ids: string[]) => {
-            const uniqueIds = Array.from(new Set(ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
-            if (uniqueIds.length === 0) {
-                return [] as T[];
-            }
-
-            const rows = await Promise.all(
-                uniqueIds.map(id =>
-                    fetchAdminData<T | null>(`/api/data?entity=${entity}&id=${id}`, `Gagal memuat relasi ${entity}`).catch(() => null)
-                )
-            );
-            return rows.filter((row) => Boolean(row?._id)) as T[];
-        };
-
-        const loadAccountDetail = async () => {
+    useEffect(() => {
+        const loadAccountOverview = async () => {
             setLoading(true);
             try {
-                const [accountData, transactionData, companyData] = await Promise.all([
+                const [accountData, summaryData, companyData] = await Promise.all([
                     fetchEntity<BankAccount | null>(`/api/data?entity=bank-accounts&id=${accountId}`),
-                    fetchAdminCollectionData<BankTransaction[]>(
-                        `/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: accountId }))}`,
-                        'Gagal memuat detail rekening'
+                    fetchAdminData<BankTransactionSummary>(
+                        `/api/data?entity=bank-transactions-summary&bankAccountRef=${encodeURIComponent(accountId)}`,
+                        'Gagal memuat ringkasan mutasi rekening'
                     ),
                     fetchCompanyProfile().catch(() => null),
                 ]);
-                const paymentRows = await fetchEntityByIds<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>(
-                    'payments',
-                    (transactionData || []).map(transaction => transaction.relatedPaymentRef || '')
-                );
-                const refundRows = await fetchEntityByIds<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>(
-                    'customer-overpayment-refunds',
-                    (transactionData || []).map(transaction => transaction.relatedOverpaymentRefundRef || '')
-                );
-                const expenseRows = await fetchEntityByIds<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>(
-                    'expenses',
-                    (transactionData || []).map(transaction => transaction.relatedExpenseRef || '')
-                );
-                const purchaseRows = await fetchEntityByIds<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>(
-                    'purchases',
-                    (transactionData || []).map(transaction => transaction.relatedPurchaseRef || '')
-                );
-                const freightNotaRows = await fetchEntityByIds<Pick<FreightNota, '_id'>>(
-                    'freight-notas',
-                    [
-                        ...paymentRows.map(payment => payment.invoiceRef || ''),
-                        ...refundRows.map(refund => refund.sourceInvoiceRef || ''),
-                    ].filter(id => /^nota-/i.test(id))
-                );
+
                 setAccount(accountData);
-                setTransactions(
-                    (transactionData || []).sort(
-                        (a, b) =>
-                            new Date(b.date || b._createdAt || '').getTime() -
-                        new Date(a.date || a._createdAt || '').getTime()
-                    )
-                );
-                setRelatedPayments(paymentRows);
-                setRelatedRefunds(refundRows);
-                setRelatedExpenses(expenseRows);
-                setRelatedPurchases(purchaseRows);
-                setRelatedFreightNotas(freightNotaRows);
+                setTransactionSummary(summaryData || { totalIn: 0, totalOut: 0, totalTransactions: 0 });
+                setTransactionTotal(summaryData?.totalTransactions || 0);
                 setCompany(companyData || null);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail rekening');
@@ -169,8 +179,58 @@ export default function BankAccountDetailPage() {
             }
         };
 
-        void loadAccountDetail();
+        void loadAccountOverview();
     }, [accountId, addToast]);
+
+    useEffect(() => {
+        const loadTransactionPage = async () => {
+            setTransactionsLoading(true);
+            try {
+                const payload = await fetchAdminListPayload<BankTransaction>(
+                    buildTransactionListUrl(transactionPage, BANK_TRANSACTION_PAGE_SIZE),
+                    'Gagal memuat mutasi rekening'
+                );
+                const transactionRows = (payload.data || []) as BankTransaction[];
+                const paymentRows = await fetchEntityByIds<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>(
+                    'payments',
+                    transactionRows.map(transaction => transaction.relatedPaymentRef || '')
+                );
+                const refundRows = await fetchEntityByIds<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>(
+                    'customer-overpayment-refunds',
+                    transactionRows.map(transaction => transaction.relatedOverpaymentRefundRef || '')
+                );
+                const expenseRows = await fetchEntityByIds<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>(
+                    'expenses',
+                    transactionRows.map(transaction => transaction.relatedExpenseRef || '')
+                );
+                const purchaseRows = await fetchEntityByIds<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>(
+                    'purchases',
+                    transactionRows.map(transaction => transaction.relatedPurchaseRef || '')
+                );
+                const freightNotaRows = await fetchEntityByIds<Pick<FreightNota, '_id'>>(
+                    'freight-notas',
+                    [
+                        ...paymentRows.map(payment => payment.invoiceRef || ''),
+                        ...refundRows.map(refund => refund.sourceInvoiceRef || ''),
+                    ].filter(id => /^nota-/i.test(id))
+                );
+
+                setTransactions(transactionRows);
+                setTransactionTotal(payload.meta?.total ?? transactionRows.length);
+                setRelatedPayments(paymentRows);
+                setRelatedRefunds(refundRows);
+                setRelatedExpenses(expenseRows);
+                setRelatedPurchases(purchaseRows);
+                setRelatedFreightNotas(freightNotaRows);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat mutasi rekening');
+            } finally {
+                setTransactionsLoading(false);
+            }
+        };
+
+        void loadTransactionPage();
+    }, [addToast, buildTransactionListUrl, transactionPage]);
 
     const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
     const fmtN = (n: number) => new Intl.NumberFormat('id-ID').format(n);
@@ -193,8 +253,9 @@ export default function BankAccountDetailPage() {
 
     const handleExportExcel = async () => {
         try {
+            const allTransactions = await fetchAllAccountTransactions();
             await exportToExcel(
-                transactions.map((tx) => ({
+                allTransactions.map((tx) => ({
                     date: tx.date,
                     type: tx.type,
                     description: tx.description,
@@ -233,12 +294,9 @@ export default function BankAccountDetailPage() {
     const isInvoiceAccount = invoiceBankAccountRefs.includes(account._id);
     const isDefaultInvoiceAccount = company?.invoiceSettings?.defaultInvoiceBankAccountRef === account._id;
     const currentBalance = parseWholeMoneyLike(account.currentBalance);
-    const totalIn = transactions
-        .filter(tx => tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN')
-        .reduce((sum, tx) => sum + parseWholeMoneyLike(tx.amount), 0);
-    const totalOut = transactions
-        .filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT')
-        .reduce((sum, tx) => sum + parseWholeMoneyLike(tx.amount), 0);
+    const totalIn = parseWholeMoneyLike(transactionSummary.totalIn);
+    const totalOut = parseWholeMoneyLike(transactionSummary.totalOut);
+    const totalTransactions = transactionSummary.totalTransactions || transactionTotal;
 
     const handlePrint = async () => {
         const printWindow = openPrintWindow('Menyiapkan print rekening...');
@@ -248,13 +306,20 @@ export default function BankAccountDetailPage() {
         }
         try {
             const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
-            const rows = transactions.length === 0
+            const allTransactions = await fetchAllAccountTransactions();
+            const rows = allTransactions.length === 0
                 ? '<tr><td colspan="5" class="c">Belum ada transaksi</td></tr>'
-                : transactions.map(tx => {
+                : allTransactions.map(tx => {
                     const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
                     const amount = parseWholeMoneyLike(tx.amount);
                     const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
-                    return `<tr><td>${fmtDate(tx.date)}</td><td>${cfg.label}</td><td>${tx.description}</td><td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${cfg.sign}${fmtN(amount)}</td><td class="r b">${fmtN(balanceAfter)}</td></tr>`;
+                    return `<tr>
+                        <td>${escapePrintHtml(fmtDate(tx.date))}</td>
+                        <td>${escapePrintHtml(cfg.label)}</td>
+                        <td>${escapePrintHtml(tx.description || '-')}</td>
+                        <td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${escapePrintHtml(`${cfg.sign}${fmtN(amount)}`)}</td>
+                        <td class="r b">${escapePrintHtml(fmtN(balanceAfter))}</td>
+                    </tr>`;
                 }).join('');
 
             openBrandedPrint({
@@ -285,29 +350,31 @@ export default function BankAccountDetailPage() {
     };
 
     return (
-        <div>
-            <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div className="bank-detail-page">
+            <div className="page-header bank-detail-header">
+                <div className="bank-detail-main">
                     <PageBackButton href="/bank-accounts" />
-                    <BankDetailLogo name={account.bankName} size={44} />
-                    <div>
-                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            {account.bankName}
-                            {cashAccount && <span className="badge badge-success">Kas Tunai</span>}
-                            {!cashAccount && isDefaultInvoiceAccount && <span className="badge badge-primary">Default Invoice</span>}
-                            {!cashAccount && isInvoiceAccount && !isDefaultInvoiceAccount && <span className="badge badge-info">Tampil di Invoice</span>}
-                        </h1>
-                        <p className="page-subtitle" style={{ fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{account.accountNumber} - a.n. {account.accountHolder}</p>
+                    <div className="bank-detail-identity">
+                        <BankDetailLogo name={account.bankName} size={52} />
+                        <div className="bank-detail-title-block">
+                            <h1 className="page-title bank-detail-title">
+                                {account.bankName}
+                                {cashAccount && <span className="badge badge-success">Kas Tunai</span>}
+                                {!cashAccount && isDefaultInvoiceAccount && <span className="badge badge-primary">Default Invoice</span>}
+                                {!cashAccount && isInvoiceAccount && !isDefaultInvoiceAccount && <span className="badge badge-info">Tampil di Invoice</span>}
+                            </h1>
+                            <p className="page-subtitle bank-detail-account-line">{account.accountNumber} - a.n. {account.accountHolder}</p>
+                        </div>
                     </div>
                 </div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions bank-detail-actions">
                     {canExportBankAccount && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={15} /> Excel</button>}
                     {canPrintBankAccount && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>}
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                <div className="card" style={{ background: bankInfo.gradient, color: '#fff', overflow: 'hidden', position: 'relative' }}>
+            <div className="bank-detail-summary-grid">
+                <div className="card bank-detail-balance-card" style={{ background: bankInfo.gradient }}>
                     <div style={{ position: 'absolute', right: -15, top: -15, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
                     <div className="card-body" style={{ padding: '1.1rem', position: 'relative' }}>
                         <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Saldo Saat Ini</div>
@@ -333,7 +400,7 @@ export default function BankAccountDetailPage() {
                 <div className="card" style={{ overflow: 'hidden' }}>
                     <div className="card-body" style={{ padding: '1.1rem' }}>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Transaksi</div>
-                        <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{transactions.length}</div>
+                        <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{totalTransactions}</div>
                     </div>
                 </div>
             </div>
@@ -341,15 +408,25 @@ export default function BankAccountDetailPage() {
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="card-header-title">Riwayat Transaksi</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{transactions.length} transaksi</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{totalTransactions} transaksi</span>
                 </div>
                 <div className="table-wrapper table-desktop-only" style={{ overflowX: 'auto' }}>
-                    <table style={{ minWidth: 600 }}>
+                    <table className="bank-transaction-table">
                         <thead>
                             <tr><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th style={{ textAlign: 'right' }}>Jumlah</th><th style={{ textAlign: 'right' }}>Saldo Setelah</th></tr>
                         </thead>
                         <tbody suppressHydrationWarning>
-                            {transactions.length === 0 ? (
+                            {transactionsLoading ? (
+                                [1, 2, 3, 4, 5].map(row => (
+                                    <tr key={row}>
+                                        <td><div className="skeleton skeleton-text" /></td>
+                                        <td><div className="skeleton skeleton-text" /></td>
+                                        <td><div className="skeleton skeleton-text" /></td>
+                                        <td><div className="skeleton skeleton-text" /></td>
+                                        <td><div className="skeleton skeleton-text" /></td>
+                                    </tr>
+                                ))
+                            ) : transactions.length === 0 ? (
                                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.3 }}>-</div>
                                     <div>Belum ada transaksi</div>
@@ -407,7 +484,12 @@ export default function BankAccountDetailPage() {
                     </table>
                 </div>
                 <div className="mobile-record-list">
-                    {transactions.length === 0 ? (
+                    {transactionsLoading ? (
+                        <div className="mobile-record-card">
+                            <div className="skeleton skeleton-text" />
+                            <div className="skeleton skeleton-text" />
+                        </div>
+                    ) : transactions.length === 0 ? (
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada transaksi</div>
                         </div>
@@ -436,8 +518,8 @@ export default function BankAccountDetailPage() {
                             <div key={tx._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{cfg.label}</div>
-                                        <div className="mobile-record-subtitle">{fmtDate(tx.date)} | {tx.description}</div>
+                                        <div className="mobile-record-title">{tx.description || cfg.label}</div>
+                                        <div className="mobile-record-subtitle">{fmtDate(tx.date)}</div>
                                         {sourceLink && (
                                             <div style={{ marginTop: '0.2rem' }}>
                                                 <Link href={sourceLink.href} style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)' }}>
@@ -464,6 +546,17 @@ export default function BankAccountDetailPage() {
                         );
                     })}
                 </div>
+                <AppPagination
+                    page={transactionPage}
+                    pageSize={BANK_TRANSACTION_PAGE_SIZE}
+                    totalItems={transactionTotal}
+                    onPageChange={setTransactionPage}
+                    info={({ startIndex, endIndex, totalItems }) =>
+                        totalItems === 0
+                            ? 'Belum ada transaksi'
+                            : `Menampilkan ${startIndex}-${endIndex} dari ${totalItems} transaksi`
+                    }
+                />
             </div>
         </div>
     );
