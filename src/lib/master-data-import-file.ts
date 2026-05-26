@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 
 import type { MasterDataImportField, MasterDataImportTargetConfig } from './master-data-import-config';
 
@@ -182,6 +183,56 @@ function findHeaderRow(worksheet: ExcelJS.Worksheet, config: MasterDataImportTar
   return null;
 }
 
+async function stripXlsxCommentParts(buffer: ArrayBuffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  let changed = false;
+
+  Object.keys(zip.files).forEach((entryName) => {
+    if (
+      /^xl\/comments\//.test(entryName) ||
+      /^xl\/threadedComments\//.test(entryName) ||
+      /^xl\/persons\//.test(entryName) ||
+      /^xl\/drawings\/commentsDrawing\d+[.]vml$/.test(entryName)
+    ) {
+      zip.remove(entryName);
+      changed = true;
+    }
+  });
+
+  const worksheetRelNames = Object.keys(zip.files).filter((entryName) => /^xl\/worksheets\/_rels\/sheet\d+[.]xml[.]rels$/.test(entryName));
+  await Promise.all(worksheetRelNames.map(async (entryName) => {
+    const file = zip.file(entryName);
+    if (!file) return;
+    const xml = await file.async('string');
+    const sanitized = xml.replace(
+      /<Relationship\b(?=[^>]*\bType="[^"]*\/(?:comments|threadedComment|person|vmlDrawing)")(?=[^>]*\bTarget="[^"]*(?:comments|threadedComments|persons|commentsDrawing)[^"]*")[^>]*\/>/g,
+      '',
+    );
+    if (sanitized !== xml) {
+      zip.file(entryName, sanitized);
+      changed = true;
+    }
+  }));
+
+  const contentTypes = zip.file('[Content_Types].xml');
+  if (contentTypes) {
+    const xml = await contentTypes.async('string');
+    const sanitized = xml.replace(
+      /<Override\b(?=[^>]*\bPartName="\/xl\/(?:comments|threadedComments|persons)\/[^"]+")[^>]*\/>/g,
+      '',
+    ).replace(
+      /<Override\b(?=[^>]*\bPartName="\/xl\/drawings\/commentsDrawing\d+[.]vml")[^>]*\/>/g,
+      '',
+    );
+    if (sanitized !== xml) {
+      zip.file('[Content_Types].xml', sanitized);
+      changed = true;
+    }
+  }
+
+  return changed ? zip.generateAsync({ type: 'arraybuffer' }) : buffer;
+}
+
 export async function buildMasterDataImportTemplateWorkbook(config: MasterDataImportTargetConfig) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PT Gading Mas Surya';
@@ -226,7 +277,6 @@ export async function buildMasterDataImportTemplateWorkbook(config: MasterDataIm
     headerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
     headerCell.border = BORDER_STYLE;
     headerCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    headerCell.note = `${field.label}${field.required ? ' (wajib)' : ' (opsional)'}${field.help ? `\n${field.help}` : ''}`;
   });
   template.getRow(HEADER_ROW_NUMBER).height = 24;
 
@@ -280,7 +330,8 @@ export async function buildMasterDataImportTemplateWorkbook(config: MasterDataIm
 
 export async function parseMasterDataImportXlsx(buffer: ArrayBuffer, config: MasterDataImportTargetConfig): Promise<ParsedMasterDataImportFile> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const readableBuffer = await stripXlsxCommentParts(buffer);
+  await workbook.xlsx.load(readableBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const worksheet = findTemplateWorksheet(workbook);
   if (!worksheet) {
     throw new Error('Excel tidak memiliki worksheet data');

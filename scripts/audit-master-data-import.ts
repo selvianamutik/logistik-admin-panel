@@ -3,6 +3,7 @@ import { loadScriptEnv } from './_env';
 loadScriptEnv();
 
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { handleMasterDataImport } from '../src/lib/api/master-data-import';
 import { MASTER_DATA_IMPORT_TARGETS } from '../src/lib/master-data-import-config';
 import type { MasterDataImportTargetConfig } from '../src/lib/master-data-import-config';
@@ -95,6 +96,41 @@ async function expectXlsxParseError(workbook: ExcelJS.Workbook, config: MasterDa
   await expectXlsxBufferParseError(buffer, config, expectedText);
 }
 
+async function moveCommentsToModernExcelLayout(buffer: unknown) {
+  const zip = await JSZip.loadAsync(buffer as ArrayBuffer);
+  const legacyComment = zip.file('xl/comments1.xml');
+  if (legacyComment) {
+    zip.file('xl/comments/comment1.xml', await legacyComment.async('string'));
+    zip.remove('xl/comments1.xml');
+  }
+
+  const legacyVml = zip.file('xl/drawings/vmlDrawing1.vml');
+  if (legacyVml) {
+    zip.file('xl/drawings/commentsDrawing1.vml', await legacyVml.async('string'));
+    zip.remove('xl/drawings/vmlDrawing1.vml');
+  }
+
+  const worksheetRels = Object.keys(zip.files).filter((entryName) => /^xl\/worksheets\/_rels\/sheet\d+[.]xml[.]rels$/.test(entryName));
+  for (const entryName of worksheetRels) {
+    const file = zip.file(entryName);
+    if (!file) continue;
+    const xml = await file.async('string');
+    zip.file(entryName, xml
+      .replace(/Target="(?:[.][.]\/)?comments1[.]xml"/g, 'Target="/xl/comments/comment1.xml"')
+      .replace(/Target="(?:[.][.]\/drawings\/)?vmlDrawing1[.]vml"/g, 'Target="/xl/drawings/commentsDrawing1.vml"'));
+  }
+
+  const contentTypes = zip.file('[Content_Types].xml');
+  if (contentTypes) {
+    const xml = await contentTypes.async('string');
+    zip.file('[Content_Types].xml', xml
+      .replace(/PartName="\/xl\/comments1[.]xml"/g, 'PartName="/xl/comments/comment1.xml"')
+      .replace(/PartName="\/xl\/drawings\/vmlDrawing1[.]vml"/g, 'PartName="/xl/drawings/commentsDrawing1.vml"'));
+  }
+
+  return zip.generateAsync({ type: 'arraybuffer' });
+}
+
 async function auditImportFileTemplates() {
   console.log('[audit-master-data-import] xlsx template and parser guards');
   for (const config of MASTER_DATA_IMPORT_TARGETS) {
@@ -171,6 +207,17 @@ async function auditImportFileTemplates() {
   extraColumnSheet.addRow(['supplierCode', 'name']);
   extraColumnSheet.addRow(['SUP-1', 'PT Kolom Ekstra', 'tidak boleh']);
   await expectXlsxParseError(extraColumnWorkbook, supplierConfig, 'kolom lebih banyak');
+
+  const modernCommentWorkbook = new ExcelJS.Workbook();
+  const modernCommentSheet = modernCommentWorkbook.addWorksheet('Template');
+  modernCommentSheet.getCell('A1').value = 'supplierCode';
+  modernCommentSheet.getCell('A1').note = 'Catatan header dari Excel modern';
+  modernCommentSheet.getCell('B1').value = 'name';
+  modernCommentSheet.getCell('A2').value = 'SUP-COMMENT';
+  modernCommentSheet.getCell('B2').value = 'PT Comment Path';
+  const modernCommentBuffer = await moveCommentsToModernExcelLayout(await modernCommentWorkbook.xlsx.writeBuffer());
+  const modernCommentParsed = await parseMasterDataImportXlsx(modernCommentBuffer as unknown as ArrayBuffer, supplierConfig);
+  assert(modernCommentParsed.rows[0]?.supplierCode === 'SUP-COMMENT', 'Excel dengan path comments modern harus tetap bisa diparse');
 }
 
 async function main() {
