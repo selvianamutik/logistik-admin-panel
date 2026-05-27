@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/notifications/operational-admin/due-reminders",
+      "schedule": "0 1 * * *"
+    }
+  ]
+}

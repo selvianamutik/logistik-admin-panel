@@ -4,6 +4,7 @@ import { after } from 'next/server';
 const DEFAULT_CALLMEBOT_URL = 'https://api.callmebot.com/whatsapp.php';
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_MESSAGE_LENGTH = 900;
+const GREEN_API_PROVIDER_VALUES = new Set(['green_api', 'green-api', 'greenapi']);
 
 const STATUS_LABELS: Record<string, string> = {
     CREATED: 'Dibuat',
@@ -15,9 +16,24 @@ const STATUS_LABELS: Record<string, string> = {
     CANCELLED: 'Dibatalkan',
 };
 
-type NotificationConfig =
+const INCIDENT_SETTLEMENT_CATEGORY_LABELS: Record<string, string> = {
+    TOWING: 'Towing / Evakuasi',
+    REPAIR: 'Perbaikan',
+    SPAREPART: 'Sparepart',
+    TIRE: 'Ban',
+    MEDICAL: 'Medis',
+    THIRD_PARTY_DAMAGE: 'Kerusakan pihak ketiga',
+    ADMINISTRATION: 'Administrasi',
+    POLICE_ADMIN: 'Administrasi kepolisian',
+    ACCOMMODATION: 'Akomodasi',
+    CARGO_HANDLING: 'Handling barang',
+    OTHER: 'Lain-lain',
+};
+
+type CallmeBotConfig =
     | {
         enabled: true;
+        provider: 'callmebot';
         apiKey: string;
         phone: string;
         baseUrl: string;
@@ -26,13 +42,27 @@ type NotificationConfig =
     }
     | {
         enabled: false;
+        provider?: 'callmebot' | 'green-api';
         reason: string;
     };
+
+type GreenApiConfig = {
+    enabled: true;
+    provider: 'green-api';
+    baseUrl: string;
+    instanceId: string;
+    apiToken: string;
+    chatId: string;
+    timeoutMs: number;
+    dryRun: boolean;
+};
+
+type NotificationConfig = CallmeBotConfig | GreenApiConfig;
 
 export type OperationalAdminNotificationResult = {
     ok: boolean;
     skipped: boolean;
-    provider: 'callmebot';
+    provider: 'callmebot' | 'green-api';
     reason?: string;
     statusCode?: number;
     responseText?: string;
@@ -64,8 +94,21 @@ export function normalizeWhatsAppPhoneNumber(value: string) {
     return digits;
 }
 
+export function normalizeGreenApiChatId(value: string) {
+    const compacted = value.trim().replace(/\s+/g, '');
+    if (/@(?:c|g)\.us$/i.test(compacted)) {
+        return compacted;
+    }
+    const phone = normalizeWhatsAppPhoneNumber(compacted);
+    return phone ? `${phone}@c.us` : '';
+}
+
 function readTimeoutMs() {
-    const parsed = Number.parseInt(readAnyEnv(['CALLMEBOT_TIMEOUT_MS', 'OPERATIONAL_ADMIN_WHATSAPP_TIMEOUT_MS']), 10);
+    const parsed = Number.parseInt(readAnyEnv([
+        'GREEN_API_TIMEOUT_MS',
+        'CALLMEBOT_TIMEOUT_MS',
+        'OPERATIONAL_ADMIN_WHATSAPP_TIMEOUT_MS',
+    ]), 10);
     if (!Number.isFinite(parsed)) return DEFAULT_TIMEOUT_MS;
     return Math.min(Math.max(parsed, 1000), 30000);
 }
@@ -76,23 +119,59 @@ export function getOperationalAdminWhatsAppConfig(): NotificationConfig {
         return { enabled: false, reason: 'DISABLED' };
     }
 
+    const providerValue = readAnyEnv(['WHATSAPP_PROVIDER', 'OPERATIONAL_ADMIN_WHATSAPP_PROVIDER']).toLowerCase();
+    const hasGreenApiCredential = Boolean(readAnyEnv(['GREEN_API_INSTANCE_ID']) && readAnyEnv(['GREEN_API_TOKEN']));
+    const useGreenApi = GREEN_API_PROVIDER_VALUES.has(providerValue) || (!providerValue && hasGreenApiCredential);
+
+    if (useGreenApi) {
+        const instanceId = readAnyEnv(['GREEN_API_INSTANCE_ID']);
+        const apiToken = readAnyEnv(['GREEN_API_TOKEN', 'GREEN_API_API_TOKEN', 'GREEN_API_INSTANCE_TOKEN']);
+        const chatId = normalizeGreenApiChatId(readAnyEnv([
+            'GREEN_API_CHAT_ID',
+            'OPERATIONAL_ADMIN_WHATSAPP_CHAT_ID',
+            'OPERATIONAL_ADMIN_WA',
+            'OPERATIONAL_ADMIN_WHATSAPP_PHONE',
+            'CALLMEBOT_PHONE',
+        ]));
+
+        if (!instanceId || !apiToken || !chatId) {
+            return { enabled: false, provider: 'green-api', reason: explicitEnabled ? 'MISSING_CREDENTIALS' : 'NOT_CONFIGURED' };
+        }
+
+        return {
+            enabled: true,
+            provider: 'green-api',
+            baseUrl: readAnyEnv(['GREEN_API_URL', 'GREEN_API_BASE_URL']) || 'https://api.green-api.com',
+            instanceId,
+            apiToken,
+            chatId,
+            timeoutMs: readTimeoutMs(),
+            dryRun: readBooleanEnv(['GREEN_API_DRY_RUN', 'OPERATIONAL_ADMIN_WHATSAPP_DRY_RUN']) === true,
+        };
+    }
+
     const apiKey = readAnyEnv(['CALLMEBOT_API_KEY', 'OPERATIONAL_ADMIN_WHATSAPP_API_KEY']);
     const phone = normalizeWhatsAppPhoneNumber(readAnyEnv(['CALLMEBOT_PHONE', 'OPERATIONAL_ADMIN_WHATSAPP_PHONE']));
     if (!apiKey || !phone) {
-        return { enabled: false, reason: explicitEnabled ? 'MISSING_CREDENTIALS' : 'NOT_CONFIGURED' };
+        return { enabled: false, provider: 'callmebot', reason: explicitEnabled ? 'MISSING_CREDENTIALS' : 'NOT_CONFIGURED' };
     }
     if (phone.length < 10) {
-        return { enabled: false, reason: 'INVALID_PHONE' };
+        return { enabled: false, provider: 'callmebot', reason: 'INVALID_PHONE' };
     }
 
     return {
         enabled: true,
+        provider: 'callmebot',
         apiKey,
         phone,
         baseUrl: readAnyEnv(['CALLMEBOT_BASE_URL', 'OPERATIONAL_ADMIN_WHATSAPP_BASE_URL']) || DEFAULT_CALLMEBOT_URL,
         timeoutMs: readTimeoutMs(),
         dryRun: readBooleanEnv(['CALLMEBOT_DRY_RUN', 'OPERATIONAL_ADMIN_WHATSAPP_DRY_RUN']) === true,
     };
+}
+
+function normalizeBaseUrl(value: string) {
+    return value.trim().replace(/\/+$/, '');
 }
 
 function compactMessage(message: string) {
@@ -212,13 +291,40 @@ export function buildDriverTripClosureMessage(params: {
     ].filter(Boolean).join('\n');
 }
 
+export function getIncidentSettlementCategoryLabel(category?: string) {
+    return category ? INCIDENT_SETTLEMENT_CATEGORY_LABELS[category] || category : '-';
+}
+
+export function buildIncidentSettlementActionRequiredMessage(params: {
+    incidentNumber?: string;
+    doNumber?: string;
+    vehiclePlate?: string;
+    category?: string;
+    description?: string;
+    amount?: number;
+    statusLabel?: string;
+    actionLabel: string;
+}) {
+    return [
+        '[GMS] Tindak lanjut biaya insiden.',
+        `Insiden: ${params.incidentNumber || '-'}`,
+        `DO: ${params.doNumber || '-'}`,
+        `Unit: ${params.vehiclePlate || '-'}`,
+        `Kategori: ${getIncidentSettlementCategoryLabel(params.category)}`,
+        params.description ? `Detail: ${params.description}` : '',
+        `Nominal: ${formatCurrency(Math.max(params.amount || 0, 0))}`,
+        params.statusLabel ? `Status: ${params.statusLabel}` : '',
+        `Aksi: ${params.actionLabel}`,
+    ].filter(Boolean).join('\n');
+}
+
 export async function sendOperationalAdminWhatsApp(message: string): Promise<OperationalAdminNotificationResult> {
     const config = getOperationalAdminWhatsAppConfig();
     if (!config.enabled) {
         return {
             ok: true,
             skipped: true,
-            provider: 'callmebot',
+            provider: config.provider || 'callmebot',
             reason: config.reason,
         };
     }
@@ -228,7 +334,7 @@ export async function sendOperationalAdminWhatsApp(message: string): Promise<Ope
         return {
             ok: true,
             skipped: true,
-            provider: 'callmebot',
+            provider: config.provider,
             reason: 'EMPTY_MESSAGE',
         };
     }
@@ -237,13 +343,49 @@ export async function sendOperationalAdminWhatsApp(message: string): Promise<Ope
         return {
             ok: true,
             skipped: true,
-            provider: 'callmebot',
+            provider: config.provider,
             reason: 'DRY_RUN',
             responseText: text,
         };
     }
 
     try {
+        if (config.provider === 'green-api') {
+            const response = await fetch(
+                `${normalizeBaseUrl(config.baseUrl)}/waInstance${encodeURIComponent(config.instanceId)}/sendMessage/${encodeURIComponent(config.apiToken)}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chatId: config.chatId,
+                        message: text,
+                    }),
+                    signal: getAbortSignal(config.timeoutMs),
+                    cache: 'no-store',
+                }
+            );
+            const responseText = (await response.text().catch(() => '')).trim();
+            const providerRejected = /\b(error|invalid|not authorized|notauthorized|instance|token|forbidden)\b/i.test(responseText);
+            if (!response.ok || providerRejected) {
+                return {
+                    ok: false,
+                    skipped: false,
+                    provider: 'green-api',
+                    statusCode: response.status,
+                    responseText,
+                    reason: providerRejected ? 'PROVIDER_REJECTED' : 'HTTP_ERROR',
+                };
+            }
+
+            return {
+                ok: true,
+                skipped: false,
+                provider: 'green-api',
+                statusCode: response.status,
+                responseText,
+            };
+        }
+
         const url = new URL(config.baseUrl);
         url.searchParams.set('phone', config.phone);
         url.searchParams.set('text', text);
@@ -260,7 +402,7 @@ export async function sendOperationalAdminWhatsApp(message: string): Promise<Ope
             return {
                 ok: false,
                 skipped: false,
-                provider: 'callmebot',
+                provider: config.provider,
                 statusCode: response.status,
                 responseText,
                 reason: providerRejected ? 'PROVIDER_REJECTED' : 'HTTP_ERROR',
@@ -270,7 +412,7 @@ export async function sendOperationalAdminWhatsApp(message: string): Promise<Ope
         return {
             ok: true,
             skipped: false,
-            provider: 'callmebot',
+            provider: config.provider,
             statusCode: response.status,
             responseText,
         };
@@ -278,7 +420,7 @@ export async function sendOperationalAdminWhatsApp(message: string): Promise<Ope
         return {
             ok: false,
             skipped: false,
-            provider: 'callmebot',
+            provider: config.provider,
             reason: 'REQUEST_FAILED',
             errorMessage: error instanceof Error ? error.message : String(error),
         };
@@ -289,6 +431,7 @@ export async function notifyOperationalAdminWhatsApp(message: string) {
     const result = await sendOperationalAdminWhatsApp(message);
     if (!result.ok && !result.skipped) {
         console.warn('Operational admin WhatsApp notification failed', {
+            provider: result.provider,
             reason: result.reason,
             statusCode: result.statusCode,
             responseText: result.responseText,

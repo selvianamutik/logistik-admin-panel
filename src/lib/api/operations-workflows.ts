@@ -27,6 +27,10 @@ import {
     normalizeIncidentSettlementLinePayload,
     normalizeOptionalWholeNumber,
 } from './operations-workflow-support';
+import {
+    buildIncidentSettlementActionRequiredMessage,
+    scheduleOperationalAdminWhatsApp,
+} from './operational-admin-notifications';
 
 export {
     normalizeDriverPayload,
@@ -613,7 +617,14 @@ export async function handleIncidentSettlementLineDelete(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await getDocumentById<{ _id: string; status?: string; pendingDriverResolutionRequestedBy?: string | null }>(existing.incidentRef, 'incident');
+    const incident = await getDocumentById<{
+        _id: string;
+        incidentNumber?: string;
+        relatedDONumber?: string;
+        vehiclePlate?: string;
+        status?: string;
+        pendingDriverResolutionRequestedBy?: string | null;
+    }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -664,7 +675,14 @@ export async function handleIncidentSettlementLineStatusUpdate(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await getDocumentById<{ _id: string; status?: string; pendingDriverResolutionRequestedBy?: string | null }>(existing.incidentRef, 'incident');
+    const incident = await getDocumentById<{
+        _id: string;
+        incidentNumber?: string;
+        relatedDONumber?: string;
+        vehiclePlate?: string;
+        status?: string;
+        pendingDriverResolutionRequestedBy?: string | null;
+    }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -735,6 +753,18 @@ export async function handleIncidentSettlementLineStatusUpdate(
             userName: session.name,
         });
         await addAuditLog(session, 'UPDATE', 'incident-settlement-lines', id, actionNote);
+        if (status === 'APPROVED' && existing.lineType === 'COST') {
+            scheduleOperationalAdminWhatsApp(buildIncidentSettlementActionRequiredMessage({
+                incidentNumber: incident.incidentNumber || existing.incidentNumber,
+                doNumber: incident.relatedDONumber,
+                vehiclePlate: incident.vehiclePlate,
+                category: existing.category,
+                description: existing.description,
+                amount: existing.amount,
+                statusLabel: 'Disetujui',
+                actionLabel: 'Posting biaya ke uang jalan trip atau pengeluaran perusahaan sesuai sumber biaya.',
+            }));
+        }
         return NextResponse.json({ data: updatedLine });
     } catch (error) {
         throw error;

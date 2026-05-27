@@ -42,6 +42,7 @@ import type {
     ExpenseCategory,
     FreightNota,
     IncidentExpenseRoute,
+    IncidentSettlementLine,
     FreightNotaInstructionAccount,
     InvoiceAdjustment,
     InvoiceAdjustmentKind,
@@ -95,6 +96,10 @@ import {
     postPaymentJournal,
     voidJournalEntryForSource,
 } from './accounting-posting';
+import {
+    buildIncidentSettlementActionRequiredMessage,
+    scheduleOperationalAdminWhatsApp,
+} from './operational-admin-notifications';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -297,6 +302,47 @@ function normalizeWholeMoneyAmount(value: unknown) {
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
+function buildPostedIncidentSettlementFollowUpAction(line: Pick<IncidentSettlementLine, 'lineType' | 'category'> | { lineType?: string; category?: string }) {
+    if (line.lineType !== 'COST') {
+        return '';
+    }
+    if (line.category === 'TIRE') {
+        return 'Catat aset ban dari insiden; lanjut pasang ke unit atau jadwalkan maintenance bila perlu.';
+    }
+    if (line.category === 'REPAIR' || line.category === 'SPAREPART') {
+        return 'Buat follow-up maintenance supaya histori unit dan biaya perbaikan tidak putus.';
+    }
+    return '';
+}
+
+function schedulePostedIncidentSettlementFollowUpReminder(params: {
+    line: {
+        incidentNumber?: string;
+        lineType?: string;
+        category?: string;
+        description?: string;
+        amount?: number;
+    };
+    incident?: {
+        incidentNumber?: string;
+        relatedDONumber?: string;
+        vehiclePlate?: string;
+    } | null;
+}) {
+    const actionLabel = buildPostedIncidentSettlementFollowUpAction(params.line);
+    if (!actionLabel) return;
+    scheduleOperationalAdminWhatsApp(buildIncidentSettlementActionRequiredMessage({
+        incidentNumber: params.incident?.incidentNumber || params.line.incidentNumber,
+        doNumber: params.incident?.relatedDONumber,
+        vehiclePlate: params.incident?.vehiclePlate,
+        category: params.line.category,
+        description: params.line.description,
+        amount: params.line.amount,
+        statusLabel: 'Sudah diposting',
+        actionLabel,
+    }));
 }
 
 function bankTransactionDelta(transaction: Pick<BankTransaction, 'amount' | 'type'>) {
@@ -2335,6 +2381,10 @@ export async function handleExpenseCreate(
                 userRef: session._id,
                 userName: session.name,
             });
+            schedulePostedIncidentSettlementFollowUpReminder({
+                line: incidentSettlementLine,
+                incident: linkedIncident,
+            });
         }
         if (!(incidentSettlementLine && incidentExpenseRoute === 'DRIVER_VOUCHER' && (linkedVoucher || shouldDeferIncidentTripExpenseToVoucher))) {
             await postExpenseJournal(session, expenseDoc as Expense, null);
@@ -2448,6 +2498,10 @@ export async function handleExpenseCreate(
                 note: `Detail insiden diposting ke pengeluaran: ${expenseDescription || expenseNote || category.name || 'Pengeluaran insiden'}`,
                 userRef: session._id,
                 userName: session.name,
+            });
+            schedulePostedIncidentSettlementFollowUpReminder({
+                line: incidentSettlementLine,
+                incident: linkedIncident,
             });
         }
         if (!(incidentSettlementLine && incidentExpenseRoute === 'DRIVER_VOUCHER' && linkedVoucher)) {
