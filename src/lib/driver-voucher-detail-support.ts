@@ -117,33 +117,82 @@ export function inferDriverVoucherDisbursementCount(value: Partial<Pick<DriverVo
     return initialCount + topUpCount;
 }
 
+function getPriorBonReferenceLabel(sequence: number) {
+    if (sequence <= 2) return 'Bon Pertama';
+    return 'Bon Pertama dan Bon Kedua';
+}
+
+function getFirstTwoBonAmount(input: {
+    disbursements?: DriverVoucherDisbursement[];
+    initialCashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    topUpAmount?: number | string | null;
+}) {
+    const ordered = input.disbursements
+        ? sortDriverVoucherDisbursementsChronologically(input.disbursements)
+        : [];
+    if (ordered.length > 0) {
+        return ordered
+            .slice(0, 2)
+            .reduce((sum, item) => sum + parseFormattedNumberish(item.amount || 0, { maxFractionDigits: 0 }), 0);
+    }
+
+    const initialCashGiven = Math.max(parseFormattedNumberish(input.initialCashGiven || 0, { maxFractionDigits: 0 }), 0);
+    const topUpAmount = Math.max(parseFormattedNumberish(input.topUpAmount || 0, { maxFractionDigits: 0 }), 0);
+    const totalIssuedAmount = Math.max(parseFormattedNumberish(input.totalIssuedAmount || 0, { maxFractionDigits: 0 }), 0);
+    if (totalIssuedAmount > 0 && initialCashGiven + topUpAmount <= 0) return totalIssuedAmount;
+    return initialCashGiven + topUpAmount;
+}
+
 export function buildDriverVoucherSettlementDisplay(input: {
     balance: number;
     disbursements?: DriverVoucherDisbursement[];
     fallbackDisbursementCount?: number;
+    initialCashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    topUpAmount?: number | string | null;
+    totalClaimAmount?: number | string | null;
 }) {
     const balance = parseFormattedNumberish(input.balance || 0, { maxFractionDigits: 0 });
     const activeDisbursementCount = input.disbursements
         ? sortDriverVoucherDisbursementsChronologically(input.disbursements).length
         : 0;
     const disbursementCount = Math.max(activeDisbursementCount, input.fallbackDisbursementCount || 0);
-    const closingBonLabel = `${formatDriverVoucherBonLabel(disbursementCount + 1)} Penutupan`;
+    const closingSequence = Math.max(2, Math.min(disbursementCount + 1, 3));
+    const closingBonLabel = `${formatDriverVoucherBonLabel(closingSequence)} Penutupan`;
+    const settlementAmount = Math.abs(balance);
+    const totalClaimAmount = Math.max(parseFormattedNumberish(input.totalClaimAmount || 0, { maxFractionDigits: 0 }), 0);
+    const firstTwoBonAmount = getFirstTwoBonAmount(input);
+    const closingBonAmount = balance < 0 && totalClaimAmount > 0 && firstTwoBonAmount > 0
+        ? Math.max(totalClaimAmount - firstTwoBonAmount, settlementAmount)
+        : settlementAmount;
+    const alreadyDisbursedClosingAmount = Math.max(closingBonAmount - settlementAmount, 0);
 
     if (balance < 0) {
+        const priorBonLabel = getPriorBonReferenceLabel(closingSequence);
+        const settlementNote = alreadyDisbursedClosingAmount > 0
+            ? ` Sudah tercatat di bon penutup ${formatCurrency(alreadyDisbursedClosingAmount)}, sisa dicairkan saat penutupan ${formatCurrency(settlementAmount)}.`
+            : ' Dicairkan saat penutupan trip.';
         return {
             label: closingBonLabel,
-            description: `${closingBonLabel}: tambahan bayar ke supir setelah biaya lain-lain dan upah borongan diperhitungkan`,
+            description: `${closingBonLabel}: total biaya dikurangi ${priorBonLabel}.${settlementNote}`,
             primaryActionLabel: 'Selesaikan & Catat Bon Penutupan',
             bankFieldLabel: `Rekening / Kas ${closingBonLabel}`,
+            amount: closingBonAmount,
+            settlementAmount,
+            alreadyDisbursedClosingAmount,
         };
     }
 
     if (balance > 0) {
         return {
             label: 'Pengembalian Sisa Bon',
-            description: 'Driver mengembalikan sisa bon ke rekening atau kas perusahaan',
+            description: 'Total uang diberikan lebih besar dari total biaya trip; driver mengembalikan selisih ke rekening atau kas perusahaan',
             primaryActionLabel: 'Selesaikan & Catat Pengembalian Sisa Bon',
             bankFieldLabel: 'Rekening / Kas Pengembalian Sisa Bon',
+            amount: settlementAmount,
+            settlementAmount,
+            alreadyDisbursedClosingAmount: 0,
         };
     }
 
@@ -152,6 +201,9 @@ export function buildDriverVoucherSettlementDisplay(input: {
         description: 'Tidak ada selisih uang jalan yang perlu dibayar atau dikembalikan',
         primaryActionLabel: 'Selesaikan Trip',
         bankFieldLabel: 'Rekening / Kas Penyelesaian',
+        amount: 0,
+        settlementAmount: 0,
+        alreadyDisbursedClosingAmount: 0,
     };
 }
 
@@ -192,6 +244,10 @@ export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, i
             ...(voucher || {}),
             topUpAmount,
         }),
+        initialCashGiven,
+        topUpAmount,
+        totalIssuedAmount,
+        totalClaimAmount,
     });
     const settlementLabel = settlementDisplay.description;
     const settlementPrimaryLabel = settlementDisplay.primaryActionLabel;
@@ -222,8 +278,8 @@ export function buildDriverVoucherPrintHtml(params: {
     const { voucher, deliveryOrder, items, disbursements, summary } = params;
     const {
         operationalSpent,
-        operationalBalance,
         driverFeeAmount,
+        totalClaimAmount,
         initialCashGiven,
         totalIssuedAmount,
         topUpAmount,
@@ -238,6 +294,10 @@ export function buildDriverVoucherPrintHtml(params: {
             ...voucher,
             topUpAmount,
         }),
+        initialCashGiven,
+        topUpAmount,
+        totalIssuedAmount,
+        totalClaimAmount,
     });
     const settlementColor = balance < 0 ? '#dc2626' : balance > 0 ? '#16a34a' : '#1e293b';
     const statusLabel = DRIVER_VOUCHER_STATUS_MAP[voucher.status || '']?.label || voucher.status || '-';
@@ -358,12 +418,12 @@ export function buildDriverVoucherPrintHtml(params: {
                 <div class="stat-value d">${escapePrintHtml(formatCurrency(operationalSpent))}</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Upah Borongan</div>
-                <div class="stat-value">${escapePrintHtml(formatCurrency(driverFeeAmount))}</div>
+                <div class="stat-label">Total Biaya</div>
+                <div class="stat-value">${escapePrintHtml(formatCurrency(totalClaimAmount))}</div>
             </div>
             <div class="stat-box">
                 <div class="stat-label">${escapePrintHtml(settlementDisplay.label)}</div>
-                <div class="stat-value" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</div>
+                <div class="stat-value" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(settlementDisplay.amount))}</div>
             </div>
         </div>
 
@@ -424,29 +484,36 @@ export function buildDriverVoucherPrintHtml(params: {
             <tbody>
                 <tr>
                     <td class="c b">=</td>
-                    <td class="b">Total Uang Jalan Diberikan</td>
-                    <td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td>
+                    <td class="b">Total Biaya</td>
+                    <td class="r b">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td>
                 </tr>
                 <tr>
                     <td class="c b">-</td>
+                    <td>Total Uang Jalan Diberikan</td>
+                    <td class="r b">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td>
+                </tr>
+                <tr>
+                    <td class="c b">&nbsp;</td>
                     <td>Biaya Lain-lain Aktual</td>
                     <td class="r">${escapePrintHtml(formatCurrency(operationalSpent))}</td>
                 </tr>
                 <tr>
-                    <td class="c b">=</td>
-                    <td class="b">Sisa Bon Operasional</td>
-                    <td class="r b">${escapePrintHtml(formatCurrency(operationalBalance))}</td>
-                </tr>
-                <tr>
-                    <td class="c b">-</td>
+                    <td class="c b">+</td>
                     <td>Upah Borongan</td>
                     <td class="r">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td>
                 </tr>
                 <tr style="border-top:2px solid #1e293b">
                     <td class="c b">=</td>
                     <td class="b">${escapePrintHtml(settlementDisplay.label)}</td>
-                    <td class="r b" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td>
+                    <td class="r b" style="color:${settlementColor}">${escapePrintHtml(formatCurrency(settlementDisplay.amount))}</td>
                 </tr>
+                ${settlementDisplay.amount !== settlementDisplay.settlementAmount ? `
+                    <tr>
+                        <td class="c b">&nbsp;</td>
+                        <td>Sisa dicairkan saat penutupan</td>
+                        <td class="r">${escapePrintHtml(formatCurrency(settlementDisplay.settlementAmount))}</td>
+                    </tr>
+                ` : ''}
             </tbody>
             </table>
         </div>

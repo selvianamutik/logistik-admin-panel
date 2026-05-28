@@ -367,17 +367,18 @@ export default function DriverDetailPage() {
                         <>
                             <div className="table-wrapper table-desktop-only">
                                 <table>
-                                    <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Penyelesaian Uang Jalan</th><th>Status</th></tr></thead>
+                                    <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Total Biaya</th><th>Penyelesaian Uang Jalan</th><th>Status</th></tr></thead>
                                     <tbody>
                                         {vouchers.length === 0 ? (
-                                            <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
+                                            <tr><td colSpan={10} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
                                         ) : vouchers.map(item => {
                                             const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
                                             const {
                                                 totalIssuedAmount,
                                                 totalSpent,
-                                                operationalBalance,
                                                 driverFeeAmount,
+                                                totalClaimAmount,
+                                                initialCashGiven,
                                                 topUpAmount,
                                                 balance,
                                             } = getDriverVoucherFinancialSummary(item);
@@ -387,6 +388,10 @@ export default function DriverDetailPage() {
                                                     ...item,
                                                     topUpAmount,
                                                 }),
+                                                initialCashGiven,
+                                                totalIssuedAmount,
+                                                topUpAmount,
+                                                totalClaimAmount,
                                             });
                                             return (
                                                 <tr key={item._id}>
@@ -402,10 +407,10 @@ export default function DriverDetailPage() {
                                                     <td>{formatCurrency(totalIssuedAmount)}</td>
                                                     <td>{formatCurrency(totalSpent)}</td>
                                                     <td>{formatCurrency(driverFeeAmount)}</td>
+                                                    <td>{formatCurrency(totalClaimAmount)}</td>
                                                     <td>
-                                                        <div>{formatCurrency(balance)}</div>
+                                                        <div>{formatCurrency(balance < 0 ? settlementDisplay.amount : balance)}</div>
                                                         <div className="text-muted text-sm">{settlementDisplay.label}</div>
-                                                        <div className="text-muted text-sm">Sisa bon: {formatCurrency(operationalBalance)}</div>
                                                     </td>
                                                     <td><span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span></td>
                                                 </tr>
@@ -423,6 +428,8 @@ export default function DriverDetailPage() {
                                         totalIssuedAmount,
                                         totalSpent,
                                         driverFeeAmount,
+                                        totalClaimAmount,
+                                        initialCashGiven,
                                         balance,
                                         topUpAmount,
                                     } = getDriverVoucherFinancialSummary(item);
@@ -432,6 +439,10 @@ export default function DriverDetailPage() {
                                             ...item,
                                             topUpAmount,
                                         }),
+                                        initialCashGiven,
+                                        totalIssuedAmount,
+                                        topUpAmount,
+                                        totalClaimAmount,
                                     });
                                     return (
                                         <div key={item._id} className="mobile-record-card">
@@ -460,8 +471,12 @@ export default function DriverDetailPage() {
                                                     <span className="mobile-record-value">{formatCurrency(driverFeeAmount)}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Total Biaya</span>
+                                                    <span className="mobile-record-value">{formatCurrency(totalClaimAmount)}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">{settlementDisplay.label}</span>
-                                                    <span className="mobile-record-value">{formatCurrency(balance)}</span>
+                                                    <span className="mobile-record-value">{formatCurrency(balance < 0 ? settlementDisplay.amount : balance)}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Top Up</span>

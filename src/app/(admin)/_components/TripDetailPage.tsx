@@ -4799,6 +4799,10 @@ export default function TripDetailPage() {
                 ...linkedVoucher,
                 topUpAmount: linkedVoucherSummary.topUpAmount,
             }),
+            initialCashGiven: linkedVoucherSummary.initialCashGiven,
+            topUpAmount: linkedVoucherSummary.topUpAmount,
+            totalIssuedAmount: linkedVoucherSummary.totalIssuedAmount,
+            totalClaimAmount: linkedVoucherSummary.totalClaimAmount,
         })
         : null;
     const linkedVoucherSettlementLabel = linkedVoucherSettlementDisplay?.description || '';
@@ -6529,6 +6533,12 @@ export default function TripDetailPage() {
                                 </div>
                                 <div className="detail-row">
                                     <div className="detail-item">
+                                        <div className="detail-label">Total Biaya</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalClaimAmount)}</div>
+                                    </div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
                                         <div className="detail-label">Total Uang Diberikan</div>
                                         <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</div>
                                         {linkedVoucherCashBreakdown && (
@@ -6541,11 +6551,14 @@ export default function TripDetailPage() {
                                             className="detail-value"
                                             style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}
                                         >
-                                            {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
+                                            {formatCurrency(linkedVoucherSettlementDisplay?.amount ?? Math.abs(linkedVoucherSummary.balance))}
                                         </div>
                                         <div className="text-muted text-sm">
                                             {linkedVoucherSettlementDisplay?.description || ''}
                                         </div>
+                                        {linkedVoucherSettlementDisplay && linkedVoucherSettlementDisplay.amount !== linkedVoucherSettlementDisplay.settlementAmount && (
+                                            <div className="text-muted text-sm">Sisa dicairkan saat penutupan: {formatCurrency(linkedVoucherSettlementDisplay.settlementAmount)}</div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="text-muted text-sm">
@@ -7861,9 +7874,13 @@ export default function TripDetailPage() {
                                         <div className="font-semibold">{formatCurrency(linkedVoucherSummary.driverFeeAmount)}</div>
                                     </div>
                                     <div>
+                                        <div className="text-muted text-sm">Total Biaya</div>
+                                        <div className="font-semibold">{formatCurrency(linkedVoucherSummary.totalClaimAmount)}</div>
+                                    </div>
+                                    <div>
                                         <div className="text-muted text-sm">{linkedVoucherSettlementDisplay?.label || 'Penyelesaian Uang Jalan'}</div>
                                         <div className="font-semibold" style={{ color: linkedVoucherSummary.balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                            {formatCurrency(Math.abs(linkedVoucherSummary.balance))}
+                                            {formatCurrency(linkedVoucherSettlementDisplay?.amount ?? Math.abs(linkedVoucherSummary.balance))}
                                         </div>
                                     </div>
                                 </div>
@@ -7898,12 +7915,15 @@ export default function TripDetailPage() {
                             <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>- {formatCurrency(linkedVoucherSummary.totalSpent)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(linkedVoucherSummary.operationalBalance)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>- {formatCurrency(linkedVoucherSummary.driverFeeAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem', borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.5rem' }}><span>Total Biaya</span><strong>{formatCurrency(linkedVoucherSummary.totalClaimAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-gray-200)', paddingTop: '0.5rem', marginBottom: linkedVoucherSettlementDisplay && linkedVoucherSettlementDisplay.amount !== linkedVoucherSettlementDisplay.settlementAmount ? '0.35rem' : 0 }}>
                                     <span>{linkedVoucherSettlementDisplay?.label || 'Penyelesaian Uang Jalan'}</span>
-                                    <strong style={{ color: linkedVoucherSummary.balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(linkedVoucherSummary.balance))}</strong>
+                                    <strong style={{ color: linkedVoucherSummary.balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(linkedVoucherSettlementDisplay?.amount ?? Math.abs(linkedVoucherSummary.balance))}</strong>
                                 </div>
+                                {linkedVoucherSettlementDisplay && linkedVoucherSettlementDisplay.amount !== linkedVoucherSettlementDisplay.settlementAmount && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sisa dicairkan saat penutupan</span><strong>{formatCurrency(linkedVoucherSettlementDisplay.settlementAmount)}</strong></div>
+                                )}
                             </div>
                         </div>
                         <div className="modal-footer">

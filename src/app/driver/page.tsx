@@ -4198,6 +4198,10 @@ export default function DriverPortalPage() {
                                     ...voucher,
                                     topUpAmount: summary.topUpAmount,
                                 }),
+                                initialCashGiven: summary.initialCashGiven,
+                                topUpAmount: summary.topUpAmount,
+                                totalIssuedAmount: summary.totalIssuedAmount,
+                                totalClaimAmount: summary.totalClaimAmount,
                             });
 
                             return (
@@ -4234,9 +4238,16 @@ export default function DriverPortalPage() {
                                                 <div className="detail-value">{formatCurrency(summary.driverFeeAmount)}</div>
                                             </div>
                                             <div className="detail-item">
+                                                <div className="detail-label">Total Biaya</div>
+                                                <div className="detail-value">{formatCurrency(summary.totalClaimAmount)}</div>
+                                            </div>
+                                            <div className="detail-item">
                                                 <div className="detail-label">{settlementDisplay.label}</div>
-                                                <div className="detail-value">{formatCurrency(Math.abs(summary.balance))}</div>
+                                                <div className="detail-value">{formatCurrency(settlementDisplay.amount)}</div>
                                                 <div className="text-muted text-sm">{settlementDisplay.description}</div>
+                                                {settlementDisplay.amount !== settlementDisplay.settlementAmount && (
+                                                    <div className="text-muted text-sm">Sisa dicairkan saat penutupan: {formatCurrency(settlementDisplay.settlementAmount)}</div>
+                                                )}
                                             </div>
                                             <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
                                                 <div className="detail-label">Rincian Bon</div>

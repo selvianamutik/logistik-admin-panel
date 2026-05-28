@@ -623,7 +623,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Total Hak Trip Pending
+                    Total Biaya Pending
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                     {formatCurrency(openVoucherClaims)}
@@ -693,8 +693,7 @@ export default function ReportsPage() {
                       <th style={{ textAlign: "right" }}>Total Diberikan</th>
                       <th style={{ textAlign: "right" }}>Biaya</th>
                       <th style={{ textAlign: "right" }}>Upah Trip</th>
-                      <th style={{ textAlign: "right" }}>Total Hak Trip</th>
-                      <th style={{ textAlign: "right" }}>Sisa Bon Operasional</th>
+                      <th style={{ textAlign: "right" }}>Total Biaya</th>
                       <th style={{ textAlign: "right" }}>Penyelesaian Uang Jalan</th>
                     </tr>
                   </thead>
@@ -702,7 +701,7 @@ export default function ReportsPage() {
                     {openDriverVouchers.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={9}
                           style={{
                             textAlign: "center",
                             padding: "2rem 1rem",
@@ -719,8 +718,8 @@ export default function ReportsPage() {
                           totalSpent,
                           driverFeeAmount,
                           totalClaimAmount,
+                          initialCashGiven,
                           topUpAmount,
-                          operationalBalance,
                           balance,
                         } = getDriverVoucherFinancialSummary(item);
                         const settlementDisplay = buildDriverVoucherSettlementDisplay({
@@ -729,6 +728,10 @@ export default function ReportsPage() {
                             ...item,
                             topUpAmount,
                           }),
+                          initialCashGiven,
+                          totalIssuedAmount,
+                          topUpAmount,
+                          totalClaimAmount,
                         });
                         return (
                           <tr key={item._id}>
@@ -753,24 +756,12 @@ export default function ReportsPage() {
                                 textAlign: "right",
                                 fontWeight: 700,
                                 color:
-                                  operationalBalance < 0
-                                    ? "var(--color-danger)"
-                                    : "var(--color-success)",
-                              }}
-                            >
-                              {formatCurrency(operationalBalance)}
-                            </td>
-                            <td
-                              style={{
-                                textAlign: "right",
-                                fontWeight: 700,
-                                color:
                                   balance < 0
                                     ? "var(--color-danger)"
                                     : "var(--color-success)",
                               }}
                             >
-                              <div>{formatCurrency(balance)}</div>
+                              <div>{formatCurrency(balance < 0 ? settlementDisplay.amount : balance)}</div>
                               <div className="text-muted text-sm">{settlementDisplay.label}</div>
                             </td>
                           </tr>
@@ -797,8 +788,8 @@ export default function ReportsPage() {
                       totalSpent,
                       driverFeeAmount,
                       totalClaimAmount,
+                      initialCashGiven,
                       topUpAmount,
-                      operationalBalance,
                       balance,
                     } = getDriverVoucherFinancialSummary(item);
                     const settlementDisplay = buildDriverVoucherSettlementDisplay({
@@ -807,6 +798,10 @@ export default function ReportsPage() {
                         ...item,
                         topUpAmount,
                       }),
+                      initialCashGiven,
+                      totalIssuedAmount,
+                      topUpAmount,
+                      totalClaimAmount,
                     });
                     return (
                       <div key={item._id} className="mobile-record-card">
@@ -847,24 +842,9 @@ export default function ReportsPage() {
                             </span>
                           </div>
                           <div className="mobile-record-kv">
-                            <span className="mobile-record-label">Total Hak Trip</span>
+                            <span className="mobile-record-label">Total Biaya</span>
                             <span className="mobile-record-value">
                               {formatCurrency(totalClaimAmount)}
-                            </span>
-                          </div>
-                          <div className="mobile-record-kv">
-                            <span className="mobile-record-label">Sisa Bon Operasional</span>
-                            <span
-                              className="mobile-record-value"
-                              style={{
-                                fontWeight: 700,
-                                color:
-                                  operationalBalance < 0
-                                    ? "var(--color-danger)"
-                                    : "var(--color-success)",
-                              }}
-                            >
-                              {formatCurrency(operationalBalance)}
                             </span>
                           </div>
                           <div className="mobile-record-kv">
@@ -879,7 +859,7 @@ export default function ReportsPage() {
                                     : "var(--color-success)",
                               }}
                             >
-                              {formatCurrency(balance)}
+                              {formatCurrency(balance < 0 ? settlementDisplay.amount : balance)}
                             </span>
                           </div>
                         </div>

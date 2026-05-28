@@ -130,7 +130,6 @@ export default function DriverVoucherDetailPage() {
 
     const {
         operationalSpent,
-        operationalBalance,
         driverFeeAmount,
         totalClaimAmount,
         initialCashGiven,
@@ -148,6 +147,10 @@ export default function DriverVoucherDetailPage() {
             ...(voucher || {}),
             topUpAmount,
         }),
+        initialCashGiven,
+        topUpAmount,
+        totalIssuedAmount,
+        totalClaimAmount,
     });
     const routeLabel = formatDriverVoucherRouteForDisplay(voucher?.route) || voucher?.route || '-';
     const linkedDoBaseTripFee =
@@ -709,10 +712,10 @@ export default function DriverVoucherDetailPage() {
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(operationalSpent)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Sisa Bon Operasional</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: operationalBalance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(operationalBalance))}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Biaya</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(totalClaimAmount)}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        {operationalBalance >= 0 ? 'Sisa dana operasional yang masih dipegang driver' : 'Biaya lain-lain melebihi uang jalan operasional'}
+                        Biaya lain-lain + upah borongan
                     </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
@@ -737,7 +740,7 @@ export default function DriverVoucherDetailPage() {
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{settlementDisplay.label}</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(settlementDisplay.amount)}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                         {settlementDisplay.description}
                     </div>
@@ -753,14 +756,15 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{routeLabel}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BON PERTAMA</div><div>{formatCurrency(initialCashGiven)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA BON OPERASIONAL</div><div>{formatCurrency(operationalBalance)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL BIAYA</div><div>{formatCurrency(totalClaimAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN</div><div>{formatCurrency(driverFeeAmount)}</div></div>
                         {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH DASAR DO</div><div>{formatCurrency(linkedDoBaseTripFee)}</div></div>}
                         {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TAMBAHAN OVERTONASE</div><div>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoOvertonaseAmount) : 'Menunggu aktual final'}</div></div>}
                         {linkedDeliveryOrder && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH BORONGAN FINAL DO</div><div>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</div></div>}
                         {linkedDeliveryOrder && linkedDoHasFinalActualWeight && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>BERAT AKTUAL FINAL</div><div>{linkedDeliveryOrder.actualTotalWeightKg} kg</div></div>}
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>{settlementDisplay.label.toUpperCase()}</div><div>{formatCurrency(balance)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>{settlementDisplay.label.toUpperCase()}</div><div>{formatCurrency(settlementDisplay.amount)}</div></div>
+                        {settlementDisplay.amount !== settlementDisplay.settlementAmount && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA DICAIRKAN SAAT PENUTUPAN</div><div>{formatCurrency(settlementDisplay.settlementAmount)}</div></div>}
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
                         {isSettled && voucher.settledDate && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TANGGAL SELESAI</div><div>{formatDate(voucher.settledDate)}</div></div>}
                         {isSettled && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING PENYELESAIAN</div><div>{voucher.settlementBankName || '-'}</div></div>}
@@ -1045,12 +1049,12 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Total Klaim Trip</div>
-                                        <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
+                                        <div className="text-muted text-sm">Biaya Lain-lain</div>
+                                        <div className="font-semibold">{formatCurrency(operationalSpent)}</div>
                                     </div>
                                     <div>
                                         <div className="text-muted text-sm">Penyelesaian Saat Ini</div>
-                                        <div className="font-semibold" style={{ color: balance < 0 ? 'var(--color-danger)' : 'inherit' }}>{formatCurrency(Math.abs(balance))}</div>
+                                        <div className="font-semibold" style={{ color: balance < 0 ? 'var(--color-danger)' : 'inherit' }}>{formatCurrency(settlementDisplay.amount)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1091,16 +1095,16 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Sisa Bon Operasional</div>
-                                        <div className="font-semibold" style={{ color: operationalBalance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(operationalBalance)}</div>
+                                        <div className="text-muted text-sm">Biaya Lain-lain</div>
+                                        <div className="font-semibold">{formatCurrency(operationalSpent)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Total Klaim Trip</div>
+                                        <div className="text-muted text-sm">Total Biaya</div>
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
                                         <div className="text-muted text-sm">{settlementDisplay.label}</div>
-                                        <div className="font-semibold" style={{ color: balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(Math.abs(balance))}</div>
+                                        <div className="font-semibold" style={{ color: balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(settlementDisplay.amount)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1121,13 +1125,15 @@ export default function DriverVoucherDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Bon Tambahan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Lain-lain</span><strong>{formatCurrency(operationalSpent)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>
                                 {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Dasar DO</span><strong>{formatCurrency(linkedDoBaseTripFee)}</strong></div>}
                                 {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Tambahan Overtonase</span><strong>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoOvertonaseAmount) : 'Menunggu aktual final'}</strong></div>}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
                                 {linkedDeliveryOrder && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Borongan Final DO</span><strong>{linkedDoHasFinalActualWeight ? formatCurrency(linkedDoFinalTripFee) : 'Menunggu aktual final'}</strong></div>}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Klaim Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{settlementDisplay.label}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Biaya</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: settlementDisplay.amount !== settlementDisplay.settlementAmount ? '0.35rem' : 0 }}><span>{settlementDisplay.label}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(settlementDisplay.amount)}</strong></div>
+                                {settlementDisplay.amount !== settlementDisplay.settlementAmount && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sisa dicairkan saat penutupan</span><strong>{formatCurrency(settlementDisplay.settlementAmount)}</strong></div>
+                                )}
                             </div>
                         </div>
                         <div className="modal-footer">
