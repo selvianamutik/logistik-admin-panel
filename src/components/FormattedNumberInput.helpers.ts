@@ -40,6 +40,11 @@ function parseGroupedDigits(parts: string[]) {
   return digits ? Number(digits) : 0;
 }
 
+function canTreatSingleSeparatorAsGrouping(integerPart: string, fractionPart: string) {
+  const normalizedIntegerPart = integerPart.replace(/^0+(?=\d)/, "");
+  return fractionPart.length === 3 && integerPart.length > 0 && normalizedIntegerPart !== "0";
+}
+
 function parseIntegerLikeInput(cleaned: string) {
   const commaCount = (cleaned.match(/,/g) || []).length;
   const dotCount = (cleaned.match(/\./g) || []).length;
@@ -60,7 +65,7 @@ function parseIntegerLikeInput(cleaned: string) {
       return integerPart ? Number(integerPart.replace(/^0+(?=\d)/, "")) : 0;
     }
 
-    if (fractionPart.length === 3 && integerPart.length > 0) {
+    if (canTreatSingleSeparatorAsGrouping(integerPart, fractionPart)) {
       const grouped = parseGroupedDigits(parts);
       if (grouped !== null) {
         return grouped;
@@ -129,7 +134,12 @@ export function parseFormattedNumberInput(
       const integerPart = left.replace(/\D/g, "");
       const fractionPart = right.replace(/\D/g, "");
 
-      if (fractionPart.length === 3 && integerPart.length > 0) {
+      if (integerPart.replace(/^0+/, "") === "" && fractionPart.length > 0) {
+        const parsed = parseDecimalParts(left, right);
+        return isNegative && parsed !== 0 ? -parsed : parsed;
+      }
+
+      if (canTreatSingleSeparatorAsGrouping(integerPart, fractionPart)) {
         const grouped = parseGroupedDigits(parts);
         if (grouped !== null) {
           return isNegative && grouped !== 0 ? -grouped : grouped;

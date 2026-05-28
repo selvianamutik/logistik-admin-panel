@@ -13,14 +13,13 @@ type TripResourceCandidate = Pick<
 
 const LOCKING_DELIVERY_ORDER_STATUS_FILTER: DeliveryOrder['status'][] = [
     'CREATED',
-    'HEADING_TO_PICKUP',
     'ON_DELIVERY',
     'ARRIVED',
     'PARTIAL_HOLD',
     'DELIVERED',
 ];
 
-const LOCKING_ORDER_STATUS_FILTER: Order['status'][] = ['OPEN', 'PARTIAL', 'ON_HOLD'];
+const LOCKING_ORDER_STATUS_FILTER: Order['status'][] = ['OPEN', 'PARTIAL'];
 
 function describeTripCandidate(candidate: TripResourceCandidate, index: number) {
     return `Trip ${candidate.sequence || index + 1}`;

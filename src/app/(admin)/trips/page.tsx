@@ -113,7 +113,7 @@ export default function TripsPage() {
         [items, search, statusFilter]
     );
     const pageItems = filteredItems.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
-    const activeTripCount = items.filter(item => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)).length;
+    const activeTripCount = items.filter(item => ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)).length;
     const pendingApprovalCount = items.filter(item => item.pendingDriverStatus).length;
     const completedCount = items.filter(item => item.status === 'DELIVERED').length;
 

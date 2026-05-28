@@ -445,21 +445,23 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         .map((trip) {
           if (trip.shipperReferences.isEmpty) return trip;
           var changed = false;
-          final references = trip.shipperReferences.map((reference) {
-            final shouldForceCreated = _referenceIdentityCandidates(
-              trip.deliveryOrderId,
-              documentId: reference.documentId,
-              referenceKey: reference.key,
-              referenceNumber: reference.referenceNumber,
-            ).any(_createdShipperReferenceStatusOverrides.contains);
-            if (!shouldForceCreated) return reference;
-            if ((reference.tripStatus ?? '').trim().toUpperCase() ==
-                'CREATED') {
-              return reference;
-            }
-            changed = true;
-            return reference.copyWith(tripStatus: 'CREATED');
-          }).toList(growable: false);
+          final references = trip.shipperReferences
+              .map((reference) {
+                final shouldForceCreated = _referenceIdentityCandidates(
+                  trip.deliveryOrderId,
+                  documentId: reference.documentId,
+                  referenceKey: reference.key,
+                  referenceNumber: reference.referenceNumber,
+                ).any(_createdShipperReferenceStatusOverrides.contains);
+                if (!shouldForceCreated) return reference;
+                if ((reference.tripStatus ?? '').trim().toUpperCase() ==
+                    'CREATED') {
+                  return reference;
+                }
+                changed = true;
+                return reference.copyWith(tripStatus: 'CREATED');
+              })
+              .toList(growable: false);
           return changed ? trip.copyWith(shipperReferences: references) : trip;
         })
         .toList(growable: false);
@@ -477,11 +479,9 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     final normalizedNumber = referenceNumber?.trim().toUpperCase();
     return <String>{
       if (normalizedDocumentId?.isNotEmpty == true) normalizedDocumentId!,
-      if (normalizedOrderId.isNotEmpty &&
-          normalizedKey?.isNotEmpty == true)
+      if (normalizedOrderId.isNotEmpty && normalizedKey?.isNotEmpty == true)
         '$normalizedOrderId:$normalizedKey',
-      if (normalizedOrderId.isNotEmpty &&
-          normalizedNumber?.isNotEmpty == true)
+      if (normalizedOrderId.isNotEmpty && normalizedNumber?.isNotEmpty == true)
         '$normalizedOrderId:$normalizedNumber',
       if (normalizedKey?.isNotEmpty == true) normalizedKey!,
       if (normalizedNumber?.isNotEmpty == true) normalizedNumber!,
@@ -611,7 +611,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     return switch (trip.status) {
       TripStatus.assigned ||
-      TripStatus.headingToPickup ||
       TripStatus.onDelivery ||
       TripStatus.arrived ||
       TripStatus.partialHold ||
@@ -622,7 +621,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   TripStatus? _preferredSuratJalanStatus(DeliveryTrip trip) {
     return switch (trip.status) {
       TripStatus.assigned => TripStatus.onDelivery,
-      TripStatus.headingToPickup => TripStatus.onDelivery,
       TripStatus.onDelivery => TripStatus.arrived,
       TripStatus.arrived => TripStatus.delivered,
       TripStatus.partialHold => TripStatus.onDelivery,
@@ -669,11 +667,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   ) {
     final currentStatus = _referenceStatusForBatch(trip, reference);
     return switch (nextStatus) {
-      TripStatus.headingToPickup => false,
       TripStatus.onDelivery =>
-        currentStatus == 'CREATED' ||
-            currentStatus == 'HEADING_TO_PICKUP' ||
-            currentStatus == 'PARTIAL_HOLD',
+        currentStatus == 'CREATED' || currentStatus == 'PARTIAL_HOLD',
       TripStatus.arrived => currentStatus == 'ON_DELIVERY',
       TripStatus.delivered =>
         reference.canRequestFinalization && currentStatus == 'ARRIVED',
@@ -794,7 +789,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
     const orderedStatuses = [
       'CREATED',
-      'HEADING_TO_PICKUP',
       'ON_DELIVERY',
       'ARRIVED',
       'PARTIAL_HOLD',
@@ -930,6 +924,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               allowsDirectCargoInput: trip.allowsDirectCargoInput,
               initialShipperReferences: trip.shipperReferences,
               existingCargoItems: trip.cargoItems,
+              existingActualDropPoints: trip.actualDropPoints,
             ),
           ),
         );
@@ -1223,7 +1218,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
     }
     return switch (trip.status) {
       TripStatus.assigned ||
-      TripStatus.headingToPickup ||
       TripStatus.onDelivery ||
       TripStatus.arrived ||
       TripStatus.partialHold => true,
@@ -1956,9 +1950,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       );
       await _loadTrips();
       if (!mounted) return;
-      _showSuccess(
-        'Penyelesaian insiden dikirim. Menunggu review admin.',
-      );
+      _showSuccess('Penyelesaian insiden dikirim. Menunggu review admin.');
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
       _showError(err.message);
@@ -2170,8 +2162,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
 
   String _statusNoteForUpdate(TripStatus status) {
     return switch (status) {
-      TripStatus.headingToPickup =>
-        'Driver menyiapkan perjalanan via driver app',
       TripStatus.onDelivery => 'Pengiriman dimulai via driver app',
       TripStatus.arrived => 'Driver menandai sudah tiba via driver app',
       TripStatus.partialHold =>
@@ -2777,11 +2767,7 @@ class _TripClosureWarning extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: scheme.error,
-            size: 18,
-          ),
+          Icon(Icons.warning_amber_rounded, color: scheme.error, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -4847,9 +4833,7 @@ class _DriverIncidentCard extends StatelessWidget {
                           height: 16,
                           child: CircularProgressIndicator.adaptive(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(
-                              scheme.primary,
-                            ),
+                            valueColor: AlwaysStoppedAnimation(scheme.primary),
                           ),
                         )
                       : const Icon(Icons.receipt_long_rounded),
@@ -4860,7 +4844,9 @@ class _DriverIncidentCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: busy ? null : () => onSubmitResolution(actionIncident),
+                  onPressed: busy
+                      ? null
+                      : () => onSubmitResolution(actionIncident),
                   icon: busy
                       ? SizedBox(
                           width: 16,
@@ -5078,6 +5064,15 @@ class _TripDetailCard extends StatelessWidget {
                 value: trip.itemSummary!,
               ),
             ],
+            if (trip.hasRejectedDriverRequestNotice) ...[
+              const SizedBox(height: 12),
+              _DetailNote(
+                icon: Icons.warning_amber_rounded,
+                label: 'Permintaan Driver Ditolak',
+                value: trip.rejectedRequestNote!.trim(),
+                tone: _DetailNoteTone.warning,
+              ),
+            ],
           ],
         ),
       ),
@@ -5141,16 +5136,20 @@ class _DetailTile extends StatelessWidget {
   }
 }
 
+enum _DetailNoteTone { neutral, warning }
+
 class _DetailNote extends StatelessWidget {
   const _DetailNote({
     required this.icon,
     required this.label,
     required this.value,
+    this.tone = _DetailNoteTone.neutral,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final _DetailNoteTone tone;
 
   @override
   Widget build(BuildContext context) {
@@ -5159,14 +5158,26 @@ class _DetailNote extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: scheme.surface,
+        color: tone == _DetailNoteTone.warning
+            ? scheme.errorContainer.withValues(alpha: 0.45)
+            : scheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: tone == _DetailNoteTone.warning
+              ? scheme.error.withValues(alpha: 0.35)
+              : scheme.outline.withValues(alpha: 0.4),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: scheme.primary),
+          Icon(
+            icon,
+            size: 15,
+            color: tone == _DetailNoteTone.warning
+                ? scheme.error
+                : scheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -5475,7 +5486,6 @@ class _CloseTripButton extends StatelessWidget {
 Color _deliveryStatusColor(String status, ColorScheme scheme) {
   return switch (status.trim().toUpperCase()) {
     'CREATED' => const Color(0xFF64748B),
-    'HEADING_TO_PICKUP' => const Color(0xFF2563EB),
     'ON_DELIVERY' => scheme.primary,
     'ARRIVED' => const Color(0xFFB45309),
     'PARTIAL_HOLD' => const Color(0xFFB45309),

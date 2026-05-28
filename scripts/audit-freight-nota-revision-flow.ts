@@ -360,7 +360,7 @@ function pickFixtureResources(params: {
     deliveryOrders: DeliveryOrder[];
 }) {
     const activeDeliveryOrders = params.deliveryOrders.filter(item =>
-        ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status))
+        ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status))
     );
     const busyVehicleIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.vehicleRef)).filter(Boolean));
     const busyDriverIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.driverRef)).filter(Boolean));

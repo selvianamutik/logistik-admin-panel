@@ -85,7 +85,7 @@ export default function DriverDetailPage() {
 
     const account = useMemo(() => buildDriverAccountMap(accounts).get(driverId), [accounts, driverId]);
     const activeTrip = useMemo(
-        () => deliveryOrders.find(item => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)),
+        () => deliveryOrders.find(item => ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)),
         [deliveryOrders]
     );
     const unsettledVoucherCount = useMemo(() => vouchers.filter(item => item.status !== 'SETTLED').length, [vouchers]);

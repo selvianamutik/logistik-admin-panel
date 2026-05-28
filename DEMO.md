@@ -119,7 +119,6 @@ Hal penting:
 2. Buka daftar DO driver.
 3. Mulai tracking.
 4. Ubah progres:
-- `HEADING_TO_PICKUP`
 - `ON_DELIVERY`
 - `ARRIVED`
 5. Untuk `DELIVERED`, jelaskan bahwa driver hanya mengajukan, admin yang menyetujui.

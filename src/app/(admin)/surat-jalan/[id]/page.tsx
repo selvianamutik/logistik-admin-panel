@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { Edit, FileText, MapPin, Plus, Save, Truck, X } from 'lucide-react';
+import { FileText, MapPin, Plus, Save, Truck, X } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -1718,16 +1718,6 @@ export default function SuratJalanDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {isDeliveredStatus && canManageDeliveryStatus && !deliveryOrder.tripClosedByAdminAt && (
-                        <button className="btn btn-secondary" onClick={openActualEditModal} disabled={deliveredItemCount === 0} title={deliveredItemCount === 0 ? 'Belum ada item terkirim aktual' : 'Edit aktual item terkirim'}>
-                            <Edit size={16} /> Edit Aktual
-                        </button>
-                    )}
-                    {canEditSuratJalan && !deliveryOrder.tripClosedByAdminAt && (
-                        <button className="btn btn-primary" onClick={openEditModal}>
-                            <Edit size={16} /> Edit SJ
-                        </button>
-                    )}
                     {canManageDeliveryStatus && availableStatuses.length > 0 && (
                         <button className="btn btn-secondary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> Update SJ Ini

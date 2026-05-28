@@ -14,6 +14,7 @@ import type { DeliveryOrder, DriverVoucher, Order, Service } from '@/lib/types';
 
 type TripCashStatusCode = 'NO_DO' | 'NEEDS_BON' | 'BON_DRAFT' | 'BON_ISSUED' | 'BON_SETTLED' | 'NOT_REQUIRED';
 type TripCashStatusMeta = { code: TripCashStatusCode; label: string; color: string };
+const ORDER_STATUS_FILTER_OPTIONS = Object.entries(ORDER_STATUS_MAP).filter(([status]) => status !== 'ON_HOLD');
 
 const getTripCashStatusMeta = (order: Order, deliveryOrders: DeliveryOrder[], voucherByDeliveryOrderRef: Map<string, DriverVoucher>): TripCashStatusMeta => {
     if (order.status === 'CANCELLED') {
@@ -59,8 +60,6 @@ const getNextActionLabel = (order: Order, tripCashStatus?: TripCashStatusMeta) =
             return 'Buat trip pertama';
         case 'PARTIAL':
             return 'Lanjutkan sisa pengiriman';
-        case 'ON_HOLD':
-            return 'Cek alasan hold';
         case 'COMPLETE':
             return 'Siap ditagih / arsip';
         case 'CANCELLED':
@@ -187,10 +186,8 @@ export default function OrdersPage() {
                 (totals, order) => {
                     if (order.status === 'OPEN') {
                         totals.needDispatch += 1;
-                    } else if (order.status === 'PARTIAL') {
+                    } else if (order.status === 'PARTIAL' || order.status === 'ON_HOLD') {
                         totals.inProgress += 1;
-                    } else if (order.status === 'ON_HOLD') {
-                        totals.onHold += 1;
                     }
                     return totals;
                 },
@@ -326,7 +323,7 @@ export default function OrdersPage() {
                             onChange={e => setStatusFilter(e.target.value)}
                         >
                             <option value="">Semua Status</option>
-                            {Object.entries(ORDER_STATUS_MAP).map(([k, v]) => (
+                            {ORDER_STATUS_FILTER_OPTIONS.map(([k, v]) => (
                                 <option key={k} value={k}>{v.label}</option>
                             ))}
                         </select>

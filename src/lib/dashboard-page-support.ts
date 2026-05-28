@@ -30,8 +30,6 @@ export function getRecentOrderAction(status: string) {
             return 'Buat trip pertama';
         case 'PARTIAL':
             return 'Lanjutkan sisa pengiriman';
-        case 'ON_HOLD':
-            return 'Cek alasan hold';
         case 'COMPLETE':
             return 'Siap ditagih / arsip';
         default:

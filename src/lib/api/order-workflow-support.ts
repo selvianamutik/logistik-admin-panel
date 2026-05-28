@@ -214,7 +214,6 @@ const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
 ]);
 export const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CREATED: ['ON_DELIVERY', 'CANCELLED'],
-    HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
     ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
     ARRIVED: ['DELIVERED', 'CANCELLED'],
     PARTIAL_HOLD: ['ON_DELIVERY', 'CANCELLED'],
@@ -313,17 +312,23 @@ export function buildDriverRequestedTrackingStatus(status: string) {
 }
 
 export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
-    const derivedItemStatuses = items.map(item =>
-        deriveOrderItemStatusFromProgress(getOrderItemProgress(item))
-    );
+    const itemProgress = items.map(item => getOrderItemProgress(item));
+    const derivedItemStatuses = itemProgress.map(progress => deriveOrderItemStatusFromProgress(progress));
     const allDelivered = derivedItemStatuses.length > 0 && derivedItemStatuses.every(status => status === 'DELIVERED');
-    const anyDelivered = derivedItemStatuses.some(status => status === 'DELIVERED' || status === 'PARTIAL');
-    const anyAssigned = derivedItemStatuses.some(status => status === 'ASSIGNED' || status === 'ON_DELIVERY');
-    const anyNonDeliveryResolved = derivedItemStatuses.some(status => status === 'HOLD' || status === 'RETURNED');
+    const anyDelivered = itemProgress.some(progress =>
+        progress.deliveredQtyKoli > 0 ||
+        progress.deliveredWeight > 0 ||
+        progress.deliveredVolume > 0
+    );
+    const anyHeld = itemProgress.some(progress =>
+        progress.heldQtyKoli > 0 ||
+        progress.heldWeight > 0 ||
+        progress.heldVolume > 0
+    );
+    const anyHeldStatus = derivedItemStatuses.some(status => status === 'HOLD');
 
     if (allDelivered) return 'COMPLETE';
-    if (anyDelivered) return 'PARTIAL';
-    if (anyNonDeliveryResolved && !anyAssigned) return 'ON_HOLD';
+    if (anyDelivered || anyHeld || anyHeldStatus) return 'PARTIAL';
     return 'OPEN';
 }
 

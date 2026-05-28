@@ -651,7 +651,6 @@ export interface OrderItem {
 // ── Delivery Order ──
 export type DOStatus =
     | 'CREATED'
-    | 'HEADING_TO_PICKUP'
     | 'ON_DELIVERY'
     | 'ARRIVED'
     | 'PARTIAL_HOLD'

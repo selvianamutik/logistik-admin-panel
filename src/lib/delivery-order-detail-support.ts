@@ -7,7 +7,7 @@ import type {
     TrackingLog,
     Vehicle,
 } from '@/lib/types';
-import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
+import { formatFormattedNumberValue, parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import {
     calculateVolumePortion,
     calculateWeightPortion,
@@ -150,19 +150,21 @@ export function buildActualCargoDraft(
     const actualVolumeInputUnit = pendingDraft?.actualVolumeInputUnit || item.actualVolumeInputUnit || plannedVolumeInputUnit || 'M3';
     const actualVolumeInputValue =
         pendingDraft?.actualVolumeInputValue !== undefined && pendingDraft.actualVolumeInputValue !== null
-            ? String(
+            ? formatActualDropNumberValue(
                 parseFormattedNumberish(pendingDraft.actualVolumeInputValue, {
                     maxFractionDigits: actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                })
+                }),
+                actualVolumeInputUnit === 'LITER' ? 0 : 3
             )
             : item.actualVolumeInputValue !== undefined && item.actualVolumeInputValue !== null
-            ? String(
+            ? formatActualDropNumberValue(
                 parseFormattedNumberish(item.actualVolumeInputValue, {
                     maxFractionDigits: actualVolumeInputUnit === 'LITER' ? 0 : 3,
-                })
+                }),
+                actualVolumeInputUnit === 'LITER' ? 0 : 3
             )
             : plannedVolumeM3 > 0
-                ? String(convertM3ToVolumeInputValue(parseFormattedNumberish(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), actualVolumeInputUnit))
+                ? formatActualDropNumberValue(convertM3ToVolumeInputValue(parseFormattedNumberish(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), actualVolumeInputUnit), actualVolumeInputUnit === 'LITER' ? 0 : 3)
                 : '';
     const initialDraft: ActualCargoDraft = {
         deliveryOrderItemRef: item._id,
@@ -314,11 +316,11 @@ export function applyActualCargoAutoWeightFromQty(
         : currentVolumeM3;
     const actualWeightInputValue =
         shouldAutoWeight && weightKg > 0
-            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
+            ? formatActualDropNumberValue(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)), getWeightInputFractionDigits(nextUnit))
             : '';
     const actualVolumeInputValue =
         volumeM3 > 0
-            ? String(roundQuantity(convertM3ToVolumeInputValue(volumeM3, item.actualVolumeInputUnit), item.actualVolumeInputUnit === 'LITER' ? 0 : 3))
+            ? formatActualDropNumberValue(roundQuantity(convertM3ToVolumeInputValue(volumeM3, item.actualVolumeInputUnit), item.actualVolumeInputUnit === 'LITER' ? 0 : 3), item.actualVolumeInputUnit === 'LITER' ? 0 : 3)
             : '';
 
     return {
@@ -360,6 +362,31 @@ export function updateActualDropDraftWeightUnit(drop: ActualDropDraft, nextUnit:
         weightInputUnit: nextUnit,
         weightInputValue: currentWeightKg > 0
             ? String(roundQuantity(convertKgToWeightInputValue(currentWeightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
+            : '',
+    };
+}
+
+export function updateActualDropDraftVolumeUnit(drop: ActualDropDraft, nextUnit: VolumeInputUnit): ActualDropDraft {
+    if (drop.volumeInputUnit === nextUnit) {
+        return drop;
+    }
+
+    const currentVolumeInputValue = parseFormattedNumberish(drop.volumeInputValue || 0, {
+        maxFractionDigits: drop.volumeInputUnit === 'LITER' ? 0 : 3,
+    });
+    const currentVolumeM3 =
+        currentVolumeInputValue > 0
+            ? convertVolumeToM3(currentVolumeInputValue, drop.volumeInputUnit)
+            : 0;
+
+    return {
+        ...drop,
+        volumeInputUnit: nextUnit,
+        volumeInputValue: currentVolumeM3 > 0
+            ? formatActualDropNumberValue(
+                roundQuantity(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit), nextUnit === 'LITER' ? 0 : 3),
+                nextUnit === 'LITER' ? 0 : 3
+            )
             : '',
     };
 }
@@ -449,12 +476,12 @@ export function applyActualDropAutoWeightFromQty(
     return {
         ...drop,
         qtyKoli: String(nextQtyKoli),
-        weightInputValue: shouldAutoWeight && weightKg > 0
-            ? String(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)))
+        weightInputValue: shouldAutoWeight
+            ? formatActualDropNumberValue(roundQuantity(convertKgToWeightInputValue(weightKg, nextUnit), getWeightInputFractionDigits(nextUnit)), getWeightInputFractionDigits(nextUnit))
             : drop.weightInputValue,
         weightInputUnit: nextUnit,
-        volumeInputValue: shouldAutoVolume && volumeM3 > 0
-            ? String(roundQuantity(convertM3ToVolumeInputValue(volumeM3, drop.volumeInputUnit), drop.volumeInputUnit === 'LITER' ? 0 : 3))
+        volumeInputValue: shouldAutoVolume
+            ? formatActualDropNumberValue(roundQuantity(convertM3ToVolumeInputValue(volumeM3, drop.volumeInputUnit), drop.volumeInputUnit === 'LITER' ? 0 : 3), drop.volumeInputUnit === 'LITER' ? 0 : 3)
             : drop.volumeInputValue,
         autoWeightBasisQtyKoli: basisQtyKoli > 0 ? basisQtyKoli : undefined,
         autoWeightBasisWeightKg: basisWeightKg > 0 ? basisWeightKg : undefined,
@@ -479,7 +506,7 @@ export function updateActualCargoDraftVolumeUnit(item: ActualCargoDraft, nextUni
     return {
         ...item,
         actualVolumeInputUnit: nextUnit,
-        actualVolumeInputValue: currentVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit)) : '',
+        actualVolumeInputValue: currentVolumeM3 > 0 ? formatActualDropNumberValue(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit), nextUnit === 'LITER' ? 0 : 3) : '',
     };
 }
 
@@ -622,6 +649,10 @@ export function summarizeActualDropDrafts(items: ActualDropDraft[]) {
     };
 }
 
+function formatActualDropNumberValue(value: number, maxFractionDigits: number) {
+    return formatFormattedNumberValue(value, true, maxFractionDigits, true);
+}
+
 function getActualDropMismatchMessage(
     actualCargoTotals: DeliveryOrderDetailState['actualCargoTotals'],
     actualDropTotals: DeliveryOrderDetailState['actualDropTotals']
@@ -715,17 +746,17 @@ export function buildDefaultActualDropDrafts(
             originLocationAddress: point.originLocationAddress || '',
             locationName: point.locationName || '',
             locationAddress: point.locationAddress || '',
-            qtyKoli: point.qtyKoli !== undefined ? String(point.qtyKoli) : '',
+            qtyKoli: point.qtyKoli !== undefined ? formatActualDropNumberValue(point.qtyKoli, 2) : '',
             weightInputValue: point.weightInputValue !== undefined
-                ? String(point.weightInputValue)
+                ? formatActualDropNumberValue(point.weightInputValue, getWeightInputFractionDigits(point.weightInputUnit || 'KG'))
                 : point.weightKg !== undefined
-                    ? String(point.weightKg)
+                    ? formatActualDropNumberValue(point.weightKg, 2)
                     : '',
             weightInputUnit: point.weightInputUnit || 'KG',
             volumeInputValue: point.volumeInputValue !== undefined
-                ? String(point.volumeInputValue)
+                ? formatActualDropNumberValue(point.volumeInputValue, (point.volumeInputUnit || 'M3') === 'LITER' ? 0 : 3)
                 : point.volumeM3 !== undefined
-                    ? String(point.volumeM3)
+                    ? formatActualDropNumberValue(point.volumeM3, 3)
                     : '',
             volumeInputUnit: point.volumeInputUnit || 'M3',
             note: point.note || '',
@@ -757,10 +788,10 @@ export function buildDefaultActualDropDrafts(
         originLocationAddress: '',
         locationName,
         locationAddress,
-        qtyKoli: itemTotals.qtyKoli > 0 ? String(itemTotals.qtyKoli) : '',
-        weightInputValue: itemTotals.weightKg > 0 ? String(itemTotals.weightKg) : '',
+        qtyKoli: formatActualDropNumberValue(itemTotals.qtyKoli, 2),
+        weightInputValue: formatActualDropNumberValue(itemTotals.weightKg, 2),
         weightInputUnit: 'KG',
-        volumeInputValue: itemTotals.volumeM3 > 0 ? String(itemTotals.volumeM3) : '',
+        volumeInputValue: formatActualDropNumberValue(itemTotals.volumeM3, 3),
         volumeInputUnit: 'M3',
         note: '',
         };
@@ -791,10 +822,10 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
         originLocationAddress: '',
         locationName: defaultTarget.locationName,
         locationAddress: defaultTarget.locationAddress,
-        qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
-        weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
+        qtyKoli: formatActualDropNumberValue(totals.qtyKoli, 2),
+        weightInputValue: formatActualDropNumberValue(totals.weightKg, 2),
         weightInputUnit: 'KG',
-        volumeInputValue: totals.volumeM3 > 0 ? String(totals.volumeM3) : '',
+        volumeInputValue: formatActualDropNumberValue(totals.volumeM3, 3),
         volumeInputUnit: 'M3',
         note: '',
     };
@@ -818,7 +849,6 @@ export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropD
 export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
         CREATED: ['ON_DELIVERY'],
-        HEADING_TO_PICKUP: ['ON_DELIVERY'],
         ON_DELIVERY: ['ARRIVED'],
         ARRIVED: ['DELIVERED'],
         PARTIAL_HOLD: ['ON_DELIVERY'],

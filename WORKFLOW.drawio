@@ -451,7 +451,7 @@
         <mxCell id="p3" value="Start / resume tracking&#xa;+ lock driver ke DO aktif" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="1440" y="180" width="210" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="Heartbeat dan update status live&#xa;HEADING_TO_PICKUP / ON_DELIVERY / ARRIVED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+        <mxCell id="p4" value="Heartbeat dan update status live&#xa;ON_DELIVERY / ARRIVED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
           <mxGeometry x="1730" y="180" width="220" height="80" as="geometry" />
         </mxCell>
         <mxCell id="d3" value="Pause diminta?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">

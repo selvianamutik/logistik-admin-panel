@@ -317,7 +317,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
+            if (!['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
                 return jsonNoStore({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
             }
 

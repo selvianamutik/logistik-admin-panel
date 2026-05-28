@@ -23,6 +23,7 @@ import type {
     OrderPickupStop,
     OrderTripPlan,
     SessionUser,
+    TrackingLog,
     User,
     Vehicle,
 } from '@/lib/types';
@@ -49,6 +50,9 @@ export type DriverAssignedDeliveryOrder = DeliveryOrder & {
     allowsDirectCargoInput?: boolean;
     vehicleLastOdometer?: number;
     vehicleLastOdometerAt?: string;
+    driverRejectedRequestStatus?: string;
+    driverRejectedRequestNote?: string;
+    driverRejectedRequestAt?: string;
 };
 
 export type DriverAssignedTripPlanPickupStop = {
@@ -216,7 +220,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
 
     const orderRefs = [...new Set(deliveryOrders.map(item => item.orderRef).filter((value): value is string => typeof value === 'string' && value.length > 0))];
     const vehicleRefs = [...new Set(deliveryOrders.map(item => item.vehicleRef).filter((value): value is string => typeof value === 'string' && value.length > 0))];
-    const [orders, cargoItems, suratJalanRecords, directCargoCapabilities, vehicles] = await Promise.all([
+    const [orders, cargoItems, suratJalanRecords, directCargoCapabilities, vehicles, rejectedRequestLogs] = await Promise.all([
         orderRefs.length > 0 ? listDocumentsByFilter<Array<Record<string, unknown> & { _id: string }>[number]>('order', { _id: orderRefs }) : Promise.resolve([]),
         listDocumentsByFilter<DeliveryOrderItem & { _createdAt?: string }>('deliveryOrderItem', {
             deliveryOrderRef: deliveryOrders.map(item => item._id),
@@ -228,6 +232,11 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         vehicleRefs.length > 0
             ? listDocumentsByFilter<Pick<Vehicle, '_id' | 'lastOdometer' | 'lastOdometerAt'>>('vehicle', { _id: vehicleRefs })
             : Promise.resolve([]),
+        listDocumentsByFilter<Pick<TrackingLog, 'refRef' | 'status' | 'note' | 'timestamp'>>('trackingLog', {
+            refType: 'DO',
+            refRef: deliveryOrders.map(item => item._id),
+            status: 'DRIVER_REQUEST_REJECTED',
+        }),
     ]);
 
     const orderMap = new Map(orders.map(order => [order._id, order]));
@@ -244,6 +253,15 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         current.push(item);
         suratJalanByTripRef.set(item.tripRef, current);
     }
+    const latestRejectedRequestLogByDeliveryOrderRef = new Map<string, Pick<TrackingLog, 'refRef' | 'status' | 'note' | 'timestamp'>>();
+    for (const log of rejectedRequestLogs) {
+        const deliveryOrderRef = typeof log.refRef === 'string' ? log.refRef : '';
+        if (!deliveryOrderRef) continue;
+        const current = latestRejectedRequestLogByDeliveryOrderRef.get(deliveryOrderRef);
+        if (!current || String(log.timestamp || '').localeCompare(String(current.timestamp || '')) > 0) {
+            latestRejectedRequestLogByDeliveryOrderRef.set(deliveryOrderRef, log);
+        }
+    }
 
     return deliveryOrders
         .sort((left, right) => {
@@ -254,6 +272,9 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         .map(item => {
             const relatedOrder = typeof item.orderRef === 'string' ? orderMap.get(item.orderRef) : undefined;
             const vehicle = typeof item.vehicleRef === 'string' ? vehicleMap.get(item.vehicleRef) : undefined;
+            const rejectedRequestLog = latestRejectedRequestLogByDeliveryOrderRef.get(item._id);
+            const [rejectedRequestStatus = '', ...rejectedRequestReasonParts] = String(rejectedRequestLog?.note || '').split(':');
+            const rejectedRequestReason = rejectedRequestReasonParts.join(':').trim();
             return {
                 ...item,
                 customerName: item.customerName || (typeof relatedOrder?.customerName === 'string' ? relatedOrder.customerName : undefined),
@@ -268,6 +289,9 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
                 allowsDirectCargoInput: typeof item.orderRef === 'string' ? (directCargoCapabilities.get(item.orderRef) ?? false) : false,
                 vehicleLastOdometer: vehicle?.lastOdometer,
                 vehicleLastOdometerAt: vehicle?.lastOdometerAt,
+                driverRejectedRequestStatus: rejectedRequestLog ? rejectedRequestStatus.trim() : undefined,
+                driverRejectedRequestNote: rejectedRequestLog ? rejectedRequestReason || rejectedRequestLog.note : undefined,
+                driverRejectedRequestAt: rejectedRequestLog?.timestamp,
             };
         });
 }
@@ -442,7 +466,7 @@ function normalizeTripPlanPickupStops(
 }
 
 export async function getDriverAssignedTripPlans(driverRef: string) {
-    const activeOrderStatuses = new Set(['OPEN', 'PARTIAL', 'ON_HOLD']);
+    const activeOrderStatuses = new Set(['OPEN', 'PARTIAL']);
     const allOrders = await listDocumentsByFilter<Array<{
         _id: string;
         status?: string;

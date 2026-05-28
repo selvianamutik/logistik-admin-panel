@@ -14,7 +14,6 @@ type AuditIssue = {
 
 const VALID_SJ_STATUSES = new Set([
     'CREATED',
-    'HEADING_TO_PICKUP',
     'ON_DELIVERY',
     'ARRIVED',
     'PARTIAL_HOLD',

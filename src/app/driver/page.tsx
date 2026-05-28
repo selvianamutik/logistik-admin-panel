@@ -272,7 +272,7 @@ function formatTrackingState(state?: DriverAssignedDeliveryOrder['trackingState'
 }
 
 function canDriverStartTracking(status: DriverAssignedDeliveryOrder['status']) {
-    return ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(status);
+    return ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(status);
 }
 
 function isDriverDashboardDeliveryOrderVisible(order: DriverAssignedDeliveryOrder) {
@@ -400,7 +400,6 @@ function getNextDriverBatchStatus(status?: string): DriverBatchStatus | null {
     switch (status) {
         case 'PARTIAL_HOLD':
         case 'CREATED':
-        case 'HEADING_TO_PICKUP':
             return 'ON_DELIVERY';
         case 'ON_DELIVERY':
             return 'ARRIVED';
@@ -523,7 +522,15 @@ function getDriverOrderSjRows(order: DriverAssignedDeliveryOrder) {
             : plannedSummary;
         const holdSummary = suratJalanRecord?.holdCargo;
         const billableSummary = suratJalanRecord?.billableCargo;
+        const returnSummary = suratJalanRecord?.returnCargo;
         const effectivePickupAddress = suratJalanRecord?.pickupAddress || reference.pickupAddress || '';
+        const deleteLocked =
+            tripStatus === 'DELIVERED' ||
+            tripStatus === 'PARTIAL_HOLD' ||
+            finalizedCount > 0 ||
+            hasDriverCargoSummaryValue(billableSummary) ||
+            hasDriverCargoSummaryValue(holdSummary) ||
+            hasDriverCargoSummaryValue(returnSummary);
 
         return {
             ...reference,
@@ -535,6 +542,7 @@ function getDriverOrderSjRows(order: DriverAssignedDeliveryOrder) {
             nextStatus: getNextDriverBatchStatus(tripStatus),
             itemCount: items.length,
             finalizedCount,
+            deleteLocked,
             summary: items.length > 0 ? formatCargoSummary(totalSummary || plannedSummary) : '-',
             summaryItems: [
                 {
@@ -566,6 +574,7 @@ function getDriverOrderSjRows(order: DriverAssignedDeliveryOrder) {
         nextStatus: getNextDriverBatchStatus(order.status),
         itemCount: 0,
         finalizedCount: 0,
+        deleteLocked: false,
         summary: '-',
         summaryItems: [
             { label: 'Total', value: '-' },
@@ -609,6 +618,27 @@ function getDriverOrderSjRecord(
             (referenceNumber && recordNumber === referenceNumber)
         );
     }) || null;
+}
+
+function isDriverShipperReferenceDeleteLocked(
+    order: DriverAssignedDeliveryOrder,
+    reference: { referenceKey?: string; referenceNumber?: string }
+) {
+    const record = getDriverOrderSjRecord(order, reference);
+    const items = getDriverOrderItemsForSj(order, reference);
+    const finalizedCount = items.filter(item =>
+        item.actualQtyKoli !== undefined ||
+        item.actualWeightKg !== undefined ||
+        item.actualVolumeM3 !== undefined
+    ).length;
+    return Boolean(
+        record?.tripStatus === 'DELIVERED' ||
+        record?.tripStatus === 'PARTIAL_HOLD' ||
+        finalizedCount > 0 ||
+        hasDriverCargoSummaryValue(record?.billableCargo) ||
+        hasDriverCargoSummaryValue(record?.holdCargo) ||
+        hasDriverCargoSummaryValue(record?.returnCargo)
+    );
 }
 
 function areAllDriverTripSuratJalanDelivered(rows: ReturnType<typeof getDriverOrderSjRows>) {
@@ -3453,6 +3483,13 @@ export default function DriverPortalPage() {
         if (!referenceNumber) {
             return;
         }
+        if (isDriverShipperReferenceDeleteLocked(order, target)) {
+            setFeedback({
+                type: 'error',
+                message: `SJ ${referenceNumber} sudah punya aktual drop/hold/return atau status final, jadi tidak bisa dihapus.`,
+            });
+            return;
+        }
         const confirmed = window.confirm(`Hapus SJ ${referenceNumber}? Barang yang terkait dengan SJ ini juga akan dihapus.`);
         if (!confirmed) {
             return;
@@ -3945,8 +3982,14 @@ export default function DriverPortalPage() {
                                                                                     referenceKey: row.referenceKey,
                                                                                     referenceNumber: row.referenceNumber,
                                                                                 })}
-                                                                                disabled={isActionInFlight || row.pendingRequest?.status === 'DELIVERED'}
-                                                                                title={row.pendingRequest?.status === 'DELIVERED' ? 'Finalisasi aktual SJ ini sedang menunggu approval admin.' : undefined}
+                                                                                disabled={isActionInFlight || row.pendingRequest?.status === 'DELIVERED' || row.deleteLocked}
+                                                                                title={
+                                                                                    row.deleteLocked
+                                                                                        ? 'SJ sudah punya aktual drop/hold/return atau status final.'
+                                                                                        : row.pendingRequest?.status === 'DELIVERED'
+                                                                                            ? 'Finalisasi aktual SJ ini sedang menunggu approval admin.'
+                                                                                            : undefined
+                                                                                }
                                                                             >
                                                                                 <Trash2 size={14} /> Hapus
                                                                             </button>
@@ -4031,8 +4074,14 @@ export default function DriverPortalPage() {
                                                                     referenceKey: row.referenceKey,
                                                                     referenceNumber: row.referenceNumber,
                                                                 })}
-                                                                    disabled={isActionInFlight || row.pendingRequest?.status === 'DELIVERED'}
-                                                                    title={row.pendingRequest?.status === 'DELIVERED' ? 'Finalisasi aktual SJ ini sedang menunggu approval admin.' : undefined}
+                                                                    disabled={isActionInFlight || row.pendingRequest?.status === 'DELIVERED' || row.deleteLocked}
+                                                                    title={
+                                                                        row.deleteLocked
+                                                                            ? 'SJ sudah punya aktual drop/hold/return atau status final.'
+                                                                            : row.pendingRequest?.status === 'DELIVERED'
+                                                                                ? 'Finalisasi aktual SJ ini sedang menunggu approval admin.'
+                                                                                : undefined
+                                                                    }
                                                                 >
                                                                     <Trash2 size={14} /> Hapus
                                                                 </button>
@@ -4874,6 +4923,12 @@ export default function DriverPortalPage() {
                                     const finalizedItemsInGroup = existingItemsInGroup.filter(existingItem =>
                                         existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined
                                     );
+                                    const deleteLocked = cargoInputOrder
+                                        ? isDriverShipperReferenceDeleteLocked(cargoInputOrder, {
+                                            referenceKey: group.shipperReferenceKey,
+                                            referenceNumber: normalizedGroupReference,
+                                        })
+                                        : false;
                                     return (
                                         <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -4891,7 +4946,13 @@ export default function DriverPortalPage() {
                                                     )}
                                                 </div>
                                                 {cargoInputGroups.length > 1 && (
-                                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoInputGroup(group.id)} disabled={isActionInFlight}>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost btn-sm"
+                                                        onClick={() => removeCargoInputGroup(group.id)}
+                                                        disabled={isActionInFlight || deleteLocked}
+                                                        title={deleteLocked ? 'SJ sudah punya aktual drop/hold/return atau status final.' : undefined}
+                                                    >
                                                         <X size={14} /> Hapus SJ
                                                     </button>
                                                 )}

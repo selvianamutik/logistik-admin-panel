@@ -422,11 +422,11 @@ export default function OrderDetailPage() {
                     fallbackMessage
                 ),
                 fetchAdminCollectionData<DeliveryOrder[]>(
-                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
+                    `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`,
                     fallbackMessage
                 ),
                 fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(
-                    `/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`,
+                    `/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL'] }))}`,
                     fallbackMessage
                 ),
             ]);
@@ -533,8 +533,8 @@ export default function OrderDetailPage() {
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL', 'ON_HOLD'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
@@ -1302,6 +1302,7 @@ export default function OrderDetailPage() {
                 pickupAddress?: string;
                 itemCount: number;
                 cargo: ReturnType<typeof createCargoAggregate>;
+                items: DeliveryOrderItem[];
             }>();
             const ensureManifestEntry = (referenceNumber: string, pickupStopKey?: string, pickupAddress?: string) => {
                 const matchedPickup = pickupStopKey ? pickupMap.get(pickupStopKey) : undefined;
@@ -1313,6 +1314,7 @@ export default function OrderDetailPage() {
                         pickupAddress: matchedPickup?.pickupAddress || pickupAddress,
                         itemCount: 0,
                         cargo: createCargoAggregate(),
+                        items: [],
                     });
                 }
                 return manifestMap.get(manifestKey)!;
@@ -1328,6 +1330,7 @@ export default function OrderDetailPage() {
                     const referenceNumber = item.shipperReferenceNumber?.trim() || deliveryOrder.customerDoNumber || 'TANPA-SJ';
                     const manifestEntry = ensureManifestEntry(referenceNumber, item.pickupStopKey, item.pickupAddress);
                     manifestEntry.itemCount += 1;
+                    manifestEntry.items.push(item);
                     manifestEntry.cargo = addCargoAggregate(
                         manifestEntry.cargo,
                         deliveryOrder.status === 'DELIVERED'
@@ -2078,7 +2081,7 @@ export default function OrderDetailPage() {
             {/* Items */}
             <div className="card mt-6">
                 <div className="card-header">
-                    <span className="card-header-title">{isHeaderOnlyOrder ? `Manifest Tersimpan per SJ (${persistedShipperManifestCount})` : `Item / Koli (${items.length})`}</span>
+                    <span className="card-header-title">{isHeaderOnlyOrder ? `Manifest Tersimpan per Trip (${persistedShipperManifestCount})` : `Item / Koli (${items.length})`}</span>
                 </div>
                 {isHeaderOnlyOrder ? (
                     <div className="card-body">
@@ -2118,6 +2121,59 @@ export default function OrderDetailPage() {
                                                     <div style={{ marginTop: '0.35rem', fontWeight: 600 }}>
                                                         {hasCargoAggregate(manifest.cargo) ? formatCargoSummary(manifest.cargo) : 'Barang belum dicatat'}
                                                     </div>
+                                                    {manifest.items.length > 0 && (
+                                                        <details style={{ marginTop: '0.75rem' }}>
+                                                            <summary
+                                                                className="text-sm font-medium"
+                                                                style={{
+                                                                    cursor: 'pointer',
+                                                                    color: 'var(--color-primary)',
+                                                                    userSelect: 'none',
+                                                                }}
+                                                            >
+                                                                Lihat daftar barang ({manifest.items.length})
+                                                            </summary>
+                                                            <div style={{ display: 'grid', gap: '0.55rem', marginTop: '0.65rem' }}>
+                                                                {manifest.items.map(item => {
+                                                                    const manifestItemCargo = deliveryOrder.status === 'DELIVERED'
+                                                                        ? {
+                                                                            qtyKoli: item.actualQtyKoli ?? item.orderItemQtyKoli,
+                                                                            weightKg: item.actualWeightKg ?? item.orderItemWeight,
+                                                                            weightInputValue: item.actualWeightInputValue,
+                                                                            weightInputUnit: item.actualWeightInputUnit,
+                                                                            volumeM3: item.actualVolumeM3 ?? item.orderItemVolumeM3,
+                                                                            volumeInputValue: item.actualVolumeInputValue,
+                                                                            volumeInputUnit: item.actualVolumeInputUnit,
+                                                                        }
+                                                                        : {
+                                                                            qtyKoli: item.orderItemQtyKoli,
+                                                                            weightKg: item.orderItemWeight,
+                                                                            weightInputValue: item.orderItemWeightInputValue,
+                                                                            weightInputUnit: item.orderItemWeightInputUnit,
+                                                                            volumeM3: item.orderItemVolumeM3,
+                                                                            volumeInputValue: item.orderItemVolumeInputValue,
+                                                                            volumeInputUnit: item.orderItemVolumeInputUnit,
+                                                                        };
+                                                                    return (
+                                                                        <div
+                                                                            key={item._id}
+                                                                            style={{
+                                                                                padding: '0.65rem 0.75rem',
+                                                                                border: '1px solid var(--color-gray-200)',
+                                                                                borderRadius: '0.55rem',
+                                                                                background: 'var(--color-gray-50)',
+                                                                            }}
+                                                                        >
+                                                                            <div className="font-medium">{item.orderItemDescription || 'Barang tanpa nama'}</div>
+                                                                            <div className="text-sm" style={{ marginTop: '0.35rem', fontWeight: 600 }}>
+                                                                                {formatCargoSummary(manifestItemCargo)}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </details>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>

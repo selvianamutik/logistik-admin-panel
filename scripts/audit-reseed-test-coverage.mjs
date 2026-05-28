@@ -145,7 +145,7 @@ async function main() {
     const deliveryOrders = byType(docs, 'deliveryOrder');
     const deliveryOrderItems = byType(docs, 'deliveryOrderItem');
     const doStatuses = new Set(deliveryOrders.map(item => item.status));
-    const requiredDoStatuses = ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED', 'CANCELLED'];
+    const requiredDoStatuses = ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED', 'CANCELLED'];
     const missingStatuses = requiredDoStatuses.filter(status => !doStatuses.has(status));
     requireCondition(missingStatuses.length === 0, 'Missing delivery order status coverage', missingStatuses);
 

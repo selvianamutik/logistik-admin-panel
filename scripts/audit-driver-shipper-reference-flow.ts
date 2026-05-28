@@ -163,7 +163,7 @@ async function main() {
 
     const candidatePairs = deliveryOrders
         .filter(item =>
-            ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status)) &&
+            ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status)) &&
             normalizeText(item.driverRef) &&
             !normalizeText(item.cargoFinalizedAt) &&
             !normalizeText(item.pendingDriverStatus) &&

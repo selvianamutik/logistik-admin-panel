@@ -412,7 +412,7 @@ export default function VehicleDetailPage() {
             </div>
         );
     };
-    const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
+    const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
     const totalTireUsageCost = tireUsageCostRows.reduce((sum, row) => sum + Number(row.usageCost || 0), 0);
     const {
         normalizedAllTireRows,

@@ -8,7 +8,6 @@ import type { DeliveryOrder, Order } from '../src/lib/types';
 
 const lockingStatuses: DeliveryOrder['status'][] = [
     'CREATED',
-    'HEADING_TO_PICKUP',
     'ON_DELIVERY',
     'ARRIVED',
     'PARTIAL_HOLD',

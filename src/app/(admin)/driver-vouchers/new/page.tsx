@@ -59,7 +59,7 @@ export default function NewDriverVoucherPage() {
         ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganDoRefs]) => {
             const activeAccounts = (accountRows || []).filter((account) => account.active !== false);
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
-            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));
+            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
             setBankAccounts(activeAccounts);
             setUsedVoucherDoRefs(

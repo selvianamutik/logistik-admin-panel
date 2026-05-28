@@ -1,16 +1,8 @@
-enum TripStatus {
-  assigned,
-  headingToPickup,
-  onDelivery,
-  arrived,
-  partialHold,
-  delivered,
-}
+enum TripStatus { assigned, onDelivery, arrived, partialHold, delivered }
 
 String deliveryStatusApiValue(TripStatus status) {
   return switch (status) {
     TripStatus.assigned => 'CREATED',
-    TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
     TripStatus.onDelivery => 'ON_DELIVERY',
     TripStatus.arrived => 'ARRIVED',
     TripStatus.partialHold => 'PARTIAL_HOLD',
@@ -22,7 +14,6 @@ bool deliveryStatusRequiresActiveTracking(TripStatus status) {
   return switch (status) {
     TripStatus.onDelivery || TripStatus.arrived => true,
     TripStatus.assigned ||
-    TripStatus.headingToPickup ||
     TripStatus.partialHold ||
     TripStatus.delivered => false,
   };
@@ -31,7 +22,6 @@ bool deliveryStatusRequiresActiveTracking(TripStatus status) {
 String deliveryStatusLabel(String status) {
   return switch (status.trim().toUpperCase()) {
     'CREATED' => 'Dibuat',
-    'HEADING_TO_PICKUP' => 'Dalam Persiapan',
     'ON_DELIVERY' => 'Dalam Pengiriman',
     'ARRIVED' => 'Tiba di Tujuan',
     'PARTIAL_HOLD' => 'Terkirim Sebagian / Hold',
@@ -557,8 +547,7 @@ class DriverIncident {
 
   bool get canSubmitResolution => !isFinalAdminStage && !hasSubmittedResolution;
 
-  bool get canAddResolutionCost =>
-      !isFinalAdminStage;
+  bool get canAddResolutionCost => !isFinalAdminStage;
 
   bool get canOpenResolutionForm => canSubmitResolution || canAddResolutionCost;
 
@@ -642,6 +631,9 @@ class DeliveryTrip {
     this.actualDropPoints = const [],
     this.pendingActualCargoItems = const [],
     this.pendingActualDropPoints = const [],
+    this.rejectedRequestStatus,
+    this.rejectedRequestNote,
+    this.rejectedRequestAt,
   });
 
   final String deliveryOrderId;
@@ -673,6 +665,12 @@ class DeliveryTrip {
   final List<DeliveryActualDropPoint> actualDropPoints;
   final List<PendingDriverActualCargoItem> pendingActualCargoItems;
   final List<DeliveryActualDropPoint> pendingActualDropPoints;
+  final String? rejectedRequestStatus;
+  final String? rejectedRequestNote;
+  final String? rejectedRequestAt;
+
+  bool get hasRejectedDriverRequestNotice =>
+      rejectedRequestNote?.trim().isNotEmpty == true;
 
   bool get hasPendingTripClosureRequest =>
       pendingDriverRequests.any((request) => request.isTripClosureRequest);
@@ -788,6 +786,9 @@ class DeliveryTrip {
       actualDropPoints: actualDropPoints,
       pendingActualCargoItems: pendingActualCargoItems,
       pendingActualDropPoints: pendingActualDropPoints,
+      rejectedRequestStatus: rejectedRequestStatus,
+      rejectedRequestNote: rejectedRequestNote,
+      rejectedRequestAt: rejectedRequestAt,
     );
   }
 }
@@ -823,7 +824,6 @@ String defaultTripStatusNote(
   }
 
   return switch (status) {
-    TripStatus.headingToPickup => 'Driver menyiapkan perjalanan',
     TripStatus.onDelivery => 'Pengiriman berjalan',
     TripStatus.arrived => 'Driver sudah tiba',
     TripStatus.partialHold => 'Sebagian muatan hold',

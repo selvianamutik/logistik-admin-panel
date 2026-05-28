@@ -48,8 +48,8 @@ Script seed aktif:
 Dataset demo saat ini mencakup kondisi:
 - customer, layanan, kategori biaya aktif dan nonaktif
 - master barang per customer
-- order `OPEN`, `PARTIAL`, `COMPLETE`, `ON_HOLD`, `CANCELLED`
-- DO `CREATED`, `HEADING_TO_PICKUP`, `ON_DELIVERY`, `ARRIVED`, `DELIVERED`, `CANCELLED`
+- order `OPEN`, `PARTIAL`, `COMPLETE`, `CANCELLED`
+- DO `CREATED`, `ON_DELIVERY`, `ARRIVED`, `PARTIAL_HOLD`, `DELIVERED`, `CANCELLED`
 - nota `UNPAID`, `PARTIAL`, `PAID`
 - penerimaan customer untuk bayar beberapa nota sekaligus
 - klaim / potongan nota
@@ -75,7 +75,6 @@ Akun demo:
 
 Flow status DO yang benar saat demo:
 - `CREATED`
-- `HEADING_TO_PICKUP`
 - `ON_DELIVERY`
 - `ARRIVED`
 - `DELIVERED`

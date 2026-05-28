@@ -22,6 +22,7 @@ class DeliveryManifestPage extends StatefulWidget {
     required this.allowsDirectCargoInput,
     this.initialShipperReferences = const [],
     this.existingCargoItems = const [],
+    this.existingActualDropPoints = const [],
   });
 
   final String title;
@@ -31,6 +32,7 @@ class DeliveryManifestPage extends StatefulWidget {
   final bool allowsDirectCargoInput;
   final List<DeliveryShipperReference> initialShipperReferences;
   final List<DeliveryCargoItem> existingCargoItems;
+  final List<DeliveryActualDropPoint> existingActualDropPoints;
 
   @override
   State<DeliveryManifestPage> createState() => _DeliveryManifestPageState();
@@ -188,6 +190,16 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
       (entry) => entry.id == groupId,
       orElse: () => _groups.first,
     );
+    final deleteLockReason = _groupDeleteLockReason(group);
+    if (deleteLockReason != null) {
+      showMobileFeedback(
+        context,
+        type: MobileFeedbackType.warning,
+        title: 'SJ dikunci',
+        message: deleteLockReason,
+      );
+      return;
+    }
     final hasExistingCargo = group.items.any(
       (item) => item.sourceCargoItemId.trim().isNotEmpty,
     );
@@ -218,6 +230,144 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     });
   }
 
+  String? _groupDeleteLockReason(_ManifestGroupDraft group) {
+    final reference = _referenceForGroup(group);
+    final status = reference?.tripStatus?.trim().toUpperCase();
+    final hasHoldCargo =
+        _hasPositive(reference?.holdQtyKoli) ||
+        _hasPositive(reference?.holdWeightKg) ||
+        _hasPositive(reference?.holdVolumeM3);
+    final hasActualCargo = group.items.any((item) {
+      final sourceId = item.sourceCargoItemId.trim();
+      if (sourceId.isEmpty) return false;
+      DeliveryCargoItem? cargo;
+      for (final entry in widget.existingCargoItems) {
+        if (entry.id.trim() == sourceId) {
+          cargo = entry;
+          break;
+        }
+      }
+      return _hasCargoActualOrHold(cargo);
+    });
+    final hasAllocatedDropPoint = widget.existingActualDropPoints.any(
+      (point) => _actualDropPointMatchesGroup(point, group),
+    );
+
+    if (_isLockedManifestStatus(status) ||
+        hasHoldCargo ||
+        hasActualCargo ||
+        hasAllocatedDropPoint) {
+      final label = group.shipperReferenceNumber.trim().isEmpty
+          ? 'SJ ini'
+          : 'SJ ${group.shipperReferenceNumber.trim().toUpperCase()}';
+      return '$label sudah punya aktual drop/hold/return atau status final, jadi tidak bisa dihapus.';
+    }
+    return null;
+  }
+
+  String? _itemDeleteLockReason(_ManifestItemDraft? item) {
+    final sourceId = item?.sourceCargoItemId.trim() ?? '';
+    if (sourceId.isEmpty) return null;
+    return _itemDeleteLockReasonBySourceId(sourceId);
+  }
+
+  String? _itemDeleteLockReasonBySourceId(String sourceCargoItemId) {
+    final sourceId = sourceCargoItemId.trim();
+    if (sourceId.isEmpty) return null;
+    DeliveryCargoItem? cargo;
+    for (final entry in widget.existingCargoItems) {
+      if (entry.id.trim() == sourceId) {
+        cargo = entry;
+        break;
+      }
+    }
+    final hasAllocatedDropPoint = widget.existingActualDropPoints.any(
+      (point) => _actualDropPointMatchesItem(point, sourceId),
+    );
+    if (_hasCargoActualOrHold(cargo) || hasAllocatedDropPoint) {
+      return 'Barang ini sudah punya aktual drop/hold/return, jadi tidak bisa dihapus.';
+    }
+    return null;
+  }
+
+  bool _isLockedManifestStatus(String? status) {
+    return status == 'DELIVERED' ||
+        status == 'PARTIAL_HOLD' ||
+        status == 'ON_HOLD' ||
+        status == 'HOLD';
+  }
+
+  DeliveryShipperReference? _referenceForGroup(_ManifestGroupDraft group) {
+    final key = group.referenceKey.trim();
+    final number = group.shipperReferenceNumber.trim().toUpperCase();
+    for (final reference in widget.initialShipperReferences) {
+      final referenceKey = reference.key?.trim() ?? '';
+      final referenceNumber = reference.referenceNumber.trim().toUpperCase();
+      if (key.isNotEmpty && referenceKey == key) return reference;
+      if (number.isNotEmpty && referenceNumber == number) return reference;
+    }
+    return null;
+  }
+
+  bool _actualDropPointMatchesGroup(
+    DeliveryActualDropPoint point,
+    _ManifestGroupDraft group,
+  ) {
+    const allocatedTypes = {'DROP', 'HOLD', 'TRANSIT', 'EXTRA_DROP', 'RETURN'};
+    if (!allocatedTypes.contains(point.stopType.trim().toUpperCase())) {
+      return false;
+    }
+
+    final groupKey = group.referenceKey.trim();
+    final groupNumber = group.shipperReferenceNumber.trim().toUpperCase();
+    final pointKey = (point.shipperReferenceKey ?? '').trim();
+    final pointNumber = (point.shipperReferenceNumber ?? '').trim().toUpperCase();
+    if (groupKey.isNotEmpty && pointKey == groupKey) return true;
+    if (groupNumber.isNotEmpty && pointNumber == groupNumber) return true;
+
+    final itemIds = group.items
+        .map((item) => item.sourceCargoItemId.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (itemIds.isEmpty) return false;
+    final pointItemRefs = <String>{
+      if ((point.deliveryOrderItemRef ?? '').trim().isNotEmpty)
+        point.deliveryOrderItemRef!.trim(),
+      ...point.deliveryOrderItemRefs.map((ref) => ref.trim()),
+    };
+    return pointItemRefs.any(itemIds.contains);
+  }
+
+  bool _actualDropPointMatchesItem(
+    DeliveryActualDropPoint point,
+    String sourceCargoItemId,
+  ) {
+    const allocatedTypes = {'DROP', 'HOLD', 'TRANSIT', 'EXTRA_DROP', 'RETURN'};
+    if (!allocatedTypes.contains(point.stopType.trim().toUpperCase())) {
+      return false;
+    }
+    final sourceId = sourceCargoItemId.trim();
+    if (sourceId.isEmpty) return false;
+    final pointItemRefs = <String>{
+      if ((point.deliveryOrderItemRef ?? '').trim().isNotEmpty)
+        point.deliveryOrderItemRef!.trim(),
+      ...point.deliveryOrderItemRefs.map((ref) => ref.trim()),
+    };
+    return pointItemRefs.contains(sourceId);
+  }
+
+  bool _hasCargoActualOrHold(DeliveryCargoItem? item) {
+    if (item == null) return false;
+    return _hasPositive(item.actualQtyKoli) ||
+        _hasPositive(item.actualWeightInputValue) ||
+        _hasPositive(item.actualVolumeInputValue) ||
+        _hasPositive(item.heldQtyKoli) ||
+        _hasPositive(item.heldWeightKg) ||
+        _hasPositive(item.heldVolumeM3);
+  }
+
+  bool _hasPositive(double? value) => value != null && value > 0;
+
   void _selectGroup(String groupId) {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _selectedGroupId = groupId);
@@ -240,6 +390,20 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     String? shipperReferenceNumber,
     String? date,
   }) {
+    final group = _groups.firstWhere(
+      (entry) => entry.id == groupId,
+      orElse: () => _groups.first,
+    );
+    final lockReason = _groupDeleteLockReason(group);
+    if (lockReason != null) {
+      showMobileFeedback(
+        context,
+        type: MobileFeedbackType.warning,
+        title: 'SJ dikunci',
+        message: lockReason,
+      );
+      return;
+    }
     setState(() {
       _groups = _groups
           .map(
@@ -256,6 +420,20 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   }
 
   void _addItem(String groupId) {
+    final group = _groups.firstWhere(
+      (entry) => entry.id == groupId,
+      orElse: () => _groups.first,
+    );
+    final lockReason = _groupDeleteLockReason(group);
+    if (lockReason != null) {
+      showMobileFeedback(
+        context,
+        type: MobileFeedbackType.warning,
+        title: 'SJ dikunci',
+        message: lockReason,
+      );
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     final item = _ManifestItemDraft.create();
     setState(() {
@@ -277,15 +455,29 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
   }
 
   Future<void> _removeItem(String groupId, String itemId) async {
+    _ManifestGroupDraft? targetGroup;
     _ManifestItemDraft? targetItem;
     for (final group in _groups) {
       if (group.id != groupId) continue;
+      targetGroup = group;
       for (final item in group.items) {
         if (item.id == itemId) {
           targetItem = item;
           break;
         }
       }
+    }
+    final lockReason =
+        (targetGroup == null ? null : _groupDeleteLockReason(targetGroup)) ??
+        _itemDeleteLockReason(targetItem);
+    if (lockReason != null) {
+      showMobileFeedback(
+        context,
+        type: MobileFeedbackType.warning,
+        title: 'Barang dikunci',
+        message: lockReason,
+      );
+      return;
     }
     final isExistingCargo =
         targetItem?.sourceCargoItemId.trim().isNotEmpty == true;
@@ -777,7 +969,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
         .map((item) => item.sourceCargoItemId.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
-    return originalIds.difference(retainedIds).toList(growable: false);
+    return originalIds
+        .difference(retainedIds)
+        .where((id) => _itemDeleteLockReasonBySourceId(id) == null)
+        .toList(growable: false);
   }
 
   void _showError(String message) {
@@ -928,6 +1123,10 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                               onRemoveGroup: _groups.length > 1
                                   ? _removeGroup
                                   : null,
+                              removeLocked:
+                                  _groupDeleteLockReason(selectedGroup) != null,
+                              removeLockedReason:
+                                  _groupDeleteLockReason(selectedGroup),
                               itemVisibilityKeyFor: _itemVisibilityKey,
                             ),
                           ),
@@ -1313,6 +1512,8 @@ class _ManifestGroupEditorCard extends StatelessWidget {
     required this.onEditItem,
     required this.onRemoveItem,
     required this.onRemoveGroup,
+    required this.removeLocked,
+    this.removeLockedReason,
     required this.itemVisibilityKeyFor,
   });
 
@@ -1330,6 +1531,8 @@ class _ManifestGroupEditorCard extends StatelessWidget {
   final void Function(String groupId, String itemId) onEditItem;
   final void Function(String groupId, String itemId) onRemoveItem;
   final void Function(String groupId)? onRemoveGroup;
+  final bool removeLocked;
+  final String? removeLockedReason;
   final GlobalKey Function(String itemId) itemVisibilityKeyFor;
 
   @override
@@ -1356,15 +1559,20 @@ class _ManifestGroupEditorCard extends StatelessWidget {
                 ),
                 if (onRemoveGroup != null)
                   IconButton(
-                    onPressed: () => onRemoveGroup!(group.id),
+                    onPressed: removeLocked
+                        ? null
+                        : () => onRemoveGroup!(group.id),
                     icon: const Icon(Icons.delete_outline_rounded),
-                    tooltip: 'Hapus SJ',
+                    tooltip: removeLocked
+                        ? removeLockedReason ?? 'SJ tidak bisa dihapus'
+                        : 'Hapus SJ',
                   ),
               ],
             ),
             _SyncedTextFormField(
               value: group.shipperReferenceNumber,
               textCapitalization: TextCapitalization.characters,
+              enabled: !removeLocked,
               decoration: const InputDecoration(
                 labelText: 'No. SJ Pengirim',
                 hintText: 'Contoh: BK/27032026/001',
@@ -1376,6 +1584,7 @@ class _ManifestGroupEditorCard extends StatelessWidget {
             const SizedBox(height: 12),
             _ManifestDateField(
               value: group.date,
+              enabled: !removeLocked,
               onChanged: (value) => onGroupChanged(group.id, date: value),
             ),
             const SizedBox(height: 12),
@@ -1383,6 +1592,7 @@ class _ManifestGroupEditorCard extends StatelessWidget {
               key: ValueKey('pickup-${group.id}-${group.pickupStopKey}'),
               value: group.pickupStopKey,
               pickupStops: pickupStops,
+              enabled: !removeLocked,
               onChanged: (value) =>
                   onGroupChanged(group.id, pickupStopKey: value),
             ),
@@ -1415,15 +1625,17 @@ class _ManifestGroupEditorCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _ManifestItemListTile(
                     item: item,
-                    onEdit: () => onEditItem(group.id, item.id),
-                    onRemove: group.items.length > 1
+                    onEdit: removeLocked
+                        ? null
+                        : () => onEditItem(group.id, item.id),
+                    onRemove: group.items.length > 1 && !removeLocked
                         ? () => onRemoveItem(group.id, item.id)
                         : null,
                   ),
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: () => onAddItem(group.id),
+                onPressed: removeLocked ? null : () => onAddItem(group.id),
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Tambah Barang di SJ Ini'),
               ),
@@ -1455,20 +1667,23 @@ class _ManifestDateField extends StatelessWidget {
   const _ManifestDateField({
     required this.value,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final String value;
   final ValueChanged<String> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => _pickDate(context),
+      onTap: enabled ? () => _pickDate(context) : null,
       child: InputDecorator(
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: 'Tanggal SJ',
-          suffixIcon: Icon(Icons.calendar_today_rounded),
+          enabled: enabled,
+          suffixIcon: const Icon(Icons.calendar_today_rounded),
         ),
         child: Text(
           value.trim().isNotEmpty ? value.trim() : _currentJakartaDateValue(),
@@ -1499,11 +1714,13 @@ class _PickupStopSelectorField extends StatelessWidget {
     required this.value,
     required this.pickupStops,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final String value;
   final List<DeliveryPickupStop> pickupStops;
   final ValueChanged<String> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1526,7 +1743,7 @@ class _PickupStopSelectorField extends StatelessWidget {
       (stop) => stop.key == value,
       orElse: () => pickupStops.first,
     );
-    final canChoose = pickupStops.length > 1;
+    final canChoose = enabled && pickupStops.length > 1;
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
@@ -1534,6 +1751,7 @@ class _PickupStopSelectorField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: canChoose ? 'Pickup untuk SJ ini' : 'Pickup trip',
+          enabled: enabled,
           helperText: _pickupStopSubtitle(selectedStop),
           helperMaxLines: 2,
           suffixIcon: canChoose ? const Icon(Icons.expand_more_rounded) : null,
@@ -1968,7 +2186,7 @@ class _ManifestItemListTile extends StatelessWidget {
   });
 
   final _ManifestItemDraft item;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
   final VoidCallback? onRemove;
 
   @override

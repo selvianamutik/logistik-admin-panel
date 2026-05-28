@@ -209,8 +209,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                 ? draft.volumeInputUnit
                 : _normalizeVolumeUnit(volumeInputUnit);
             final nextQty = qtyKoli ?? draft.qtyKoli;
-            final autoWeightValue =
-                qtyKoli != null && weightInputValue == null
+            final autoWeightValue = qtyKoli != null && weightInputValue == null
                 ? _autoWeightInputValueForQty(
                     draft: _ActualDropDraft.create(
                       qtyKoli: draft.qtyKoli,
@@ -224,8 +223,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     nextWeightUnit: nextWeightUnit,
                   )
                 : null;
-            final autoVolumeValue =
-                qtyKoli != null && volumeInputValue == null
+            final autoVolumeValue = qtyKoli != null && volumeInputValue == null
                 ? _autoVolumeInputValueForQty(
                     draft: _ActualDropDraft.create(
                       qtyKoli: draft.qtyKoli,
@@ -252,7 +250,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileWeightInputFractionDigits(
                       nextWeightUnit,
                     ),
-                )
+                  )
                 : weightInputValue ?? autoWeightValue;
             final convertedVolumeValue =
                 volumeInputUnit != null && volumeInputValue == null
@@ -267,7 +265,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileVolumeInputFractionDigits(
                       nextVolumeUnit,
                     ),
-                )
+                  )
                 : volumeInputValue ?? autoVolumeValue;
 
             return draft.copyWith(
@@ -355,7 +353,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileWeightInputFractionDigits(
                       nextWeightUnit,
                     ),
-                )
+                  )
                 : weightInputValue;
             final nextVolumeInputValueFromQty =
                 qtyKoli != null && volumeInputValue == null
@@ -379,7 +377,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     fractionDigits: mobileVolumeInputFractionDigits(
                       nextVolumeUnit,
                     ),
-                )
+                  )
                 : volumeInputValue ?? nextVolumeInputValueFromQty;
 
             return draft.copyWith(
@@ -1488,6 +1486,11 @@ class _ActualCargoDraft {
     required this.weightInputUnit,
     required this.volumeInputValue,
     required this.volumeInputUnit,
+    required this.dropQtyKoli,
+    required this.dropWeightInputValue,
+    required this.dropWeightInputUnit,
+    required this.dropVolumeInputValue,
+    required this.dropVolumeInputUnit,
   });
 
   final String itemId;
@@ -1502,10 +1505,18 @@ class _ActualCargoDraft {
   final String weightInputUnit;
   final String volumeInputValue;
   final String volumeInputUnit;
+  final String dropQtyKoli;
+  final String dropWeightInputValue;
+  final String dropWeightInputUnit;
+  final String dropVolumeInputValue;
+  final String dropVolumeInputUnit;
 
   double get qtyKoliValue => _parseDouble(qtyKoli);
   double get weightInputValueNumber => _parseDouble(weightInputValue);
   double get volumeInputValueNumber => _parseDouble(volumeInputValue);
+  double get dropQtyKoliValue => _parseDouble(dropQtyKoli);
+  double get dropWeightInputValueNumber => _parseDouble(dropWeightInputValue);
+  double get dropVolumeInputValueNumber => _parseDouble(dropVolumeInputValue);
 
   _ActualCargoDraft copyWith({
     String? qtyKoli,
@@ -1527,6 +1538,11 @@ class _ActualCargoDraft {
       weightInputUnit: weightInputUnit ?? this.weightInputUnit,
       volumeInputValue: volumeInputValue ?? this.volumeInputValue,
       volumeInputUnit: volumeInputUnit ?? this.volumeInputUnit,
+      dropQtyKoli: dropQtyKoli,
+      dropWeightInputValue: dropWeightInputValue,
+      dropWeightInputUnit: dropWeightInputUnit,
+      dropVolumeInputValue: dropVolumeInputValue,
+      dropVolumeInputUnit: dropVolumeInputUnit,
     );
   }
 }
@@ -1710,6 +1726,21 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
             (isHoldContinuationItem ? null : item.actualVolumeInputValue) ??
             item.volumeInputValue ??
             (item.volumeM3 ?? 0);
+        final dropQty = holdContinuation?.qtyKoliValue ?? item.qtyKoli ?? 0;
+        final dropWeightUnit =
+            (holdContinuation?.weightInputUnit ?? item.weightInputUnit ?? 'KG')
+                .toUpperCase();
+        final dropVolumeUnit =
+            (holdContinuation?.volumeInputUnit ?? item.volumeInputUnit ?? 'M3')
+                .toUpperCase();
+        final dropWeightInput =
+            holdContinuation?.weightInputValueNumber ??
+            item.weightInputValue ??
+            (item.weightKg ?? 0);
+        final dropVolumeInput =
+            holdContinuation?.volumeInputValueNumber ??
+            item.volumeInputValue ??
+            (item.volumeM3 ?? 0);
         return _ActualCargoDraft(
           itemId: item.id,
           description: item.description,
@@ -1731,6 +1762,17 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
             fractionDigits: defaultVolumeUnit == 'LITER' ? 0 : 3,
           ),
           volumeInputUnit: defaultVolumeUnit,
+          dropQtyKoli: _formatMetric(dropQty),
+          dropWeightInputValue: _formatMetric(
+            dropWeightInput,
+            fractionDigits: mobileWeightInputFractionDigits(dropWeightUnit),
+          ),
+          dropWeightInputUnit: dropWeightUnit,
+          dropVolumeInputValue: _formatMetric(
+            dropVolumeInput,
+            fractionDigits: dropVolumeUnit == 'LITER' ? 0 : 3,
+          ),
+          dropVolumeInputUnit: dropVolumeUnit,
         );
       })
       .whereType<_ActualCargoDraft>()
@@ -1824,25 +1866,27 @@ List<_ActualDropDraft> _buildFirstDropPointAllocationDrafts(
   final base = _ActualDropDraft.create();
   final groupKey = base.groupKey;
 
-  return cargoDrafts.map((cargo) {
-    final holdPoint = _holdContinuationPointForCargo(trip, cargo);
-    return _ActualDropDraft.create(
-      groupKey: groupKey,
-      stopType: 'DROP',
-      deliveryOrderItemRef: cargo.itemId,
-      deliveryOrderItemRefs: [cargo.itemId],
-      shipperReferenceKey: cargo.shipperReferenceKey,
-      shipperReferenceNumber: cargo.shipperReferenceNumber,
-      originLocationName: holdPoint?.locationName ?? '',
-      originLocationAddress: holdPoint?.locationAddress ?? '',
-      qtyKoli: cargo.qtyKoli,
-      weightInputValue: cargo.weightInputValue,
-      weightInputUnit: cargo.weightInputUnit,
-      volumeInputValue: cargo.volumeInputValue,
-      volumeInputUnit: cargo.volumeInputUnit,
-      note: holdPoint == null ? '' : 'Lanjutan hold dikirim',
-    );
-  }).toList(growable: false);
+  return cargoDrafts
+      .map((cargo) {
+        final holdPoint = _holdContinuationPointForCargo(trip, cargo);
+        return _ActualDropDraft.create(
+          groupKey: groupKey,
+          stopType: 'DROP',
+          deliveryOrderItemRef: cargo.itemId,
+          deliveryOrderItemRefs: [cargo.itemId],
+          shipperReferenceKey: cargo.shipperReferenceKey,
+          shipperReferenceNumber: cargo.shipperReferenceNumber,
+          originLocationName: holdPoint?.locationName ?? '',
+          originLocationAddress: holdPoint?.locationAddress ?? '',
+          qtyKoli: cargo.dropQtyKoli,
+          weightInputValue: cargo.dropWeightInputValue,
+          weightInputUnit: cargo.dropWeightInputUnit,
+          volumeInputValue: cargo.dropVolumeInputValue,
+          volumeInputUnit: cargo.dropVolumeInputUnit,
+          note: holdPoint == null ? '' : 'Lanjutan hold dikirim',
+        );
+      })
+      .toList(growable: false);
 }
 
 DeliveryActualDropPoint? _holdContinuationPointForCargo(
@@ -2201,7 +2245,7 @@ List<_ActualDropDraft> _normalizeDropDraftsForSelectedReferences(
   List<DeliveryShipperReference> selectedReferences,
   List<_ActualCargoDraft> selectedCargoDrafts,
 ) {
-  final totals = _summarizeCargoDrafts(selectedCargoDrafts);
+  final totals = _summarizeCargoDropBasisDrafts(selectedCargoDrafts);
   final retainedDrafts = drafts
       .where(
         (draft) =>
@@ -2391,19 +2435,21 @@ DateTime? _parseDateValue(String value) {
 bool _isValidDateValue(String value) =>
     RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value.trim());
 
-_ActualCargoTotals _summarizeCargoDrafts(List<_ActualCargoDraft> drafts) {
+_ActualCargoTotals _summarizeCargoDropBasisDrafts(
+  List<_ActualCargoDraft> drafts,
+) {
   double qtyKoli = 0;
   double weightKg = 0;
   double volumeM3 = 0;
   for (final draft in drafts) {
-    qtyKoli += draft.qtyKoliValue;
+    qtyKoli += draft.dropQtyKoliValue;
     weightKg += _convertWeightToKg(
-      draft.weightInputValueNumber,
-      draft.weightInputUnit,
+      draft.dropWeightInputValueNumber,
+      draft.dropWeightInputUnit,
     );
     volumeM3 += _convertVolumeToM3(
-      draft.volumeInputValueNumber,
-      draft.volumeInputUnit,
+      draft.dropVolumeInputValueNumber,
+      draft.dropVolumeInputUnit,
     );
   }
   return _ActualCargoTotals(
@@ -2691,19 +2737,21 @@ List<_ActualDropDraft> _expandGenericDropDraftToCargoAllocations(
   List<_ActualCargoDraft> cargoDrafts,
 ) {
   if (cargoDrafts.isEmpty) return [sourceDraft];
-  return cargoDrafts.map((cargo) {
-    return sourceDraft.copyWith(
-      deliveryOrderItemRef: cargo.itemId,
-      deliveryOrderItemRefs: [cargo.itemId],
-      shipperReferenceKey: cargo.shipperReferenceKey,
-      shipperReferenceNumber: cargo.shipperReferenceNumber,
-      qtyKoli: cargo.qtyKoli,
-      weightInputValue: cargo.weightInputValue,
-      weightInputUnit: cargo.weightInputUnit,
-      volumeInputValue: cargo.volumeInputValue,
-      volumeInputUnit: cargo.volumeInputUnit,
-    );
-  }).toList(growable: false);
+  return cargoDrafts
+      .map((cargo) {
+        return sourceDraft.copyWith(
+          deliveryOrderItemRef: cargo.itemId,
+          deliveryOrderItemRefs: [cargo.itemId],
+          shipperReferenceKey: cargo.shipperReferenceKey,
+          shipperReferenceNumber: cargo.shipperReferenceNumber,
+          qtyKoli: cargo.dropQtyKoli,
+          weightInputValue: cargo.dropWeightInputValue,
+          weightInputUnit: cargo.dropWeightInputUnit,
+          volumeInputValue: cargo.dropVolumeInputValue,
+          volumeInputUnit: cargo.dropVolumeInputUnit,
+        );
+      })
+      .toList(growable: false);
 }
 
 List<_ActualDropDraft> _activeDropDraftsForValidation(
@@ -2883,18 +2931,18 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
     );
   }
 
-  final weightUnit = _normalizeWeightUnit(cargo.weightInputUnit);
-  final volumeUnit = _normalizeVolumeUnit(cargo.volumeInputUnit);
-  final remainingQtyKoli = (cargo.qtyKoliValue - usedQtyKoli)
+  final weightUnit = _normalizeWeightUnit(cargo.dropWeightInputUnit);
+  final volumeUnit = _normalizeVolumeUnit(cargo.dropVolumeInputUnit);
+  final remainingQtyKoli = (cargo.dropQtyKoliValue - usedQtyKoli)
       .clamp(0, double.infinity)
       .toDouble();
   final remainingWeightKg =
-      (_convertWeightToKg(cargo.weightInputValueNumber, weightUnit) -
+      (_convertWeightToKg(cargo.dropWeightInputValueNumber, weightUnit) -
               usedWeightKg)
           .clamp(0, double.infinity)
           .toDouble();
   final remainingVolumeM3 =
-      (_convertVolumeToM3(cargo.volumeInputValueNumber, volumeUnit) -
+      (_convertVolumeToM3(cargo.dropVolumeInputValueNumber, volumeUnit) -
               usedVolumeM3)
           .clamp(0, double.infinity)
           .toDouble();
@@ -2907,11 +2955,11 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
     volumeUnit,
   );
   return _ActualDropDraft.create(
-    qtyKoli: remainingQtyKoli <= 0 && cargo.qtyKoliValue > 0
+    qtyKoli: remainingQtyKoli <= 0 && cargo.dropQtyKoliValue > 0
         ? '0'
         : _formatMetric(remainingQtyKoli),
     weightInputValue:
-        remainingWeightInputValue <= 0 && cargo.weightInputValueNumber > 0
+        remainingWeightInputValue <= 0 && cargo.dropWeightInputValueNumber > 0
         ? '0'
         : _formatMetric(
             remainingWeightInputValue,
@@ -2919,7 +2967,7 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
           ),
     weightInputUnit: weightUnit,
     volumeInputValue:
-        remainingVolumeInputValue <= 0 && cargo.volumeInputValueNumber > 0
+        remainingVolumeInputValue <= 0 && cargo.dropVolumeInputValueNumber > 0
         ? '0'
         : _formatMetric(
             remainingVolumeInputValue,
@@ -2942,10 +2990,10 @@ String? _autoWeightInputValueForQty({
 }) {
   if (cargo == null) return null;
   final qtyKoli = _parseDouble(nextQtyKoli);
-  final basisQtyKoli = cargo.qtyKoliValue;
+  final basisQtyKoli = cargo.dropQtyKoliValue;
   final basisWeightKg = _convertWeightToKg(
-    cargo.weightInputValueNumber,
-    cargo.weightInputUnit,
+    cargo.dropWeightInputValueNumber,
+    cargo.dropWeightInputUnit,
   );
   if (qtyKoli <= 0 || basisQtyKoli <= 0 || basisWeightKg <= 0) {
     return '';
@@ -2981,10 +3029,10 @@ String? _autoVolumeInputValueForQty({
 }) {
   if (cargo == null) return null;
   final qtyKoli = _parseDouble(nextQtyKoli);
-  final basisQtyKoli = cargo.qtyKoliValue;
+  final basisQtyKoli = cargo.dropQtyKoliValue;
   final basisVolumeM3 = _convertVolumeToM3(
-    cargo.volumeInputValueNumber,
-    cargo.volumeInputUnit,
+    cargo.dropVolumeInputValueNumber,
+    cargo.dropVolumeInputUnit,
   );
   if (qtyKoli <= 0 || basisQtyKoli <= 0 || basisVolumeM3 <= 0) {
     return '';
@@ -4022,14 +4070,13 @@ class _DropUiGroup {
   final List<_ActualDropDraft> drafts;
 
   _ActualDropDraft get primaryDraft => drafts.first;
-  List<_ActualDropDraft> get allocatedDrafts =>
-      drafts
-          .where(
-            (draft) =>
-                _dropDraftHasItemSelection(draft) &&
-                _hasActualDropItemValues(draft),
-          )
-          .toList(growable: false);
+  List<_ActualDropDraft> get allocatedDrafts => drafts
+      .where(
+        (draft) =>
+            _dropDraftHasItemSelection(draft) &&
+            _hasActualDropItemValues(draft),
+      )
+      .toList(growable: false);
 
   bool containsDraftId(String? draftId) =>
       draftId != null && drafts.any((draft) => draft.id == draftId);
@@ -4373,8 +4420,8 @@ class _DropPointCargoGroupTile extends StatelessWidget {
         allocationDrafts: _allocationDraftsWithRemainingDefaults(
           allocationDrafts: displayAllocationDrafts,
           cargoDrafts: group.drafts,
-          allDropDrafts: allDropDrafts.length == 1 &&
-                  displayAllocationDrafts.isNotEmpty
+          allDropDrafts:
+              allDropDrafts.length == 1 && displayAllocationDrafts.isNotEmpty
               ? displayAllocationDrafts
               : allDropDrafts,
         ),
@@ -4803,11 +4850,13 @@ class _DropAllocationValueDraft {
     _ActualDropDraft? allocation,
   ) {
     return _DropAllocationValueDraft(
-      qtyKoli: allocation?.qtyKoli ?? cargo.qtyKoli,
-      weightInputValue: allocation?.weightInputValue ?? cargo.weightInputValue,
-      weightInputUnit: allocation?.weightInputUnit ?? cargo.weightInputUnit,
-      volumeInputValue: allocation?.volumeInputValue ?? cargo.volumeInputValue,
-      volumeInputUnit: allocation?.volumeInputUnit ?? cargo.volumeInputUnit,
+      qtyKoli: allocation?.qtyKoli ?? cargo.dropQtyKoli,
+      weightInputValue:
+          allocation?.weightInputValue ?? cargo.dropWeightInputValue,
+      weightInputUnit: allocation?.weightInputUnit ?? cargo.dropWeightInputUnit,
+      volumeInputValue:
+          allocation?.volumeInputValue ?? cargo.dropVolumeInputValue,
+      volumeInputUnit: allocation?.volumeInputUnit ?? cargo.dropVolumeInputUnit,
     );
   }
 

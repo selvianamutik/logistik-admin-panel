@@ -39,25 +39,18 @@ function deriveOrderStatusFromItems(items: Array<{ status?: string | null }>) {
         item.status === 'DELIVERED'
         || item.status === 'PARTIAL'
     );
-    const anyAssigned = items.some(item =>
-        item.status === 'ASSIGNED'
-        || item.status === 'ON_DELIVERY'
-    );
     const anyNonDeliveryResolved = items.some(item =>
         item.status === 'HOLD'
         || item.status === 'RETURNED'
     );
+    const anyInTransit = items.some(item => item.status === 'ON_DELIVERY');
 
     if (allDelivered) {
         return 'COMPLETE';
     }
 
-    if (anyDelivered) {
+    if (anyDelivered || anyInTransit || anyNonDeliveryResolved) {
         return 'PARTIAL';
-    }
-
-    if (anyNonDeliveryResolved && !anyAssigned) {
-        return 'ON_HOLD';
     }
 
     return 'OPEN';

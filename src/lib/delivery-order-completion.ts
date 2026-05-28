@@ -372,8 +372,6 @@ export function getDeliveryOrderDisplayStatusMeta(
     switch (status) {
         case 'CREATED':
             return { label: 'Dibuat', color: 'gray', tripClosed: false };
-        case 'HEADING_TO_PICKUP':
-            return { label: 'Dalam Persiapan', color: 'warning', tripClosed: false };
         case 'ON_DELIVERY':
             return { label: 'Dalam Pengiriman', color: 'info', tripClosed: false };
         case 'ARRIVED':

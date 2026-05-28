@@ -104,13 +104,12 @@ Artinya:
 
 - Status DO bergerak:
   - `CREATED`
-  - `HEADING_TO_PICKUP`
   - `ON_DELIVERY`
   - `ARRIVED`
   - `DELIVERED`
 - Saat DO berubah, status item order ikut disinkronkan.
 - Status order dihitung dari status seluruh item, bukan cuma jumlah DO.
-- Driver hanya boleh mengirim progres perjalanan seperti `HEADING_TO_PICKUP`, `ON_DELIVERY`, atau `ARRIVED`.
+- Driver hanya boleh mengirim progres perjalanan seperti `ON_DELIVERY` atau `ARRIVED`.
 - Status `DELIVERED` ditetapkan oleh admin/dispatcher, bukan oleh driver.
 - Saat admin menyelesaikan DO ke `DELIVERED`, data POD diisi di langkah yang sama:
   - nama penerima
@@ -147,7 +146,7 @@ Hasil akhirnya:
 
 - semua item selesai -> `COMPLETE`
 - sebagian sudah jalan / selesai -> `PARTIAL`
-- ada hold tanpa progress kirim -> `ON_HOLD`
+- ada hold tanpa progress kirim -> `PARTIAL`
 - belum ada progress -> `OPEN`
 
 ### 3.4 Hold pada item order

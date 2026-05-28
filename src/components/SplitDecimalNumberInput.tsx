@@ -15,15 +15,36 @@ type SplitDecimalNumberInputProps = Omit<
 function splitNumber(value: number | string | null | undefined, maxFractionDigits: number) {
   if (typeof value === "string") {
     const trimmed = value.trim();
-    const decimalMatch = trimmed.match(/^(\d*)[,.](\d*)$/);
-    if (decimalMatch) {
+    const normalized = trimmed.replace(/\s/g, "");
+    const commaIndex = normalized.lastIndexOf(",");
+    if (commaIndex >= 0) {
+      const integerDigits = normalized.slice(0, commaIndex).replace(/\D/g, "");
+      const fractionDigits = normalized.slice(commaIndex + 1).replace(/\D/g, "");
       return {
-        integerValue: Number(decimalMatch[1] || 0),
-        fractionText: maxFractionDigits > 0 ? decimalMatch[2] : "",
+        integerValue: integerDigits ? Number(integerDigits) : 0,
+        fractionText: maxFractionDigits > 0 ? fractionDigits : "",
       };
     }
 
-    const integerDigits = trimmed.replace(/\D/g, "");
+    const dotParts = normalized.split(".");
+    if (dotParts.length === 2) {
+      const [left = "", right = ""] = dotParts;
+      const integerDigits = left.replace(/\D/g, "");
+      const fractionDigits = right.replace(/\D/g, "");
+      const leftWithoutLeadingZero = integerDigits.replace(/^0+(?=\d)/, "");
+      const looksLikeThousandsGrouping =
+        fractionDigits.length === 3 &&
+        integerDigits.length > 0 &&
+        leftWithoutLeadingZero !== "0";
+      if (!looksLikeThousandsGrouping) {
+        return {
+          integerValue: integerDigits ? Number(integerDigits) : 0,
+          fractionText: maxFractionDigits > 0 ? fractionDigits : "",
+        };
+      }
+    }
+
+    const integerDigits = normalized.replace(/\D/g, "");
     return {
       integerValue: integerDigits ? Number(integerDigits) : 0,
       fractionText: "",
@@ -149,7 +170,8 @@ export default function SplitDecimalNumberInput({
             return;
           }
           const pasted = event.clipboardData.getData("text").trim();
-          const decimalPaste = pasted.match(/^(\d*)[,.](\d+)$/);
+          const normalizedPaste = pasted.replace(/\s/g, "");
+          const decimalPaste = normalizedPaste.match(/^([\d.]*),(\d+)$/);
           if (!decimalPaste) {
             return;
           }

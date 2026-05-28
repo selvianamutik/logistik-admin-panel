@@ -113,15 +113,6 @@ export function deriveTripOperationalStatusFromSuratJalanStatuses(
     baseStatus: DOStatus,
     statuses: DOStatus[]
 ): DOStatus {
-    const operationalOrder: Array<Exclude<DOStatus, 'CANCELLED'>> = [
-        'PARTIAL_HOLD',
-        'CREATED',
-        'HEADING_TO_PICKUP',
-        'ON_DELIVERY',
-        'ARRIVED',
-        'DELIVERED',
-    ];
-
     if (baseStatus === 'CANCELLED') {
         return 'CANCELLED';
     }
@@ -143,7 +134,19 @@ export function deriveTripOperationalStatusFromSuratJalanStatuses(
         return uniqueStatuses[0];
     }
 
-    return operationalOrder.find(status => uniqueStatuses.includes(status)) || baseStatus;
+    if (uniqueStatuses.includes('PARTIAL_HOLD')) {
+        return 'PARTIAL_HOLD';
+    }
+    if (uniqueStatuses.includes('ARRIVED')) {
+        return 'ARRIVED';
+    }
+    if (uniqueStatuses.includes('ON_DELIVERY')) {
+        return 'ON_DELIVERY';
+    }
+    if (uniqueStatuses.every(status => status === 'DELIVERED')) {
+        return 'DELIVERED';
+    }
+    return 'CREATED';
 }
 
 export function aggregateTripStatusFromSuratJalanStatuses(
@@ -170,7 +173,7 @@ export function deriveSuratJalanDocumentStatus(
         return baseStatus;
     }
     if (hasHold) {
-        return ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(baseStatus)
+        return ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(baseStatus)
             ? baseStatus
             : 'PARTIAL_HOLD';
     }

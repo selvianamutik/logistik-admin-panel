@@ -1722,14 +1722,14 @@ function getSortPresetComparator(
     if (sortPreset !== 'work-queue') return null;
 
     if (docType === 'order') {
-        const ranks = { OPEN: 0, PARTIAL: 1, ON_HOLD: 2, COMPLETE: 3, CANCELLED: 4 };
+        const ranks = { OPEN: 0, PARTIAL: 1, ON_HOLD: 1, COMPLETE: 2, CANCELLED: 3 };
         return (left, right) =>
             rankValue(left.status, ranks) - rankValue(right.status, ranks)
             || compareWithFallback(left, right, 'createdAt', 'desc');
     }
 
     if (docType === 'deliveryOrder') {
-        const ranks = { PARTIAL_HOLD: 0, CREATED: 1, HEADING_TO_PICKUP: 2, ON_DELIVERY: 3, ARRIVED: 4, DELIVERED: 5, CANCELLED: 6 };
+        const ranks = { CREATED: 0, ON_DELIVERY: 1, ARRIVED: 2, PARTIAL_HOLD: 3, DELIVERED: 4, CANCELLED: 5 };
         return (left, right) => {
             const leftPendingRank = hasMeaningfulValue(left.pendingDriverStatus) ? 0 : 1;
             const rightPendingRank = hasMeaningfulValue(right.pendingDriverStatus) ? 0 : 1;

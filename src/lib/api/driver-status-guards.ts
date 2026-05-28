@@ -11,7 +11,6 @@ export function validateDriverStatusTransition(
     if (
         requestedStatus === 'ON_DELIVERY' &&
         deliveryOrder.status !== 'CREATED' &&
-        deliveryOrder.status !== 'HEADING_TO_PICKUP' &&
         deliveryOrder.status !== 'PARTIAL_HOLD'
     ) {
         return 'Driver hanya bisa menandai dalam pengiriman dari status siap jalan atau hold lanjutan.';

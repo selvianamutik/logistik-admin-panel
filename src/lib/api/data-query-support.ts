@@ -1838,9 +1838,8 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
                     (acc, row) => {
                         acc.total += 1;
                         if (row.status === 'OPEN') acc.open += 1;
-                        if (row.status === 'PARTIAL') acc.partial += 1;
+                        if (row.status === 'PARTIAL' || row.status === 'ON_HOLD') acc.partial += 1;
                         if (row.status === 'COMPLETE') acc.complete += 1;
-                        if (row.status === 'ON_HOLD') acc.onHold += 1;
                         return acc;
                     },
                     { total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }

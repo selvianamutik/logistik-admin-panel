@@ -341,7 +341,7 @@ export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> 
     OPEN: { label: 'Belum Terkirim', color: 'info' },
     PARTIAL: { label: 'Sebagian Terkirim', color: 'warning' },
     COMPLETE: { label: 'Selesai', color: 'success' },
-    ON_HOLD: { label: 'Ditahan', color: 'purple' },
+    ON_HOLD: { label: 'Sebagian Terkirim', color: 'warning' },
     CANCELLED: { label: 'Dibatalkan', color: 'danger' },
 };
 
@@ -357,7 +357,6 @@ export const ITEM_STATUS_MAP: Record<string, { label: string; color: string }> =
 
 export const DO_STATUS_MAP: Record<string, { label: string; color: string }> = {
     CREATED: { label: 'Dibuat', color: 'gray' },
-    HEADING_TO_PICKUP: { label: 'Dalam Persiapan', color: 'warning' },
     ON_DELIVERY: { label: 'Dalam Pengiriman', color: 'info' },
     ARRIVED: { label: 'Tiba di Tujuan', color: 'primary' },
     PARTIAL_HOLD: { label: 'Terkirim Sebagian / Hold', color: 'warning' },

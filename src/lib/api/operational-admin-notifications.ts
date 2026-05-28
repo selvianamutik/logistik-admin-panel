@@ -8,7 +8,6 @@ const GREEN_API_PROVIDER_VALUES = new Set(['green_api', 'green-api', 'greenapi']
 
 const STATUS_LABELS: Record<string, string> = {
     CREATED: 'Dibuat',
-    HEADING_TO_PICKUP: 'Dalam Persiapan',
     ON_DELIVERY: 'Dalam Pengiriman',
     ARRIVED: 'Tiba di Tujuan',
     PARTIAL_HOLD: 'Terkirim Sebagian / Hold',

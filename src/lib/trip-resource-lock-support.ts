@@ -43,14 +43,13 @@ export type TripResourceLockSource =
 
 const LOCKING_DELIVERY_ORDER_STATUSES = new Set<DeliveryOrder['status']>([
     'CREATED',
-    'HEADING_TO_PICKUP',
     'ON_DELIVERY',
     'ARRIVED',
     'PARTIAL_HOLD',
     'DELIVERED',
 ]);
 
-const LOCKING_ORDER_STATUSES = new Set<Order['status']>(['OPEN', 'PARTIAL', 'ON_HOLD']);
+const LOCKING_ORDER_STATUSES = new Set<Order['status']>(['OPEN', 'PARTIAL']);
 
 export function isDeliveryOrderResourceLocked(order: DeliveryOrderResourceLock) {
     if (!order || order.status === 'CANCELLED' || order.tripClosedByAdminAt) {

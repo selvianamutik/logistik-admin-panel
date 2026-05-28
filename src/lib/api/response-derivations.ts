@@ -178,16 +178,15 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
         return orders;
     }
 
-    const cacheKey = `orders:${buildDocumentSignature(orders)}`;
-    const cached = getResponseDerivationCache<OrderResponseSource[]>(cacheKey);
-    if (cached) {
-        return cached;
-    }
-
     const orderIds = orders.map(item => item._id).filter(Boolean);
     const orderItems = orderIds.length > 0
         ? await listDocumentsByFilter<OrderItemStatusSource>('orderItem', { orderRef: orderIds })
         : [];
+    const cacheKey = `orders:${buildDocumentSignature(orders)}:${buildDocumentSignature(orderItems)}`;
+    const cached = getResponseDerivationCache<OrderResponseSource[]>(cacheKey);
+    if (cached) {
+        return cached;
+    }
 
     const itemsByOrderRef = new Map<string, OrderItemStatusSource[]>();
     for (const item of orderItems) {
@@ -204,9 +203,6 @@ export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
         }
 
         const linkedItems = itemsByOrderRef.get(order._id) || [];
-        if (linkedItems.length === 0) {
-            return order;
-        }
 
         const derivedStatus = deriveOrderStatusFromItems(linkedItems);
         if (!derivedStatus || derivedStatus === order.status) {

@@ -122,23 +122,19 @@ void main() {
     test('uses admin operational labels for per-SJ statuses', () {
       const reference = DeliveryShipperReference(
         referenceNumber: 'SJ-A',
-        tripStatus: 'HEADING_TO_PICKUP',
+        tripStatus: 'ON_DELIVERY',
       );
 
       expect(
-        deliveryStatusApiValue(TripStatus.headingToPickup),
-        'HEADING_TO_PICKUP',
+        deliveryStatusApiValue(TripStatus.onDelivery),
+        'ON_DELIVERY',
       );
-      expect(reference.statusLabel, 'Menuju Pickup');
+      expect(reference.statusLabel, 'Dalam Pengiriman');
       expect(deliveryStatusLabel('ON_DELIVERY'), 'Dalam Pengiriman');
       expect(deliveryStatusLabel('DELIVERED'), 'Terkirim');
     });
 
     test('matches backend tracking guard for driver status updates', () {
-      expect(
-        deliveryStatusRequiresActiveTracking(TripStatus.headingToPickup),
-        isFalse,
-      );
       expect(
         deliveryStatusRequiresActiveTracking(TripStatus.onDelivery),
         isTrue,
@@ -156,9 +152,9 @@ void main() {
         originLabel: 'Gudang A',
         destinationLabel: 'Tujuan A',
         customerName: 'PT Contoh',
-        status: TripStatus.headingToPickup,
+        status: TripStatus.assigned,
         etdLabel: 'Tanggal DO 2026-04-18',
-        statusNote: 'Menuju pickup',
+        statusNote: 'Trip sudah ditugaskan',
         allowsDirectCargoInput: true,
         trackingState: 'STOPPED',
       );

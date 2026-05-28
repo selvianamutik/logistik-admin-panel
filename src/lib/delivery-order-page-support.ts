@@ -15,8 +15,6 @@ export function getNextDeliveryOrderAction(deliveryOrder: DeliveryOrder) {
             return deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED'
                 ? 'Pantau perjalanan'
                 : 'Aktifkan tracking / pantau';
-        case 'HEADING_TO_PICKUP':
-            return 'Pantau persiapan perjalanan';
         case 'CREATED':
             return 'Pastikan trip siap berangkat';
         case 'DELIVERED':

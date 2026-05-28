@@ -188,7 +188,7 @@ export function buildOrderDetailMetrics(
         const activeDeliveryOrder = dos.find(
             d =>
                 d._id === doi.deliveryOrderRef &&
-                ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status)
+                ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(d.status)
         );
         if (activeDeliveryOrder && doi.orderItemRef) {
             acc[doi.orderItemRef] = activeDeliveryOrder;
@@ -218,7 +218,7 @@ export function buildOrderDetailMetrics(
         const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
         if (
             !deliveryOrder ||
-            !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status) ||
+            !['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status) ||
             !doItem.orderItemRef
         ) {
             return acc;

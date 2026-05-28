@@ -571,12 +571,17 @@ class DeliveryOrderService {
       pendingActualDropPoints: _mapActualDropPoints(
         json['pendingDriverActualDropPoints'],
       ),
+      rejectedRequestStatus: (json['driverRejectedRequestStatus'] as String?)
+          ?.trim(),
+      rejectedRequestNote: (json['driverRejectedRequestNote'] as String?)
+          ?.trim(),
+      rejectedRequestAt: (json['driverRejectedRequestAt'] as String?)?.trim(),
     );
   }
 
   TripStatus _mapTripStatus(String status) {
     return switch (status.trim().toUpperCase()) {
-      'HEADING_TO_PICKUP' => TripStatus.headingToPickup,
+      'HEADING_TO_PICKUP' => TripStatus.onDelivery,
       'ON_DELIVERY' => TripStatus.onDelivery,
       'ARRIVED' => TripStatus.arrived,
       'PARTIAL_HOLD' => TripStatus.partialHold,
@@ -611,9 +616,6 @@ class DeliveryOrderService {
     }
     if (statuses.any((status) => status == 'ON_DELIVERY')) {
       return TripStatus.onDelivery;
-    }
-    if (statuses.any((status) => status == 'HEADING_TO_PICKUP')) {
-      return TripStatus.headingToPickup;
     }
     return fallbackStatus;
   }
@@ -1101,7 +1103,6 @@ class DeliveryOrderService {
   String _mapStatusToApi(TripStatus status) {
     return switch (status) {
       TripStatus.assigned => 'CREATED',
-      TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
       TripStatus.onDelivery => 'ON_DELIVERY',
       TripStatus.arrived => 'ARRIVED',
       TripStatus.partialHold => 'PARTIAL_HOLD',

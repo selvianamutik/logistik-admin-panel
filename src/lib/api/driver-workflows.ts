@@ -941,7 +941,7 @@ export async function handleDriverVoucherCreate(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
     }
-    if (deliveryOrder.status && !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)) {
+    if (deliveryOrder.status && !['CREATED', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)) {
         return NextResponse.json(
             { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} dengan status ${deliveryOrder.status} tidak bisa dipakai untuk uang jalan trip.` },
             { status: 409 }
