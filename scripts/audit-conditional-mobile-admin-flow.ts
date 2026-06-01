@@ -321,6 +321,20 @@ async function makeIncidentCycle(params: {
         resolutionNote: `Driver selesai incident ${params.idx}`,
         resolutionLocationText: `Audit resolution location ${params.idx}`,
         resolutionOdometer: 1100 + params.idx,
+    });
+    assert(resolution.data?.incident?.status === 'IN_PROGRESS', `incident ${params.idx} tidak naik ke IN_PROGRESS`);
+
+    const duplicate = await driverRequest<AnyDoc>('PATCH', params.token, '/api/driver/incidents', {
+        action: 'submit-resolution',
+        incidentRef: incident._id,
+        resolutionNote: 'Duplicate should fail',
+    }, 409);
+    assert(duplicate.error, `duplicate incident ${params.idx} harus ditolak`);
+
+    const costSubmission = await driverRequest<AnyDoc>('PATCH', params.token, '/api/driver/incidents', {
+        action: 'submit-resolution',
+        incidentRef: incident._id,
+        resolutionNote: `Driver tambah biaya incident ${params.idx}`,
         costs: [{
             category: params.category,
             amount: params.amount,
@@ -329,16 +343,9 @@ async function makeIncidentCycle(params: {
             note: 'Masuk uang jalan',
         }],
     });
-    const line = resolution.data?.settlementLines?.[0];
-    assert(resolution.data?.incident?.status === 'IN_PROGRESS', `incident ${params.idx} tidak naik ke IN_PROGRESS`);
+    assert(costSubmission.data?.incident?.status === 'IN_PROGRESS', `tambah biaya incident ${params.idx} tidak boleh menurunkan status incident`);
+    const line = costSubmission.data?.settlementLines?.[0];
     assert(line?._id && line.status === 'DRAFT', `incident ${params.idx} tidak membuat biaya DRAFT`);
-
-    const duplicate = await driverRequest<AnyDoc>('PATCH', params.token, '/api/driver/incidents', {
-        action: 'submit-resolution',
-        incidentRef: incident._id,
-        resolutionNote: 'Duplicate should fail',
-    }, 409);
-    assert(duplicate.error, `duplicate incident ${params.idx} harus ditolak`);
 
     const lineDetail = await requestJson<ApiResponse<AnyDoc>>(
         `/api/data?entity=incident-settlement-lines&id=${encodeURIComponent(line._id)}`,

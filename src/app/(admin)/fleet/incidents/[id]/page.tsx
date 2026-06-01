@@ -266,13 +266,9 @@ export default function IncidentDetailPage() {
     const grossExposure = summary.totalCost + summary.totalCompensation;
     const netExposure = grossExposure - summary.postedRecovery;
     const hasPendingSettlement = useMemo(() => hasUnsettledIncidentSettlementLines(lines), [lines]);
-    const availableStatuses = incident ? getAvailableIncidentStatusesForContext(incident.status, lines) : [];
+    const availableStatuses = incident ? getAvailableIncidentStatusesForContext(incident.status) : [];
     const lineCategories = getIncidentSettlementCategoryOptions(lineForm.lineType);
     const incidentClosed = incident?.status === 'CLOSED';
-    const pendingDriverReviewLines = useMemo(
-        () => lines.filter(line => line.status === 'DRAFT' && (line.note || '').includes('Diajukan driver')),
-        [lines]
-    );
     const hasPendingDriverResolution = Boolean(
         incident?.pendingDriverResolutionRequestedAt
     );

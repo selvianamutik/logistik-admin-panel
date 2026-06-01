@@ -20,7 +20,6 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
-import { clearRelationalReadCache } from '@/lib/supabase-relational';
 
 import {
     assertIsoDate,
@@ -75,277 +74,76 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
 import { getFreightNotaList } from './data-query-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
-import { computeDriverVoucherTotals } from './driver-workflow-support';
 import { assertTripResourcesAssignable } from './trip-resource-locks';
 import { inferExpenseCategoryScope, resolveExpenseCategoryAccountKey } from '@/lib/expense-category-scope';
 import { postExpenseJournal } from './accounting-posting';
 import {
     aggregateTripStatusFromSuratJalanStatuses,
-    mapDeliveryOrderToSuratJalanItemRecords,
     mapDeliveryOrderToSuratJalanRecords,
-    mapDeliveryOrderToTripRecord,
     parseSuratJalanDocumentId,
 } from '@/lib/trip-document-mappers';
 import { findLatestActualDropPoint, isHoldContinuationStopType } from '@/lib/actual-drop-point-utils';
+import {
+    buildAutoFinalizeBatchRawDropPoints,
+    ensureTripRecordForSuratJalanWrites,
+    getDeliveryOrderSuratJalanIdentity,
+    getLockedRemovedShipperReferenceLabels,
+    MANUAL_DO_STATUSES,
+    normalizeSelectedSuratJalanRefs,
+    refreshSuratJalanItemRecordsForDeliveryOrder,
+} from './order-workflows-surat-jalan-support';
+import {
+    areDeliveryOrderShipperReferencesEquivalent,
+    normalizeDeliveryOrderShipperReferencesForUpdate,
+    resolveDeliveryOrderCargoItemContext,
+} from './order-workflows-shipper-reference-support';
+import {
+    clearLegacyPendingDriverRequestFields,
+    getBlockingPendingDriverApprovalRequest,
+    getPendingDriverRequestsFromDeliveryOrder,
+    getPendingFinalizationSuratJalanRefSet,
+    getPendingShipperReferenceMutationMessage,
+    hasPendingDriverApprovalRequest,
+    isCargoItemTargetedByPendingFinalization,
+    pendingFinalizationReferenceLabel,
+    type PendingDriverApprovalSource,
+} from './order-workflows-pending-driver-support';
+import {
+    isOilMaintenanceType,
+    parseOdometerValue,
+    resolveOilStatus,
+} from './order-workflows-odometer-support';
+import { buildOrderItemDraftDocument } from './order-workflows-order-item-support';
+import {
+    computeTripOvertonageAdjustment,
+    type TripOvertonageComputationResult,
+} from './order-workflows-overtonage-support';
+import {
+    getExtraPickupRefsFromPayload,
+    normalizeOrderPickupStopsInput,
+    normalizeOrderTripPlansInput,
+    normalizeRequestedPickupStopKeys,
+    remapRequestedPickupStopKey,
+    remapRequestedPickupStopKeys,
+    resolveOrderPickupStopExpansion,
+} from './order-workflows-trip-plan-input-support';
+import { resolveCancelTripExpenseCategory } from './order-workflows-cancel-trip-support';
+import {
+    BILLABLE_PROGRESS_DROP_TYPES,
+    getAmbiguousActualDropMappingMessage,
+    getActualDropTotalMismatchMessage,
+    hasDeliveryCargoSummary,
+    NON_BILLABLE_PROGRESS_DROP_TYPES,
+    preferDerivedActualCargoInputs,
+    splitActualCargoForOrderProgress,
+    summarizeActualDropPointCargo,
+    summarizeActualDropPointCargoForOrderItem,
+    summarizeSuratJalanActualCargo,
+} from './order-workflows-cargo-summary-support';
 
-const MANUAL_DO_STATUSES = ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED', 'CANCELLED'] as const;
-
-function getDeliveryOrderSuratJalanIdentity(params: {
-    deliveryOrderId: string;
-    shipperReferenceKey?: string | null;
-    shipperReferenceNumber?: string | null;
-}) {
-    return `${params.deliveryOrderId}:${params.shipperReferenceKey || params.shipperReferenceNumber || 'primary'}`;
-}
-
-function hasSuratJalanCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; volumeM3?: number } | null) {
-    return (
-        normalizeNumber(summary?.qtyKoli ?? 0) > 0 ||
-        normalizeNumber(summary?.weightKg ?? 0) > 0 ||
-        normalizeNumber(summary?.volumeM3 ?? 0) > 0
-    );
-}
-
-function getLockedRemovedShipperReferenceLabels(params: {
-    deliveryOrderId: string;
-    removedReferences: Array<{ _key?: string; referenceNumber?: string }>;
-    removedReferenceKeys: Set<string>;
-    removedReferenceNumbers: Set<string>;
-    itemsLinkedToRemovedReferences: Array<{ _id: string }>;
-    suratJalanRecords: Array<{
-        _id: string;
-        tripStatus?: string;
-        referenceKey?: string;
-        suratJalanNumber?: string;
-        billableCargo?: { qtyKoli?: number; weightKg?: number; volumeM3?: number };
-        holdCargo?: { qtyKoli?: number; weightKg?: number; volumeM3?: number };
-        returnCargo?: { qtyKoli?: number; weightKg?: number; volumeM3?: number };
-    }>;
-    actualDropPoints?: Array<{
-        stopType?: string;
-        deliveryOrderItemRef?: string;
-        deliveryOrderItemRefs?: unknown;
-        shipperReferenceKey?: string;
-        shipperReferenceNumber?: string;
-    }>;
-}) {
-    const removedItemIds = new Set(params.itemsLinkedToRemovedReferences.map(item => item._id));
-    const allocatedDropTypes = new Set(['DROP', 'HOLD', 'TRANSIT', 'EXTRA_DROP', 'RETURN']);
-    return params.removedReferences
-        .filter(reference => {
-            const referenceKey = normalizeOptionalText(reference._key);
-            const referenceNumber = normalizeOptionalText(reference.referenceNumber)?.toUpperCase();
-            const targetRecordId = getDeliveryOrderSuratJalanIdentity({
-                deliveryOrderId: params.deliveryOrderId,
-                shipperReferenceKey: reference._key,
-                shipperReferenceNumber: reference.referenceNumber,
-            });
-            const matchingRecord = params.suratJalanRecords.find(record =>
-                record._id === targetRecordId ||
-                (referenceKey && normalizeOptionalText(record.referenceKey) === referenceKey) ||
-                (referenceNumber && normalizeOptionalText(record.suratJalanNumber)?.toUpperCase() === referenceNumber)
-            );
-            if (
-                matchingRecord &&
-                (
-                    matchingRecord.tripStatus === 'DELIVERED' ||
-                    matchingRecord.tripStatus === 'PARTIAL_HOLD' ||
-                    hasSuratJalanCargoSummaryValue(matchingRecord.billableCargo) ||
-                    hasSuratJalanCargoSummaryValue(matchingRecord.holdCargo) ||
-                    hasSuratJalanCargoSummaryValue(matchingRecord.returnCargo)
-                )
-            ) {
-                return true;
-            }
-
-            return (params.actualDropPoints || []).some(point => {
-                if (!allocatedDropTypes.has(point.stopType || '')) {
-                    return false;
-                }
-                const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
-                const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
-                if (
-                    (pointReferenceKey && params.removedReferenceKeys.has(pointReferenceKey)) ||
-                    (pointReferenceNumber && params.removedReferenceNumbers.has(pointReferenceNumber))
-                ) {
-                    return true;
-                }
-                const pointItemRefs = [
-                    normalizeOptionalText(point.deliveryOrderItemRef),
-                    ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
-                        .map(ref => normalizeOptionalText(ref))
-                        .filter((ref): ref is string => Boolean(ref))),
-                ].filter((ref): ref is string => Boolean(ref));
-                return pointItemRefs.some(ref => removedItemIds.has(ref));
-            });
-        })
-        .map(reference => normalizeOptionalText(reference.referenceNumber)?.toUpperCase() || normalizeOptionalText(reference._key) || 'SJ');
-}
-
-function normalizeSelectedSuratJalanRefs(data: Record<string, unknown>, deliveryOrderId: string) {
-    return Array.from(
-        new Set(
-            (Array.isArray(data.targetSuratJalanRefs) ? data.targetSuratJalanRefs : [])
-                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-                .map(value => value.trim())
-                .filter(value => value === `${deliveryOrderId}:primary` || value.startsWith(`${deliveryOrderId}:`))
-        )
-    );
-}
-
-async function findPersistedTripRecordForDeliveryOrder(deliveryOrderId: string) {
-    const byId = await getDocumentById<{ _id: string; deliveryOrderRef?: string }>(deliveryOrderId, 'trip');
-    if (byId) {
-        return byId;
-    }
-
-    const byDeliveryOrderRef = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string }>('trip', {
-        deliveryOrderRef: deliveryOrderId,
-    });
-    return byDeliveryOrderRef.find(record => record.deliveryOrderRef === deliveryOrderId) || null;
-}
-
-async function ensureTripRecordForSuratJalanWrites(deliveryOrder: { _id: string; _type?: unknown; orderRef?: unknown; date?: unknown }) {
-    const completeDeliveryOrder =
-        deliveryOrder._type === 'deliveryOrder' && typeof deliveryOrder.orderRef === 'string' && typeof deliveryOrder.date === 'string'
-            ? deliveryOrder as DeliveryOrder
-            : await getDocumentById<DeliveryOrder>(deliveryOrder._id, 'deliveryOrder');
-    if (!completeDeliveryOrder) {
-        throw new Error('Trip tidak ditemukan');
-    }
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-        clearRelationalReadCache();
-        const persistedTripRecord = await findPersistedTripRecordForDeliveryOrder(deliveryOrder._id);
-        if (persistedTripRecord) {
-            return;
-        }
-        try {
-            await createDocument({ ...mapDeliveryOrderToTripRecord(completeDeliveryOrder) });
-            clearRelationalReadCache();
-            return;
-        } catch (error) {
-            if (!isMutationConflictError(error)) {
-                throw error;
-            }
-            clearRelationalReadCache();
-            const persistedTripRecordAfterConflict = await findPersistedTripRecordForDeliveryOrder(deliveryOrder._id);
-            if (persistedTripRecordAfterConflict) {
-                return;
-            }
-        }
-        await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
-    }
-    throw new Error('Trip relasional belum siap untuk penulisan surat jalan');
-}
-
-async function refreshSuratJalanItemRecordsForDeliveryOrder(deliveryOrder: DeliveryOrder) {
-    const deliveryOrderItems = await listDocumentsByFilter<DeliveryOrderItem>('deliveryOrderItem', {
-        deliveryOrderRef: deliveryOrder._id,
-    });
-    const mappedItemRecords = mapDeliveryOrderToSuratJalanItemRecords(deliveryOrder, deliveryOrderItems);
-    const existingItemRecords = await listDocumentsByFilter<{ _id: string }>('suratJalanItem', {
-        tripRef: deliveryOrder._id,
-    });
-    const mappedItemRecordIds = new Set(mappedItemRecords.map(item => item._id));
-    const existingItemRecordIds = new Set(existingItemRecords.map(item => item._id));
-
-    for (const record of mappedItemRecords) {
-        if (existingItemRecordIds.has(record._id)) {
-            await updateDocument(record._id, { ...record }, 'suratJalanItem');
-        } else {
-            await createDocument({ ...record });
-        }
-    }
-
-    for (const record of existingItemRecords) {
-        if (!mappedItemRecordIds.has(record._id)) {
-            await deleteDocument(record._id, 'suratJalanItem');
-        }
-    }
-}
-
-function buildAutoFinalizeBatchRawDropPoints(
-    deliveryOrderId: string,
-    deliveryOrder: {
-        receiverName?: string;
-        receiverCompany?: string;
-        receiverAddress?: string;
-        shipperReferences?: Array<{
-            _key?: string;
-            referenceNumber?: string;
-            receiverName?: string;
-            receiverCompany?: string;
-            receiverAddress?: string;
-        }>;
-    },
-    doItems: DeliveryOrderItemCargoSnapshot[],
-    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>,
-    selectedSuratJalanRefs: Set<string>
-) {
-    const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
-    const groupedItems = doItems.reduce<Map<string, DeliveryOrderItemCargoSnapshot[]>>((acc, item) => {
-        const suratJalanRef = getDeliveryOrderSuratJalanIdentity({
-            deliveryOrderId,
-            shipperReferenceKey: item.shipperReferenceKey,
-            shipperReferenceNumber: item.shipperReferenceNumber,
-        });
-        const current = acc.get(suratJalanRef) || [];
-        current.push(item);
-        acc.set(suratJalanRef, current);
-        return acc;
-    }, new Map());
-
-    return [...groupedItems.entries()].flatMap(([suratJalanRef, items]) => {
-        const matchedReference = shipperReferences.find(reference =>
-            suratJalanRef === getDeliveryOrderSuratJalanIdentity({
-                deliveryOrderId,
-                shipperReferenceKey: reference._key,
-                shipperReferenceNumber: reference.referenceNumber,
-            })
-        ) || null;
-
-        const totals = items.reduce((sum, item) => {
-            const actual = actualCargoByDoItemId.get(item._id);
-            if (!actual) {
-                return sum;
-            }
-            return {
-                qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(actual.actualQtyKoli)),
-                weightKg: roundQuantity(sum.weightKg + normalizeNumber(actual.actualWeightKg)),
-                volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(actual.actualVolumeM3 ?? 0), 3),
-            };
-        }, { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-
-        if (totals.qtyKoli <= 0 && totals.weightKg <= 0 && totals.volumeM3 <= 0) {
-            return [];
-        }
-
-        const isSelected = selectedSuratJalanRefs.has(suratJalanRef);
-        const targetName = matchedReference?.referenceNumber
-            ? `Tujuan final ${matchedReference.referenceNumber}`
-            : 'Tujuan Invoice';
-        const targetAddress = '';
-
-        return [{
-            stopType: isSelected ? 'DROP' : 'HOLD',
-            deliveryOrderItemRefs: items.map(item => item._id),
-            shipperReferenceKey: matchedReference?._key || items[0]?.shipperReferenceKey,
-            shipperReferenceNumber: matchedReference?.referenceNumber || items[0]?.shipperReferenceNumber,
-            locationName: targetName,
-            locationAddress: targetAddress,
-            qtyKoli: totals.qtyKoli > 0 ? totals.qtyKoli : undefined,
-            weightKg: totals.weightKg > 0 ? totals.weightKg : undefined,
-            volumeM3: totals.volumeM3 > 0 ? totals.volumeM3 : undefined,
-            note: isSelected ? 'Finalisasi batch SJ terpilih' : 'Menunggu batch SJ berikutnya',
-        }];
-    });
-}
-import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import {
     getDeliveryOrderBillableCargoSummary,
     getDeliveryOrderHoldCargoSummary,
-    getDeliveryOrderNonBillableCargoSummary,
     getDeliveryOrderReturnCargoSummary,
 } from '@/lib/delivery-order-completion';
 import type { CompanyProfile, DeliveryOrder, DeliveryOrderItem, DOStatus, Expense, ExpenseCategory, Maintenance, Order, OrderPickupStop, OrderTripPlan, PendingDriverStatusRequest, Service, TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
@@ -357,219 +155,6 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
-
-function parseOdometerValue(value: unknown) {
-    if (value === undefined || value === null || value === '') {
-        return undefined;
-    }
-    const parsed = typeof value === 'number' ? value : Number(String(value).replace(/\./g, '').replace(',', '.'));
-    return Number.isFinite(parsed) ? Math.round(parsed) : undefined;
-}
-
-function getPendingDriverRequestsFromDeliveryOrder(
-    deliveryOrder: Pick<
-        DeliveryOrder,
-        | '_id'
-        | 'pendingDriverRequests'
-        | 'pendingDriverStatus'
-        | 'pendingDriverStatusRequestedAt'
-        | 'pendingDriverStatusRequestedBy'
-        | 'pendingDriverStatusRequestedByName'
-        | 'pendingDriverStatusNote'
-        | 'pendingDriverStatusSuratJalanRefs'
-        | 'pendingDriverPodReceiverName'
-        | 'pendingDriverPodReceivedDate'
-        | 'pendingDriverPodNote'
-        | 'pendingDriverActualCargoItems'
-        | 'pendingDriverActualDropPoints'
-        | 'tripEndOdometerKm'
-    >
-): PendingDriverStatusRequest[] {
-    const requests = Array.isArray(deliveryOrder.pendingDriverRequests)
-        ? deliveryOrder.pendingDriverRequests.filter(request => request && request.requestId && request.status)
-        : [];
-    if (requests.length > 0 || !deliveryOrder.pendingDriverStatus) {
-        return requests;
-    }
-    return [{
-        requestId: `${deliveryOrder._id}:legacy-pending-driver-request`,
-        status: deliveryOrder.pendingDriverStatus,
-        requestedAt: deliveryOrder.pendingDriverStatusRequestedAt,
-        requestedBy: deliveryOrder.pendingDriverStatusRequestedBy,
-        requestedByName: deliveryOrder.pendingDriverStatusRequestedByName,
-        note: deliveryOrder.pendingDriverStatusNote,
-        targetSuratJalanRefs: deliveryOrder.pendingDriverStatusSuratJalanRefs || [],
-        podReceiverName: deliveryOrder.pendingDriverPodReceiverName,
-        podReceivedDate: deliveryOrder.pendingDriverPodReceivedDate,
-        podNote: deliveryOrder.pendingDriverPodNote,
-        actualCargoItems: deliveryOrder.pendingDriverActualCargoItems || [],
-        actualDropPoints: deliveryOrder.pendingDriverActualDropPoints || [],
-        tripEndOdometerKm: deliveryOrder.tripEndOdometerKm,
-        closeTripOnly: Boolean(deliveryOrder.tripEndOdometerKm && (!deliveryOrder.pendingDriverActualCargoItems || deliveryOrder.pendingDriverActualCargoItems.length === 0)),
-    }];
-}
-
-function hasPendingDriverApprovalRequest(deliveryOrder: { pendingDriverStatus?: unknown; pendingDriverRequests?: unknown }) {
-    return Boolean(deliveryOrder.pendingDriverStatus) ||
-        (Array.isArray(deliveryOrder.pendingDriverRequests) &&
-            deliveryOrder.pendingDriverRequests.some(request =>
-                request &&
-                typeof request === 'object' &&
-                'requestId' in request &&
-                'status' in request
-            ));
-}
-
-type PendingDriverApprovalSource = Pick<
-    DeliveryOrder,
-    | '_id'
-    | 'pendingDriverRequests'
-    | 'pendingDriverStatus'
-    | 'pendingDriverStatusRequestedAt'
-    | 'pendingDriverStatusRequestedBy'
-    | 'pendingDriverStatusRequestedByName'
-    | 'pendingDriverStatusNote'
-    | 'pendingDriverStatusSuratJalanRefs'
-    | 'pendingDriverPodReceiverName'
-    | 'pendingDriverPodReceivedDate'
-    | 'pendingDriverPodNote'
-    | 'pendingDriverActualCargoItems'
-    | 'pendingDriverActualDropPoints'
-    | 'tripEndOdometerKm'
->;
-
-function getBlockingPendingDriverApprovalRequest(deliveryOrder: PendingDriverApprovalSource) {
-    return getPendingDriverRequestsFromDeliveryOrder(deliveryOrder)
-        .find(request =>
-            request.closeTripOnly ||
-            request.status !== 'DELIVERED' ||
-            !Array.isArray(request.targetSuratJalanRefs) ||
-            request.targetSuratJalanRefs.length === 0
-        );
-}
-
-function getPendingFinalizationSuratJalanRefSet(deliveryOrder: PendingDriverApprovalSource) {
-    return new Set(
-        getPendingDriverRequestsFromDeliveryOrder(deliveryOrder)
-            .filter(request =>
-                request.status === 'DELIVERED' &&
-                !request.closeTripOnly &&
-                Array.isArray(request.targetSuratJalanRefs) &&
-                request.targetSuratJalanRefs.length > 0
-            )
-            .flatMap(request => request.targetSuratJalanRefs || [])
-            .map(ref => normalizeOptionalText(ref))
-            .filter((ref): ref is string => Boolean(ref))
-    );
-}
-
-function getSuratJalanIdentityCandidates(
-    deliveryOrderId: string,
-    params: {
-        shipperReferenceKey?: string | null;
-        shipperReferenceNumber?: string | null;
-    }
-) {
-    const key = normalizeOptionalText(params.shipperReferenceKey);
-    const number = normalizeOptionalText(params.shipperReferenceNumber);
-    return Array.from(new Set([
-        key ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId, shipperReferenceKey: key }) : '',
-        number ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId, shipperReferenceNumber: number }) : '',
-        !key && !number ? getDeliveryOrderSuratJalanIdentity({ deliveryOrderId }) : '',
-    ].filter(Boolean)));
-}
-
-function intersectsPendingFinalization(
-    pendingRefs: Set<string>,
-    candidates: string[]
-) {
-    return candidates.some(candidate => pendingRefs.has(candidate));
-}
-
-function pendingFinalizationReferenceLabel(
-    deliveryOrderId: string,
-    pendingRefs: Set<string>,
-    fallback = 'SJ ini'
-) {
-    const first = Array.from(pendingRefs)[0];
-    if (!first) return fallback;
-    return first.startsWith(`${deliveryOrderId}:`)
-        ? first.slice(`${deliveryOrderId}:`.length) || fallback
-        : first;
-}
-
-function getPendingShipperReferenceMutationMessage(
-    deliveryOrder: PendingDriverApprovalSource & {
-        shipperReferences?: DeliveryOrder['shipperReferences'];
-    },
-    nextShipperReferences: NonNullable<DeliveryOrder['shipperReferences']>
-) {
-    const blockingRequest = getBlockingPendingDriverApprovalRequest(deliveryOrder);
-    if (blockingRequest) {
-        return 'SJ/barang tidak bisa diubah karena trip masih punya permintaan driver yang menunggu approval admin.';
-    }
-
-    const pendingRefs = getPendingFinalizationSuratJalanRefSet(deliveryOrder);
-    if (pendingRefs.size === 0) {
-        return '';
-    }
-
-    const nextByKey = new Map(
-        nextShipperReferences
-            .map(reference => [normalizeOptionalText(reference._key), reference] as const)
-            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
-    );
-    const nextByNumber = new Map(
-        nextShipperReferences
-            .map(reference => [normalizeOptionalText(reference.referenceNumber)?.toUpperCase(), reference] as const)
-            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
-    );
-
-    for (const currentReference of deliveryOrder.shipperReferences || []) {
-        const candidates = getSuratJalanIdentityCandidates(deliveryOrder._id, {
-            shipperReferenceKey: currentReference._key,
-            shipperReferenceNumber: currentReference.referenceNumber,
-        });
-        if (!intersectsPendingFinalization(pendingRefs, candidates)) {
-            continue;
-        }
-
-        const currentKey = normalizeOptionalText(currentReference._key);
-        const currentNumber = normalizeOptionalText(currentReference.referenceNumber)?.toUpperCase();
-        const nextReference =
-            (currentKey ? nextByKey.get(currentKey) : undefined) ||
-            (currentNumber ? nextByNumber.get(currentNumber) : undefined);
-        if (!nextReference) {
-            return `SJ ${currentReference.referenceNumber || pendingFinalizationReferenceLabel(deliveryOrder._id, pendingRefs)} sedang menunggu approval admin dan tidak boleh dihapus dulu.`;
-        }
-
-        const nextNumber = normalizeOptionalText(nextReference.referenceNumber)?.toUpperCase();
-        const currentPickup = normalizeOptionalText(currentReference.pickupStopKey);
-        const nextPickup = normalizeOptionalText(nextReference.pickupStopKey);
-        if (currentNumber !== nextNumber || currentPickup !== nextPickup) {
-            return `SJ ${currentReference.referenceNumber || pendingFinalizationReferenceLabel(deliveryOrder._id, pendingRefs)} sedang menunggu approval admin dan tidak boleh diubah dulu.`;
-        }
-    }
-
-    return '';
-}
-
-function isCargoItemTargetedByPendingFinalization(
-    deliveryOrderId: string,
-    pendingRefs: Set<string>,
-    item: {
-        shipperReferenceKey?: string | null;
-        shipperReferenceNumber?: string | null;
-    }
-) {
-    return intersectsPendingFinalization(
-        pendingRefs,
-        getSuratJalanIdentityCandidates(deliveryOrderId, {
-            shipperReferenceKey: item.shipperReferenceKey,
-            shipperReferenceNumber: item.shipperReferenceNumber,
-        })
-    );
-}
 
 async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'SJ/barang') {
     const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
@@ -587,36 +172,6 @@ async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'S
     }
 
     return '';
-}
-
-function clearLegacyPendingDriverRequestFields() {
-    return {
-        pendingDriverStatus: null,
-        pendingDriverStatusRequestedAt: null,
-        pendingDriverStatusRequestedBy: null,
-        pendingDriverStatusRequestedByName: null,
-        pendingDriverStatusNote: null,
-        pendingDriverStatusSuratJalanRefs: null,
-        pendingDriverPodReceiverName: null,
-        pendingDriverPodReceivedDate: null,
-        pendingDriverPodNote: null,
-        pendingDriverActualCargoItems: null,
-        pendingDriverActualDropPoints: null,
-    };
-}
-
-function isOilMaintenanceType(value: unknown) {
-    const text = typeof value === 'string' ? value.toLowerCase() : '';
-    return text.includes('oli') || text.includes('oil');
-}
-
-function resolveOilStatus(remainingKm: number | undefined) {
-    if (typeof remainingKm !== 'number' || !Number.isFinite(remainingKm)) {
-        return undefined;
-    }
-    if (remainingKm <= 0) return 'DUE';
-    if (remainingKm <= 1000) return 'DUE_SOON';
-    return 'OK';
 }
 
 async function applyTripClosureOdometerUpdates(params: {
@@ -838,771 +393,6 @@ async function writeWorkflowTrackingStopLog(
     } catch (error) {
         console.warn('Failed to write workflow tracking stop log', error);
     }
-}
-
-function buildOrderItemDraftDocument(
-    orderRef: string,
-    item: NormalizedOrderItemInput,
-    itemId: string = crypto.randomUUID(),
-    extras?: Record<string, unknown>
-) {
-    return {
-        _id: itemId,
-        _type: 'orderItem',
-        orderRef,
-        entrySource: 'ORDER',
-        customerProductRef: item.customerProductRef,
-        customerProductCode: item.customerProductCode,
-        customerProductName: item.customerProductName,
-        description: item.description,
-        qtyKoli: item.qtyKoli,
-        weight: item.weight,
-        volume: item.volume,
-        weightInputValue: item.weightInputValue,
-        weightInputUnit: item.weightInputUnit,
-        volumeInputValue: item.volumeInputValue,
-        volumeInputUnit: item.volumeInputUnit,
-        value: item.value,
-        deliveredQtyKoli: 0,
-        deliveredWeight: 0,
-        deliveredVolume: 0,
-        assignedQtyKoli: 0,
-        assignedWeight: 0,
-        assignedVolume: 0,
-        heldQtyKoli: 0,
-        heldWeight: 0,
-        heldVolume: 0,
-        status: 'PENDING',
-        ...extras,
-    };
-}
-
-function hasCargoProgressPart(part: { qtyKoli: number; weight: number; volume: number }) {
-    return part.qtyKoli > 0 || part.weight > 0 || part.volume > 0;
-}
-
-function ratioOrFallback(value: number, total: number, fallback: number) {
-    if (total > 0) {
-        return Math.min(Math.max(value / total, 0), 1);
-    }
-    return fallback;
-}
-
-function splitActualCargoForOrderProgress(params: {
-    actualQtyKoli: number;
-    actualWeight: number;
-    actualVolume: number;
-    deliveryOrderItemRef?: string;
-    shipperReferenceNumber?: string;
-    actualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
-}) {
-    const actual = {
-        qtyKoli: params.actualQtyKoli,
-        weight: params.actualWeight,
-        volume: params.actualVolume,
-    };
-    const empty = { qtyKoli: 0, weight: 0, volume: 0 };
-    const deliveryOrderSnapshot = { actualDropPoints: params.actualDropPoints || [] };
-    const referenceNumber = normalizeOptionalText(params.shipperReferenceNumber);
-    const deliveryOrderItemRef = normalizeOptionalText(params.deliveryOrderItemRef);
-    const billable = getDeliveryOrderBillableCargoSummary(deliveryOrderSnapshot, referenceNumber, deliveryOrderItemRef);
-    const nonBillable = getDeliveryOrderNonBillableCargoSummary(deliveryOrderSnapshot, referenceNumber, deliveryOrderItemRef);
-    const billablePart = {
-        qtyKoli: billable.qtyKoli,
-        weight: billable.weightKg,
-        volume: billable.volumeM3,
-    };
-    const nonBillablePart = {
-        qtyKoli: nonBillable.qtyKoli,
-        weight: nonBillable.weightKg,
-        volume: nonBillable.volumeM3,
-    };
-    const hasBillable = hasCargoProgressPart(billablePart);
-    const hasNonBillable = hasCargoProgressPart(nonBillablePart);
-
-    if (!hasBillable && !hasNonBillable) {
-        return { delivered: actual, held: empty };
-    }
-    if (hasBillable && !hasNonBillable) {
-        return { delivered: actual, held: empty };
-    }
-    if (!hasBillable && hasNonBillable) {
-        return { delivered: empty, held: actual };
-    }
-
-    const total = {
-        qtyKoli: roundQuantity(billablePart.qtyKoli + nonBillablePart.qtyKoli),
-        weight: roundQuantity(billablePart.weight + nonBillablePart.weight),
-        volume: roundQuantity(billablePart.volume + nonBillablePart.volume, 3),
-    };
-    const fallbackRatio = ratioOrFallback(
-        billablePart.qtyKoli || billablePart.weight || billablePart.volume,
-        total.qtyKoli || total.weight || total.volume,
-        0
-    );
-    const delivered = {
-        qtyKoli: roundQuantity(actual.qtyKoli * ratioOrFallback(billablePart.qtyKoli, total.qtyKoli, fallbackRatio)),
-        weight: roundQuantity(actual.weight * ratioOrFallback(billablePart.weight, total.weight, fallbackRatio)),
-        volume: roundQuantity(actual.volume * ratioOrFallback(billablePart.volume, total.volume, fallbackRatio), 3),
-    };
-
-    return {
-        delivered,
-        held: {
-            qtyKoli: roundQuantity(Math.max(actual.qtyKoli - delivered.qtyKoli, 0)),
-            weight: roundQuantity(Math.max(actual.weight - delivered.weight, 0)),
-            volume: roundQuantity(Math.max(actual.volume - delivered.volume, 0), 3),
-        },
-    };
-}
-
-function createDeliveryCargoSummary() {
-    return { qtyKoli: 0, weightKg: 0, volumeM3: 0 };
-}
-
-function addDeliveryCargoSummary(
-    left: { qtyKoli: number; weightKg: number; volumeM3: number },
-    right: { qtyKoli: number; weightKg: number; volumeM3: number }
-) {
-    return {
-        qtyKoli: roundQuantity(left.qtyKoli + right.qtyKoli),
-        weightKg: roundQuantity(left.weightKg + right.weightKg),
-        volumeM3: roundQuantity(left.volumeM3 + right.volumeM3, 3),
-    };
-}
-
-function hasDeliveryCargoSummary(summary: { qtyKoli: number; weightKg: number; volumeM3: number }) {
-    return summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
-}
-
-function summarizeSuratJalanActualCargo(
-    deliveryOrder: DeliveryOrder,
-    allDeliveryOrderItems: Array<Pick<DeliveryOrderItem, '_id' | 'shipperReferenceKey' | 'shipperReferenceNumber'>>,
-    record: { _id: string; referenceKey?: string; suratJalanNumber?: string },
-    summarizeReference: (
-        deliveryOrder: DeliveryOrder,
-        shipperReferenceNumber?: string,
-        deliveryOrderItemRef?: string
-    ) => { qtyKoli: number; weightKg: number; volumeM3: number }
-) {
-    const parsedReferenceKey = (() => {
-        try {
-            return parseSuratJalanDocumentId(record._id).referenceKey;
-        } catch {
-            return '';
-        }
-    })();
-    const recordNumber = normalizeOptionalText(record.suratJalanNumber)?.toUpperCase();
-    const recordItems = allDeliveryOrderItems.filter(item =>
-        getDeliveryOrderSuratJalanIdentity({
-            deliveryOrderId: deliveryOrder._id,
-            shipperReferenceKey: item.shipperReferenceKey,
-            shipperReferenceNumber: item.shipperReferenceNumber,
-        }) === record._id ||
-        Boolean(
-            (record.referenceKey && item.shipperReferenceKey === record.referenceKey) ||
-            (parsedReferenceKey && parsedReferenceKey !== 'primary' && item.shipperReferenceKey === parsedReferenceKey) ||
-            (recordNumber && normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase() === recordNumber)
-        )
-    );
-    const itemSpecificSummary = recordItems.reduce(
-        (sum, item) => addDeliveryCargoSummary(sum, summarizeReference(deliveryOrder, undefined, item._id)),
-        createDeliveryCargoSummary()
-    );
-
-    return hasDeliveryCargoSummary(itemSpecificSummary)
-        ? itemSpecificSummary
-        : summarizeReference(deliveryOrder, record.suratJalanNumber);
-}
-
-function summarizeActualDropPointCargo(
-    actualDropPoints: DeliveryOrder['actualDropPoints'] | ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
-    options?: { billableOnly?: boolean }
-) {
-    return (actualDropPoints || [])
-        .filter(point => !options?.billableOnly || point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP')
-        .reduce(
-            (sum, point) => addDeliveryCargoSummary(sum, {
-                qtyKoli: normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }),
-                weightKg: normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
-                    ? normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 })
-                    : convertWeightToKg(
-                        normalizeNumber(point.weightInputValue ?? 0, { maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit) }),
-                        point.weightInputUnit || 'KG'
-                    ),
-                volumeM3: normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
-                    ? normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 })
-                    : convertVolumeToM3(
-                        normalizeNumber(point.volumeInputValue ?? 0, { maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3 }),
-                        point.volumeInputUnit || 'M3'
-                    ),
-            }),
-            createDeliveryCargoSummary()
-        );
-}
-
-const BILLABLE_PROGRESS_DROP_TYPES = new Set(['DROP', 'EXTRA_DROP']);
-const NON_BILLABLE_PROGRESS_DROP_TYPES = new Set(['HOLD', 'TRANSIT', 'RETURN']);
-
-function summarizeActualDropPointCargoForOrderItem(
-    actualDropPoints: DeliveryOrder['actualDropPoints'] | ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
-    itemRefs: Set<string>,
-    allowedTypes: Set<string>,
-    shipperReferenceNumber?: string,
-    doItems: DeliveryOrderItemCargoSnapshot[] = []
-) {
-    const normalizedReferenceNumber = normalizeOptionalText(shipperReferenceNumber)?.toUpperCase();
-    const doItemById = new Map(doItems.map(item => [item._id, item]));
-    const getPointCargo = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => ({
-        qtyKoli: normalizeNumber(point.qtyKoli ?? 0, { maxFractionDigits: 2 }),
-        weightKg: normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 }) > 0
-            ? normalizeNumber(point.weightKg ?? 0, { maxFractionDigits: 2 })
-            : convertWeightToKg(
-                normalizeNumber(point.weightInputValue ?? 0, { maxFractionDigits: getWeightInputFractionDigits(point.weightInputUnit) }),
-                point.weightInputUnit || 'KG'
-            ),
-        volumeM3: normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 }) > 0
-            ? normalizeNumber(point.volumeM3 ?? 0, { maxFractionDigits: 3 })
-            : convertVolumeToM3(
-                normalizeNumber(point.volumeInputValue ?? 0, { maxFractionDigits: point.volumeInputUnit === 'LITER' ? 0 : 3 }),
-                point.volumeInputUnit || 'M3'
-            ),
-    });
-    const getItemCargoBase = (
-        item: DeliveryOrderItemCargoSnapshot | undefined,
-        field: 'qtyKoli' | 'weightKg' | 'volumeM3',
-        nonBillable: boolean
-    ) => {
-        if (!item) {
-            return 0;
-        }
-        if (nonBillable) {
-            if (field === 'qtyKoli') return normalizeNumber(item.heldQtyKoli ?? 0, { maxFractionDigits: 2 });
-            if (field === 'weightKg') return normalizeNumber(item.heldWeight ?? 0, { maxFractionDigits: 2 });
-            return normalizeNumber(item.heldVolume ?? 0, { maxFractionDigits: 3 });
-        }
-        if (field === 'qtyKoli') return normalizeNumber(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0, { maxFractionDigits: 2 });
-        if (field === 'weightKg') return normalizeNumber(item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? 0, { maxFractionDigits: 2 });
-        return normalizeNumber(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 });
-    };
-    const allocatePointCargo = (
-        point: NonNullable<DeliveryOrder['actualDropPoints']>[number],
-        pointRefs: string[],
-        matchedRefs: string[]
-    ) => {
-        const pointCargo = getPointCargo(point);
-        if (pointRefs.length <= 1 || matchedRefs.length === pointRefs.length) {
-            return pointCargo;
-        }
-
-        const nonBillable = NON_BILLABLE_PROGRESS_DROP_TYPES.has(point.stopType);
-        const ratioFor = (field: 'qtyKoli' | 'weightKg' | 'volumeM3') => {
-            const total = pointRefs.reduce((sum, ref) => sum + getItemCargoBase(doItemById.get(ref), field, nonBillable), 0);
-            const matched = matchedRefs.reduce((sum, ref) => sum + getItemCargoBase(doItemById.get(ref), field, nonBillable), 0);
-            if (total > 0) {
-                return matched / total;
-            }
-            return matchedRefs.length / pointRefs.length;
-        };
-
-        return {
-            qtyKoli: pointCargo.qtyKoli * ratioFor('qtyKoli'),
-            weightKg: pointCargo.weightKg * ratioFor('weightKg'),
-            volumeM3: pointCargo.volumeM3 * ratioFor('volumeM3'),
-        };
-    };
-    return (actualDropPoints || [])
-        .filter(point => allowedTypes.has(point.stopType))
-        .reduce(
-            (sum, point) => {
-                const pointRefs = [
-                    normalizeOptionalText(point.deliveryOrderItemRef),
-                    ...((Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : [])
-                        .map(ref => normalizeOptionalText(ref))
-                        .filter((ref): ref is string => Boolean(ref))),
-                ].filter((ref): ref is string => Boolean(ref));
-                if (pointRefs.length > 0) {
-                    const matchedRefs = pointRefs.filter(ref => itemRefs.has(ref));
-                    return matchedRefs.length > 0
-                        ? addDeliveryCargoSummary(sum, allocatePointCargo(point, pointRefs, matchedRefs))
-                        : sum;
-                }
-
-                const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber)?.toUpperCase();
-                return normalizedReferenceNumber && pointReferenceNumber === normalizedReferenceNumber
-                    ? addDeliveryCargoSummary(sum, getPointCargo(point))
-                    : sum;
-            },
-            createDeliveryCargoSummary()
-        );
-}
-
-function getActualDropTotalMismatchMessage(
-    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>,
-    actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
-    options?: { billableOnly?: boolean }
-) {
-    const actualCargoTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
-    const actualDropTotals = summarizeActualDropPointCargo(actualDropPoints, options);
-    const dropLabel = options?.billableOnly ? 'titik drop terkirim' : 'titik realisasi';
-    if (actualCargoTotals.qtyKoli > 0 && Math.abs(actualDropTotals.qtyKoli - actualCargoTotals.qtyKoli) > 0.01) {
-        return `Total qty ${dropLabel} harus sama dengan qty aktual muatan.`;
-    }
-    if (actualCargoTotals.weightKg > 0 && Math.abs(actualDropTotals.weightKg - actualCargoTotals.weightKg) > 0.01) {
-        return `Total berat ${dropLabel} harus sama dengan berat aktual muatan.`;
-    }
-    if (actualCargoTotals.volumeM3 > 0 && Math.abs(actualDropTotals.volumeM3 - actualCargoTotals.volumeM3) > 0.001) {
-        return `Total volume ${dropLabel} harus sama dengan volume aktual muatan.`;
-    }
-    return null;
-}
-
-function preferDerivedActualCargoInputs(
-    current: Map<string, NormalizedActualCargoInput>,
-    derived: Map<string, NormalizedActualCargoInput> | null
-) {
-    if (!derived || derived.size === 0) {
-        return current;
-    }
-    return new Map([
-        ...current,
-        ...derived,
-    ]);
-}
-
-async function computeTripOvertonageAdjustment(params: {
-    deliveryOrder: DeliveryOrder;
-    actualTotalTripWeightKg: number;
-}) {
-    const { deliveryOrder, actualTotalTripWeightKg } = params;
-    const serviceRef = extractRefId(deliveryOrder.serviceRef);
-    const vehicleRef = extractRefId(deliveryOrder.vehicleRef);
-    const tripRouteRateRef = extractRefId(deliveryOrder.tripRouteRateRef);
-    const [service, vehicle, tripRouteRate, linkedVoucher] = await Promise.all([
-        serviceRef
-            ? getDocumentById<{
-                _id: string;
-                maxPayloadKg?: number;
-            }>(serviceRef, 'service')
-            : Promise.resolve(null),
-        vehicleRef
-            ? getDocumentById<{
-                _id: string;
-                capacityKg?: number;
-            }>(vehicleRef, 'vehicle')
-            : Promise.resolve(null),
-        tripRouteRateRef
-            ? getDocumentById<{
-                _id: string;
-                overtonaseDriverRatePerTon?: number;
-                overtonaseReferencePerTon?: number;
-                notes?: string;
-            }>(tripRouteRateRef, 'tripRouteRate')
-            : Promise.resolve(null),
-        listDocumentsByFilter<{
-            _id: string;
-            _rev?: string;
-            bonNumber?: string;
-            status?: string;
-            totalSpent?: number;
-            totalIssuedAmount?: number;
-            cashGiven?: number;
-            driverFeeAmount?: number;
-        }>('driverVoucher', { deliveryOrderRef: deliveryOrder._id }).then(rows => rows[0] || null),
-    ]);
-
-    const overtonageResult = computeDeliveryOrderOvertonage({
-        actualTotalWeightKg: actualTotalTripWeightKg,
-        serviceMaxPayloadKg: service?.maxPayloadKg ?? deliveryOrder.serviceMaxPayloadKg,
-        vehicleCapacityKg: vehicle?.capacityKg ?? deliveryOrder.vehicleCapacityKg,
-        baseTripFee: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0),
-        overtonaseDriverRatePerKg:
-            normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0) > 0
-                ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0)
-                : getTripRouteOvertonaseRatePerKg(tripRouteRate),
-        manualOvertonaseWeightKg: deliveryOrder.manualOvertonaseWeightKg,
-    });
-
-    let linkedVoucherPatch:
-        | {
-            _id: string;
-            driverFeeAmount: number;
-            totalClaimAmount: number;
-            balance: number;
-        }
-        | undefined;
-    let linkedVoucherAdjustmentSummary: string | undefined;
-    let settledVoucherOvertonageWarning: string | undefined;
-
-    if (
-        linkedVoucher?._id &&
-        linkedVoucher.status !== 'SETTLED' &&
-        Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
-    ) {
-        const voucherTotals = computeDriverVoucherTotals(
-            normalizeNumber(linkedVoucher.totalIssuedAmount ?? linkedVoucher.cashGiven ?? 0, { maxFractionDigits: 0 }),
-            normalizeNumber(linkedVoucher.totalSpent ?? 0, { maxFractionDigits: 0 }),
-            overtonageResult.effectiveTripFee
-        );
-        linkedVoucherPatch = {
-            _id: linkedVoucher._id,
-            driverFeeAmount: voucherTotals.driverFeeAmount,
-            totalClaimAmount: voucherTotals.totalClaimAmount,
-            balance: voucherTotals.balance,
-        };
-        linkedVoucherAdjustmentSummary = `bon ${linkedVoucher.bonNumber || linkedVoucher._id} ikut disinkronkan ke ${voucherTotals.driverFeeAmount}`;
-    }
-
-    if (
-        linkedVoucher?._id &&
-        linkedVoucher.status === 'SETTLED' &&
-        Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
-    ) {
-        settledVoucherOvertonageWarning = `Bon ${linkedVoucher.bonNumber || linkedVoucher._id} sudah selesai, jadi tambahan overtonase tidak ikut mengubah penyelesaian uang jalan lama.`;
-    }
-
-    return {
-        overtonageResult,
-        linkedVoucherPatch,
-        linkedVoucherAdjustmentSummary,
-        settledVoucherOvertonageWarning,
-    };
-}
-
-function getAmbiguousActualDropMappingMessage(
-    actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
-    doItems: DeliveryOrderItemCargoSnapshot[]
-) {
-    const points = actualDropPoints || [];
-    if (points.length <= 1 || doItems.length <= 1) {
-        return null;
-    }
-
-    const billableTypes = new Set(['DROP', 'EXTRA_DROP']);
-    const nonBillableTypes = new Set(['HOLD', 'TRANSIT', 'RETURN']);
-    const itemGroups = doItems.reduce<Map<string, DeliveryOrderItemCargoSnapshot[]>>((acc, item) => {
-        const key = normalizeOptionalText(item.shipperReferenceKey) || normalizeOptionalText(item.shipperReferenceNumber) || 'TANPA-SJ';
-        const current = acc.get(key) || [];
-        current.push(item);
-        acc.set(key, current);
-        return acc;
-    }, new Map());
-
-    const dropMatchesItem = (
-        point: ReturnType<typeof normalizeDeliveryActualDropPoints>[number],
-        item: DeliveryOrderItemCargoSnapshot
-    ) => {
-        const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
-        const itemRefs = Array.isArray(point.deliveryOrderItemRefs)
-            ? point.deliveryOrderItemRefs.map(ref => normalizeOptionalText(ref)).filter(Boolean)
-            : [];
-        if (itemRef || itemRefs.length > 0) {
-            return itemRef === item._id || itemRefs.includes(item._id);
-        }
-
-        const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
-        const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber);
-        if (!pointReferenceKey && !pointReferenceNumber) {
-            return true;
-        }
-
-        return (
-            (pointReferenceKey && pointReferenceKey === normalizeOptionalText(item.shipperReferenceKey)) ||
-            (pointReferenceNumber && pointReferenceNumber === normalizeOptionalText(item.shipperReferenceNumber))
-        );
-    };
-
-    for (const [groupKey, groupItems] of itemGroups.entries()) {
-        if (groupItems.length <= 1) {
-            continue;
-        }
-
-        const groupDrops = points.filter(point => groupItems.some(item => dropMatchesItem(point, item)));
-        const hasBillable = groupDrops.some(point => billableTypes.has(point.stopType));
-        const hasNonBillable = groupDrops.some(point => nonBillableTypes.has(point.stopType));
-        if (!hasBillable || !hasNonBillable) {
-            continue;
-        }
-
-        const hasAmbiguousDrop = groupDrops.some(point => {
-            const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
-            const itemRefs = Array.isArray(point.deliveryOrderItemRefs)
-                ? point.deliveryOrderItemRefs.map(ref => normalizeOptionalText(ref)).filter(Boolean)
-                : [];
-            if (itemRef || itemRefs.length > 0) {
-                return false;
-            }
-            return doItems.filter(item => dropMatchesItem(point, item)).length > 1;
-        });
-        if (hasAmbiguousDrop) {
-            const groupLabel = groupKey === 'TANPA-SJ'
-                ? 'SJ ini'
-                : `SJ ${groupItems[0]?.shipperReferenceNumber || groupKey}`;
-            return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan invoice per barang tidak salah.`;
-        }
-    }
-
-    return null;
-}
-
-function normalizeDeliveryOrderShipperReferencesForUpdate(
-    deliveryOrder: {
-        pickupStops?: Array<{
-            _key?: string;
-            pickupAddress?: string;
-        }>;
-        shipperReferences?: Array<{
-            _key?: string;
-            sequence?: number;
-            referenceNumber?: string;
-            date?: string;
-            pickupStopKey?: string;
-            pickupAddress?: string;
-            billingCustomerRef?: string;
-            billingCustomerName?: string;
-            receiverName?: string;
-            receiverPhone?: string;
-            receiverAddress?: string;
-            receiverCompany?: string;
-            notes?: string;
-        }>;
-    },
-    rawShipperReferences: unknown,
-) {
-    const requestedReferences = Array.isArray(rawShipperReferences) ? rawShipperReferences : [];
-    if (requestedReferences.length === 0) {
-        return undefined;
-    }
-
-    const pickupStopByKey = new Map(
-        (deliveryOrder.pickupStops || [])
-            .map(stop => [normalizeOptionalText(stop._key), stop] as const)
-            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
-    );
-    const existingReferences = Array.isArray(deliveryOrder.shipperReferences)
-        ? deliveryOrder.shipperReferences
-        : [];
-
-    const seenReferenceNumbers = new Set<string>();
-    const usedExistingReferenceIndexes = new Set<number>();
-    const usedReferenceKeys = new Set<string>();
-    const normalizedReferences = requestedReferences
-        .filter(isPlainObject)
-        .map((reference, index) => {
-            const referenceNumber = normalizeText(reference.referenceNumber).toUpperCase();
-            if (!referenceNumber) {
-                throw new Error(`No. SJ pengirim wajib diisi pada SJ ${index + 1}`);
-            }
-            if (seenReferenceNumbers.has(referenceNumber)) {
-                throw new Error(`No. SJ pengirim ${referenceNumber} duplikat dalam daftar SJ`);
-            }
-            seenReferenceNumbers.add(referenceNumber);
-
-            const requestedReferenceKey = normalizeOptionalText(reference._key);
-            const findExistingReference = () => {
-                const byRequestedKeyIndex = requestedReferenceKey
-                    ? existingReferences.findIndex((item, candidateIndex) =>
-                        !usedExistingReferenceIndexes.has(candidateIndex) &&
-                        normalizeOptionalText(item._key) === requestedReferenceKey
-                    )
-                    : -1;
-                if (byRequestedKeyIndex >= 0) {
-                    return { reference: existingReferences[byRequestedKeyIndex], index: byRequestedKeyIndex };
-                }
-
-                const byNumberIndex = existingReferences.findIndex((item, candidateIndex) =>
-                    !usedExistingReferenceIndexes.has(candidateIndex) &&
-                    normalizeOptionalText(item.referenceNumber)?.toUpperCase() === referenceNumber
-                );
-                if (byNumberIndex >= 0) {
-                    return { reference: existingReferences[byNumberIndex], index: byNumberIndex };
-                }
-
-                return { reference: undefined, index: -1 };
-            };
-            const existingReferenceMatch = findExistingReference();
-            const existingReference = existingReferenceMatch.reference;
-            if (existingReferenceMatch.index >= 0) {
-                usedExistingReferenceIndexes.add(existingReferenceMatch.index);
-            }
-            let resolvedReferenceKey =
-                normalizeOptionalText(existingReference?._key) ||
-                crypto.randomUUID();
-            if (usedReferenceKeys.has(resolvedReferenceKey)) {
-                resolvedReferenceKey = crypto.randomUUID();
-            }
-            usedReferenceKeys.add(resolvedReferenceKey);
-
-            const requestedPickupStopKey = normalizeOptionalText(reference.pickupStopKey);
-            const resolvedPickupStopKey =
-                requestedPickupStopKey
-                || normalizeOptionalText(existingReference?.pickupStopKey)
-                || ((deliveryOrder.pickupStops?.length || 0) === 1
-                    ? normalizeOptionalText(deliveryOrder.pickupStops?.[0]?._key)
-                    : undefined);
-            const pickupStop = resolvedPickupStopKey ? pickupStopByKey.get(resolvedPickupStopKey) : undefined;
-            const hasReferenceField = (field: string) => Object.prototype.hasOwnProperty.call(reference, field);
-            const requestedPickupAddress = hasReferenceField('pickupAddress')
-                ? normalizeOptionalText(reference.pickupAddress)
-                : undefined;
-
-            return {
-                _key: resolvedReferenceKey,
-                sequence: index + 1,
-                referenceNumber,
-                date:
-                    hasReferenceField('date')
-                        ? normalizeOptionalText(reference.date)
-                        : normalizeOptionalText(existingReference?.date),
-                pickupStopKey: pickupStop ? resolvedPickupStopKey : undefined,
-                pickupAddress:
-                    normalizeOptionalText(pickupStop?.pickupAddress)
-                    || requestedPickupAddress
-                    || normalizeOptionalText(existingReference?.pickupAddress),
-                billingCustomerRef:
-                    hasReferenceField('billingCustomerRef')
-                        ? normalizeOptionalText(reference.billingCustomerRef)
-                        : normalizeOptionalText(existingReference?.billingCustomerRef),
-                billingCustomerName:
-                    hasReferenceField('billingCustomerName')
-                        ? normalizeOptionalText(reference.billingCustomerName)
-                        : normalizeOptionalText(existingReference?.billingCustomerName),
-                receiverName:
-                    hasReferenceField('receiverName')
-                        ? normalizeOptionalText(reference.receiverName)
-                        : normalizeOptionalText(existingReference?.receiverName),
-                receiverPhone:
-                    hasReferenceField('receiverPhone')
-                        ? normalizeOptionalText(reference.receiverPhone)
-                        : normalizeOptionalText(existingReference?.receiverPhone),
-                receiverAddress:
-                    hasReferenceField('receiverAddress')
-                        ? normalizeOptionalText(reference.receiverAddress)
-                        : normalizeOptionalText(existingReference?.receiverAddress),
-                receiverCompany:
-                    hasReferenceField('receiverCompany')
-                        ? normalizeOptionalText(reference.receiverCompany)
-                        : normalizeOptionalText(existingReference?.receiverCompany),
-                notes:
-                    normalizeOptionalText(reference.notes)
-                    || normalizeOptionalText(existingReference?.notes),
-            };
-        });
-
-    return normalizedReferences;
-}
-
-function areDeliveryOrderShipperReferencesEquivalent(
-    left: Array<{
-        referenceNumber?: string;
-        date?: string;
-        pickupStopKey?: string;
-        billingCustomerRef?: string;
-        billingCustomerName?: string;
-        receiverName?: string;
-        receiverPhone?: string;
-        receiverAddress?: string;
-        receiverCompany?: string;
-        notes?: string;
-    }> | undefined,
-    right: Array<{
-        referenceNumber?: string;
-        date?: string;
-        pickupStopKey?: string;
-        billingCustomerRef?: string;
-        billingCustomerName?: string;
-        receiverName?: string;
-        receiverPhone?: string;
-        receiverAddress?: string;
-        receiverCompany?: string;
-        notes?: string;
-    }> | undefined,
-) {
-    const normalizeReferences = (value: typeof left) =>
-        (Array.isArray(value) ? value : [])
-            .map((reference, index) => ({
-                sequence: index + 1,
-                referenceNumber: normalizeOptionalText(reference.referenceNumber)?.toUpperCase() || '',
-                date: normalizeOptionalText(reference.date) || '',
-                pickupStopKey: normalizeOptionalText(reference.pickupStopKey) || '',
-                billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef) || '',
-                billingCustomerName: normalizeOptionalText(reference.billingCustomerName) || '',
-                receiverName: normalizeOptionalText(reference.receiverName) || '',
-                receiverPhone: normalizeOptionalText(reference.receiverPhone) || '',
-                receiverAddress: normalizeOptionalText(reference.receiverAddress) || '',
-                receiverCompany: normalizeOptionalText(reference.receiverCompany) || '',
-                notes: normalizeOptionalText(reference.notes) || '',
-            }))
-            .filter(reference => reference.referenceNumber.length > 0);
-
-    const normalizedLeft = normalizeReferences(left);
-    const normalizedRight = normalizeReferences(right);
-
-    return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
-}
-
-function resolveDeliveryOrderCargoItemContext(
-    item: Pick<NormalizedOrderItemInput, 'pickupStopKey' | 'shipperReferenceNumber'>,
-    deliveryOrder: {
-        pickupStops?: Array<{
-            _key?: string;
-            orderPickupStopKey?: string;
-            pickupAddress?: string;
-        }>;
-        shipperReferences?: Array<{
-            _key?: string;
-            referenceNumber?: string;
-            pickupStopKey?: string;
-            pickupAddress?: string;
-        }>;
-    }
-) {
-    const requestedPickupStopKey = normalizeOptionalText(item.pickupStopKey);
-    const requestedReferenceNumber = normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase();
-    const pickupStops = Array.isArray(deliveryOrder.pickupStops) ? deliveryOrder.pickupStops : [];
-    const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
-
-    const matchedReference =
-        shipperReferences.find(reference =>
-            requestedReferenceNumber &&
-            normalizeOptionalText(reference.referenceNumber)?.toUpperCase() === requestedReferenceNumber
-        ) ||
-        (!requestedReferenceNumber
-            ? shipperReferences.find(reference =>
-                requestedPickupStopKey &&
-                normalizeOptionalText(reference.pickupStopKey) === requestedPickupStopKey
-            )
-            : undefined);
-    const resolvedPickupStopKey =
-        normalizeOptionalText(matchedReference?.pickupStopKey) ||
-        requestedPickupStopKey ||
-        (pickupStops.length === 1 ? normalizeOptionalText(pickupStops[0]?._key) : undefined);
-    const matchedPickupStop =
-        pickupStops.find(stop =>
-            resolvedPickupStopKey &&
-            (
-                normalizeOptionalText(stop._key) === resolvedPickupStopKey ||
-                normalizeOptionalText(stop.orderPickupStopKey) === resolvedPickupStopKey
-            )
-        ) ||
-        pickupStops.find(stop =>
-            requestedPickupStopKey &&
-            (
-                normalizeOptionalText(stop._key) === requestedPickupStopKey ||
-                normalizeOptionalText(stop.orderPickupStopKey) === requestedPickupStopKey
-            )
-        );
-
-    return {
-        pickupStopKey: normalizeOptionalText(matchedPickupStop?._key) || resolvedPickupStopKey,
-        pickupAddress:
-            normalizeOptionalText(matchedPickupStop?.pickupAddress) ||
-            normalizeOptionalText(matchedReference?.pickupAddress),
-        shipperReferenceKey: normalizeOptionalText(matchedReference?._key),
-        shipperReferenceNumber:
-            normalizeOptionalText(matchedReference?.referenceNumber) ||
-            requestedReferenceNumber,
-    };
 }
 
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
@@ -2532,92 +1322,25 @@ export async function handleOrderTripPlanAppend(
         return NextResponse.json({ error: 'Order belum punya titik pickup yang bisa dipakai untuk trip.' }, { status: 409 });
     }
 
-    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
-        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
-        : [];
-    const extraPickupRefs = [
-        ...new Set([
-            ...requestedPickupStopKeys
-                .filter(key => key.startsWith('customer-pickup:'))
-                .map(key => key.replace('customer-pickup:', '')),
-            ...(Array.isArray(data.extraPickupRefs)
-                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
-                : []),
-        ]),
-    ];
-    const extraPickupDocs = extraPickupRefs.length > 0
-        ? await listDocumentsByFilter<{
-            _id: string;
-            customerRef?: unknown;
-            label?: string;
-            pickupAddress?: string;
-            notes?: string;
-            active?: boolean;
-        }>('customerPickupLocation', { _id: extraPickupRefs })
-        : [];
-    if (extraPickupDocs.length !== extraPickupRefs.length) {
-        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
+    const requestedPickupStopKeys = normalizeRequestedPickupStopKeys(data);
+    const extraPickupRefs = getExtraPickupRefsFromPayload(data, requestedPickupStopKeys);
+    const pickupStopExpansion = await resolveOrderPickupStopExpansion({
+        currentOrderPickupStops,
+        requestedPickupStopKeys,
+        extraPickupRefs,
+        orderCustomerRef,
+    });
+    if (pickupStopExpansion.error) {
+        return NextResponse.json(
+            { error: pickupStopExpansion.error.message },
+            { status: pickupStopExpansion.error.status }
+        );
     }
-    const invalidExtraPickup = extraPickupDocs.find(pickup =>
-        extractRefId(pickup.customerRef) !== orderCustomerRef ||
-        pickup.active === false ||
-        !normalizeOptionalText(pickup.pickupAddress)
-    );
-    if (invalidExtraPickup) {
-        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
-    }
-
-    const orderPickupByMasterRef = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
-            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
-    );
-    const orderPickupByAddress = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
-            .filter(([pickupAddress]) => Boolean(pickupAddress))
-    );
-    const pickupStopKeyAlias = new Map<string, string>();
-    const extraOrderPickupStops: OrderPickupStop[] = [];
-    for (const pickup of extraPickupDocs) {
-        const pickupAddress = normalizeText(pickup.pickupAddress);
-        const existingStop =
-            orderPickupByMasterRef.get(pickup._id) ||
-            orderPickupByAddress.get(pickupAddress.toLowerCase());
-        if (existingStop?._key) {
-            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
-            continue;
-        }
-
-        const newStop: OrderPickupStop = {
-            _key: crypto.randomUUID(),
-            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
-            customerPickupRef: pickup._id,
-            pickupLabel: normalizeOptionalText(pickup.label),
-            pickupAddress,
-            notes: normalizeOptionalText(pickup.notes),
-        };
-        extraOrderPickupStops.push(newStop);
-        orderPickupByMasterRef.set(pickup._id, newStop);
-        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
-        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
-    }
-
-    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
-        .map((stop, index) => ({
-            ...stop,
-            sequence: index + 1,
-        }));
-    const remapPickupStopKey = (key: unknown) => {
-        const normalizedKey = normalizeOptionalText(key);
-        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
-    };
+    const { effectiveOrderPickupStops, pickupStopKeyAlias } = pickupStopExpansion;
     const nextTripPayload = {
         ...data,
         _key: crypto.randomUUID(),
-        pickupStopKeys: requestedPickupStopKeys
-            .map(remapPickupStopKey)
-            .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:'))),
+        pickupStopKeys: remapRequestedPickupStopKeys(requestedPickupStopKeys, pickupStopKeyAlias),
     };
 
     let normalizedNewTripPlans: OrderTripPlan[];
@@ -2742,92 +1465,25 @@ export async function handleOrderTripPlanUpdate(
         return NextResponse.json({ error: 'Order belum punya titik pickup yang bisa dipakai untuk trip.' }, { status: 409 });
     }
 
-    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
-        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
-        : [];
-    const extraPickupRefs = [
-        ...new Set([
-            ...requestedPickupStopKeys
-                .filter(key => key.startsWith('customer-pickup:'))
-                .map(key => key.replace('customer-pickup:', '')),
-            ...(Array.isArray(data.extraPickupRefs)
-                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
-                : []),
-        ]),
-    ];
-    const extraPickupDocs = extraPickupRefs.length > 0
-        ? await listDocumentsByFilter<{
-            _id: string;
-            customerRef?: unknown;
-            label?: string;
-            pickupAddress?: string;
-            notes?: string;
-            active?: boolean;
-        }>('customerPickupLocation', { _id: extraPickupRefs })
-        : [];
-    if (extraPickupDocs.length !== extraPickupRefs.length) {
-        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
+    const requestedPickupStopKeys = normalizeRequestedPickupStopKeys(data);
+    const extraPickupRefs = getExtraPickupRefsFromPayload(data, requestedPickupStopKeys);
+    const pickupStopExpansion = await resolveOrderPickupStopExpansion({
+        currentOrderPickupStops,
+        requestedPickupStopKeys,
+        extraPickupRefs,
+        orderCustomerRef,
+    });
+    if (pickupStopExpansion.error) {
+        return NextResponse.json(
+            { error: pickupStopExpansion.error.message },
+            { status: pickupStopExpansion.error.status }
+        );
     }
-    const invalidExtraPickup = extraPickupDocs.find(pickup =>
-        extractRefId(pickup.customerRef) !== orderCustomerRef ||
-        pickup.active === false ||
-        !normalizeOptionalText(pickup.pickupAddress)
-    );
-    if (invalidExtraPickup) {
-        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
-    }
-
-    const orderPickupByMasterRef = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
-            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
-    );
-    const orderPickupByAddress = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
-            .filter(([pickupAddress]) => Boolean(pickupAddress))
-    );
-    const pickupStopKeyAlias = new Map<string, string>();
-    const extraOrderPickupStops: OrderPickupStop[] = [];
-    for (const pickup of extraPickupDocs) {
-        const pickupAddress = normalizeText(pickup.pickupAddress);
-        const existingStop =
-            orderPickupByMasterRef.get(pickup._id) ||
-            orderPickupByAddress.get(pickupAddress.toLowerCase());
-        if (existingStop?._key) {
-            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
-            continue;
-        }
-
-        const newStop: OrderPickupStop = {
-            _key: crypto.randomUUID(),
-            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
-            customerPickupRef: pickup._id,
-            pickupLabel: normalizeOptionalText(pickup.label),
-            pickupAddress,
-            notes: normalizeOptionalText(pickup.notes),
-        };
-        extraOrderPickupStops.push(newStop);
-        orderPickupByMasterRef.set(pickup._id, newStop);
-        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
-        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
-    }
-
-    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
-        .map((stop, index) => ({
-            ...stop,
-            sequence: index + 1,
-        }));
-    const remapPickupStopKey = (key: unknown) => {
-        const normalizedKey = normalizeOptionalText(key);
-        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
-    };
+    const { effectiveOrderPickupStops, pickupStopKeyAlias } = pickupStopExpansion;
     const nextTripPayload = {
         ...data,
         _key: tripPlanKey,
-        pickupStopKeys: requestedPickupStopKeys
-            .map(remapPickupStopKey)
-            .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:'))),
+        pickupStopKeys: remapRequestedPickupStopKeys(requestedPickupStopKeys, pickupStopKeyAlias),
     };
 
     let normalizedTripPlans: OrderTripPlan[];
@@ -3283,7 +1939,7 @@ export async function handleDeliveryOrderStatusUpdate(
 
     let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
     let actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
-    let overtonageResult: ReturnType<typeof computeDeliveryOrderOvertonage> | undefined;
+    let overtonageResult: TripOvertonageComputationResult | undefined;
     let linkedVoucherAdjustmentSummary: string | undefined;
     let settledVoucherOvertonageWarning: string | undefined;
     let linkedVoucherPatch:
@@ -4035,44 +2691,14 @@ export async function handleDeliveryOrderCancelTrip(
     let cancelExpenseCategoryDoc: ExpenseCategory | null = null;
     let cancelExpenseBankAccount: Awaited<ReturnType<typeof getLedgerAccount>> = null;
     if (shouldRecordCancelExpense) {
-        const categoryRows = await listDocumentsByFilter<ExpenseCategory>('expenseCategory', {});
-        const activeOperationalCategories = categoryRows
-            .filter(category =>
-                category.active !== false &&
-                inferExpenseCategoryScope(category) === 'GENERAL' &&
-                category.allowManual !== false
-            )
-            .sort((left, right) => normalizeNumber(left.sortOrder ?? 0) - normalizeNumber(right.sortOrder ?? 0));
-        cancelExpenseCategoryDoc = cancelExpenseCategoryRef
-            ? await getDocumentById<ExpenseCategory>(cancelExpenseCategoryRef, 'expenseCategory')
-            : null;
-        if (!cancelExpenseCategoryDoc && cancelExpenseCategoryName) {
-            const categoryNameLower = cancelExpenseCategoryName.toLowerCase();
-            cancelExpenseCategoryDoc = activeOperationalCategories.find(category => category.name.toLowerCase() === categoryNameLower) || null;
+        const categoryResolution = await resolveCancelTripExpenseCategory({
+            categoryRef: cancelExpenseCategoryRef,
+            categoryName: cancelExpenseCategoryName,
+        });
+        if (categoryResolution.error || !categoryResolution.category) {
+            return NextResponse.json({ error: categoryResolution.error }, { status: 409 });
         }
-        cancelExpenseCategoryDoc =
-            cancelExpenseCategoryDoc ||
-            activeOperationalCategories.find(category => /batal|pembatalan/i.test(category.name)) ||
-            activeOperationalCategories.find(category => /lain-lain umum/i.test(category.name)) ||
-            activeOperationalCategories.find(category => /operasional/i.test(category.name)) ||
-            activeOperationalCategories[0] ||
-            null;
-        if (!cancelExpenseCategoryDoc) {
-            return NextResponse.json(
-                { error: 'Kategori pengeluaran umum untuk biaya batal trip belum tersedia.' },
-                { status: 409 }
-            );
-        }
-        if (
-            cancelExpenseCategoryDoc.active === false ||
-            inferExpenseCategoryScope(cancelExpenseCategoryDoc) !== 'GENERAL' ||
-            cancelExpenseCategoryDoc.allowManual === false
-        ) {
-            return NextResponse.json(
-                { error: 'Kategori biaya batal trip harus berupa kategori pengeluaran umum aktif.' },
-                { status: 409 }
-            );
-        }
+        cancelExpenseCategoryDoc = categoryResolution.category;
         cancelExpenseBankAccount = await getLedgerAccount(cancelExpenseBankAccountRef || '');
         if (!cancelExpenseBankAccount) {
             return NextResponse.json({ error: 'Kas / bank biaya batal trip tidak ditemukan atau nonaktif' }, { status: 404 });
@@ -4348,44 +2974,14 @@ export async function handleOrderTripPlanCancel(
     let cancelExpenseCategoryDoc: ExpenseCategory | null = null;
     let cancelExpenseBankAccount: Awaited<ReturnType<typeof getLedgerAccount>> = null;
     if (shouldRecordCancelExpense) {
-        const categoryRows = await listDocumentsByFilter<ExpenseCategory>('expenseCategory', {});
-        const activeOperationalCategories = categoryRows
-            .filter(category =>
-                category.active !== false &&
-                inferExpenseCategoryScope(category) === 'GENERAL' &&
-                category.allowManual !== false
-            )
-            .sort((left, right) => normalizeNumber(left.sortOrder ?? 0) - normalizeNumber(right.sortOrder ?? 0));
-        cancelExpenseCategoryDoc = cancelExpenseCategoryRef
-            ? await getDocumentById<ExpenseCategory>(cancelExpenseCategoryRef, 'expenseCategory')
-            : null;
-        if (!cancelExpenseCategoryDoc && cancelExpenseCategoryName) {
-            const categoryNameLower = cancelExpenseCategoryName.toLowerCase();
-            cancelExpenseCategoryDoc = activeOperationalCategories.find(category => category.name.toLowerCase() === categoryNameLower) || null;
+        const categoryResolution = await resolveCancelTripExpenseCategory({
+            categoryRef: cancelExpenseCategoryRef,
+            categoryName: cancelExpenseCategoryName,
+        });
+        if (categoryResolution.error || !categoryResolution.category) {
+            return NextResponse.json({ error: categoryResolution.error }, { status: 409 });
         }
-        cancelExpenseCategoryDoc =
-            cancelExpenseCategoryDoc ||
-            activeOperationalCategories.find(category => /batal|pembatalan/i.test(category.name)) ||
-            activeOperationalCategories.find(category => /lain-lain umum/i.test(category.name)) ||
-            activeOperationalCategories.find(category => /operasional/i.test(category.name)) ||
-            activeOperationalCategories[0] ||
-            null;
-        if (!cancelExpenseCategoryDoc) {
-            return NextResponse.json(
-                { error: 'Kategori pengeluaran umum untuk biaya batal trip belum tersedia.' },
-                { status: 409 }
-            );
-        }
-        if (
-            cancelExpenseCategoryDoc.active === false ||
-            inferExpenseCategoryScope(cancelExpenseCategoryDoc) !== 'GENERAL' ||
-            cancelExpenseCategoryDoc.allowManual === false
-        ) {
-            return NextResponse.json(
-                { error: 'Kategori biaya batal trip harus berupa kategori pengeluaran umum aktif.' },
-                { status: 409 }
-            );
-        }
+        cancelExpenseCategoryDoc = categoryResolution.category;
 
         cancelExpenseBankAccount = await getLedgerAccount(cancelExpenseBankAccountRef || '');
         if (!cancelExpenseBankAccount) {
@@ -5052,7 +3648,7 @@ export async function handleDeliveryOrderBatchSuratJalanStatusUpdate(
         deliveryOrderItemUpdates: Record<string, unknown>;
     }> = [];
     let mergedActualDropPoints: NonNullable<DeliveryOrder['actualDropPoints']> = currentDropPoints;
-    let overtonageResult: ReturnType<typeof computeDeliveryOrderOvertonage> | undefined;
+    let overtonageResult: TripOvertonageComputationResult | undefined;
     let linkedVoucherAdjustmentSummary: string | undefined;
     let settledVoucherOvertonageWarning: string | undefined;
     let linkedVoucherPatch:
@@ -6206,40 +4802,8 @@ export async function handleDeliveryOrderCreate(
             );
         }
     }
-    const requestedPickupStopKeys = Array.isArray(data.pickupStopKeys)
-        ? data.pickupStopKeys.map(key => normalizeOptionalText(key)).filter((key): key is string => Boolean(key))
-        : [];
-    const extraPickupRefs = [
-        ...new Set([
-            ...requestedPickupStopKeys
-                .filter(key => key.startsWith('customer-pickup:'))
-                .map(key => key.replace('customer-pickup:', '')),
-            ...(Array.isArray(data.extraPickupRefs)
-                ? data.extraPickupRefs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref))
-                : []),
-        ]),
-    ];
-    const extraPickupDocs = extraPickupRefs.length > 0
-        ? await listDocumentsByFilter<{
-            _id: string;
-            customerRef?: unknown;
-            label?: string;
-            pickupAddress?: string;
-            notes?: string;
-            active?: boolean;
-        }>('customerPickupLocation', { _id: extraPickupRefs })
-        : [];
-    if (extraPickupDocs.length !== extraPickupRefs.length) {
-        return NextResponse.json({ error: 'Sebagian master pickup tambahan tidak ditemukan' }, { status: 404 });
-    }
-    const invalidExtraPickup = extraPickupDocs.find(pickup =>
-        extractRefId(pickup.customerRef) !== orderCustomerRef ||
-        pickup.active === false ||
-        !normalizeOptionalText(pickup.pickupAddress)
-    );
-    if (invalidExtraPickup) {
-        return NextResponse.json({ error: 'Master pickup tambahan tidak aktif atau tidak sesuai customer order' }, { status: 409 });
-    }
+    const requestedPickupStopKeys = normalizeRequestedPickupStopKeys(data);
+    const extraPickupRefs = getExtraPickupRefsFromPayload(data, requestedPickupStopKeys);
     const currentOrderPickupStops = normalizeOrderPickupStopsInput(
         Array.isArray(order.pickupStops) ? order.pickupStops : [],
         order.pickupAddress
@@ -6247,53 +4811,20 @@ export async function handleDeliveryOrderCreate(
         ...stop,
         sequence: index + 1,
     }));
-    const orderPickupByMasterRef = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeOptionalText(stop.customerPickupRef), stop] as const)
-            .filter(([customerPickupRef]) => Boolean(customerPickupRef))
-    );
-    const orderPickupByAddress = new Map(
-        currentOrderPickupStops
-            .map(stop => [normalizeText(stop.pickupAddress).toLowerCase(), stop] as const)
-            .filter(([pickupAddress]) => Boolean(pickupAddress))
-    );
-    const pickupStopKeyAlias = new Map<string, string>();
-    const extraOrderPickupStops: OrderPickupStop[] = [];
-    for (const pickup of extraPickupDocs) {
-        const pickupAddress = normalizeText(pickup.pickupAddress);
-        const existingStop =
-            orderPickupByMasterRef.get(pickup._id) ||
-            orderPickupByAddress.get(pickupAddress.toLowerCase());
-        if (existingStop?._key) {
-            pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, existingStop._key);
-            continue;
-        }
-
-        const newStop: OrderPickupStop = {
-            _key: crypto.randomUUID(),
-            sequence: currentOrderPickupStops.length + extraOrderPickupStops.length + 1,
-            customerPickupRef: pickup._id,
-            pickupLabel: normalizeOptionalText(pickup.label),
-            pickupAddress,
-            notes: normalizeOptionalText(pickup.notes),
-        };
-        extraOrderPickupStops.push(newStop);
-        orderPickupByMasterRef.set(pickup._id, newStop);
-        orderPickupByAddress.set(pickupAddress.toLowerCase(), newStop);
-        pickupStopKeyAlias.set(`customer-pickup:${pickup._id}`, newStop._key || '');
+    const pickupStopExpansion = await resolveOrderPickupStopExpansion({
+        currentOrderPickupStops,
+        requestedPickupStopKeys,
+        extraPickupRefs,
+        orderCustomerRef,
+    });
+    if (pickupStopExpansion.error) {
+        return NextResponse.json(
+            { error: pickupStopExpansion.error.message },
+            { status: pickupStopExpansion.error.status }
+        );
     }
-    const effectiveOrderPickupStops = [...currentOrderPickupStops, ...extraOrderPickupStops]
-        .map((stop, index) => ({
-            ...stop,
-            sequence: index + 1,
-        }));
-    const remapPickupStopKey = (key: unknown) => {
-        const normalizedKey = normalizeOptionalText(key);
-        return normalizedKey ? pickupStopKeyAlias.get(normalizedKey) || normalizedKey : undefined;
-    };
-    const requestedOrderPickupStopKeys = requestedPickupStopKeys
-        .map(remapPickupStopKey)
-        .filter((key): key is string => Boolean(key && !key.startsWith('customer-pickup:')));
+    const { effectiveOrderPickupStops, pickupStopKeyAlias, addedPickupStopCount } = pickupStopExpansion;
+    const requestedOrderPickupStopKeys = remapRequestedPickupStopKeys(requestedPickupStopKeys, pickupStopKeyAlias);
     const selectedPickupStopKeys = new Set(
         requestedOrderPickupStopKeys.length > 0
             ? requestedOrderPickupStopKeys
@@ -6332,7 +4863,7 @@ export async function handleDeliveryOrderCreate(
             if (!referenceNumber) {
                 return null;
             }
-            const pickupStopKey = remapPickupStopKey(reference.pickupStopKey);
+            const pickupStopKey = remapRequestedPickupStopKey(reference.pickupStopKey, pickupStopKeyAlias);
             const pickupStop = pickupStopKey ? pickupStopByOrderKey.get(pickupStopKey) : undefined;
             return {
                 _key: crypto.randomUUID(),
@@ -6390,7 +4921,6 @@ export async function handleDeliveryOrderCreate(
         typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
             ? data.vehiclePlate.trim()
             : selectedTripPlan?.vehiclePlate || '';
-    let vehicleCapacityKg = 0;
     let selectedVehicle: {
         _id: string;
         _rev?: string;
@@ -6436,7 +4966,6 @@ export async function handleDeliveryOrderCreate(
         if (vehicle.status === 'OUT_OF_SERVICE') {
             return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
-        vehicleCapacityKg = normalizeNumber(vehicle.capacityKg ?? 0);
         const conflictingDeliveryOrder =
             (await listDocumentsByFilter<{
                 _id: string;
@@ -6755,7 +5284,7 @@ export async function handleDeliveryOrderCreate(
             );
             directCargoItems = directCargoItems.map(item => ({
                 ...item,
-                pickupStopKey: remapPickupStopKey(item.pickupStopKey),
+                pickupStopKey: remapRequestedPickupStopKey(item.pickupStopKey, pickupStopKeyAlias),
             }));
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
@@ -6997,7 +5526,7 @@ export async function handleDeliveryOrderCreate(
             );
         }
         const orderUpdates: Record<string, unknown> = {};
-        if (extraOrderPickupStops.length > 0) {
+        if (addedPickupStopCount > 0) {
             const primaryCustomerPickupRef = effectiveOrderPickupStops[0]?.customerPickupRef || order.customerPickupRef;
             orderUpdates.pickupStops = effectiveOrderPickupStops;
             orderUpdates.pickupAddress = effectiveOrderPickupStops[0]?.pickupAddress || order.pickupAddress;
@@ -7206,158 +5735,6 @@ export async function handleDeliveryOrderCreate(
         `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId });
-}
-
-function normalizeOrderPickupStopsInput(rawStops: unknown[], fallbackAddress?: string): OrderPickupStop[] {
-    const stops = rawStops
-        .filter(isPlainObject)
-        .map((stop, index) => ({
-            _key: normalizeOptionalText(stop._key) || normalizeOptionalText(stop.id) || crypto.randomUUID(),
-            sequence: index + 1,
-            customerPickupRef: normalizeOptionalText(stop.customerPickupRef),
-            pickupLabel: normalizeOptionalText(stop.pickupLabel),
-            pickupAddress: normalizeText(stop.pickupAddress),
-            notes: normalizeOptionalText(stop.notes),
-        }))
-        .filter(stop => stop.pickupAddress);
-
-    if (stops.length > 0) {
-        return stops;
-    }
-
-    const fallback = normalizeOptionalText(fallbackAddress);
-    return fallback
-        ? [{
-            _key: crypto.randomUUID(),
-            sequence: 1,
-            pickupAddress: fallback,
-        }]
-        : [];
-}
-
-async function normalizeOrderTripPlansInput(
-    rawPlans: unknown[],
-    pickupStops: OrderPickupStop[],
-    serviceRef?: string
-): Promise<OrderTripPlan[]> {
-    const plans: OrderTripPlan[] = [];
-    const validPickupStopKeys = new Set(pickupStops.map(stop => stop._key).filter((key): key is string => Boolean(key)));
-
-    for (const [index, rawPlan] of rawPlans.filter(isPlainObject).entries()) {
-        const vehicleRef = normalizeText(rawPlan.vehicleRef);
-        const driverRef = normalizeText(rawPlan.driverRef);
-        const issueBankRef = normalizeText(rawPlan.issueBankRef);
-        const cashGiven = normalizeCurrencyNumber(rawPlan.cashGiven ?? 0);
-        const requestedTaripBorongan = normalizeCurrencyNumber(rawPlan.taripBorongan ?? rawPlan.tripFee ?? 0);
-        const date = normalizeOptionalText(rawPlan.date) || getBusinessDateValue();
-        const pickupStopKeys = Array.isArray(rawPlan.pickupStopKeys)
-            ? rawPlan.pickupStopKeys
-                .filter((value): value is string => typeof value === 'string' && validPickupStopKeys.has(value))
-            : [];
-
-        if (pickupStopKeys.length === 0) {
-            throw new Error(`Minimal 1 titik pickup wajib dipilih pada trip ${index + 1}`);
-        }
-        if (!vehicleRef) {
-            throw new Error(`Kendaraan wajib dipilih pada trip ${index + 1}`);
-        }
-        if (!driverRef) {
-            throw new Error(`Supir wajib dipilih pada trip ${index + 1}`);
-        }
-        if (!issueBankRef) {
-            throw new Error(`Rekening atau kas sumber wajib dipilih pada trip ${index + 1}`);
-        }
-        if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
-            throw new Error(`Nominal uang jalan awal wajib diisi pada trip ${index + 1}`);
-        }
-        if (!Number.isFinite(requestedTaripBorongan) || requestedTaripBorongan < 0) {
-            throw new Error(`Upah trip pada trip ${index + 1} tidak valid`);
-        }
-        assertIsoDate(date, `Tanggal trip ${index + 1}`);
-
-        const [vehicle, driver, issueBank] = await Promise.all([
-            getDocumentById<{
-                _id: string;
-                plateNumber?: string;
-                status?: string;
-                serviceRef?: string;
-                serviceName?: string;
-            }>(vehicleRef, 'vehicle'),
-            getDocumentById<{ _id: string; name?: string; active?: boolean }>(driverRef, 'driver'),
-            getDocumentById<{ _id: string; bankName?: string; accountNumber?: string; active?: boolean }>(issueBankRef, 'bankAccount'),
-        ]);
-
-        if (!vehicle) {
-            throw new Error(`Kendaraan pada trip ${index + 1} tidak ditemukan`);
-        }
-        if (vehicle.status === 'SOLD' || vehicle.status === 'OUT_OF_SERVICE') {
-            throw new Error(`Kendaraan pada trip ${index + 1} tidak bisa dipakai`);
-        }
-        if (!driver) {
-            throw new Error(`Supir pada trip ${index + 1} tidak ditemukan`);
-        }
-        if (driver.active === false) {
-            throw new Error(`Supir pada trip ${index + 1} tidak aktif`);
-        }
-        if (!issueBank) {
-            throw new Error(`Rekening atau kas sumber pada trip ${index + 1} tidak ditemukan`);
-        }
-        if (issueBank.active === false) {
-            throw new Error(`Rekening atau kas sumber pada trip ${index + 1} tidak aktif`);
-        }
-
-        const vehicleServiceRef = extractRefId(vehicle.serviceRef) || undefined;
-        const vehicleCategoryOverrideReason = normalizeOptionalText(rawPlan.vehicleCategoryOverrideReason);
-        if (serviceRef && vehicleServiceRef !== serviceRef && !vehicleCategoryOverrideReason) {
-            throw new Error(`Alasan override armada wajib diisi pada trip ${index + 1}`);
-        }
-        const effectiveRouteServiceRef = serviceRef || vehicleServiceRef;
-        let tripRouteSelection: Awaited<ReturnType<typeof resolveTripRouteRateSelection>>;
-        try {
-            tripRouteSelection = await resolveTripRouteRateSelection(rawPlan, {
-                serviceRef: effectiveRouteServiceRef,
-            });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Master biaya rute trip tidak valid';
-            throw new Error(`${message} pada trip ${index + 1}`);
-        }
-        const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection.matchedTripRouteRate?.rate ?? 0);
-        if (
-            matchedTripRouteRateFee > 0 &&
-            requestedTaripBorongan > 0 &&
-            Math.abs(requestedTaripBorongan - matchedTripRouteRateFee) > 0.01
-        ) {
-            throw new Error(`Upah trip pada trip ${index + 1} mengikuti master biaya rute trip yang dipilih`);
-        }
-        const taripBorongan = matchedTripRouteRateFee > 0 ? matchedTripRouteRateFee : requestedTaripBorongan;
-        if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
-            throw new Error(`Upah trip wajib diisi pada trip ${index + 1}`);
-        }
-
-        plans.push({
-            _key: normalizeOptionalText(rawPlan._key) || crypto.randomUUID(),
-            sequence: index + 1,
-            pickupStopKeys,
-            vehicleRef,
-            vehiclePlate: vehicle.plateNumber,
-            vehicleServiceRef,
-            vehicleServiceName: vehicle.serviceName,
-            vehicleCategoryOverrideReason,
-            driverRef,
-            driverName: driver.name,
-            tripRouteRateRef: tripRouteSelection.tripRouteRateRef,
-            tripOriginArea: tripRouteSelection.tripOriginArea,
-            tripDestinationArea: tripRouteSelection.tripDestinationArea,
-            taripBorongan,
-            issueBankRef,
-            issueBankName: [issueBank.bankName, issueBank.accountNumber].filter(Boolean).join(' - ') || issueBank.bankName,
-            cashGiven,
-            date,
-            notes: normalizeOptionalText(rawPlan.notes),
-        });
-    }
-
-    return plans;
 }
 
 export async function handleDeliveryOrderAppendCargoItems(

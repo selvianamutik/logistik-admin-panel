@@ -4,11 +4,10 @@ import 'package:flutter/services.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_action_feedback.dart';
+import 'mobile_delivery_form_utils.dart';
 import 'mobile_input_visibility.dart';
 import 'mobile_numeric_input_formatter.dart';
 import 'mobile_unit_selector_field.dart';
-
-const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
 enum _CompletionStep { setup, drop, cargo, review }
 
@@ -204,10 +203,10 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
             if (draft.itemId != cargoId) return draft;
             final nextWeightUnit = weightInputUnit == null
                 ? draft.weightInputUnit
-                : _normalizeWeightUnit(weightInputUnit);
+                : normalizeMobileWeightUnit(weightInputUnit);
             final nextVolumeUnit = volumeInputUnit == null
                 ? draft.volumeInputUnit
-                : _normalizeVolumeUnit(volumeInputUnit);
+                : normalizeMobileVolumeUnit(volumeInputUnit);
             final nextQty = qtyKoli ?? draft.qtyKoli;
             final autoWeightValue = qtyKoli != null && weightInputValue == null
                 ? _autoWeightInputValueForQty(
@@ -239,7 +238,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                 : null;
             final convertedWeightValue =
                 weightInputUnit != null && weightInputValue == null
-                ? _formatMetric(
+                ? formatMobileMetric(
                     _convertKgToWeightInputValue(
                       _convertWeightToKg(
                         draft.weightInputValueNumber,
@@ -254,7 +253,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                 : weightInputValue ?? autoWeightValue;
             final convertedVolumeValue =
                 volumeInputUnit != null && volumeInputValue == null
-                ? _formatMetric(
+                ? formatMobileMetric(
                     _convertM3ToVolumeInputValue(
                       _convertVolumeToM3(
                         draft.volumeInputValueNumber,
@@ -342,7 +341,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                     nextWeightUnit: nextWeightUnit,
                   )
                 : weightInputUnit != null && weightInputValue == null
-                ? _formatMetric(
+                ? formatMobileMetric(
                     _convertKgToWeightInputValue(
                       _convertWeightToKg(
                         draft.weightInputValueNumber,
@@ -366,7 +365,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                 : null;
             final nextVolumeInputValue =
                 volumeInputUnit != null && volumeInputValue == null
-                ? _formatMetric(
+                ? formatMobileMetric(
                     _convertM3ToVolumeInputValue(
                       _convertVolumeToM3(
                         draft.volumeInputValueNumber,
@@ -594,9 +593,9 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
             locationAddress: draft.locationAddress.trim(),
             qtyKoli: draft.qtyKoliValue,
             weightInputValue: draft.weightInputValueNumber,
-            weightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
+            weightInputUnit: normalizeMobileWeightUnit(draft.weightInputUnit),
             volumeInputValue: draft.volumeInputValueNumber,
-            volumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
+            volumeInputUnit: normalizeMobileVolumeUnit(draft.volumeInputUnit),
             note: draft.note.trim().isNotEmpty ? draft.note.trim() : null,
           );
         })
@@ -1090,7 +1089,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage>
                           controller: _noteController,
                           minLines: 2,
                           maxLines: 4,
-                          scrollPadding: _mobileInputScrollPadding,
+                          scrollPadding: mobileInputScrollPadding,
                           decoration: const InputDecoration(
                             labelText: 'Catatan Driver',
                             hintText: 'Opsional',
@@ -1751,24 +1750,24 @@ List<_ActualCargoDraft> _buildInitialCargoDrafts(DeliveryTrip trip) {
               (item.weightKg ?? 0) > 0 || (item.weightInputValue ?? 0) > 0,
           requireVolume:
               (item.volumeM3 ?? 0) > 0 || (item.volumeInputValue ?? 0) > 0,
-          qtyKoli: _formatMetric(defaultQty),
-          weightInputValue: _formatMetric(
+          qtyKoli: formatMobileMetric(defaultQty),
+          weightInputValue: formatMobileMetric(
             defaultWeightInput,
             fractionDigits: mobileWeightInputFractionDigits(defaultWeightUnit),
           ),
           weightInputUnit: defaultWeightUnit,
-          volumeInputValue: _formatMetric(
+          volumeInputValue: formatMobileMetric(
             defaultVolumeInput,
             fractionDigits: defaultVolumeUnit == 'LITER' ? 0 : 3,
           ),
           volumeInputUnit: defaultVolumeUnit,
-          dropQtyKoli: _formatMetric(dropQty),
-          dropWeightInputValue: _formatMetric(
+          dropQtyKoli: formatMobileMetric(dropQty),
+          dropWeightInputValue: formatMobileMetric(
             dropWeightInput,
             fractionDigits: mobileWeightInputFractionDigits(dropWeightUnit),
           ),
           dropWeightInputUnit: dropWeightUnit,
-          dropVolumeInputValue: _formatMetric(
+          dropVolumeInputValue: formatMobileMetric(
             dropVolumeInput,
             fractionDigits: dropVolumeUnit == 'LITER' ? 0 : 3,
           ),
@@ -1792,13 +1791,13 @@ _ActualDropDraft? _heldCargoItemFallbackDraft(DeliveryCargoItem item) {
   return _ActualDropDraft.create(
     deliveryOrderItemRef: item.id,
     deliveryOrderItemRefs: [item.id],
-    qtyKoli: _formatMetric(heldQtyKoli),
-    weightInputValue: _formatMetric(
+    qtyKoli: formatMobileMetric(heldQtyKoli),
+    weightInputValue: formatMobileMetric(
       _convertKgToWeightInputValue(heldWeightKg, weightUnit),
       fractionDigits: mobileWeightInputFractionDigits(weightUnit),
     ),
     weightInputUnit: weightUnit,
-    volumeInputValue: _formatMetric(
+    volumeInputValue: formatMobileMetric(
       _convertM3ToVolumeInputValue(heldVolumeM3, volumeUnit),
       fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
     ),
@@ -1826,15 +1825,15 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
             originLocationAddress: point.originLocationAddress ?? '',
             locationName: point.locationName,
             locationAddress: point.locationAddress ?? '',
-            qtyKoli: _formatMetric(point.qtyKoli),
-            weightInputValue: _formatMetric(
+            qtyKoli: formatMobileMetric(point.qtyKoli),
+            weightInputValue: formatMobileMetric(
               point.weightInputValue,
               fractionDigits: mobileWeightInputFractionDigits(
                 point.weightInputUnit ?? 'KG',
               ),
             ),
             weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
-            volumeInputValue: _formatMetric(
+            volumeInputValue: formatMobileMetric(
               point.volumeInputValue,
               fractionDigits:
                   (point.volumeInputUnit ?? 'M3').toUpperCase() == 'LITER'
@@ -2038,15 +2037,15 @@ _ActualDropDraft _actualDropPointToDraft(
   return _ActualDropDraft.create(
     deliveryOrderItemRef: deliveryOrderItemRef,
     deliveryOrderItemRefs: [deliveryOrderItemRef],
-    qtyKoli: _formatMetric(point.qtyKoli),
-    weightInputValue: _formatMetric(
+    qtyKoli: formatMobileMetric(point.qtyKoli),
+    weightInputValue: formatMobileMetric(
       point.weightInputValue,
       fractionDigits: mobileWeightInputFractionDigits(
         point.weightInputUnit ?? 'KG',
       ),
     ),
     weightInputUnit: (point.weightInputUnit ?? 'KG').toUpperCase(),
-    volumeInputValue: _formatMetric(
+    volumeInputValue: formatMobileMetric(
       point.volumeInputValue,
       fractionDigits: (point.volumeInputUnit ?? 'M3').toUpperCase() == 'LITER'
           ? 0
@@ -2061,8 +2060,8 @@ _ActualDropDraft _sumDropDraftValues(
   _ActualDropDraft next,
 ) {
   if (current == null) return next;
-  final weightUnit = _normalizeWeightUnit(current.weightInputUnit);
-  final volumeUnit = _normalizeVolumeUnit(current.volumeInputUnit);
+  final weightUnit = normalizeMobileWeightUnit(current.weightInputUnit);
+  final volumeUnit = normalizeMobileVolumeUnit(current.volumeInputUnit);
   final weightKg =
       _convertWeightToKg(
         current.weightInputValueNumber,
@@ -2076,13 +2075,13 @@ _ActualDropDraft _sumDropDraftValues(
       ) +
       _convertVolumeToM3(next.volumeInputValueNumber, next.volumeInputUnit);
   return current.copyWith(
-    qtyKoli: _formatMetric(current.qtyKoliValue + next.qtyKoliValue),
-    weightInputValue: _formatMetric(
+    qtyKoli: formatMobileMetric(current.qtyKoliValue + next.qtyKoliValue),
+    weightInputValue: formatMobileMetric(
       _convertKgToWeightInputValue(weightKg, weightUnit),
       fractionDigits: mobileWeightInputFractionDigits(weightUnit),
     ),
     weightInputUnit: weightUnit,
-    volumeInputValue: _formatMetric(
+    volumeInputValue: formatMobileMetric(
       _convertM3ToVolumeInputValue(volumeM3, volumeUnit),
       fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
     ),
@@ -2260,9 +2259,12 @@ List<_ActualDropDraft> _normalizeDropDraftsForSelectedReferences(
       ? retainedDrafts
       : [
           _ActualDropDraft.create(
-            qtyKoli: _formatMetric(totals.qtyKoli),
-            weightInputValue: _formatMetric(totals.weightKg),
-            volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+            qtyKoli: formatMobileMetric(totals.qtyKoli),
+            weightInputValue: formatMobileMetric(totals.weightKg),
+            volumeInputValue: formatMobileMetric(
+              totals.volumeM3,
+              fractionDigits: 3,
+            ),
           ),
         ];
 
@@ -2272,9 +2274,12 @@ List<_ActualDropDraft> _normalizeDropDraftsForSelectedReferences(
       !_dropDraftHasItemSelection(nextDrafts.first)) {
     nextDrafts = [
       nextDrafts.first.copyWith(
-        qtyKoli: _formatMetric(totals.qtyKoli),
-        weightInputValue: _formatMetric(totals.weightKg),
-        volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+        qtyKoli: formatMobileMetric(totals.qtyKoli),
+        weightInputValue: formatMobileMetric(totals.weightKg),
+        volumeInputValue: formatMobileMetric(
+          totals.volumeM3,
+          fractionDigits: 3,
+        ),
       ),
     ];
   }
@@ -2525,8 +2530,8 @@ List<DriverActualCargoInput> _buildSubmissionActualItems(
 
   return cargoDrafts
       .map((draft) {
-        final weightUnit = _normalizeWeightUnit(draft.weightInputUnit);
-        final volumeUnit = _normalizeVolumeUnit(draft.volumeInputUnit);
+        final weightUnit = normalizeMobileWeightUnit(draft.weightInputUnit);
+        final volumeUnit = normalizeMobileVolumeUnit(draft.volumeInputUnit);
         if (!itemSpecificRefs.contains(draft.itemId)) {
           return _actualInputFromCargoDraft(draft);
         }
@@ -2584,9 +2589,9 @@ DriverActualCargoInput _actualInputFromCargoDraft(_ActualCargoDraft draft) {
     deliveryOrderItemRef: draft.itemId,
     actualQtyKoli: draft.qtyKoliValue,
     actualWeightInputValue: draft.weightInputValueNumber,
-    actualWeightInputUnit: _normalizeWeightUnit(draft.weightInputUnit),
+    actualWeightInputUnit: normalizeMobileWeightUnit(draft.weightInputUnit),
     actualVolumeInputValue: draft.volumeInputValueNumber,
-    actualVolumeInputUnit: _normalizeVolumeUnit(draft.volumeInputUnit),
+    actualVolumeInputUnit: normalizeMobileVolumeUnit(draft.volumeInputUnit),
   );
 }
 
@@ -2931,8 +2936,8 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
     );
   }
 
-  final weightUnit = _normalizeWeightUnit(cargo.dropWeightInputUnit);
-  final volumeUnit = _normalizeVolumeUnit(cargo.dropVolumeInputUnit);
+  final weightUnit = normalizeMobileWeightUnit(cargo.dropWeightInputUnit);
+  final volumeUnit = normalizeMobileVolumeUnit(cargo.dropVolumeInputUnit);
   final remainingQtyKoli = (cargo.dropQtyKoliValue - usedQtyKoli)
       .clamp(0, double.infinity)
       .toDouble();
@@ -2957,11 +2962,11 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
   return _ActualDropDraft.create(
     qtyKoli: remainingQtyKoli <= 0 && cargo.dropQtyKoliValue > 0
         ? '0'
-        : _formatMetric(remainingQtyKoli),
+        : formatMobileMetric(remainingQtyKoli),
     weightInputValue:
         remainingWeightInputValue <= 0 && cargo.dropWeightInputValueNumber > 0
         ? '0'
-        : _formatMetric(
+        : formatMobileMetric(
             remainingWeightInputValue,
             fractionDigits: mobileWeightInputFractionDigits(weightUnit),
           ),
@@ -2969,7 +2974,7 @@ _ActualDropDraft _remainingDropValuesForCargoItem(
     volumeInputValue:
         remainingVolumeInputValue <= 0 && cargo.dropVolumeInputValueNumber > 0
         ? '0'
-        : _formatMetric(
+        : formatMobileMetric(
             remainingVolumeInputValue,
             fractionDigits: volumeUnit == 'LITER' ? 0 : 3,
           ),
@@ -3014,8 +3019,8 @@ String? _autoWeightInputValueForQty({
   if (!shouldRefresh) return null;
 
   final nextWeightKg = basisWeightKg * qtyKoli / basisQtyKoli;
-  final normalizedUnit = _normalizeWeightUnit(nextWeightUnit);
-  return _formatMetric(
+  final normalizedUnit = normalizeMobileWeightUnit(nextWeightUnit);
+  return formatMobileMetric(
     _convertKgToWeightInputValue(nextWeightKg, normalizedUnit),
     fractionDigits: mobileWeightInputFractionDigits(normalizedUnit),
   );
@@ -3057,8 +3062,8 @@ String? _autoVolumeInputValueForQty({
             : 0.0);
   if (nextVolumeM3 <= 0) return null;
 
-  final normalizedUnit = _normalizeVolumeUnit(nextVolumeUnit);
-  return _formatMetric(
+  final normalizedUnit = normalizeMobileVolumeUnit(nextVolumeUnit);
+  return formatMobileMetric(
     _convertM3ToVolumeInputValue(nextVolumeM3, normalizedUnit),
     fractionDigits: mobileVolumeInputFractionDigits(normalizedUnit),
   );
@@ -3066,24 +3071,26 @@ String? _autoVolumeInputValueForQty({
 
 String _formatCargoDraftValues(_ActualCargoDraft draft) {
   final parts = <String>[
-    if (draft.qtyKoliValue > 0) '${_formatMetric(draft.qtyKoliValue)} koli',
+    if (draft.qtyKoliValue > 0)
+      '${formatMobileMetric(draft.qtyKoliValue)} koli',
     if (draft.weightInputValueNumber > 0)
-      '${_formatMetric(draft.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(draft.weightInputUnit))} ${_normalizeWeightUnit(draft.weightInputUnit)}',
+      '${formatMobileMetric(draft.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(draft.weightInputUnit))} ${normalizeMobileWeightUnit(draft.weightInputUnit)}',
     if (draft.volumeInputValueNumber > 0)
-      '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
+      '${formatMobileMetric(draft.volumeInputValueNumber, fractionDigits: normalizeMobileVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${normalizeMobileVolumeUnit(draft.volumeInputUnit)}',
   ];
   return parts.isEmpty ? 'Belum diisi' : parts.join(' / ');
 }
 
 String _formatActualCargoInputValues(DriverActualCargoInput input) {
-  final weightUnit = _normalizeWeightUnit(input.actualWeightInputUnit);
-  final volumeUnit = _normalizeVolumeUnit(input.actualVolumeInputUnit);
+  final weightUnit = normalizeMobileWeightUnit(input.actualWeightInputUnit);
+  final volumeUnit = normalizeMobileVolumeUnit(input.actualVolumeInputUnit);
   final parts = <String>[
-    if (input.actualQtyKoli > 0) '${_formatMetric(input.actualQtyKoli)} koli',
+    if (input.actualQtyKoli > 0)
+      '${formatMobileMetric(input.actualQtyKoli)} koli',
     if (input.actualWeightInputValue > 0)
-      '${_formatMetric(input.actualWeightInputValue, fractionDigits: mobileWeightInputFractionDigits(weightUnit))} $weightUnit',
+      '${formatMobileMetric(input.actualWeightInputValue, fractionDigits: mobileWeightInputFractionDigits(weightUnit))} $weightUnit',
     if (input.actualVolumeInputValue > 0)
-      '${_formatMetric(input.actualVolumeInputValue, fractionDigits: volumeUnit == 'LITER' ? 0 : 3)} $volumeUnit',
+      '${formatMobileMetric(input.actualVolumeInputValue, fractionDigits: volumeUnit == 'LITER' ? 0 : 3)} $volumeUnit',
   ];
   return parts.isEmpty ? 'Belum dialokasikan' : parts.join(' / ');
 }
@@ -3213,20 +3220,6 @@ double _convertM3ToVolumeInputValue(double volumeM3, String unit) {
   return unit.toUpperCase() == 'LITER' ? volumeM3 * 1000 : volumeM3;
 }
 
-String _normalizeWeightUnit(String value) {
-  final normalized = value.trim().toUpperCase();
-  return normalized == 'TON' ? 'TON' : 'KG';
-}
-
-String _normalizeVolumeUnit(String value) {
-  final normalized = value.trim().toUpperCase();
-  return switch (normalized) {
-    'LITER' => 'LITER',
-    'KL' => 'KL',
-    _ => 'M3',
-  };
-}
-
 String _normalizeDropStopType(String value) {
   final normalized = value.trim().toUpperCase();
   return switch (normalized) {
@@ -3258,10 +3251,6 @@ bool _isBillableDropType(String value) {
 
 bool _isNonBillableDropType(String value) => !_isBillableDropType(value);
 
-String _formatMetric(double? value, {int fractionDigits = 2}) {
-  return formatMobileNumberValue(value, fractionDigits: fractionDigits);
-}
-
 class _PodCard extends StatelessWidget {
   const _PodCard({
     required this.receiverController,
@@ -3290,7 +3279,7 @@ class _PodCard extends StatelessWidget {
               controller: receiverController,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(labelText: 'Nama Penerima POD'),
-              scrollPadding: _mobileInputScrollPadding,
+              scrollPadding: mobileInputScrollPadding,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -3304,7 +3293,7 @@ class _PodCard extends StatelessWidget {
                   tooltip: 'Pilih tanggal',
                 ),
               ),
-              scrollPadding: _mobileInputScrollPadding,
+              scrollPadding: mobileInputScrollPadding,
             ),
           ],
         ),
@@ -3821,7 +3810,7 @@ class _ActualCargoCard extends StatelessWidget {
                 }
 
                 Widget weightUnitField() {
-                  final selectedUnit = _normalizeWeightUnit(
+                  final selectedUnit = normalizeMobileWeightUnit(
                     draft.weightInputUnit,
                   );
                   return MobileUnitSelectorField(
@@ -3875,7 +3864,7 @@ class _ActualCargoCard extends StatelessWidget {
                 }
 
                 Widget volumeUnitField() {
-                  final selectedUnit = _normalizeVolumeUnit(
+                  final selectedUnit = normalizeMobileVolumeUnit(
                     draft.volumeInputUnit,
                   );
                   return MobileUnitSelectorField(
@@ -4149,13 +4138,13 @@ String _dropSelectorSubtitle(
   }
   final totals = _summarizeDropDrafts(allocatedDrafts);
   if (totals.qtyKoli > 0) {
-    metrics.add('${_formatMetric(totals.qtyKoli)} koli');
+    metrics.add('${formatMobileMetric(totals.qtyKoli)} koli');
   }
   if (totals.weightKg > 0) {
-    metrics.add('${_formatMetric(totals.weightKg)} kg');
+    metrics.add('${formatMobileMetric(totals.weightKg)} kg');
   }
   if (totals.volumeM3 > 0) {
-    metrics.add('${_formatMetric(totals.volumeM3, fractionDigits: 3)} m3');
+    metrics.add('${formatMobileMetric(totals.volumeM3, fractionDigits: 3)} m3');
   }
   final address = draft.locationAddress.trim();
   final firstLine = [
@@ -4575,9 +4564,13 @@ class _DropPointCargoDetermineSheetState
           cargo: cargo,
           qtyKoli: valueDraft.qtyKoli,
           weightInputValue: valueDraft.weightInputValue,
-          weightInputUnit: _normalizeWeightUnit(valueDraft.weightInputUnit),
+          weightInputUnit: normalizeMobileWeightUnit(
+            valueDraft.weightInputUnit,
+          ),
           volumeInputValue: valueDraft.volumeInputValue,
-          volumeInputUnit: _normalizeVolumeUnit(valueDraft.volumeInputUnit),
+          volumeInputUnit: normalizeMobileVolumeUnit(
+            valueDraft.volumeInputUnit,
+          ),
         ),
       );
     }
@@ -4712,7 +4705,7 @@ class _DropPointCargoDetermineSheetState
                             key: ValueKey(
                               'allocation-weight-unit-${selectedValueDraft.weightInputUnit}',
                             ),
-                            value: _normalizeWeightUnit(
+                            value: normalizeMobileWeightUnit(
                               selectedValueDraft.weightInputUnit,
                             ),
                             options: const ['KG', 'TON'],
@@ -4764,7 +4757,7 @@ class _DropPointCargoDetermineSheetState
                             key: ValueKey(
                               'allocation-volume-unit-${selectedValueDraft.volumeInputUnit}',
                             ),
-                            value: _normalizeVolumeUnit(
+                            value: normalizeMobileVolumeUnit(
                               selectedValueDraft.volumeInputUnit,
                             ),
                             options: const ['M3', 'LITER', 'KL'],
@@ -5231,10 +5224,10 @@ class _ReviewDropPointSummaryCard extends StatelessWidget {
     );
     final totals = _summarizeDropDrafts(allocatedDrafts);
     final totalDraft = _ActualDropDraft.create(
-      qtyKoli: _formatMetric(totals.qtyKoli),
-      weightInputValue: _formatMetric(totals.weightKg),
+      qtyKoli: formatMobileMetric(totals.qtyKoli),
+      weightInputValue: formatMobileMetric(totals.weightKg),
       weightInputUnit: 'KG',
-      volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
+      volumeInputValue: formatMobileMetric(totals.volumeM3, fractionDigits: 3),
       volumeInputUnit: 'M3',
     );
 
@@ -5391,20 +5384,21 @@ class _DropPointAllocationRow extends StatelessWidget {
 
 String _formatDropDraftValues(_ActualDropDraft draft) {
   final parts = <String>[
-    if (draft.qtyKoliValue > 0) '${_formatMetric(draft.qtyKoliValue)} koli',
+    if (draft.qtyKoliValue > 0)
+      '${formatMobileMetric(draft.qtyKoliValue)} koli',
     if (draft.weightInputValueNumber > 0)
-      '${_formatMetric(draft.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(draft.weightInputUnit))} ${_normalizeWeightUnit(draft.weightInputUnit)}',
+      '${formatMobileMetric(draft.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(draft.weightInputUnit))} ${normalizeMobileWeightUnit(draft.weightInputUnit)}',
     if (draft.volumeInputValueNumber > 0)
-      '${_formatMetric(draft.volumeInputValueNumber, fractionDigits: _normalizeVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${_normalizeVolumeUnit(draft.volumeInputUnit)}',
+      '${formatMobileMetric(draft.volumeInputValueNumber, fractionDigits: normalizeMobileVolumeUnit(draft.volumeInputUnit) == 'LITER' ? 0 : 3)} ${normalizeMobileVolumeUnit(draft.volumeInputUnit)}',
   ];
   if (parts.isEmpty && draft.qtyKoli.trim().isNotEmpty) {
     parts.add('0 koli');
   }
   if (parts.isEmpty && draft.weightInputValue.trim().isNotEmpty) {
-    parts.add('0 ${_normalizeWeightUnit(draft.weightInputUnit)}');
+    parts.add('0 ${normalizeMobileWeightUnit(draft.weightInputUnit)}');
   }
   if (parts.isEmpty && draft.volumeInputValue.trim().isNotEmpty) {
-    parts.add('0 ${_normalizeVolumeUnit(draft.volumeInputUnit)}');
+    parts.add('0 ${normalizeMobileVolumeUnit(draft.volumeInputUnit)}');
   }
   return parts.isEmpty ? 'Belum diisi' : parts.join(' / ');
 }
@@ -5413,7 +5407,7 @@ String _formatRemainingKoli(double value) {
   if (value <= 0) {
     return '0';
   }
-  final formatted = _formatMetric(value);
+  final formatted = formatMobileMetric(value);
   return formatted.trim().isEmpty ? '0' : formatted;
 }
 
@@ -5493,7 +5487,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       maxLines: widget.maxLines,
       decoration: widget.decoration,
       enabled: widget.enabled,
-      scrollPadding: _mobileInputScrollPadding,
+      scrollPadding: mobileInputScrollPadding,
       onChanged: widget.onChanged,
     );
   }

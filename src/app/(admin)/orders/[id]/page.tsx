@@ -47,15 +47,35 @@ import {
 import {
     applyCustomerProductToOrderItem,
     applyOrderItemAutoWeightFromQty,
-    createDefaultOrderItemForm,
     getDraftOrderItems,
     shouldLockOrderItemVolume,
     shouldLockOrderItemWeight,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
-    type OrderItemForm,
 } from '@/lib/order-create-page-support';
+import {
+    createDefaultCancelTripExpenseForm,
+    getDefaultCancelExpenseCategoryRef,
+    isOperationalCancelExpenseCategory,
+    type CancelTripExpenseFormState,
+} from '@/lib/cancel-trip-expense-support';
+import {
+    buildDeliveryOrderShipperReferenceLinks,
+    formatDeliveryOrderShipperReferencePreview,
+    getDeliveryOrderShipperReferenceNumbers,
+} from '@/lib/order-detail-shipper-reference-support';
+import {
+    createDefaultDirectCargoGroup,
+    createDefaultDirectCargoGroupItem,
+    createDefaultTripDraftForm,
+    flattenDirectCargoGroups,
+    getDirectCargoGroupDraftItems,
+    toDirectCargoGroupItem,
+    type DirectCargoGroup,
+    type DirectCargoGroupItem,
+    type TripDraftForm,
+} from '@/lib/order-detail-direct-cargo-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatUnitCapacityLabel } from '@/lib/service-capacity-support';
@@ -66,208 +86,7 @@ import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
 import AuditTrailCard from '../../_components/AuditTrailCard';
 
-function getDeliveryOrderShipperReferenceNumbers(
-    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
-    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceNumber'>[] = []
-) {
-    const references =
-        Array.isArray(deliveryOrder.shipperReferences)
-            ? deliveryOrder.shipperReferences
-                .map(reference => reference.referenceNumber?.trim())
-                .filter((value): value is string => Boolean(value))
-            : [];
-
-    deliveryOrderItems
-        .filter(item => item.deliveryOrderRef === deliveryOrder._id)
-        .map(item => item.shipperReferenceNumber?.trim())
-        .filter((value): value is string => Boolean(value))
-        .forEach(value => references.push(value));
-
-    if (references.length === 0 && deliveryOrder.customerDoNumber?.trim()) {
-        references.push(deliveryOrder.customerDoNumber.trim());
-    }
-
-    return Array.from(new Set(references));
-}
-
-function formatDeliveryOrderShipperReferencePreview(
-    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
-    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceNumber'>[] = [],
-    limit: number = 2
-) {
-    const references = getDeliveryOrderShipperReferenceNumbers(deliveryOrder, deliveryOrderItems);
-    if (references.length === 0) {
-        return null;
-    }
-    if (references.length <= limit) {
-        return references.join(', ');
-    }
-    return `${references.slice(0, limit).join(', ')} +${references.length - limit} lagi`;
-}
-
-function buildDeliveryOrderShipperReferenceLinks(
-    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
-    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>[] = []
-) {
-    const links = new Map<string, { id: string; label: string }>();
-
-    (deliveryOrder.shipperReferences || []).forEach((reference, index) => {
-        const label = reference.referenceNumber?.trim();
-        if (!label) return;
-        const referenceIdentity = reference._key || reference.referenceNumber || `reference-${index + 1}`;
-        const id = `${deliveryOrder._id}:${referenceIdentity}`;
-        links.set(id, { id, label });
-    });
-
-    deliveryOrderItems
-        .filter(item => item.deliveryOrderRef === deliveryOrder._id)
-        .forEach(item => {
-            const label = item.shipperReferenceNumber?.trim();
-            if (!label) return;
-            const referenceIdentity = item.shipperReferenceKey || item.shipperReferenceNumber || 'primary';
-            const id = `${deliveryOrder._id}:${referenceIdentity}`;
-            if (!links.has(id)) {
-                links.set(id, { id, label });
-            }
-        });
-
-    if (links.size === 0 && deliveryOrder.customerDoNumber?.trim()) {
-        const id = `${deliveryOrder._id}:primary`;
-        links.set(id, { id, label: deliveryOrder.customerDoNumber.trim() });
-    }
-
-    return [...links.values()];
-}
-
-type DirectCargoGroupItem = Omit<OrderItemForm, 'pickupStopKey' | 'shipperReferenceNumber'>;
-
-type DirectCargoGroup = {
-    id: string;
-    pickupStopKey: string;
-    shipperReferenceNumber: string;
-    items: DirectCargoGroupItem[];
-};
-
-type TripDraftForm = {
-    id: string;
-    pickupStopKeys: string[];
-    vehicleRef: string;
-    driverRef: string;
-    tripOriginArea: string;
-    tripDestinationArea: string;
-    tripRouteRateRef: string;
-    tripFee: number;
-    vehicleOverrideReason: string;
-    issueBankRef: string;
-    cashGiven: number;
-    notes: string;
-    date: string;
-};
-
 type TripPlanModalMode = 'create' | 'edit' | 'delete';
-
-type CancelTripExpenseFormState = {
-    expenseDate: string;
-    categoryRef: string;
-    bankAccountRef: string;
-    description: string;
-    amount: number;
-};
-
-function createDefaultCancelTripExpenseForm(): CancelTripExpenseFormState {
-    return {
-        expenseDate: getBusinessDateValue(),
-        categoryRef: '',
-        bankAccountRef: '',
-        description: '',
-        amount: 0,
-    };
-}
-
-function isOperationalCancelExpenseCategory(category: ExpenseCategory) {
-    return category.active !== false && category.scope === 'GENERAL' && category.allowManual !== false;
-}
-
-function getDefaultCancelExpenseCategoryRef(categories: ExpenseCategory[]) {
-    const operationalCategories = categories.filter(isOperationalCancelExpenseCategory);
-    return (
-        operationalCategories.find(category => /batal|pembatalan/i.test(category.name))?._id ||
-        operationalCategories.find(category => /lain-lain umum/i.test(category.name))?._id ||
-        operationalCategories.find(category => /operasional/i.test(category.name))?._id ||
-        operationalCategories[0]?._id ||
-        ''
-    );
-}
-
-function toDirectCargoGroupItem(item: OrderItemForm): DirectCargoGroupItem {
-    return {
-        customerProductRef: item.customerProductRef,
-        description: item.description,
-        qtyKoli: item.qtyKoli,
-        weightInputValue: item.weightInputValue,
-        weightInputUnit: item.weightInputUnit,
-        autoWeightBasisQtyKoli: item.autoWeightBasisQtyKoli,
-        autoWeightBasisWeightKg: item.autoWeightBasisWeightKg,
-        volumeInputValue: item.volumeInputValue,
-        volumeInputUnit: item.volumeInputUnit,
-        value: item.value,
-    };
-}
-
-function createDefaultDirectCargoGroupItem(): DirectCargoGroupItem {
-    return toDirectCargoGroupItem(createDefaultOrderItemForm());
-}
-
-function createDefaultDirectCargoGroup(pickupStopKey = ''): DirectCargoGroup {
-    return {
-        id: crypto.randomUUID(),
-        pickupStopKey,
-        shipperReferenceNumber: '',
-        items: [createDefaultDirectCargoGroupItem()],
-    };
-}
-
-function createDefaultTripDraftForm(pickupStopKeys: string[] = []): TripDraftForm {
-    return {
-        id: crypto.randomUUID(),
-        pickupStopKeys,
-        vehicleRef: '',
-        driverRef: '',
-        tripOriginArea: '',
-        tripDestinationArea: '',
-        tripRouteRateRef: '',
-        tripFee: 0,
-        vehicleOverrideReason: '',
-        issueBankRef: '',
-        cashGiven: 0,
-        notes: '',
-        date: getBusinessDateValue(),
-    };
-}
-
-function isDirectCargoGroupItemDraft(item: DirectCargoGroupItem) {
-    return Boolean(
-        item.description.trim() ||
-        item.customerProductRef ||
-        item.qtyKoli > 0 ||
-        item.weightInputValue > 0 ||
-        item.volumeInputValue > 0
-    );
-}
-
-function getDirectCargoGroupDraftItems(group: DirectCargoGroup) {
-    return group.items.filter(isDirectCargoGroupItemDraft);
-}
-
-function flattenDirectCargoGroups(groups: DirectCargoGroup[]): OrderItemForm[] {
-    return groups.flatMap(group =>
-        group.items.map(item => ({
-            ...item,
-            pickupStopKey: group.pickupStopKey,
-            shipperReferenceNumber: group.shipperReferenceNumber,
-        }))
-    );
-}
 
 export default function OrderDetailPage() {
     const params = useParams();

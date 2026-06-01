@@ -6,11 +6,10 @@ import 'package:flutter/services.dart';
 import '../data/delivery_order_service.dart';
 import '../domain/models.dart';
 import 'mobile_action_feedback.dart';
+import 'mobile_delivery_form_utils.dart';
 import 'mobile_input_visibility.dart';
 import 'mobile_numeric_input_formatter.dart';
 import 'mobile_unit_selector_field.dart';
-
-const _mobileInputScrollPadding = EdgeInsets.fromLTRB(20, 20, 20, 120);
 
 class DeliveryManifestPage extends StatefulWidget {
   const DeliveryManifestPage({
@@ -321,7 +320,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
     final groupKey = group.referenceKey.trim();
     final groupNumber = group.shipperReferenceNumber.trim().toUpperCase();
     final pointKey = (point.shipperReferenceKey ?? '').trim();
-    final pointNumber = (point.shipperReferenceNumber ?? '').trim().toUpperCase();
+    final pointNumber = (point.shipperReferenceNumber ?? '')
+        .trim()
+        .toUpperCase();
     if (groupKey.isNotEmpty && pointKey == groupKey) return true;
     if (groupNumber.isNotEmpty && pointNumber == groupNumber) return true;
 
@@ -702,9 +703,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                   (previousVolumeM3 / previousQty) * nextQty,
                   nextVolumeUnit,
                 ),
-                fractionDigits: mobileVolumeInputFractionDigits(
-                  nextVolumeUnit,
-                ),
+                fractionDigits: mobileVolumeInputFractionDigits(nextVolumeUnit),
               )
             : patched.volumeInputValue,
         volumeInputUnit: nextVolumeUnit,
@@ -893,9 +892,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
           description: description,
           qtyKoli: item.qtyKoliValue,
           weightInputValue: item.weightInputValueNumber,
-          weightInputUnit: _normalizeWeightUnit(item.weightInputUnit),
+          weightInputUnit: normalizeMobileWeightUnit(item.weightInputUnit),
           volumeInputValue: item.volumeInputValueNumber,
-          volumeInputUnit: _normalizeVolumeUnit(item.volumeInputUnit),
+          volumeInputUnit: normalizeMobileVolumeUnit(item.volumeInputUnit),
           shipperReferenceNumber: referenceNumber,
           pickupStopKey: group.pickupStopKey.trim().isNotEmpty
               ? group.pickupStopKey.trim()
@@ -942,9 +941,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
               description: item.description.trim(),
               qtyKoli: item.qtyKoliValue,
               weightInputValue: item.weightInputValueNumber,
-              weightInputUnit: _normalizeWeightUnit(item.weightInputUnit),
+              weightInputUnit: normalizeMobileWeightUnit(item.weightInputUnit),
               volumeInputValue: item.volumeInputValueNumber,
-              volumeInputUnit: _normalizeVolumeUnit(item.volumeInputUnit),
+              volumeInputUnit: normalizeMobileVolumeUnit(item.volumeInputUnit),
               shipperReferenceNumber: referenceNumber,
               pickupStopKey: group.pickupStopKey.trim().isNotEmpty
                   ? group.pickupStopKey.trim()
@@ -1125,8 +1124,9 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage>
                                   : null,
                               removeLocked:
                                   _groupDeleteLockReason(selectedGroup) != null,
-                              removeLockedReason:
-                                  _groupDeleteLockReason(selectedGroup),
+                              removeLockedReason: _groupDeleteLockReason(
+                                selectedGroup,
+                              ),
                               itemVisibilityKeyFor: _itemVisibilityKey,
                             ),
                           ),
@@ -1379,20 +1379,6 @@ class _ManifestItemDraft {
 
 String _formatDraftNumber(double? value, {int fractionDigits = 5}) {
   return formatMobileNumberValue(value, fractionDigits: fractionDigits);
-}
-
-String _normalizeWeightUnit(String value) {
-  final normalized = value.trim().toUpperCase();
-  return normalized == 'TON' ? 'TON' : 'KG';
-}
-
-String _normalizeVolumeUnit(String value) {
-  final normalized = value.trim().toUpperCase();
-  return switch (normalized) {
-    'LITER' => 'LITER',
-    'KL' => 'KL',
-    _ => 'M3',
-  };
 }
 
 class _ManifestGroupSelectorField extends StatelessWidget {
@@ -1695,8 +1681,7 @@ class _ManifestDateField extends StatelessWidget {
 
   Future<void> _pickDate(BuildContext context) async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final initialDate =
-        _parseDateValue(value) ?? _jakartaDateTimeNow();
+    final initialDate = _parseDateValue(value) ?? _jakartaDateTimeNow();
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -2276,12 +2261,12 @@ String _manifestItemMetricSummary(_ManifestItemDraft item) {
   }
   if (item.weightInputValueNumber > 0) {
     parts.add(
-      '${_formatDraftNumber(item.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(item.weightInputUnit))} ${_normalizeWeightUnit(item.weightInputUnit)}',
+      '${_formatDraftNumber(item.weightInputValueNumber, fractionDigits: mobileWeightInputFractionDigits(item.weightInputUnit))} ${normalizeMobileWeightUnit(item.weightInputUnit)}',
     );
   }
   if (item.volumeInputValueNumber > 0) {
     parts.add(
-      '${_formatDraftNumber(item.volumeInputValueNumber, fractionDigits: mobileVolumeInputFractionDigits(item.volumeInputUnit))} ${_normalizeVolumeUnit(item.volumeInputUnit)}',
+      '${_formatDraftNumber(item.volumeInputValueNumber, fractionDigits: mobileVolumeInputFractionDigits(item.volumeInputUnit))} ${normalizeMobileVolumeUnit(item.volumeInputUnit)}',
     );
   }
   return parts.isEmpty ? 'Belum ada koli / berat / volume' : parts.join(' / ');
@@ -2535,7 +2520,9 @@ class _ManifestItemCard extends StatelessWidget {
               }
 
               Widget weightUnitField() {
-                final selectedUnit = _normalizeWeightUnit(item.weightInputUnit);
+                final selectedUnit = normalizeMobileWeightUnit(
+                  item.weightInputUnit,
+                );
                 return MobileUnitSelectorField(
                   key: ValueKey('unitWeight-${item.id}'),
                   value: selectedUnit,
@@ -2585,7 +2572,9 @@ class _ManifestItemCard extends StatelessWidget {
               }
 
               Widget volumeUnitField() {
-                final selectedUnit = _normalizeVolumeUnit(item.volumeInputUnit);
+                final selectedUnit = normalizeMobileVolumeUnit(
+                  item.volumeInputUnit,
+                );
                 return MobileUnitSelectorField(
                   key: ValueKey('unitVolume-${item.id}'),
                   value: selectedUnit,
@@ -2694,7 +2683,7 @@ class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
       textCapitalization: widget.textCapitalization,
       decoration: widget.decoration,
       enabled: widget.enabled,
-      scrollPadding: _mobileInputScrollPadding,
+      scrollPadding: mobileInputScrollPadding,
       validator: widget.validator,
       onChanged: widget.onChanged,
     );

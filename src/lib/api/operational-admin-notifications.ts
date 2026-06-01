@@ -440,6 +440,21 @@ export async function notifyOperationalAdminWhatsApp(message: string) {
     return result;
 }
 
+function isAfterRequestScopeError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('outside a request scope') || message.includes('next-dynamic-api-wrong-context');
+}
+
 export function scheduleOperationalAdminWhatsApp(message: string) {
-    after(() => notifyOperationalAdminWhatsApp(message));
+    const task = () => notifyOperationalAdminWhatsApp(message);
+    try {
+        after(task);
+    } catch (error) {
+        if (!isAfterRequestScopeError(error)) {
+            throw error;
+        }
+        queueMicrotask(() => {
+            void task();
+        });
+    }
 }

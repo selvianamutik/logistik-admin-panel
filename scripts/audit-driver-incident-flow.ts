@@ -2,7 +2,10 @@ import { loadScriptEnv } from './_env';
 
 loadScriptEnv();
 
+import { hashPassword } from '../src/lib/auth';
+import { getBusinessDateValue } from '../src/lib/business-date';
 import {
+    createDocument,
     deleteDocument,
     listDocumentsByFilter,
 } from '../src/lib/repositories/document-store';
@@ -11,20 +14,6 @@ type ApiResponse<T> = {
     data?: T;
     id?: string;
     error?: string;
-};
-
-type DeliveryOrderLike = {
-    _id: string;
-    doNumber?: string;
-    driverRef?: string | null;
-};
-
-type UserLike = {
-    _id: string;
-    role?: string | null;
-    active?: boolean | null;
-    email?: string | null;
-    driverRef?: string | null;
 };
 
 type DriverLoginResponse = {
@@ -53,15 +42,19 @@ type IncidentSettlementLineLike = {
     linkedExpenseRef?: string;
 };
 
+type ReferenceDocLike = {
+    _id: string;
+    name?: string | null;
+    customerName?: string | null;
+    serviceName?: string | null;
+    active?: boolean | null;
+};
+
 const REQUEST_TIMEOUT_MS = Number(process.env.AUDIT_REQUEST_TIMEOUT_MS || 45000);
 const AUDIT_SUFFIX = Date.now().toString().slice(-6);
 
 function getBaseUrl() {
     return (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-}
-
-function normalizeText(value: unknown) {
-    return typeof value === 'string' ? value.trim() : '';
 }
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -120,7 +113,7 @@ async function loginAdmin() {
     return cookieHeader;
 }
 
-async function loginDriver(email: string) {
+async function loginDriver(email: string, password: string) {
     const response = await fetchWithTimeout(`${getBaseUrl()}/api/driver/mobile/login`, {
         method: 'POST',
         headers: {
@@ -130,7 +123,7 @@ async function loginDriver(email: string) {
         },
         body: JSON.stringify({
             email,
-            password: process.env.AUDIT_DRIVER_PASSWORD || 'driver12345',
+            password,
         }),
     }, 'Login mobile driver');
     const bodyText = await response.text();
@@ -238,50 +231,112 @@ async function cleanupIncident(incidentId?: string) {
     await deleteDocument(incidentId, 'incident').catch(() => undefined);
 }
 
+async function cleanupDocumentWithAudits(id: string, type: string) {
+    const audits = await listDocumentsByFilter<{ _id: string }>('auditLog', { entityRef: id }).catch(() => []);
+    for (const audit of audits) {
+        await deleteDocument(audit._id, 'auditLog').catch(() => undefined);
+    }
+    await deleteDocument(id, type).catch(() => undefined);
+}
+
 async function main() {
     const adminCookie = await loginAdmin();
     let createdIncidentId = '';
     let createdFollowupIncidentId = '';
+    const createdDirectDocs: Array<[string, string]> = [];
 
     try {
-        auditStep('ambil kandidat DO dan akun driver');
-        const [deliveryOrderResponse, usersResponse, incidentsResponse] = await Promise.all([
-            requestJson<{ data: DeliveryOrderLike[] }>('/api/data?entity=delivery-orders', adminCookie),
-            requestJson<{ data: UserLike[] }>('/api/data?entity=users', adminCookie),
-            requestJson<{ data: IncidentLike[] }>('/api/data?entity=incidents&pageSize=1000', adminCookie),
+        auditStep('siapkan DO dan akun driver khusus audit');
+        const [customersResponse, servicesResponse] = await Promise.all([
+            requestJson<{ data: ReferenceDocLike[] }>('/api/data?entity=customers&pageSize=100', adminCookie),
+            requestJson<{ data: ReferenceDocLike[] }>('/api/data?entity=services&pageSize=100', adminCookie),
         ]);
-        const users = Array.isArray(usersResponse.data) ? usersResponse.data : [];
-        const activeIncidentDeliveryOrderRefs = new Set(
-            (incidentsResponse.data || [])
-                .filter(incident => incident.status !== 'CLOSED')
-                .map(incident => normalizeText(incident.relatedDeliveryOrderRef))
-                .filter(Boolean)
-        );
-        const candidate = (deliveryOrderResponse.data || [])
-            .filter(deliveryOrder =>
-                normalizeText(deliveryOrder.driverRef) &&
-                !activeIncidentDeliveryOrderRefs.has(deliveryOrder._id)
-            )
-            .map(deliveryOrder => ({
-                deliveryOrder,
-                driverUser: users.find(user =>
-                    user.role === 'DRIVER' &&
-                    user.active !== false &&
-                    normalizeText(user.email) &&
-                    normalizeText(user.driverRef) === normalizeText(deliveryOrder.driverRef)
-                ),
-            }))
-            .find(item => item.driverUser);
-        if (!candidate?.driverUser) {
-            console.log('Driver incident audit SKIP: tidak ada DO dengan akun driver aktif pada seed saat ini.');
-            return;
-        }
+        const customer = (customersResponse.data || []).find(item => item.active !== false);
+        const service = (servicesResponse.data || []).find(item => item.active !== false);
+        assert(customer, 'Audit driver incident butuh customer aktif');
+        assert(service, 'Audit driver incident butuh service aktif');
 
-        const driverToken = await loginDriver(normalizeText(candidate.driverUser.email));
+        const driverId = `audit-driver-incident-driver-${AUDIT_SUFFIX}`;
+        const vehicleId = `audit-driver-incident-vehicle-${AUDIT_SUFFIX}`;
+        const userId = `audit-driver-incident-user-${AUDIT_SUFFIX}`;
+        const orderId = `audit-driver-incident-order-${AUDIT_SUFFIX}`;
+        const deliveryOrderId = `audit-driver-incident-do-${AUDIT_SUFFIX}`;
+        const driverName = `Audit Driver Incident ${AUDIT_SUFFIX}`;
+        const driverEmail = `audit-driver-incident-${AUDIT_SUFFIX}@driver.local`;
+        const driverPassword = `Audit${AUDIT_SUFFIX}!`;
+        const vehiclePlate = `AUD-INC-${AUDIT_SUFFIX}`;
+        const orderNumber = `AUD-INC-ORDER-${AUDIT_SUFFIX}`;
+        const doNumber = `AUD-INC-DO-${AUDIT_SUFFIX}`;
+        const auditDate = getBusinessDateValue();
+        const customerName = customer.customerName || customer.name || 'Audit Customer';
+        const serviceName = service.serviceName || service.name || 'Audit Service';
+
+        await createDocument({
+            _id: driverId,
+            _type: 'driver',
+            name: driverName,
+            active: true,
+        });
+        createdDirectDocs.push([driverId, 'driver']);
+        await createDocument({
+            _id: vehicleId,
+            _type: 'vehicle',
+            plateNumber: vehiclePlate,
+            status: 'AVAILABLE',
+            active: true,
+        });
+        createdDirectDocs.push([vehicleId, 'vehicle']);
+        await createDocument({
+            _id: userId,
+            _type: 'user',
+            name: driverName,
+            email: driverEmail,
+            role: 'DRIVER',
+            active: true,
+            driverRef: driverId,
+            driverName,
+            passwordHash: await hashPassword(driverPassword),
+        });
+        createdDirectDocs.push([userId, 'user']);
+        await createDocument({
+            _id: orderId,
+            _type: 'order',
+            masterResi: orderNumber,
+            customerRef: customer._id,
+            customerName,
+            pickupAddress: 'Audit Incident Pickup',
+            serviceRef: service._id,
+            serviceName,
+            status: 'IN_PROGRESS',
+            notes: `Audit driver incident ${AUDIT_SUFFIX}`,
+            createdAt: new Date().toISOString(),
+        });
+        createdDirectDocs.push([orderId, 'order']);
+        await createDocument({
+            _id: deliveryOrderId,
+            _type: 'deliveryOrder',
+            doNumber,
+            orderRef: orderId,
+            masterResi: orderNumber,
+            customerRef: customer._id,
+            customerName,
+            pickupAddress: 'Audit Incident Pickup',
+            serviceRef: service._id,
+            serviceName,
+            status: 'ON_DELIVERY',
+            date: auditDate,
+            driverRef: driverId,
+            driverName,
+            vehicleRef: vehicleId,
+            vehiclePlate,
+        });
+        createdDirectDocs.push([deliveryOrderId, 'deliveryOrder']);
+
+        const driverToken = await loginDriver(driverEmail, driverPassword);
 
         auditStep('driver membuat laporan insiden untuk DO miliknya');
         const incidentCreate = await driverRequest<IncidentLike>('POST', driverToken, '/api/driver/incidents', {
-            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            relatedDeliveryOrderRef: deliveryOrderId,
             incidentType: 'OTHER',
             urgency: 'LOW',
             locationText: `Audit incident location ${AUDIT_SUFFIX}`,
@@ -293,13 +348,13 @@ async function main() {
         createdIncidentId = incident._id;
         assert(incident.status === 'OPEN', 'Incident baru dari driver harus berstatus OPEN');
         assert(
-            incident.relatedDeliveryOrderRef === candidate.deliveryOrder._id,
+            incident.relatedDeliveryOrderRef === deliveryOrderId,
             'Incident driver harus terhubung ke DO yang dipilih'
         );
 
         auditStep('driver tidak boleh membuat laporan insiden baru saat incident aktif belum ditutup');
         await driverRequest('POST', driverToken, '/api/driver/incidents', {
-            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            relatedDeliveryOrderRef: deliveryOrderId,
             incidentType: 'OTHER',
             urgency: 'LOW',
             locationText: `Duplicate active incident ${AUDIT_SUFFIX}`,
@@ -415,7 +470,7 @@ async function main() {
         assert(resolvedIncident.data?.status === 'RESOLVED', 'Admin gagal mengubah incident ke RESOLVED');
 
         await driverRequest('POST', driverToken, '/api/driver/incidents', {
-            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            relatedDeliveryOrderRef: deliveryOrderId,
             incidentType: 'OTHER',
             urgency: 'LOW',
             locationText: `Duplicate resolved incident ${AUDIT_SUFFIX}`,
@@ -470,7 +525,7 @@ async function main() {
         assert(closedIncident.data?.status === 'CLOSED', 'Admin gagal menutup incident setelah settlement void');
 
         const followupIncident = await driverRequest<IncidentLike>('POST', driverToken, '/api/driver/incidents', {
-            relatedDeliveryOrderRef: candidate.deliveryOrder._id,
+            relatedDeliveryOrderRef: deliveryOrderId,
             incidentType: 'OTHER',
             urgency: 'LOW',
             locationText: `Follow up incident after close ${AUDIT_SUFFIX}`,
@@ -486,6 +541,9 @@ async function main() {
     } finally {
         await cleanupIncident(createdFollowupIncidentId);
         await cleanupIncident(createdIncidentId);
+        for (const [id, type] of createdDirectDocs.reverse()) {
+            await cleanupDocumentWithAudits(id, type);
+        }
     }
 }
 

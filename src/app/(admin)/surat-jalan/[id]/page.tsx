@@ -233,56 +233,6 @@ export default function SuratJalanDetailPage() {
             sequence: reference.sequence || index + 1,
         }));
     };
-    const getSelectedDeliveryOrderItemIds = () => new Set(
-        documentItems
-            .map(item => resolveDocumentItemDeliveryOrderItemRef(item))
-            .filter(Boolean)
-    );
-    const getEditItemDrafts = () => {
-        const selectedItemIds = getSelectedDeliveryOrderItemIds();
-        return deliveryOrderItems
-            .filter(item => selectedItemIds.has(item._id))
-            .map(item => {
-                const weightInputUnit = item.orderItemWeightInputUnit || 'KG';
-                const volumeInputUnit = item.orderItemVolumeInputUnit || 'M3';
-                return {
-                    deliveryOrderItemId: item._id,
-                    customerProductRef: '',
-                    description: item.orderItemDescription || '',
-                    qtyKoli: parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
-                    weightInputValue: parseFormattedNumberish(
-                        item.orderItemWeightInputValue ?? item.orderItemWeight ?? item.shippedWeight ?? 0,
-                        { maxFractionDigits: getWeightInputFractionDigits(weightInputUnit) }
-                    ),
-                    weightInputUnit,
-                    volumeInputValue: parseFormattedNumberish(
-                        item.orderItemVolumeInputValue ?? item.orderItemVolumeM3 ?? 0,
-                        { maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3 }
-                    ),
-                    volumeInputUnit,
-                    value: 0,
-                    id: item.orderItemRef,
-                } satisfies EditExistingCargoItem;
-            });
-    };
-    const openEditModal = () => {
-        if (!deliveryOrder || !suratJalanDocument) return;
-        const references = getEditableShipperReferences();
-        const currentReference = references[findCurrentReferenceIndex(references)] || references[0] || getFallbackShipperReference();
-        setEditForm({
-            referenceNumber: currentReference.referenceNumber || suratJalanDocument.suratJalanNumber || '',
-            pickupStopKey: currentReference.pickupStopKey || '',
-            billingCustomerRef: currentReference.billingCustomerRef || suratJalanDocument.customerRef || deliveryOrder.customerRef || '',
-            billingCustomerName: currentReference.billingCustomerName || suratJalanDocument.customerName || deliveryOrder.customerName || '',
-            receiverName: currentReference.receiverName || suratJalanDocument.receiverName || deliveryOrder.receiverName || '',
-            receiverPhone: currentReference.receiverPhone || deliveryOrder.receiverPhone || '',
-            receiverCompany: currentReference.receiverCompany || suratJalanDocument.receiverCompany || deliveryOrder.receiverCompany || '',
-            receiverAddress: currentReference.receiverAddress || suratJalanDocument.receiverAddress || deliveryOrder.receiverAddress || '',
-        });
-        setEditExistingItems(getEditItemDrafts());
-        setEditNewItems([]);
-        setShowEditModal(true);
-    };
     const updateExistingItem = <K extends keyof DeliveryOrderCargoDraftItem>(itemIndex: number, field: K, value: DeliveryOrderCargoDraftItem[K]) => {
         setEditExistingItems(previous => previous.map((item, index) => {
             if (index !== itemIndex) return item;
@@ -1115,19 +1065,6 @@ export default function SuratJalanDetailPage() {
                 }
                 : item
         ));
-    };
-
-    const openActualEditModal = () => {
-        if (!isDeliveredStatus || deliveryOrder.tripClosedByAdminAt) return;
-        const editableItems = buildActualCargoDrafts(selectedDeliveryOrderItems);
-        const firstDeliveredItem = editableItems.find(item => deliveredDocumentItemRefs.has(item.deliveryOrderItemRef));
-        if (!firstDeliveredItem) {
-            addToast('error', 'Belum ada item terkirim aktual yang bisa diedit.');
-            return;
-        }
-        setActualEditItems(editableItems);
-        setSelectedActualEditItemRef(firstDeliveredItem.deliveryOrderItemRef);
-        setShowActualEditModal(true);
     };
 
     const updateActualEditItem = (

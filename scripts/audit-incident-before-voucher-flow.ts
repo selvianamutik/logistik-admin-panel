@@ -1,6 +1,9 @@
 import { loadScriptEnv } from './_env';
 
 loadScriptEnv();
+process.env.OPERATIONAL_ADMIN_WHATSAPP_DRY_RUN ??= 'true';
+process.env.GREEN_API_DRY_RUN ??= 'true';
+process.env.CALLMEBOT_DRY_RUN ??= 'true';
 
 import { handleDriverVoucherCreate } from '../src/lib/api/driver-workflows';
 import { handleExpenseCreate } from '../src/lib/api/finance-workflows';

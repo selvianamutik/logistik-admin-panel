@@ -37,11 +37,7 @@ import {
     WEIGHT_INPUT_UNIT_OPTIONS,
     type WeightInputUnit,
 } from '@/lib/measurement';
-
-function roundToPrecision(value: number, digits = 2) {
-    const factor = 10 ** digits;
-    return Math.round(value * factor) / factor;
-}
+import { roundToPrecision } from '@/lib/number-precision';
 
 export default function DriverVoucherDetailPage() {
     const params = useParams();

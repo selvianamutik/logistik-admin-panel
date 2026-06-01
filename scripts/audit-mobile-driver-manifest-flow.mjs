@@ -20,6 +20,10 @@ const unitSelectorPath = path.join(
     'apps/driver_app/lib/src/features/tracking/presentation/mobile_unit_selector_field.dart'
 );
 const orderWorkflowPath = path.join(appDir, 'src/lib/api/order-workflows.ts');
+const orderWorkflowCargoSummarySupportPath = path.join(
+    appDir,
+    'src/lib/api/order-workflows-cargo-summary-support.ts'
+);
 const driverShipperReferencesRoutePath = path.join(
     appDir,
     'src/app/api/driver/delivery-orders/shipper-references/route.ts'
@@ -35,6 +39,7 @@ const completionSource = fs.readFileSync(completionPath, 'utf8');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const unitSelectorSource = fs.readFileSync(unitSelectorPath, 'utf8');
 const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
+const orderWorkflowCargoSummarySupportSource = fs.readFileSync(orderWorkflowCargoSummarySupportPath, 'utf8');
 const driverShipperReferencesRouteSource = fs.readFileSync(driverShipperReferencesRoutePath, 'utf8');
 const driverCargoItemRouteSource = fs.readFileSync(driverCargoItemRoutePath, 'utf8');
 
@@ -89,17 +94,27 @@ for (const payloadKey of [
     "'volumeInputValue'",
     "'volumeInputUnit'",
 ]) {
-    assertIncludes(
-        serviceSource,
-        payloadKey,
-        `Payload mobile driver belum mengirim ${payloadKey}.`
+assertIncludes(
+    serviceSource,
+    payloadKey,
+    `Payload mobile driver belum mengirim ${payloadKey}.`
     );
 }
 
 assertIncludes(
     manifestSource,
-    'Satu trip bisa punya banyak SJ dan barang. Edit nomor langsung; hapus SJ tambahan sebelum approval/final.',
-    'Copy mobile manifest harus menjelaskan multi-SJ, edit SJ, hapus SJ, dan multi-barang.'
+    '_ManifestGroupSelectorField',
+    'Mobile manifest harus memakai selector/accordion per SJ agar multi-SJ tidak tercampur.'
+);
+assertIncludes(
+    manifestSource,
+    'Barang di SJ ini',
+    'Mobile manifest harus menampilkan barang di dalam konteks SJ terpilih.'
+);
+assertIncludes(
+    manifestSource,
+    'Barang utama tetap mengikuti order/resi yang sudah ditetapkan admin.',
+    'Mobile manifest harus menjelaskan mode barang mengikuti order/resi tanpa memaksa driver input barang.'
 );
 assertIncludes(
     manifestSource,
@@ -108,7 +123,12 @@ assertIncludes(
 );
 assertIncludes(
     manifestSource,
-    "tooltip: 'Hapus SJ'",
+    'Icons.delete_outline_rounded',
+    'Mobile manifest harus menyediakan aksi hapus SJ sebelum approval/final.'
+);
+assertIncludes(
+    manifestSource,
+    "'Hapus SJ'",
     'Mobile manifest harus menyediakan aksi eksplisit untuk menghapus SJ sebelum approval/final.'
 );
 assertIncludes(
@@ -188,12 +208,12 @@ assertIncludes(
 );
 assertIncludes(
     manifestSource,
-    'key: ValueKey(group.id)',
+    'key: ValueKey(selectedGroup.id)',
     'Group SJ mobile harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(
     manifestSource,
-    'key: ValueKey(item.id)',
+    'itemVisibilityKeyFor(item.id)',
     'Item barang mobile harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(
@@ -228,7 +248,7 @@ assertIncludes(
 );
 assertIncludes(
     completionSource,
-    'key: ValueKey(entry.value.id)',
+    'key: ValueKey(selectedDropDraft.id)',
     'Mobile completion drop card harus punya key stabil agar controller tidak tertukar.'
 );
 assertIncludes(
@@ -327,7 +347,7 @@ assertIncludes(
     'Backend driver approval harus menolak draft aktual jika total titik realisasi tidak sama dengan total barang.'
 );
 assertIncludes(
-    orderWorkflowSource,
+    orderWorkflowCargoSummarySupportSource,
     "dropLabel = options?.billableOnly ? 'titik drop terkirim' : 'titik realisasi'",
     'Backend finalisasi harus punya guard mismatch berat aktual barang vs titik realisasi.'
 );

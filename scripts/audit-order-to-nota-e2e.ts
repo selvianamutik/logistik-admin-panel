@@ -1330,9 +1330,11 @@ async function main() {
         });
         const finalizedSplitItems = await getDeliveryOrderItems(cookieHeader, doSplitId);
         assert(
-            normalizeNumber(finalizedSplitItems[0]?.actualQtyKoli) === 3 &&
-            normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 190,
-            'Batch split drop/hold satu item harus menyimpan aktual total 3 koli / 190 kg, bukan hanya bagian drop.'
+            normalizeNumber(finalizedSplitItems[0]?.actualQtyKoli) === 1 &&
+            normalizeNumber(finalizedSplitItems[0]?.actualWeightKg) === 70 &&
+            normalizeNumber(finalizedSplitItems[0]?.heldQtyKoli) === 2 &&
+            normalizeNumber(finalizedSplitItems[0]?.heldWeight) === 120,
+            'Batch split drop/hold satu item harus menyimpan aktual terkirim 1 koli / 70 kg dan hold 2 koli / 120 kg secara terpisah.'
         );
         const splitOrderItemResponse = await requestJson<{ data: Array<{ _id: string; qtyKoli?: number; weight?: number; deliveredQtyKoli?: number; deliveredWeight?: number; heldQtyKoli?: number; heldWeight?: number }> }>(
             `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ sourceDeliveryOrderRef: doSplitId }))}`,

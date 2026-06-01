@@ -53,8 +53,7 @@ export function hasUnsettledIncidentSettlementLines(lines: IncidentSettlementLin
 }
 
 export function getAvailableIncidentStatusesForContext(
-    status: Incident['status'],
-    settlementLines: IncidentSettlementLine[] = []
+    status: Incident['status']
 ) {
     return getAvailableIncidentStatuses(status);
 }

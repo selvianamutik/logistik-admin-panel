@@ -36,8 +36,13 @@ Stack utama:
 
 Dokumen alur lengkap ada di:
 - [WORKFLOW.md](C:\LOGISTIK\app\WORKFLOW.md)
+- [docs/SYSTEM_MODULES_AND_WORKFLOWS.md](C:\LOGISTIK\app\docs\SYSTEM_MODULES_AND_WORKFLOWS.md)
+- [docs/UAT_ALL_MODULES_COMPREHENSIVE.md](C:\LOGISTIK\app\docs\UAT_ALL_MODULES_COMPREHENSIVE.md)
 - [AUDIT.md](C:\LOGISTIK\app\AUDIT.md)
 - [security_best_practices_report.md](C:\LOGISTIK\app\security_best_practices_report.md)
+
+Workbook UAT lengkap:
+- [artifacts/uat/UAT_ALL_MODULES_COMPREHENSIVE.xlsx](C:\LOGISTIK\app\artifacts\uat\UAT_ALL_MODULES_COMPREHENSIVE.xlsx)
 
 ## Demo seed
 
@@ -127,13 +132,22 @@ SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
 JWT_SECRET=...
 
-# Optional: WhatsApp notification to one Admin Operasional number via CallMeBot
-CALLMEBOT_PHONE=628xxxxxxxxxx
-CALLMEBOT_API_KEY=...
-CALLMEBOT_ENABLED=true
+# Optional: WhatsApp notification to one Admin Operasional number
+WHATSAPP_PROVIDER=green_api
+GREEN_API_URL=https://api.green-api.com
+GREEN_API_INSTANCE_ID=...
+GREEN_API_TOKEN=...
+OPERATIONAL_ADMIN_WHATSAPP_PHONE=628xxxxxxxxxx
+OPERATIONAL_ADMIN_WHATSAPP_ENABLED=true
+
+# Optional scheduled reminders
+WHATSAPP_REMINDER_SECRET=...
+OPERATIONAL_ADMIN_REMINDER_LOOKAHEAD_DAYS=3
+OPERATIONAL_ADMIN_MAINTENANCE_ODOMETER_LOOKAHEAD_KM=1000
 ```
 
 `SUPABASE_PROJECT_URL` can be used instead of `SUPABASE_URL`. `SUPABASE_SERVICE_KEY`, `SUPABASE_SECRET_KEY`, or `SUPABASE_SERVICE_ROLE` are accepted as service-role key aliases, but keep them server-side only.
 
-CallMeBot is only used after successful driver actions that Admin Operasional may need to see, such as incident reports, driver incident resolution requests, SJ/trip status updates, and trip closure requests. If CallMeBot is not configured or fails, the main workflow still succeeds and the failure is logged server-side.
-Activate the Admin Operasional WhatsApp number in CallMeBot first by following the CallMeBot WhatsApp setup and sending `I allow callmebot to send me messages` from that WhatsApp number. Put the generated API key in `CALLMEBOT_API_KEY`. Keep this for low-volume operational alerts; it is not a replacement for the official WhatsApp Business API.
+WhatsApp notification is only sent after the main workflow succeeds, such as incident reports, driver incident resolution requests, SJ/trip status updates, trip closure requests, invoice due reminders, supplier payable reminders, and maintenance due reminders. If WhatsApp is not configured or the provider fails, the workflow still succeeds and the failure is logged server-side.
+
+Green API is the preferred provider for current deployment. CallMeBot environment variables are still accepted by the code as fallback compatibility, but do not put provider tokens in tracked files. Keep WhatsApp alerts low-volume; this is not a replacement for the official WhatsApp Business API.

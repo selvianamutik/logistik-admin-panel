@@ -29,7 +29,6 @@ import {
     getAssignableTripVehicles,
     getNextDeliveryOrderStatuses,
     getTripResourceActionLabel,
-    summarizeDeliveryOrderItemDescriptionsForDrop,
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
     sortTrackingLogs,
@@ -72,6 +71,37 @@ import {
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
 import {
+    ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR,
+    buildActualDropItemValueKey,
+    buildDriverReviewActualDropHydration,
+    formatActualDropDraftNumber,
+    formatItemCodeNameLabel,
+    hasCargoSummaryValue,
+    hasActualDropItemInput,
+    hasActualDropItemValues,
+    hasDeliveryOrderItemActualCargo,
+    parseActualDropItemValueKey,
+    pickActualDropItemValues,
+    subtractCargoSummary,
+    summarizeActualCargoDraftAsCargoSummary,
+    summarizeActualDropItemValues,
+    type ActualCargoItemValueDraft,
+    type ActualDropItemValueDraft,
+} from '@/lib/trip-detail-actual-drop-admin-support';
+import {
+    buildResolvedShipperReferenceEntries,
+    matchesShipperReferenceDraft,
+    type ExistingShipperReferenceItemDraft,
+    type ResolvedShipperReferenceEntry,
+    type ShipperReferenceDraft,
+} from '@/lib/trip-detail-shipping-reference-support';
+import {
+    createDefaultCancelTripExpenseForm,
+    getDefaultCancelExpenseCategoryRef,
+    isOperationalCancelExpenseCategory,
+    type CancelTripExpenseFormState,
+} from '@/lib/cancel-trip-expense-support';
+import {
     createDefaultDeliveryOrderCargoDraftItem,
     createDefaultDeliveryOrderCargoDraftGroup,
     flattenDeliveryOrderCargoDraftGroups,
@@ -94,56 +124,11 @@ import { applyCustomerProductToOrderItem, applyOrderItemAutoWeightFromQty, shoul
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
+import { roundToPrecision } from '@/lib/number-precision';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
 import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
-
-type ShipperReferenceDraft = {
-    draftKey: string;
-    referenceKey: string;
-    referenceNumber: string;
-    date: string;
-    pickupStopKey: string;
-    pickupAddress: string;
-    selectedRecipientId: string;
-    billingCustomerRef: string;
-    billingCustomerName: string;
-    receiverName: string;
-    receiverPhone: string;
-    receiverAddress: string;
-    receiverCompany: string;
-};
-
-type ExistingShipperReferenceItemDraft = DeliveryOrderCargoDraftItem & {
-    deliveryOrderItemId: string;
-};
-
-type ActualDropItemValueDraft = Pick<
-    ActualDropDraft,
-    'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit'
->;
-
-type ActualCargoItemValueDraft = Pick<
-    ActualCargoDraft,
-    'actualQtyKoli' | 'actualWeightInputValue' | 'actualWeightInputUnit' | 'actualVolumeInputValue' | 'actualVolumeInputUnit'
->;
-
-type ResolvedShipperReferenceEntry = {
-    draftKey: string;
-    referenceKey: string;
-    referenceNumber: string;
-    date: string;
-    pickupStopKey: string;
-    pickupLabel: string;
-    pickupAddress: string;
-    billingCustomerRef: string;
-    billingCustomerName: string;
-    receiverName: string;
-    receiverPhone: string;
-    receiverAddress: string;
-    receiverCompany: string;
-};
 
 type TripCashIssueFormState = {
     vehicleRef: string;
@@ -160,14 +145,6 @@ type TripCashIssueFormState = {
     notes: string;
 };
 
-type CancelTripExpenseFormState = {
-    expenseDate: string;
-    categoryRef: string;
-    bankAccountRef: string;
-    description: string;
-    amount: number;
-};
-
 type ActualCargoStepBlockMessage = {
     kind: 'setup' | 'drop' | 'allocation';
     title: string;
@@ -175,17 +152,6 @@ type ActualCargoStepBlockMessage = {
     target?: string;
     allocated?: string;
 };
-
-const ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR = '::item::';
-
-function buildActualDropItemValueKey(draftKey: string, deliveryOrderItemRef: string) {
-    return `${draftKey}${ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR}${deliveryOrderItemRef}`;
-}
-
-function roundToPrecision(value: number, digits = 2) {
-    const factor = 10 ** digits;
-    return Math.round(value * factor) / factor;
-}
 
 function createDefaultTripCashIssueForm(): TripCashIssueFormState {
     return {
@@ -202,395 +168,6 @@ function createDefaultTripCashIssueForm(): TripCashIssueFormState {
         issuedDate: getBusinessDateValue(),
         notes: '',
     };
-}
-
-function createDefaultCancelTripExpenseForm(): CancelTripExpenseFormState {
-    return {
-        expenseDate: getBusinessDateValue(),
-        categoryRef: '',
-        bankAccountRef: '',
-        description: '',
-        amount: 0,
-    };
-}
-
-function isOperationalCancelExpenseCategory(category: ExpenseCategory) {
-    return category.active !== false && category.scope === 'GENERAL' && category.allowManual !== false;
-}
-
-function getDefaultCancelExpenseCategoryRef(categories: ExpenseCategory[]) {
-    const operationalCategories = categories.filter(isOperationalCancelExpenseCategory);
-    return (
-        operationalCategories.find(category => /batal|pembatalan/i.test(category.name))?._id ||
-        operationalCategories.find(category => /lain-lain umum/i.test(category.name))?._id ||
-        operationalCategories.find(category => /operasional/i.test(category.name))?._id ||
-        operationalCategories[0]?._id ||
-        ''
-    );
-}
-
-function parseActualDropItemValueKey(valueKey: string) {
-    const separatorIndex = valueKey.indexOf(ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR);
-    if (separatorIndex < 0) {
-        return null;
-    }
-    return {
-        draftKey: valueKey.slice(0, separatorIndex),
-        deliveryOrderItemRef: valueKey.slice(separatorIndex + ACTUAL_DROP_ITEM_VALUE_KEY_SEPARATOR.length),
-    };
-}
-
-function pickActualDropItemValues(drop: ActualDropDraft): ActualDropItemValueDraft {
-    return {
-        qtyKoli: drop.qtyKoli,
-        weightInputValue: drop.weightInputValue,
-        weightInputUnit: drop.weightInputUnit,
-        volumeInputValue: drop.volumeInputValue,
-        volumeInputUnit: drop.volumeInputUnit,
-    };
-}
-
-function hasActualDropItemValues(values: ActualDropItemValueDraft) {
-    const qtyKoli = parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 });
-    const weightKg = convertWeightToKg(
-        parseFormattedNumberish(values.weightInputValue || 0, {
-            maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
-        }),
-        values.weightInputUnit
-    );
-    const volumeM3 = convertVolumeToM3(
-        parseFormattedNumberish(values.volumeInputValue || 0, {
-            maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
-        }),
-        values.volumeInputUnit
-    );
-    return qtyKoli > 0 || weightKg > 0 || volumeM3 > 0;
-}
-
-function hasActualDropItemInput(values: ActualDropItemValueDraft) {
-    return (
-        values.qtyKoli.trim() !== '' ||
-        values.weightInputValue.trim() !== '' ||
-        values.volumeInputValue.trim() !== ''
-    );
-}
-
-function hasDeliveryOrderItemActualCargo(item: Pick<DeliveryOrderItem, 'actualQtyKoli' | 'actualWeightKg' | 'actualVolumeM3'>) {
-    return (
-        (item.actualQtyKoli || 0) > 0 ||
-        (item.actualWeightKg || 0) > 0 ||
-        (item.actualVolumeM3 || 0) > 0
-    );
-}
-
-function formatItemCodeNameLabel(code: string, name: string, fallback: string) {
-    const cleanCode = code.trim();
-    const cleanName = name.trim();
-    if (cleanCode && cleanName) return `${cleanCode} - ${cleanName}`;
-    return cleanName || cleanCode || fallback;
-}
-
-function normalizeActualDropGroupText(value?: string) {
-    return (value || '').trim();
-}
-
-function formatActualDropDraftNumber(value: number | undefined, maxFractionDigits: number) {
-    return value !== undefined
-        ? formatFormattedNumberValue(value, true, maxFractionDigits, true)
-        : '';
-}
-
-function buildDriverReviewActualDropHydration(
-    sourceDropPoints: DeliveryOrder['pendingDriverActualDropPoints'] | DeliveryOrder['actualDropPoints'] | undefined,
-    actualCargoItems: ActualCargoDraft[] = []
-) {
-    const points = Array.isArray(sourceDropPoints) ? sourceDropPoints : [];
-    const groupedDrafts: ActualDropDraft[] = [];
-    const itemValueMap: Record<string, ActualDropItemValueDraft> = {};
-    const groupIndexByKey = new Map<string, number>();
-
-    points.forEach((point, index) => {
-        const pointItemRefs = [
-            point.deliveryOrderItemRef,
-            ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
-        ].map(item => normalizeActualDropGroupText(item)).filter(Boolean);
-        const hasItemSpecificAllocation = pointItemRefs.length > 0;
-        const actualDropGroupKey = normalizeActualDropGroupText(point.actualDropGroupKey);
-        const groupKey = actualDropGroupKey
-            ? `driver-group:${actualDropGroupKey}`
-            : [
-                point.stopType || 'DROP',
-                hasItemSpecificAllocation ? '' : normalizeActualDropGroupText(point.shipperReferenceKey),
-                hasItemSpecificAllocation ? '' : normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase(),
-                normalizeActualDropGroupText(point.billingCustomerRef),
-                normalizeActualDropGroupText(point.billingCustomerName),
-                normalizeActualDropGroupText(point.originLocationName),
-                normalizeActualDropGroupText(point.originLocationAddress),
-                normalizeActualDropGroupText(point.locationName),
-                normalizeActualDropGroupText(point.locationAddress),
-                normalizeActualDropGroupText(point.note),
-            ].join('|');
-        let groupIndex = groupIndexByKey.get(groupKey);
-        if (groupIndex === undefined) {
-            const draftKey = actualDropGroupKey || point._key || `driver-drop-${groupedDrafts.length + 1}`;
-            groupIndex = groupedDrafts.length;
-            groupIndexByKey.set(groupKey, groupIndex);
-            groupedDrafts.push({
-                draftKey,
-                actualDropGroupKey: actualDropGroupKey || undefined,
-                stopType: point.stopType || 'DROP',
-                deliveryOrderItemRef: '',
-                shipperReferenceKey: point.shipperReferenceKey || '',
-                shipperReferenceNumber: point.shipperReferenceNumber || '',
-                billingCustomerRef: point.billingCustomerRef || '',
-                billingCustomerName: point.billingCustomerName || '',
-                originLocationName: point.originLocationName || '',
-                originLocationAddress: point.originLocationAddress || '',
-                locationName: point.locationName || '',
-                locationAddress: point.locationAddress || '',
-                qtyKoli: '',
-                weightInputValue: '',
-                weightInputUnit: point.weightInputUnit || 'KG',
-                volumeInputValue: '',
-                volumeInputUnit: point.volumeInputUnit || 'M3',
-                note: point.note || '',
-            });
-        }
-
-        const draft = groupedDrafts[groupIndex];
-        const pointValues: ActualDropItemValueDraft = {
-            qtyKoli: formatActualDropDraftNumber(point.qtyKoli, 2),
-            weightInputValue: point.weightInputValue !== undefined
-                ? formatActualDropDraftNumber(point.weightInputValue, getWeightInputFractionDigits(point.weightInputUnit || 'KG'))
-                : point.weightKg !== undefined
-                    ? formatActualDropDraftNumber(point.weightKg, 2)
-                    : '',
-            weightInputUnit: point.weightInputUnit || draft.weightInputUnit || 'KG',
-            volumeInputValue: point.volumeInputValue !== undefined
-                ? formatActualDropDraftNumber(point.volumeInputValue, (point.volumeInputUnit || 'M3') === 'LITER' ? 0 : 3)
-                : point.volumeM3 !== undefined
-                    ? formatActualDropDraftNumber(point.volumeM3, 3)
-                    : '',
-            volumeInputUnit: point.volumeInputUnit || draft.volumeInputUnit || 'M3',
-        };
-        if (point.deliveryOrderItemRef && hasActualDropItemValues(pointValues)) {
-            itemValueMap[buildActualDropItemValueKey(draft.draftKey, point.deliveryOrderItemRef)] = pointValues;
-        }
-        if (!point.deliveryOrderItemRef && hasActualDropItemValues(pointValues)) {
-            const pointReferenceKey = normalizeActualDropGroupText(point.shipperReferenceKey);
-            const pointReferenceNumber = normalizeActualDropGroupText(point.shipperReferenceNumber).toUpperCase();
-            actualCargoItems
-                .filter(item => {
-                    const itemReferenceKey = normalizeActualDropGroupText(item.shipperReferenceKey);
-                    const itemReferenceNumber = normalizeActualDropGroupText(item.shipperReferenceNumber).toUpperCase();
-                    return (
-                        (!pointReferenceKey && !pointReferenceNumber) ||
-                        (pointReferenceKey && itemReferenceKey === pointReferenceKey) ||
-                        (pointReferenceNumber && itemReferenceNumber === pointReferenceNumber)
-                    );
-                })
-                .forEach(item => {
-                    const itemValues: ActualDropItemValueDraft = {
-                        qtyKoli: item.actualQtyKoli,
-                        weightInputValue: item.actualWeightInputValue,
-                        weightInputUnit: item.actualWeightInputUnit,
-                        volumeInputValue: item.actualVolumeInputValue,
-                        volumeInputUnit: item.actualVolumeInputUnit,
-                    };
-                    if (hasActualDropItemValues(itemValues)) {
-                        itemValueMap[buildActualDropItemValueKey(draft.draftKey, item.deliveryOrderItemRef)] = itemValues;
-                    }
-                });
-        }
-
-        const currentQtyKoli = parseFormattedNumberish(draft.qtyKoli || 0, { maxFractionDigits: 2 });
-        const currentWeightKg = convertWeightToKg(
-            parseFormattedNumberish(draft.weightInputValue || 0, {
-                maxFractionDigits: getWeightInputFractionDigits(draft.weightInputUnit),
-            }),
-            draft.weightInputUnit
-        );
-        const currentVolumeM3 = convertVolumeToM3(
-            parseFormattedNumberish(draft.volumeInputValue || 0, {
-                maxFractionDigits: draft.volumeInputUnit === 'LITER' ? 0 : 3,
-            }),
-            draft.volumeInputUnit
-        );
-        const nextQtyKoli = currentQtyKoli + parseFormattedNumberish(pointValues.qtyKoli || 0, { maxFractionDigits: 2 });
-        const nextWeightKg = currentWeightKg + convertWeightToKg(
-            parseFormattedNumberish(pointValues.weightInputValue || 0, {
-                maxFractionDigits: getWeightInputFractionDigits(pointValues.weightInputUnit),
-            }),
-            pointValues.weightInputUnit
-        );
-        const nextVolumeM3 = currentVolumeM3 + convertVolumeToM3(
-            parseFormattedNumberish(pointValues.volumeInputValue || 0, {
-                maxFractionDigits: pointValues.volumeInputUnit === 'LITER' ? 0 : 3,
-            }),
-            pointValues.volumeInputUnit
-        );
-        groupedDrafts[groupIndex] = {
-            ...draft,
-            qtyKoli: formatActualDropDraftNumber(nextQtyKoli > 0 ? nextQtyKoli : undefined, 2),
-            weightInputValue: formatActualDropDraftNumber(
-                nextWeightKg > 0 ? convertKgToWeightInputValue(nextWeightKg, draft.weightInputUnit) : undefined,
-                getWeightInputFractionDigits(draft.weightInputUnit)
-            ),
-            volumeInputValue: formatActualDropDraftNumber(
-                nextVolumeM3 > 0 ? convertM3ToVolumeInputValue(nextVolumeM3, draft.volumeInputUnit) : undefined,
-                draft.volumeInputUnit === 'LITER' ? 0 : 3
-            ),
-            deliveryOrderItemRef: draft.deliveryOrderItemRef || point.deliveryOrderItemRef || '',
-            draftKey: draft.draftKey || point._key || `${index + 1}`,
-        };
-    });
-
-    return { groupedDrafts, itemValueMap };
-}
-
-function buildResolvedShipperReferenceEntries(
-    deliveryOrder: DeliveryOrder | null,
-    doItems: DeliveryOrderItem[]
-): ResolvedShipperReferenceEntry[] {
-    if (!deliveryOrder) {
-        return [];
-    }
-
-    const pickupStops = (deliveryOrder.pickupStops || [])
-        .map((pickupStop, index) => ({
-            _key: pickupStop._key || `pickup-stop-${index + 1}`,
-            sequence: pickupStop.sequence || index + 1,
-            pickupLabel: pickupStop.pickupLabel || '',
-            pickupAddress: pickupStop.pickupAddress || '',
-        }))
-        .sort((left, right) => left.sequence - right.sequence);
-    const pickupStopMap = new Map(pickupStops.map(stop => [stop._key, stop]));
-    const entries = new Map<string, ResolvedShipperReferenceEntry>();
-    const compositeIndex = new Map<string, string>();
-
-    const upsertEntry = (
-        referenceNumber: string,
-        pickupStopKey = '',
-        pickupAddress = '',
-        draftKeyHint = '',
-        referenceKeyHint = '',
-        date = ''
-    ) => {
-        const normalizedReference = referenceNumber.trim();
-        if (!normalizedReference) {
-            return;
-        }
-        const matchedStop = pickupStopKey ? pickupStopMap.get(pickupStopKey) : null;
-        const resolvedPickupLabel = matchedStop
-            ? `Pickup ${matchedStop.sequence}${matchedStop.pickupLabel ? ` - ${matchedStop.pickupLabel}` : ''}`
-            : '';
-        const resolvedPickupAddress = matchedStop?.pickupAddress || pickupAddress || '';
-        const compositeKey = `${pickupStopKey || 'tanpa-pickup'}::${normalizedReference}`;
-        const resolvedEntryKey =
-            (referenceKeyHint && entries.has(referenceKeyHint) && referenceKeyHint)
-            || (draftKeyHint && entries.has(draftKeyHint) && draftKeyHint)
-            || compositeIndex.get(compositeKey)
-            || referenceKeyHint
-            || draftKeyHint
-            || compositeKey;
-        if (entries.has(resolvedEntryKey)) {
-            const current = entries.get(resolvedEntryKey)!;
-            entries.set(resolvedEntryKey, {
-                ...current,
-                draftKey: current.draftKey || resolvedEntryKey,
-                referenceKey: current.referenceKey || referenceKeyHint,
-                referenceNumber: current.referenceNumber || normalizedReference,
-                date: current.date || date,
-                pickupStopKey: current.pickupStopKey || pickupStopKey,
-                pickupLabel: current.pickupLabel || resolvedPickupLabel,
-                pickupAddress: current.pickupAddress || resolvedPickupAddress,
-            });
-            compositeIndex.set(compositeKey, resolvedEntryKey);
-            return;
-        }
-        entries.set(resolvedEntryKey, {
-            draftKey: draftKeyHint || resolvedEntryKey,
-            referenceKey: referenceKeyHint,
-            referenceNumber: normalizedReference,
-            date,
-            pickupStopKey,
-            pickupLabel: resolvedPickupLabel,
-            pickupAddress: resolvedPickupAddress,
-            billingCustomerRef: '',
-            billingCustomerName: '',
-            receiverName: '',
-            receiverPhone: '',
-            receiverAddress: '',
-            receiverCompany: '',
-        });
-        compositeIndex.set(compositeKey, resolvedEntryKey);
-    };
-
-    (deliveryOrder.shipperReferences || []).forEach((reference, index) => {
-        upsertEntry(
-            reference.referenceNumber || '',
-            reference.pickupStopKey || '',
-            reference.pickupAddress || '',
-            reference._key || `shipper-reference-${index + 1}`,
-            reference._key || '',
-            reference.date || ''
-        );
-        const entryKey =
-            reference._key
-            || compositeIndex.get(`${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`)
-            || `${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`;
-        const current = entries.get(entryKey);
-        if (current) {
-            entries.set(entryKey, {
-                ...current,
-                referenceKey: reference._key || current.referenceKey,
-                date: reference.date || current.date,
-                billingCustomerRef: reference.billingCustomerRef || current.billingCustomerRef,
-                billingCustomerName: reference.billingCustomerName || current.billingCustomerName,
-                receiverName: reference.receiverName || current.receiverName,
-                receiverPhone: reference.receiverPhone || current.receiverPhone,
-                receiverAddress: reference.receiverAddress || current.receiverAddress,
-                receiverCompany: reference.receiverCompany || current.receiverCompany,
-            });
-        }
-    });
-
-    doItems.forEach(item => {
-        upsertEntry(
-            item.shipperReferenceNumber || '',
-            item.pickupStopKey || '',
-            item.pickupAddress || '',
-            item.shipperReferenceKey || `delivery-order-item-${item._id}`,
-            item.shipperReferenceKey || ''
-        );
-    });
-
-    if (entries.size === 0 && deliveryOrder.customerDoNumber?.trim()) {
-        upsertEntry(
-            deliveryOrder.customerDoNumber,
-            deliveryOrder.pickupStops?.[0]?._key || '',
-            deliveryOrder.pickupAddress || '',
-            'legacy-customer-do-number',
-            ''
-        );
-    }
-
-    return [...entries.values()];
-}
-
-function matchesShipperReferenceDraft(
-    draft: Pick<ShipperReferenceDraft, 'referenceKey' | 'referenceNumber'>,
-    deliveryOrder: DeliveryOrder | null,
-    item: Pick<DeliveryOrderItem, 'shipperReferenceKey' | 'shipperReferenceNumber'>
-) {
-    const itemReferenceKey = (item.shipperReferenceKey || '').trim();
-    const itemReferenceNumber = (item.shipperReferenceNumber || deliveryOrder?.customerDoNumber || '').trim().toUpperCase();
-    const selectedReferenceKey = draft.referenceKey.trim();
-    const selectedReferenceNumber = draft.referenceNumber.trim().toUpperCase();
-    return (
-        (selectedReferenceKey && itemReferenceKey === selectedReferenceKey) ||
-        (selectedReferenceNumber && itemReferenceNumber === selectedReferenceNumber)
-    );
 }
 
 export default function TripDetailPage() {
@@ -2239,11 +1816,6 @@ export default function TripDetailPage() {
         } finally {
             setRemovingCargoItemId(null);
         }
-    };
-
-    const removeCargoItem = (deliveryOrderItemId: string, itemLabel: string) => {
-        if (!canEditDeliveryCargo || !doData?._id) return;
-        setPendingDeleteAction({ type: 'cargo-item', deliveryOrderItemId, itemLabel });
     };
 
     const deleteShipperReferenceNow = async (reference: ResolvedShipperReferenceEntry) => {
@@ -4615,9 +4187,6 @@ export default function TripDetailPage() {
             getSuratJalanOperationalStatus(reference.referenceKey).status === suratJalanStatusFilter
         )
         : sortedShipperReferenceDisplayList;
-    const hasDeliveredShipperReference = sortedShipperReferenceDisplayList.some(reference =>
-        getSuratJalanOperationalStatus(reference.referenceKey).status === 'DELIVERED'
-    );
     const suratJalanStatusSummary = sortedShipperReferenceDisplayList.reduce<Map<string, number>>((acc, reference) => {
         const status = getSuratJalanOperationalStatus(reference.referenceKey).status;
         acc.set(status, (acc.get(status) || 0) + 1);
@@ -5380,8 +4949,6 @@ export default function TripDetailPage() {
             weightKg: sum.weightKg + summary.weightKg,
             volumeM3: sum.volumeM3 + summary.volumeM3,
         }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
-    const hasCargoSummaryValue = (summary: { qtyKoli: number; weightKg: number; volumeM3: number }) =>
-        summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
     const getActualDropAllocationSummaryRows = (drop: ActualDropDraft) =>
         selectedActualCargoItems
             .map(cargoItem => {
@@ -5425,42 +4992,6 @@ export default function TripDetailPage() {
                 };
             })
             .filter(row => row.hasAllocation);
-    const summarizeActualDropItemValues = (values: Pick<ActualDropDraft, 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit'>) => ({
-        qtyKoli: parseFormattedNumberish(values.qtyKoli || 0, { maxFractionDigits: 2 }),
-        weightKg: convertWeightToKg(
-            parseFormattedNumberish(values.weightInputValue || 0, {
-                maxFractionDigits: getWeightInputFractionDigits(values.weightInputUnit),
-            }),
-            values.weightInputUnit
-        ),
-        volumeM3: convertVolumeToM3(
-            parseFormattedNumberish(values.volumeInputValue || 0, {
-                maxFractionDigits: values.volumeInputUnit === 'LITER' ? 0 : 3,
-            }),
-            values.volumeInputUnit
-        ),
-    });
-    const subtractCargoSummary = (
-        left: { qtyKoli: number; weightKg: number; volumeM3: number },
-        right: { qtyKoli: number; weightKg: number; volumeM3: number }
-    ) => ({
-        qtyKoli: Math.max(left.qtyKoli - right.qtyKoli, 0),
-        weightKg: Math.max(left.weightKg - right.weightKg, 0),
-        volumeM3: Math.max(left.volumeM3 - right.volumeM3, 0),
-    });
-    const summarizeActualCargoDraftAsCargoSummary = (item: ActualCargoDraft) => {
-        const actualWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
-            maxFractionDigits: getWeightInputFractionDigits(item.actualWeightInputUnit),
-        });
-        const actualVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
-            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
-        });
-        return {
-            qtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 }),
-            weightKg: convertWeightToKg(actualWeightInputValue, item.actualWeightInputUnit),
-            volumeM3: convertVolumeToM3(actualVolumeInputValue, item.actualVolumeInputUnit),
-        };
-    };
     const getExplicitActualDropItemValues = (drop: ActualDropDraft, cargoItem: ActualCargoDraft): ActualDropItemValueDraft | null => {
         const valueKey = buildActualDropItemValueKey(drop.draftKey, cargoItem.deliveryOrderItemRef);
         const cachedValues = actualDropItemValueMap[valueKey];
