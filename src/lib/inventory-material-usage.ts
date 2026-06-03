@@ -1,4 +1,5 @@
 import { isCancelledPurchase, parseInventoryQuantity, parseWholeMoneyAmount } from './inventory';
+import { isWarehouseStockMaintenanceMaterialUsage } from './maintenance';
 import type { Maintenance, Purchase } from './types';
 
 export type MaterialUsageRow = {
@@ -42,7 +43,9 @@ export function getMaintenanceMaterialUsageRows(maintenances: Maintenance[]): Ma
     .filter((maintenance) => maintenance.status === 'DONE')
     .flatMap((maintenance) => {
       const completedDate = normalizeDateValue(maintenance.completedDate || maintenance.plannedDate);
-      const usages = Array.isArray(maintenance.materialUsages) ? maintenance.materialUsages : [];
+      const usages = Array.isArray(maintenance.materialUsages)
+        ? maintenance.materialUsages.filter(isWarehouseStockMaintenanceMaterialUsage)
+        : [];
       return usages.map((usage) => ({
         maintenanceId: maintenance._id,
         completedDate,

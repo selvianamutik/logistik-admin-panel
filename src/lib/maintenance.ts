@@ -84,7 +84,7 @@ export function getMaintenanceMaterialPreview(item: Maintenance, limit = 2): Mai
 
 export function formatMaintenanceMaterialPreview(usage: MaintenanceMaterialPreview) {
   const cost = typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0
-    ? ` - Rp${usage.subtotalCost.toLocaleString('id-ID')}`
+    ? ` - Rp${usage.subtotalCost.toLocaleString('id-ID')}${usage.costAlreadyPosted ? ' (biaya insiden)' : ''}`
     : '';
   return `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${cost}`;
 }
@@ -113,6 +113,15 @@ export type InstalledVehicleComponentRow = MaintenanceMaterialUsage & {
 
 export function isAttachedMaintenanceMaterial(usage: MaintenanceMaterialUsage) {
   return usage.attachedToVehicle === true || usage.attachmentStatus === 'INSTALLED';
+}
+
+export function isWarehouseStockMaintenanceMaterialUsage(usage: MaintenanceMaterialUsage) {
+  return (
+    (!usage.sourceType || usage.sourceType === 'WAREHOUSE_STOCK') &&
+    typeof usage.warehouseItemRef === 'string' &&
+    !usage.warehouseItemRef.startsWith('tire:') &&
+    !usage.warehouseItemRef.startsWith('direct-purchase:')
+  );
 }
 
 export function getInstalledVehicleComponentRows(maintenances: Maintenance[]): InstalledVehicleComponentRow[] {

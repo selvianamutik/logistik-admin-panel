@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
-import { getBusinessCalendarDateParts, normalizeBusinessDateTimeForStorage } from '@/lib/business-date';
+import { getBusinessCalendarDateParts, getBusinessDateValue, normalizeBusinessDateTimeForStorage } from '@/lib/business-date';
+import {
+    isInventoryUnit,
+    isTireTrackedWarehouseItem,
+    parseInventoryQuantity,
+    parseWholeMoneyAmount,
+} from '@/lib/inventory';
 import {
     createDocument,
     deleteDocument,
@@ -12,16 +18,29 @@ import {
     updateDocument,
 } from '@/lib/repositories/document-store';
 import { normalizeOptionalTireType } from '@/lib/tire-types';
-import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
+import type {
+    Driver,
+    IncidentSettlementLine,
+    InventoryUnit,
+    Maintenance,
+    MaintenanceMaterialUsage,
+    StockMovement,
+    User,
+    WarehouseItem,
+} from '@/lib/types';
 
 import {
+    assertIsoDate,
     assertIsoDateTime,
     normalizeCurrencyNumber,
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
+import { postStockMovementJournal } from './accounting-posting';
 import { hasPermission } from '@/lib/rbac';
 import { handleGenericCreate } from './generic-workflows';
+import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
+import { resolveWarehouseItemUnitCost } from './maintenance-workflows';
 import {
     normalizeDriverPayload,
     normalizeIncidentSettlementLinePayload,
@@ -63,6 +82,31 @@ const INCIDENT_SETTLEMENT_ALLOWED_CATEGORIES: Record<string, Set<string>> = {
 const ALLOWED_INCIDENT_TYPES = new Set(['BLOWOUT_TIRE', 'ENGINE_TROUBLE', 'ACCIDENT_MINOR', 'ACCIDENT_MAJOR', 'OTHER']);
 const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
 const INCIDENT_MAINTENANCE_FOLLOW_UP_CATEGORIES = new Set(['REPAIR', 'SPAREPART', 'TIRE']);
+const INCIDENT_MATERIAL_HANDLING_CATEGORIES = new Set(['REPAIR', 'SPAREPART']);
+const INCIDENT_MATERIAL_SOURCE_MODES = new Set(['WAREHOUSE_STOCK', 'DIRECT_PURCHASE']);
+
+type IncidentMaterialSourceMode = 'WAREHOUSE_STOCK' | 'DIRECT_PURCHASE';
+
+type IncidentWarehouseMaterialInput = {
+    warehouseItemRef: string;
+    quantity: number;
+    attachToVehicle: boolean;
+    componentLabel?: string;
+    note?: string;
+};
+
+type IncidentDirectMaterialInput = {
+    linkedWarehouseItemRef?: string;
+    itemName?: string;
+    unit: InventoryUnit;
+    quantity: number;
+    unitCost: number;
+    attachToVehicle: boolean;
+    componentLabel?: string;
+    note?: string;
+    leftoverWarehouseItemRef?: string;
+    leftoverQty: number;
+};
 
 function requireIncidentSettlementRevision(
     providedRevision: unknown,
@@ -82,6 +126,136 @@ function sanitizePatchSet(input: Record<string, unknown>) {
     return Object.fromEntries(
         Object.entries(input).filter(([, value]) => value !== undefined)
     );
+}
+
+function normalizeIncidentMaterialSourceMode(value: unknown): IncidentMaterialSourceMode {
+    const sourceMode = normalizeOptionalText(value)?.toUpperCase();
+    if (!sourceMode || !INCIDENT_MATERIAL_SOURCE_MODES.has(sourceMode)) {
+        throw new Error('Sumber material insiden tidak valid');
+    }
+    return sourceMode as IncidentMaterialSourceMode;
+}
+
+function normalizeIncidentWarehouseMaterials(value: unknown): IncidentWarehouseMaterialInput[] {
+    if (!Array.isArray(value)) {
+        return [] as IncidentWarehouseMaterialInput[];
+    }
+    const rows = value
+        .map((entry, index): IncidentWarehouseMaterialInput | null => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new Error(`Material gudang insiden #${index + 1} tidak valid`);
+            }
+            const row = entry as Record<string, unknown>;
+            const warehouseItemRef = normalizeOptionalText(row.warehouseItemRef);
+            const quantity = parseInventoryQuantity(row.quantity);
+            const attachToVehicle = row.attachToVehicle === true;
+            if (!warehouseItemRef && (!Number.isFinite(quantity) || quantity <= 0)) {
+                return null;
+            }
+            if (!warehouseItemRef) {
+                throw new Error(`Barang gudang pada baris #${index + 1} wajib dipilih`);
+            }
+            if (!Number.isFinite(quantity) || quantity <= 0) {
+                throw new Error(`Qty material gudang pada baris #${index + 1} tidak valid`);
+            }
+            return {
+                warehouseItemRef,
+                quantity,
+                attachToVehicle,
+                componentLabel: normalizeOptionalText(row.componentLabel),
+                note: normalizeOptionalText(row.note),
+            } satisfies IncidentWarehouseMaterialInput;
+        })
+        .filter((row): row is IncidentWarehouseMaterialInput => Boolean(row));
+
+    const uniqueRefs = new Set(rows.map(row => row.warehouseItemRef));
+    if (uniqueRefs.size !== rows.length) {
+        throw new Error('Barang gudang insiden tidak boleh duplikat dalam satu pencatatan');
+    }
+    return rows;
+}
+
+function normalizeIncidentDirectMaterials(value: unknown): IncidentDirectMaterialInput[] {
+    if (!Array.isArray(value)) {
+        return [] as IncidentDirectMaterialInput[];
+    }
+    return value
+        .map((entry, index): IncidentDirectMaterialInput | null => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new Error(`Material beli lokal #${index + 1} tidak valid`);
+            }
+            const row = entry as Record<string, unknown>;
+            const linkedWarehouseItemRef = normalizeOptionalText(row.linkedWarehouseItemRef || row.warehouseItemRef);
+            const leftoverWarehouseItemRef = normalizeOptionalText(row.leftoverWarehouseItemRef);
+            const itemName = normalizeOptionalText(row.itemName);
+            const quantity = parseInventoryQuantity(row.quantity);
+            const leftoverQty = parseInventoryQuantity(row.leftoverQty);
+            const unitCost = parseWholeMoneyAmount(row.unitCost);
+            const hasMaterialSignal = Boolean(
+                linkedWarehouseItemRef ||
+                leftoverWarehouseItemRef ||
+                itemName ||
+                quantity > 0 ||
+                leftoverQty > 0 ||
+                unitCost > 0 ||
+                normalizeOptionalText(row.note)
+            );
+            if (!hasMaterialSignal) {
+                return null;
+            }
+            if ((!Number.isFinite(quantity) || quantity < 0) || (!Number.isFinite(leftoverQty) || leftoverQty < 0)) {
+                throw new Error(`Qty material beli lokal pada baris #${index + 1} tidak valid`);
+            }
+            if (quantity <= 0 && leftoverQty <= 0) {
+                throw new Error(`Isi qty dipakai atau sisa masuk gudang pada material beli lokal #${index + 1}`);
+            }
+            if (!Number.isFinite(unitCost) || unitCost <= 0) {
+                throw new Error(`Harga satuan beli lokal pada baris #${index + 1} wajib lebih besar dari 0`);
+            }
+            if (!itemName && !linkedWarehouseItemRef && !leftoverWarehouseItemRef) {
+                throw new Error(`Nama barang beli lokal pada baris #${index + 1} wajib diisi`);
+            }
+            if (leftoverQty > 0 && !leftoverWarehouseItemRef) {
+                throw new Error(`Barang gudang tujuan sisa pada baris #${index + 1} wajib dipilih`);
+            }
+            const rawUnit = row.unit || row.itemUnit;
+            const unit = isInventoryUnit(rawUnit) ? rawUnit : 'PCS';
+            const attachToVehicle = row.attachToVehicle === true;
+            return {
+                linkedWarehouseItemRef,
+                itemName,
+                unit,
+                quantity,
+                unitCost,
+                attachToVehicle,
+                componentLabel: normalizeOptionalText(row.componentLabel),
+                note: normalizeOptionalText(row.note),
+                leftoverWarehouseItemRef,
+                leftoverQty,
+            } satisfies IncidentDirectMaterialInput;
+        })
+        .filter((row): row is IncidentDirectMaterialInput => Boolean(row));
+}
+
+async function loadStandardWarehouseItemForIncident(itemRef: string) {
+    const item = await getDocumentById<WarehouseItem>(itemRef, 'warehouseItem');
+    if (!item || item._type !== 'warehouseItem') {
+        throw new Error('Barang gudang tidak ditemukan');
+    }
+    if (item.active === false) {
+        throw new Error(`Barang gudang ${item.itemCode || item.name || item._id} tidak aktif`);
+    }
+    if (isTireTrackedWarehouseItem(item)) {
+        throw new Error('Ban tertracking harus dikelola lewat modul Ban, bukan workflow sparepart/oli insiden');
+    }
+    if (!item.itemCode || !item.name || !item.unit) {
+        throw new Error('Master barang gudang tidak valid');
+    }
+    return item;
+}
+
+function buildIncidentMaintenanceSourceNumber(input: { incidentNumber?: string; vehiclePlate?: string }) {
+    return [input.incidentNumber || 'Insiden', input.vehiclePlate].filter(Boolean).join(' - ');
 }
 
 async function findRelatedByRefOrLegacyText<T extends Record<string, unknown>>(
@@ -839,6 +1013,430 @@ async function readCreateResponse<T extends { _id?: string }>(response: NextResp
         };
     }
     return { id, data: payload.data };
+}
+
+export async function handleIncidentMaintenanceHandlingCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    if (!hasPermission(session.role, 'maintenance', 'create')) {
+        return NextResponse.json({ error: 'Tidak punya akses mencatat penanganan maintenance insiden' }, { status: 403 });
+    }
+
+    let sourceMode: IncidentMaterialSourceMode;
+    let warehouseMaterialInputs: IncidentWarehouseMaterialInput[] = [];
+    let directMaterialInputs: IncidentDirectMaterialInput[] = [];
+    try {
+        sourceMode = normalizeIncidentMaterialSourceMode(data.sourceMode);
+        warehouseMaterialInputs = normalizeIncidentWarehouseMaterials(data.warehouseMaterials);
+        directMaterialInputs = normalizeIncidentDirectMaterials(data.directMaterials);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Payload material insiden tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    if (sourceMode === 'WAREHOUSE_STOCK' && warehouseMaterialInputs.length === 0) {
+        return NextResponse.json({ error: 'Minimal satu barang gudang wajib dipakai untuk penanganan insiden' }, { status: 400 });
+    }
+
+    const incidentRef = normalizeOptionalText(data.incidentRef || data.id);
+    if (!incidentRef) {
+        return NextResponse.json({ error: 'Insiden tidak valid' }, { status: 400 });
+    }
+
+    const incident = await getDocumentById<{
+        _id: string;
+        _rev?: string;
+        incidentNumber?: string;
+        status?: string;
+        vehicleRef?: string;
+        vehiclePlate?: string;
+        relatedDeliveryOrderRef?: string;
+    }>(incidentRef, 'incident');
+    if (!incident) {
+        return NextResponse.json({ error: 'Insiden tidak ditemukan' }, { status: 404 });
+    }
+    if (!requireIncidentSettlementRevision(data.revision, incident._rev)) {
+        return NextResponse.json({ error: 'Insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (incident.status === 'CLOSED') {
+        return NextResponse.json({ error: 'Insiden yang sudah ditutup tidak bisa dicatat penanganan baru' }, { status: 409 });
+    }
+    if (!incident.vehicleRef) {
+        return NextResponse.json({ error: 'Kendaraan insiden tidak tersedia untuk maintenance' }, { status: 409 });
+    }
+
+    const completedDate = normalizeOptionalText(data.completedDate) || getBusinessDateValue();
+    try {
+        assertIsoDate(completedDate, 'Tanggal penanganan');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Tanggal penanganan tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    let odometerAtService: number | undefined;
+    try {
+        odometerAtService = normalizeOptionalWholeNumber(data.odometerAtService, 'Odometer penanganan');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Odometer penanganan tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const vendor = normalizeOptionalText(data.vendor);
+    const maintenanceType = normalizeOptionalText(data.maintenanceType) || (
+        sourceMode === 'WAREHOUSE_STOCK'
+            ? 'Pemakaian Barang Gudang Insiden'
+            : 'Penanganan Beli Lokal Insiden'
+    );
+    const completionNotes = normalizeOptionalText(data.completionNotes);
+    const now = new Date().toISOString();
+    const maintenanceRef = `maintenance-${crypto.randomUUID()}`;
+    const incidentLabel = incident.incidentNumber || incident._id;
+    const sourceNumber = buildIncidentMaintenanceSourceNumber({
+        incidentNumber: incident.incidentNumber,
+        vehiclePlate: incident.vehiclePlate,
+    });
+
+    let linkedLine: IncidentSettlementLine | null = null;
+    let postedIncidentMaterialCostTotal = 0;
+    let postedIncidentServiceCostTotal = 0;
+    let inventoryReceiptCostTotal = 0;
+    const movementDocs: StockMovement[] = [];
+    const materialUsages: MaintenanceMaterialUsage[] = [];
+
+    if (sourceMode === 'DIRECT_PURCHASE') {
+        const settlementLineRef = normalizeOptionalText(data.settlementLineRef || data.incidentSettlementLineRef);
+        const settlementLineRevision = normalizeOptionalText(data.settlementLineRevision);
+        if (!settlementLineRef) {
+            return NextResponse.json({ error: 'Detail biaya insiden wajib dipilih untuk beli lokal' }, { status: 400 });
+        }
+        const line = await getDocumentById<IncidentSettlementLine>(settlementLineRef, 'incidentSettlementLine');
+        if (!line) {
+            return NextResponse.json({ error: 'Detail biaya insiden tidak ditemukan' }, { status: 404 });
+        }
+        if (line.incidentRef !== incident._id) {
+            return NextResponse.json({ error: 'Detail biaya tidak cocok dengan insiden ini' }, { status: 409 });
+        }
+        if (!requireIncidentSettlementRevision(settlementLineRevision, line._rev)) {
+            return NextResponse.json({ error: 'Detail biaya insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        const lineError = buildIncidentSettlementFollowUpError(line);
+        if (lineError) {
+            return NextResponse.json({ error: lineError }, { status: 409 });
+        }
+        if (!INCIDENT_MATERIAL_HANDLING_CATEGORIES.has(line.category)) {
+            return NextResponse.json({ error: 'Beli lokal lewat maintenance insiden hanya untuk perbaikan atau sparepart. Ban tetap lewat modul Ban.' }, { status: 409 });
+        }
+        if (line.linkedMaintenanceRef) {
+            return NextResponse.json({ error: 'Detail biaya insiden ini sudah tertaut ke maintenance' }, { status: 409 });
+        }
+        linkedLine = line;
+    }
+
+    try {
+        if (sourceMode === 'WAREHOUSE_STOCK') {
+            const warehouseItems = await Promise.all(
+                warehouseMaterialInputs.map(input => loadStandardWarehouseItemForIncident(input.warehouseItemRef))
+            );
+            const unitCostSnapshots = await Promise.all(warehouseItems.map(item => resolveWarehouseItemUnitCost(item)));
+            const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap(warehouseItems.map(item => item._id));
+            const warehousePlans = warehouseItems.map((item, index) => {
+                const input = warehouseMaterialInputs[index];
+                const latestStockMovementDate = latestStockMovementDates.get(item._id);
+                if (latestStockMovementDate && completedDate < latestStockMovementDate) {
+                    throw new Error(`Tanggal penanganan tidak boleh lebih awal dari mutasi stok terakhir ${item.itemCode}`);
+                }
+                const currentStockQty = Math.max(parseInventoryQuantity(item.currentStockQty ?? 0), 0);
+                if (currentStockQty < input.quantity) {
+                    throw new Error(`Stok ${item.itemCode} tidak cukup untuk dipakai pada penanganan insiden`);
+                }
+                const nextStockQty = currentStockQty - input.quantity;
+                const unitCostSnapshot = unitCostSnapshots[index];
+                const subtotalCost = Math.round(input.quantity * unitCostSnapshot);
+                return { item, input, nextStockQty, unitCostSnapshot, subtotalCost };
+            });
+
+            for (const { item, input, nextStockQty, unitCostSnapshot, subtotalCost } of warehousePlans) {
+                await updateDocument(item._id, { currentStockQty: nextStockQty }, 'warehouseItem');
+
+                const movementDoc: StockMovement = {
+                    _id: `stock-movement-${crypto.randomUUID()}`,
+                    _type: 'stockMovement',
+                    warehouseItemRef: item._id,
+                    itemCode: item.itemCode,
+                    itemName: item.name,
+                    unit: item.unit,
+                    movementDate: completedDate,
+                    type: 'OUT',
+                    sourceType: 'MAINTENANCE_USAGE',
+                    sourceRef: maintenanceRef,
+                    sourceNumber,
+                    quantity: input.quantity,
+                    balanceAfter: nextStockQty,
+                    unitCostSnapshot,
+                    subtotalCost,
+                    costMethod: 'MOVING_AVERAGE',
+                    note: input.note || `Dipakai untuk penanganan insiden ${incidentLabel}`,
+                    createdBy: session._id,
+                    createdByName: session.name,
+                };
+                await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
+                await postStockMovementJournal(session, movementDoc, unitCostSnapshot);
+                movementDocs.push(movementDoc);
+
+                materialUsages.push({
+                    warehouseItemRef: item._id,
+                    sourceType: 'WAREHOUSE_STOCK',
+                    itemCode: item.itemCode,
+                    itemName: item.name,
+                    category: item.category,
+                    unit: item.unit,
+                    quantity: input.quantity,
+                    unitCostSnapshot,
+                    subtotalCost,
+                    stockMovementRef: movementDoc._id,
+                    relatedIncidentRef: incident._id,
+                    attachmentStatus: input.attachToVehicle ? 'INSTALLED' : 'CONSUMED',
+                    attachedToVehicle: input.attachToVehicle || undefined,
+                    installedOnVehicleRef: input.attachToVehicle ? incident.vehicleRef : undefined,
+                    installedOnVehiclePlate: input.attachToVehicle ? incident.vehiclePlate : undefined,
+                    installedAtMaintenanceRef: input.attachToVehicle ? maintenanceRef : undefined,
+                    installedDate: input.attachToVehicle ? completedDate : undefined,
+                    installedOdometer: input.attachToVehicle ? odometerAtService : undefined,
+                    componentLabel: input.attachToVehicle ? (input.componentLabel || item.name) : undefined,
+                    note: input.note,
+                });
+            }
+        } else if (linkedLine) {
+            const linkedItemRefs = Array.from(new Set(
+                directMaterialInputs
+                    .flatMap(input => [input.linkedWarehouseItemRef, input.leftoverWarehouseItemRef])
+                    .filter((value): value is string => Boolean(value))
+            ));
+            const linkedItemEntries = await Promise.all(
+                linkedItemRefs.map(async (itemRef) => [itemRef, await loadStandardWarehouseItemForIncident(itemRef)] as const)
+            );
+            const linkedItemById = new Map(linkedItemEntries);
+            const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap(
+                directMaterialInputs.map(input => input.leftoverWarehouseItemRef).filter((value): value is string => Boolean(value))
+            );
+
+            const lineAmount = Math.max(
+                normalizeCurrencyNumber(linkedLine.linkedExpenseAmount ?? linkedLine.amount ?? 0, { maxFractionDigits: 0 }),
+                0
+            );
+            let allocatedTotal = 0;
+            const receiptStockBalances = new Map<string, number>();
+            const directPlans = directMaterialInputs.map((input, index) => {
+                const linkedItem = input.linkedWarehouseItemRef ? linkedItemById.get(input.linkedWarehouseItemRef) : undefined;
+                const receiptItem = input.leftoverWarehouseItemRef ? linkedItemById.get(input.leftoverWarehouseItemRef) : undefined;
+                const itemName = input.itemName || linkedItem?.name || receiptItem?.name || linkedLine.description;
+                const unit = linkedItem?.unit || receiptItem?.unit || input.unit;
+                const usedSubtotal = Math.round(input.quantity * input.unitCost);
+                const receiptSubtotal = Math.round(input.leftoverQty * input.unitCost);
+                allocatedTotal += usedSubtotal + receiptSubtotal;
+
+                if (receiptItem && input.leftoverQty > 0) {
+                    const latestStockMovementDate = latestStockMovementDates.get(receiptItem._id);
+                    if (latestStockMovementDate && completedDate < latestStockMovementDate) {
+                        throw new Error(`Tanggal sisa masuk gudang tidak boleh lebih awal dari mutasi stok terakhir ${receiptItem.itemCode}`);
+                    }
+                }
+                const currentReceiptStockQty = receiptItem
+                    ? receiptStockBalances.get(receiptItem._id) ?? Math.max(parseInventoryQuantity(receiptItem.currentStockQty ?? 0), 0)
+                    : 0;
+                const nextReceiptStockQty = currentReceiptStockQty + input.leftoverQty;
+                if (receiptItem && input.leftoverQty > 0) {
+                    receiptStockBalances.set(receiptItem._id, nextReceiptStockQty);
+                }
+                return {
+                    index,
+                    input,
+                    linkedItem,
+                    receiptItem,
+                    itemName,
+                    unit,
+                    usedSubtotal,
+                    receiptSubtotal,
+                    nextReceiptStockQty,
+                };
+            });
+
+            if (linkedLine.category === 'SPAREPART' && allocatedTotal <= 0) {
+                return NextResponse.json({ error: 'Sparepart beli lokal wajib mencatat barang dipakai atau sisa masuk gudang' }, { status: 400 });
+            }
+            if (allocatedTotal > lineAmount) {
+                return NextResponse.json(
+                    { error: 'Total material dipakai dan sisa masuk gudang tidak boleh melebihi biaya insiden yang sudah diposting' },
+                    { status: 400 }
+                );
+            }
+
+            for (const plan of directPlans) {
+                const { index, input, linkedItem, receiptItem, itemName, unit, usedSubtotal, receiptSubtotal, nextReceiptStockQty } = plan;
+                let receiptMovementRef: string | undefined;
+                if (receiptItem && input.leftoverQty > 0) {
+                    await updateDocument(receiptItem._id, { currentStockQty: nextReceiptStockQty }, 'warehouseItem');
+
+                    const movementDoc: StockMovement = {
+                        _id: `stock-movement-${crypto.randomUUID()}`,
+                        _type: 'stockMovement',
+                        warehouseItemRef: receiptItem._id,
+                        itemCode: receiptItem.itemCode,
+                        itemName: receiptItem.name,
+                        unit: receiptItem.unit,
+                        movementDate: completedDate,
+                        type: 'IN',
+                        sourceType: 'MANUAL_IN',
+                        sourceRef: maintenanceRef,
+                        sourceNumber,
+                        quantity: input.leftoverQty,
+                        balanceAfter: nextReceiptStockQty,
+                        unitCostSnapshot: input.unitCost,
+                        subtotalCost: receiptSubtotal,
+                        costMethod: 'MANUAL',
+                        note: input.note || `Sisa pembelian lokal dari insiden ${incidentLabel}`,
+                        createdBy: session._id,
+                        createdByName: session.name,
+                    };
+                    await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
+                    await postStockMovementJournal(session, movementDoc, input.unitCost);
+                    movementDocs.push(movementDoc);
+                    receiptMovementRef = movementDoc._id;
+                    inventoryReceiptCostTotal += receiptSubtotal;
+                }
+
+                if (input.quantity > 0) {
+                    postedIncidentMaterialCostTotal += usedSubtotal;
+                    materialUsages.push({
+                        warehouseItemRef: `direct-purchase:${maintenanceRef}:${index + 1}`,
+                        sourceType: 'DIRECT_PURCHASE',
+                        itemCode: linkedItem?.itemCode,
+                        itemName,
+                        category: linkedItem?.category || receiptItem?.category || linkedLine.category,
+                        unit,
+                        quantity: input.quantity,
+                        unitCostSnapshot: input.unitCost,
+                        subtotalCost: usedSubtotal,
+                        costAlreadyPosted: true,
+                        linkedWarehouseItemRef: linkedItem?._id,
+                        linkedWarehouseItemCode: linkedItem?.itemCode,
+                        linkedWarehouseItemName: linkedItem?.name,
+                        relatedIncidentRef: incident._id,
+                        relatedIncidentSettlementLineRef: linkedLine._id,
+                        relatedIncidentExpenseRef: linkedLine.linkedExpenseRef,
+                        directPurchaseVendor: vendor || linkedLine.payeeName,
+                        directPurchaseRoute: linkedLine.linkedExpenseRoute,
+                        enteredInventoryWarehouseItemRef: receiptItem?._id,
+                        enteredInventoryStockMovementRef: receiptMovementRef,
+                        enteredInventoryQty: input.leftoverQty > 0 ? input.leftoverQty : undefined,
+                        enteredInventorySubtotalCost: receiptSubtotal > 0 ? receiptSubtotal : undefined,
+                        attachmentStatus: input.attachToVehicle ? 'INSTALLED' : 'CONSUMED',
+                        attachedToVehicle: input.attachToVehicle || undefined,
+                        installedOnVehicleRef: input.attachToVehicle ? incident.vehicleRef : undefined,
+                        installedOnVehiclePlate: input.attachToVehicle ? incident.vehiclePlate : undefined,
+                        installedAtMaintenanceRef: input.attachToVehicle ? maintenanceRef : undefined,
+                        installedDate: input.attachToVehicle ? completedDate : undefined,
+                        installedOdometer: input.attachToVehicle ? odometerAtService : undefined,
+                        componentLabel: input.attachToVehicle ? (input.componentLabel || itemName) : undefined,
+                        note: input.note,
+                    });
+                }
+            }
+            postedIncidentServiceCostTotal = Math.max(lineAmount - allocatedTotal, 0);
+        }
+
+        const materialCostTotal = sourceMode === 'WAREHOUSE_STOCK'
+            ? materialUsages.reduce((sum, usage) => sum + Math.max(parseWholeMoneyAmount(usage.subtotalCost), 0), 0)
+            : 0;
+        const totalCost = materialCostTotal;
+        const notes = [
+            `Penanganan dari insiden ${incidentLabel}`,
+            linkedLine?.description ? `Detail biaya: ${linkedLine.description}` : '',
+            sourceMode === 'DIRECT_PURCHASE'
+                ? 'Biaya beli lokal sudah diposting di insiden. Maintenance ini mencatat riwayat teknis unit agar biaya tidak dobel.'
+                : '',
+            completionNotes,
+        ].filter(Boolean).join(' | ');
+
+        const maintenanceDoc: Maintenance = {
+            _id: maintenanceRef,
+            _type: 'maintenance',
+            vehicleRef: incident.vehicleRef,
+            vehiclePlate: incident.vehiclePlate,
+            type: maintenanceType,
+            scheduleType: 'DATE',
+            plannedDate: completedDate,
+            status: 'DONE',
+            completedDate,
+            odometerAtService,
+            vendor,
+            notes,
+            completionNotes,
+            attachmentUrls: [],
+            materialUsages,
+            materialUsageCount: materialUsages.length,
+            materialCostTotal,
+            laborCost: 0,
+            totalCost,
+            cost: totalCost,
+            source: 'INCIDENT_FOLLOW_UP',
+            relatedDeliveryOrderRef: incident.relatedDeliveryOrderRef,
+            relatedIncidentRef: incident._id,
+            relatedIncidentNumber: incidentLabel,
+            relatedIncidentSettlementLineRef: linkedLine?._id,
+            relatedIncidentExpenseRef: linkedLine?.linkedExpenseRef,
+            postedIncidentMaterialCostTotal: sourceMode === 'DIRECT_PURCHASE' ? postedIncidentMaterialCostTotal : undefined,
+            postedIncidentServiceCostTotal: sourceMode === 'DIRECT_PURCHASE' ? postedIncidentServiceCostTotal : undefined,
+            inventoryReceiptCostTotal: sourceMode === 'DIRECT_PURCHASE' ? inventoryReceiptCostTotal : undefined,
+        };
+
+        await createDocument(maintenanceDoc as unknown as { _type: string; [key: string]: unknown });
+
+        let updatedLine: IncidentSettlementLine | undefined;
+        if (linkedLine) {
+            updatedLine = await updateDocument<IncidentSettlementLine>(linkedLine._id, {
+                linkedMaintenanceRef: maintenanceRef,
+                linkedMaintenanceType: maintenanceType,
+                updatedAt: now,
+                updatedBy: session._id,
+                updatedByName: session.name,
+            }, 'incidentSettlementLine');
+        }
+
+        const actionNote = sourceMode === 'DIRECT_PURCHASE'
+            ? `Penanganan maintenance beli lokal ${maintenanceType} dicatat dari ${formatIncidentSettlementLabel(linkedLine as IncidentSettlementLine)}`
+            : `Pemakaian barang gudang untuk penanganan maintenance ${maintenanceType} dicatat pada ${incidentLabel}`;
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'incidentActionLog',
+            incidentRef: incident._id,
+            timestamp: now,
+            note: actionNote,
+            userRef: session._id,
+            userName: session.name,
+        });
+        await addAuditLog(session, 'CREATE', 'maintenances', maintenanceRef, actionNote);
+
+        return NextResponse.json({
+            data: maintenanceDoc,
+            maintenanceRef,
+            settlementLine: updatedLine,
+            stockMovementRefs: movementDocs.map(movement => movement._id),
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Gagal mencatat penanganan maintenance insiden' },
+            { status: 400 }
+        );
+    }
 }
 
 export async function handleIncidentSettlementLineTireFollowUpCreate(

@@ -25,6 +25,7 @@ import {
     getMaintenanceMaterialOverflowCount,
     getMaintenanceMaterialPreview,
     getMaintenanceRecordedCost,
+    isWarehouseStockMaintenanceMaterialUsage,
     type MaintenanceCompletionFormState,
     type MaintenanceMaterialOption,
 } from '@/lib/maintenance';
@@ -579,10 +580,10 @@ export default function MaintenancePage() {
             <div style={{ display: 'grid', gap: '0.2rem' }}>
                 {materialPreview.map((usage) => {
                     const usageCost = typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0
-                        ? ` - ${formatCurrency(usage.subtotalCost)}`
+                        ? ` - ${formatCurrency(usage.subtotalCost)}${usage.costAlreadyPosted ? ' (biaya insiden)' : ''}`
                         : '';
                     const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${usageCost}${usage.attachedToVehicle ? ' | Terpasang di unit' : ''}`;
-                    return canOpenWarehouseItems && !usage.warehouseItemRef.startsWith('tire:') ? (
+                    return canOpenWarehouseItems && isWarehouseStockMaintenanceMaterialUsage(usage) ? (
                         <Link
                             key={`${item._id}-${usage.warehouseItemRef}`}
                             href={`/inventory/items/${usage.warehouseItemRef}`}

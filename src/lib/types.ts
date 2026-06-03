@@ -1289,9 +1289,11 @@ export interface Vehicle {
 export type MaintenanceStatus = 'SCHEDULED' | 'DONE' | 'SKIPPED';
 export type ScheduleType = 'DATE' | 'ODOMETER';
 export type MaintenanceMaterialAttachmentStatus = 'CONSUMED' | 'INSTALLED';
+export type MaintenanceMaterialSourceType = 'WAREHOUSE_STOCK' | 'DIRECT_PURCHASE';
 
 export interface MaintenanceMaterialUsage {
   warehouseItemRef: string;
+  sourceType?: MaintenanceMaterialSourceType;
   itemCode?: string;
   itemName?: string;
   category?: string;
@@ -1299,6 +1301,20 @@ export interface MaintenanceMaterialUsage {
   quantity: number;
   unitCostSnapshot?: number;
   subtotalCost?: number;
+  costAlreadyPosted?: boolean;
+  stockMovementRef?: string;
+  linkedWarehouseItemRef?: string;
+  linkedWarehouseItemCode?: string;
+  linkedWarehouseItemName?: string;
+  relatedIncidentRef?: string;
+  relatedIncidentSettlementLineRef?: string;
+  relatedIncidentExpenseRef?: string;
+  directPurchaseVendor?: string;
+  directPurchaseRoute?: IncidentExpenseRoute;
+  enteredInventoryWarehouseItemRef?: string;
+  enteredInventoryStockMovementRef?: string;
+  enteredInventoryQty?: number;
+  enteredInventorySubtotalCost?: number;
   attachmentStatus?: MaintenanceMaterialAttachmentStatus;
   attachedToVehicle?: boolean;
   installedOnVehicleRef?: string;
@@ -1335,9 +1351,12 @@ export interface Maintenance {
   laborBankAccountName?: string;
   laborBankAccountNumber?: string;
   totalCost?: number;
+  postedIncidentMaterialCostTotal?: number;
+  postedIncidentServiceCostTotal?: number;
+  inventoryReceiptCostTotal?: number;
   relatedExpenseRef?: string;
   cost?: number;
-  source?: 'MANUAL' | 'ODOMETER_AUTO' | 'TIRE_REPLACEMENT';
+  source?: 'MANUAL' | 'ODOMETER_AUTO' | 'TIRE_REPLACEMENT' | 'INCIDENT_FOLLOW_UP';
   relatedDeliveryOrderRef?: string;
   relatedIncidentRef?: string;
   relatedIncidentNumber?: string;

@@ -25,6 +25,7 @@ import {
   WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS,
 } from '@/lib/inventory';
 import { getMaintenanceMaterialUsageRows, summarizeItemUsageRows } from '@/lib/inventory-material-usage';
+import { isWarehouseStockMaintenanceMaterialUsage } from '@/lib/maintenance';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
 import type { Maintenance, Purchase, PurchaseItem, StockMovement, Supplier, TireEvent, WarehouseItem } from '@/lib/types';
@@ -290,7 +291,9 @@ export default function WarehouseItemDetailPage() {
     if (!canOpenMaintenance) return [];
     const rows: MaintenanceUsageRow[] = [];
     Object.entries(maintenancesById).forEach(([maintenanceId, maintenance]) => {
-      const relatedUsages = (maintenance.materialUsages || []).filter((usage) => usage.warehouseItemRef === itemId);
+      const relatedUsages = (maintenance.materialUsages || []).filter(
+        (usage) => isWarehouseStockMaintenanceMaterialUsage(usage) && usage.warehouseItemRef === itemId
+      );
       if (relatedUsages.length === 0) return;
       rows.push({
           maintenanceId,

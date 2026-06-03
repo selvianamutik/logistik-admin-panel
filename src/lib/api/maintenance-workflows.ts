@@ -150,7 +150,7 @@ async function loadWarehouseItemSnapshot(itemRef: string) {
     return item;
 }
 
-async function resolveWarehouseItemUnitCost(item: Pick<WarehouseItem, '_id' | 'defaultPurchasePrice'>) {
+export async function resolveWarehouseItemUnitCost(item: Pick<WarehouseItem, '_id' | 'defaultPurchasePrice'>) {
     const receiptRows = (await listDocumentsByFilter<Pick<PurchaseItem, 'receivedQty' | 'unitPrice'>>(
         'purchaseItem',
         { warehouseItemRef: item._id }
@@ -437,6 +437,7 @@ export async function handleMaintenanceComplete(
 
             materialUsages.push({
                 warehouseItemRef: item._id,
+                sourceType: 'WAREHOUSE_STOCK',
                 itemCode: item.itemCode,
                 itemName: item.name,
                 category: item.category,
@@ -444,6 +445,7 @@ export async function handleMaintenanceComplete(
                 quantity: materialInput.quantity,
                 unitCostSnapshot,
                 subtotalCost,
+                stockMovementRef: movementDoc._id,
                 attachmentStatus: materialInput.attachToVehicle ? 'INSTALLED' : 'CONSUMED',
                 attachedToVehicle: materialInput.attachToVehicle || undefined,
                 installedOnVehicleRef: materialInput.attachToVehicle ? maintenance.vehicleRef : undefined,

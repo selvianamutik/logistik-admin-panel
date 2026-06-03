@@ -76,6 +76,7 @@ import {
 } from '@/lib/api/generic-workflows';
 import {
     handleIncidentCreate,
+    handleIncidentMaintenanceHandlingCreate,
     handleIncidentSettlementLineCreate,
     handleIncidentSettlementLineDelete,
     handleIncidentSettlementLineMaintenanceFollowUpCreate,
@@ -290,6 +291,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'end-early' ||
         action === 'create-tire-follow-up' ||
         action === 'create-maintenance-follow-up' ||
+        action === 'record-maintenance-handling' ||
         action === 'complete-with-materials'
         || action === 'install-to-slot'
     ) {
@@ -1624,6 +1626,10 @@ export async function POST(request: Request) {
 
         if (entity === 'incidents' && action === 'set-status') {
             return await handleIncidentStatusUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'incidents' && action === 'record-maintenance-handling') {
+            return await handleIncidentMaintenanceHandlingCreate(session, data, addAuditLog);
         }
 
         if (entity === 'incident-settlement-lines' && action === 'update') {

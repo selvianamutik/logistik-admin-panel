@@ -48,6 +48,7 @@ import {
     getMaintenanceMaterialOverflowCount,
     getMaintenanceMaterialPreview,
     getMaintenanceRecordedCost,
+    isWarehouseStockMaintenanceMaterialUsage,
 } from '@/lib/maintenance';
 import { getTireHistoryActionColor, getTireHistoryActionLabel } from '@/lib/tire-history';
 
@@ -263,10 +264,10 @@ export default function VehicleDetailPage() {
                     const usageContent = (
                         <span>
                             {usageLabel}
-                            {typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0 ? ` - ${formatCurrency(usage.subtotalCost)}` : ''}
+                            {typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0 ? ` - ${formatCurrency(usage.subtotalCost)}${usage.costAlreadyPosted ? ' (biaya insiden)' : ''}` : ''}
                         </span>
                     );
-                    return canOpenWarehouseItems && !usage.warehouseItemRef.startsWith('tire:') ? (
+                    return canOpenWarehouseItems && isWarehouseStockMaintenanceMaterialUsage(usage) ? (
                         <Link
                             key={`${item._id}-${usage.warehouseItemRef}`}
                             href={`/inventory/items/${usage.warehouseItemRef}`}

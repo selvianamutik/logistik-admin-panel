@@ -25,7 +25,8 @@ import {
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { hasPermission } from '@/lib/rbac';
 import { getExpenseCategoryScopeLabel, inferExpenseCategoryScope } from '@/lib/expense-category-scope';
-import { isTireTrackedWarehouseItem } from '@/lib/inventory';
+import { getBusinessDateValue } from '@/lib/business-date';
+import { INVENTORY_UNIT_OPTIONS, isTireTrackedWarehouseItem } from '@/lib/inventory';
 import { resolveFleetTireEvents } from '@/lib/fleet-asset-page-support';
 import { DEFAULT_TIRE_TYPE, normalizeTireType, TIRE_TYPE_OPTIONS } from '@/lib/tire-types';
 import { compareTireSlotCodes, formatTireSlotLabel, getSuggestedVehicleTireLayout, resolveTireSlotCode } from '@/lib/tire-slots';
@@ -38,6 +39,7 @@ import type {
     IncidentSettlementCategory,
     IncidentSettlementLine,
     IncidentSettlementLineType,
+    InventoryUnit,
     TireEvent,
     TireType,
     Vehicle,
@@ -118,6 +120,92 @@ function createDefaultIncidentTireInstallForm(): IncidentTireInstallForm {
     };
 }
 
+type IncidentMaintenanceSourceMode = 'WAREHOUSE_STOCK' | 'DIRECT_PURCHASE';
+
+type IncidentHandlingWarehouseLine = {
+    rowId: string;
+    warehouseItemRef: string;
+    quantity: number;
+    attachToVehicle: boolean;
+    componentLabel: string;
+    note: string;
+};
+
+type IncidentHandlingDirectLine = {
+    rowId: string;
+    linkedWarehouseItemRef: string;
+    itemName: string;
+    unit: InventoryUnit;
+    quantity: number;
+    unitCost: number;
+    attachToVehicle: boolean;
+    componentLabel: string;
+    note: string;
+    leftoverWarehouseItemRef: string;
+    leftoverQty: number;
+};
+
+type IncidentHandlingForm = {
+    sourceMode: IncidentMaintenanceSourceMode;
+    settlementLineRef: string;
+    completedDate: string;
+    odometerAtService: number;
+    vendor: string;
+    maintenanceType: string;
+    completionNotes: string;
+    warehouseMaterials: IncidentHandlingWarehouseLine[];
+    directMaterials: IncidentHandlingDirectLine[];
+};
+
+function createEmptyIncidentHandlingWarehouseLine(): IncidentHandlingWarehouseLine {
+    return {
+        rowId: crypto.randomUUID(),
+        warehouseItemRef: '',
+        quantity: 0,
+        attachToVehicle: false,
+        componentLabel: '',
+        note: '',
+    };
+}
+
+function createEmptyIncidentHandlingDirectLine(): IncidentHandlingDirectLine {
+    return {
+        rowId: crypto.randomUUID(),
+        linkedWarehouseItemRef: '',
+        itemName: '',
+        unit: 'PCS',
+        quantity: 0,
+        unitCost: 0,
+        attachToVehicle: false,
+        componentLabel: '',
+        note: '',
+        leftoverWarehouseItemRef: '',
+        leftoverQty: 0,
+    };
+}
+
+function createDefaultIncidentHandlingForm(
+    incident?: Pick<Incident, 'odometer'> | null,
+    sourceMode: IncidentMaintenanceSourceMode = 'WAREHOUSE_STOCK',
+    line?: IncidentSettlementLine | null
+): IncidentHandlingForm {
+    return {
+        sourceMode,
+        settlementLineRef: line?._id || '',
+        completedDate: line?.date || getBusinessDateValue(),
+        odometerAtService: typeof incident?.odometer === 'number' ? incident.odometer : 0,
+        vendor: line?.payeeName || '',
+        maintenanceType: sourceMode === 'DIRECT_PURCHASE'
+            ? line?.category === 'REPAIR'
+                ? 'Penanganan Perbaikan Insiden'
+                : 'Penanganan Sparepart Insiden'
+            : 'Pemakaian Barang Gudang Insiden',
+        completionNotes: line?.description || '',
+        warehouseMaterials: [createEmptyIncidentHandlingWarehouseLine()],
+        directMaterials: line?.category === 'REPAIR' ? [] : [createEmptyIncidentHandlingDirectLine()],
+    };
+}
+
 function getTireRemainingPercent(tire: Pick<TireEvent, 'remainingPercent' | 'totalUsedPercent'> | null | undefined) {
     const explicit = Number(tire?.remainingPercent);
     if (Number.isFinite(explicit)) return Math.max(explicit, 0);
@@ -182,6 +270,7 @@ export default function IncidentDetailPage() {
     const [lines, setLines] = useState<IncidentSettlementLine[]>([]);
     const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [warehouseItems, setWarehouseItems] = useState<WarehouseItem[]>([]);
     const [trackedTireWarehouseItems, setTrackedTireWarehouseItems] = useState<WarehouseItem[]>([]);
     const [incidentVehicle, setIncidentVehicle] = useState<Vehicle | null>(null);
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
@@ -206,6 +295,10 @@ export default function IncidentDetailPage() {
     const [tireInstallLine, setTireInstallLine] = useState<IncidentSettlementLine | null>(null);
     const [tireInstallForm, setTireInstallForm] = useState(createDefaultIncidentTireInstallForm());
     const [savingTireInstall, setSavingTireInstall] = useState(false);
+    const [showHandlingModal, setShowHandlingModal] = useState(false);
+    const [handlingLine, setHandlingLine] = useState<IncidentSettlementLine | null>(null);
+    const [handlingForm, setHandlingForm] = useState(createDefaultIncidentHandlingForm());
+    const [savingHandling, setSavingHandling] = useState(false);
     const [creatingMaintenanceLineRef, setCreatingMaintenanceLineRef] = useState('');
 
     const loadDetail = useCallback(async () => {
@@ -222,8 +315,8 @@ export default function IncidentDetailPage() {
                 canCreateExpense
                     ? fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat referensi pengeluaran')
                     : Promise.resolve([]),
-                canCreateTires
-                    ? fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items', 'Gagal memuat master barang ban')
+                (canCreateTires || canCreateMaintenance)
+                    ? fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items', 'Gagal memuat master barang gudang')
                     : Promise.resolve([]),
             ];
             const [incidentData, actionLogs, lineRows, categoryRows, accountRows, warehouseRows] = await Promise.all(tasks);
@@ -247,6 +340,7 @@ export default function IncidentDetailPage() {
                 : []
             );
             setBankAccounts(canCreateExpense ? (((accountRows as BankAccount[]) || []).filter(item => item.active !== false)) : []);
+            setWarehouseItems(canCreateTires || canCreateMaintenance ? (((warehouseRows as WarehouseItem[]) || []).filter(item => item.active !== false)) : []);
             setTrackedTireWarehouseItems(canCreateTires
                 ? (((warehouseRows as WarehouseItem[]) || []).filter(item => item.active !== false && isTireTrackedWarehouseItem(item)))
                 : []
@@ -258,7 +352,7 @@ export default function IncidentDetailPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, canCreateExpense, canCreateTires, canInstallTires, incidentId]);
+    }, [addToast, canCreateExpense, canCreateMaintenance, canCreateTires, canInstallTires, incidentId]);
 
     useEffect(() => { void loadDetail(); }, [loadDetail]);
 
@@ -279,6 +373,39 @@ export default function IncidentDetailPage() {
     const selectedTireWarehouseItem = useMemo(
         () => trackedTireWarehouseItems.find(item => item._id === tireFollowUpForm.linkedWarehouseItemRef) || null,
         [tireFollowUpForm.linkedWarehouseItemRef, trackedTireWarehouseItems]
+    );
+    const standardWarehouseItems = useMemo(
+        () => warehouseItems.filter(item => item.active !== false && !isTireTrackedWarehouseItem(item)),
+        [warehouseItems]
+    );
+    const stockedStandardWarehouseItems = useMemo(
+        () => standardWarehouseItems.filter(item => Number(item.currentStockQty || 0) > 0),
+        [standardWarehouseItems]
+    );
+    const directPurchaseLineOptions = useMemo(
+        () => lines.filter(line =>
+            line.lineType === 'COST' &&
+            (line.category === 'REPAIR' || line.category === 'SPAREPART') &&
+            line.status === 'POSTED' &&
+            Boolean(line.linkedExpenseRef) &&
+            !line.linkedMaintenanceRef
+        ),
+        [lines]
+    );
+    const selectedHandlingLine = useMemo(
+        () => handlingForm.settlementLineRef
+            ? lines.find(line => line._id === handlingForm.settlementLineRef) || null
+            : handlingLine,
+        [handlingForm.settlementLineRef, handlingLine, lines]
+    );
+    const directAllocatedTotal = useMemo(
+        () => handlingForm.directMaterials.reduce((sum, row) => {
+            const quantity = Number(row.quantity || 0);
+            const leftoverQty = Number(row.leftoverQty || 0);
+            const unitCost = Number(row.unitCost || 0);
+            return sum + Math.max(quantity, 0) * Math.max(unitCost, 0) + Math.max(leftoverQty, 0) * Math.max(unitCost, 0);
+        }, 0),
+        [handlingForm.directMaterials]
     );
     const resolvedTireEvents = useMemo(() => resolveFleetTireEvents(tireEvents), [tireEvents]);
     const tireById = useMemo(
@@ -607,6 +734,204 @@ export default function IncidentDetailPage() {
         }
     };
 
+    const openHandlingModal = (line?: IncidentSettlementLine, sourceMode: IncidentMaintenanceSourceMode = 'WAREHOUSE_STOCK') => {
+        const nextLine = sourceMode === 'DIRECT_PURCHASE'
+            ? line || directPurchaseLineOptions[0] || null
+            : null;
+        setHandlingLine(nextLine);
+        setHandlingForm(createDefaultIncidentHandlingForm(incident, sourceMode, nextLine));
+        setShowHandlingModal(true);
+    };
+
+    const closeHandlingModal = (force = false) => {
+        if (savingHandling && !force) return;
+        setShowHandlingModal(false);
+        setHandlingLine(null);
+        setHandlingForm(createDefaultIncidentHandlingForm(incident));
+    };
+
+    const switchHandlingSourceMode = (sourceMode: IncidentMaintenanceSourceMode) => {
+        const nextLine = sourceMode === 'DIRECT_PURCHASE'
+            ? selectedHandlingLine || directPurchaseLineOptions[0] || null
+            : null;
+        setHandlingLine(nextLine);
+        setHandlingForm(prev => ({
+            ...createDefaultIncidentHandlingForm(incident, sourceMode, nextLine),
+            completedDate: prev.completedDate || getBusinessDateValue(),
+            odometerAtService: prev.odometerAtService,
+            vendor: sourceMode === 'DIRECT_PURCHASE' ? (nextLine?.payeeName || prev.vendor) : prev.vendor,
+            completionNotes: prev.completionNotes,
+            warehouseMaterials: prev.warehouseMaterials.length > 0 ? prev.warehouseMaterials : [createEmptyIncidentHandlingWarehouseLine()],
+            directMaterials: sourceMode === 'DIRECT_PURCHASE'
+                ? (prev.directMaterials.length > 0 ? prev.directMaterials : (nextLine?.category === 'REPAIR' ? [] : [createEmptyIncidentHandlingDirectLine()]))
+                : prev.directMaterials,
+        }));
+    };
+
+    const selectHandlingSettlementLine = (settlementLineRef: string) => {
+        const line = directPurchaseLineOptions.find(item => item._id === settlementLineRef) || null;
+        setHandlingLine(line);
+        setHandlingForm(prev => ({
+            ...prev,
+            settlementLineRef,
+            completedDate: line?.date || prev.completedDate,
+            vendor: line?.payeeName || prev.vendor,
+            maintenanceType: line?.category === 'REPAIR' ? 'Penanganan Perbaikan Insiden' : 'Penanganan Sparepart Insiden',
+            completionNotes: line?.description || prev.completionNotes,
+            directMaterials: line?.category === 'REPAIR' ? prev.directMaterials : (prev.directMaterials.length > 0 ? prev.directMaterials : [createEmptyIncidentHandlingDirectLine()]),
+        }));
+    };
+
+    const updateWarehouseHandlingLine = (rowId: string, updates: Partial<IncidentHandlingWarehouseLine>) => {
+        setHandlingForm(prev => ({
+            ...prev,
+            warehouseMaterials: prev.warehouseMaterials.map(row => {
+                if (row.rowId !== rowId) return row;
+                const next = { ...row, ...updates };
+                if (updates.warehouseItemRef) {
+                    const item = standardWarehouseItems.find(option => option._id === updates.warehouseItemRef);
+                    if (item && !next.componentLabel) next.componentLabel = item.name;
+                }
+                return next;
+            }),
+        }));
+    };
+
+    const updateDirectHandlingLine = (rowId: string, updates: Partial<IncidentHandlingDirectLine>) => {
+        setHandlingForm(prev => ({
+            ...prev,
+            directMaterials: prev.directMaterials.map(row => {
+                if (row.rowId !== rowId) return row;
+                const next = { ...row, ...updates };
+                const linkedItem = updates.linkedWarehouseItemRef
+                    ? standardWarehouseItems.find(option => option._id === updates.linkedWarehouseItemRef)
+                    : null;
+                const leftoverItem = updates.leftoverWarehouseItemRef
+                    ? standardWarehouseItems.find(option => option._id === updates.leftoverWarehouseItemRef)
+                    : null;
+                const item = linkedItem || leftoverItem;
+                if (item) {
+                    next.itemName = next.itemName || item.name;
+                    next.unit = item.unit || next.unit;
+                    next.unitCost = next.unitCost || item.defaultPurchasePrice || 0;
+                    if (!next.componentLabel) next.componentLabel = item.name;
+                }
+                return next;
+            }),
+        }));
+    };
+
+    const addWarehouseHandlingLine = () => {
+        setHandlingForm(prev => ({
+            ...prev,
+            warehouseMaterials: [...prev.warehouseMaterials, createEmptyIncidentHandlingWarehouseLine()],
+        }));
+    };
+
+    const removeWarehouseHandlingLine = (rowId: string) => {
+        setHandlingForm(prev => ({
+            ...prev,
+            warehouseMaterials: prev.warehouseMaterials.length > 1
+                ? prev.warehouseMaterials.filter(row => row.rowId !== rowId)
+                : [createEmptyIncidentHandlingWarehouseLine()],
+        }));
+    };
+
+    const addDirectHandlingLine = () => {
+        setHandlingForm(prev => ({
+            ...prev,
+            directMaterials: [...prev.directMaterials, createEmptyIncidentHandlingDirectLine()],
+        }));
+    };
+
+    const removeDirectHandlingLine = (rowId: string) => {
+        setHandlingForm(prev => ({
+            ...prev,
+            directMaterials: prev.directMaterials.filter(row => row.rowId !== rowId),
+        }));
+    };
+
+    const saveIncidentHandling = async () => {
+        if (!incident?._id || !incident._rev) return addToast('error', 'Data insiden perlu direfresh sebelum mencatat penanganan');
+        if (!incident.vehicleRef) return addToast('error', 'Kendaraan insiden tidak tersedia untuk maintenance');
+        if (!handlingForm.completedDate) return addToast('error', 'Tanggal penanganan wajib diisi');
+
+        const warehouseMaterials = handlingForm.warehouseMaterials
+            .filter(row => row.warehouseItemRef || row.quantity > 0)
+            .map(row => ({
+                warehouseItemRef: row.warehouseItemRef,
+                quantity: row.quantity,
+                attachToVehicle: row.attachToVehicle,
+                componentLabel: row.componentLabel.trim() || undefined,
+                note: row.note.trim() || undefined,
+            }));
+        const directMaterials = handlingForm.directMaterials
+            .filter(row => row.linkedWarehouseItemRef || row.leftoverWarehouseItemRef || row.itemName.trim() || row.quantity > 0 || row.leftoverQty > 0 || row.unitCost > 0)
+            .map(row => ({
+                linkedWarehouseItemRef: row.linkedWarehouseItemRef || undefined,
+                itemName: row.itemName.trim() || undefined,
+                unit: row.unit,
+                quantity: row.quantity,
+                unitCost: row.unitCost,
+                attachToVehicle: row.attachToVehicle,
+                componentLabel: row.componentLabel.trim() || undefined,
+                note: row.note.trim() || undefined,
+                leftoverWarehouseItemRef: row.leftoverWarehouseItemRef || undefined,
+                leftoverQty: row.leftoverQty,
+            }));
+
+        if (handlingForm.sourceMode === 'WAREHOUSE_STOCK' && warehouseMaterials.length === 0) {
+            return addToast('error', 'Minimal satu barang gudang wajib dipilih');
+        }
+        if (handlingForm.sourceMode === 'DIRECT_PURCHASE') {
+            if (!selectedHandlingLine?._id || !selectedHandlingLine._rev) {
+                return addToast('error', 'Detail biaya posted wajib dipilih dan direfresh');
+            }
+            if (selectedHandlingLine.category === 'SPAREPART' && directMaterials.length === 0) {
+                return addToast('error', 'Sparepart beli lokal wajib mencatat barang dipakai atau sisa masuk gudang');
+            }
+            const expenseAmount = Number(selectedHandlingLine.linkedExpenseAmount ?? selectedHandlingLine.amount ?? 0) || 0;
+            if (directAllocatedTotal > expenseAmount) {
+                return addToast('error', 'Total alokasi material tidak boleh melebihi biaya insiden yang sudah diposting');
+            }
+        }
+
+        setSavingHandling(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'incidents',
+                    action: 'record-maintenance-handling',
+                    data: {
+                        incidentRef: incident._id,
+                        revision: incident._rev,
+                        sourceMode: handlingForm.sourceMode,
+                        settlementLineRef: handlingForm.sourceMode === 'DIRECT_PURCHASE' ? selectedHandlingLine?._id : undefined,
+                        settlementLineRevision: handlingForm.sourceMode === 'DIRECT_PURCHASE' ? selectedHandlingLine?._rev : undefined,
+                        completedDate: handlingForm.completedDate,
+                        odometerAtService: handlingForm.odometerAtService || undefined,
+                        vendor: handlingForm.vendor.trim() || undefined,
+                        maintenanceType: handlingForm.maintenanceType.trim() || undefined,
+                        completionNotes: handlingForm.completionNotes.trim() || undefined,
+                        warehouseMaterials: handlingForm.sourceMode === 'WAREHOUSE_STOCK' ? warehouseMaterials : undefined,
+                        directMaterials: handlingForm.sourceMode === 'DIRECT_PURCHASE' ? directMaterials : undefined,
+                    },
+                }),
+            });
+            const payload = await res.json();
+            if (!res.ok) return addToast('error', payload.error || 'Gagal mencatat penanganan insiden');
+            addToast('success', 'Penanganan maintenance insiden dicatat');
+            closeHandlingModal(true);
+            await loadDetail();
+        } catch {
+            addToast('error', 'Gagal mencatat penanganan insiden');
+        } finally {
+            setSavingHandling(false);
+        }
+    };
+
     const chooseIncidentExpenseRoute = (route: IncidentExpenseRoute) => {
         setExpenseForm(prev => ({
             ...prev,
@@ -731,7 +1056,8 @@ export default function IncidentDetailPage() {
             {canCreateExpense && canPostIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openExpenseModal(line)}><ReceiptText size={14} /> Post Expense</button>}
             {canCreateTires && line.lineType === 'COST' && line.category === 'TIRE' && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedTireEventRef && <button className="table-action-btn" onClick={() => openTireFollowUpModal(line)}><Plus size={14} /> Catat Aset Ban</button>}
             {canInstallIncidentTire(line) && <button className="table-action-btn" onClick={() => openTireInstallModal(line)}><Wrench size={14} /> Pasang Ban</button>}
-            {canCreateMaintenance && line.lineType === 'COST' && ['REPAIR', 'SPAREPART', 'TIRE'].includes(line.category) && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedMaintenanceRef && <button className="table-action-btn" onClick={() => void createMaintenanceFollowUp(line)} disabled={creatingMaintenanceLineRef === line._id}><Wrench size={14} /> {creatingMaintenanceLineRef === line._id ? 'Membuat...' : 'Follow-up Maintenance'}</button>}
+            {canCreateMaintenance && !incidentClosed && line.lineType === 'COST' && (line.category === 'REPAIR' || line.category === 'SPAREPART') && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedMaintenanceRef && <button className="table-action-btn" onClick={() => openHandlingModal(line, 'DIRECT_PURCHASE')}><Wrench size={14} /> Catat Penanganan</button>}
+            {canCreateMaintenance && line.lineType === 'COST' && line.category === 'TIRE' && line.status === 'POSTED' && line.linkedExpenseRef && !line.linkedMaintenanceRef && <button className="table-action-btn" onClick={() => void createMaintenanceFollowUp(line)} disabled={creatingMaintenanceLineRef === line._id}><Wrench size={14} /> {creatingMaintenanceLineRef === line._id ? 'Membuat...' : 'Follow-up Maintenance'}</button>}
             {canManageIncident && canMarkIncidentRecoveryPosted(line) && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'POSTED')}><CheckCircle2 size={14} /> Tandai Diterima</button>}
             {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Tolak</button>}
             {canManageIncident && !incidentClosed && canDeleteIncidentSettlementLine(line) && <button className="table-action-btn danger" onClick={() => void deleteLine(line)}><Trash2 size={14} /> Hapus</button>}
@@ -755,6 +1081,7 @@ export default function IncidentDetailPage() {
                 <div className="page-actions">
                     {canManageIncident && availableStatuses.length > 0 && <button className="btn btn-primary" onClick={openStatusModal}><Save size={16} /> Ubah Status</button>}
                     {canManageIncident && !incidentClosed && <button className="btn btn-secondary" onClick={() => openLineModal()}><Plus size={16} /> Tambah Detail Biaya</button>}
+                    {canCreateMaintenance && !incidentClosed && <button className="btn btn-secondary" onClick={() => openHandlingModal(undefined, 'WAREHOUSE_STOCK')}><Wrench size={16} /> Catat Pemakaian</button>}
                     <button className="btn btn-secondary" onClick={handlePrint}><Printer size={16} /> Print</button>
                 </div>
             </div>
@@ -857,6 +1184,19 @@ export default function IncidentDetailPage() {
                 <div className="form-group"><label className="form-label">Catatan Pengeluaran</label><input className="form-input" value={expenseForm.note} onChange={event => setExpenseForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Catatan singkat pengeluaran" /></div>
                 <div className="form-group"><label className="form-label">Deskripsi Pengeluaran</label><textarea className="form-textarea" rows={3} value={expenseForm.description} onChange={event => setExpenseForm(prev => ({ ...prev, description: event.target.value }))} placeholder="Deskripsi yang akan tersimpan di modul pengeluaran" /></div>
             </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => { setShowExpenseModal(false); setPostingLine(null); }} disabled={postingExpense}>Batal</button><button className="btn btn-primary" onClick={postExpense} disabled={postingExpense || !expenseForm.incidentExpenseRoute || !expenseForm.categoryRef || (expenseForm.incidentExpenseRoute === 'COMPANY_EXPENSE' && !expenseForm.bankAccountRef)}><ReceiptText size={16} /> {postingExpense ? 'Memposting...' : 'Posting Pengeluaran'}</button></div></div></div>}
+
+            {showHandlingModal && <div className="modal-overlay" onClick={() => closeHandlingModal()}><div className="modal modal-lg" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Catat Penanganan Maintenance Insiden</h3></div><div className="modal-body">
+                <div className="form-group"><label className="form-label">Sumber Material</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" className={handlingForm.sourceMode === 'WAREHOUSE_STOCK' ? 'btn btn-primary' : 'btn btn-secondary'} onClick={() => switchHandlingSourceMode('WAREHOUSE_STOCK')} disabled={savingHandling}><Wrench size={16} /> Ambil dari Gudang</button><button type="button" className={handlingForm.sourceMode === 'DIRECT_PURCHASE' ? 'btn btn-primary' : 'btn btn-secondary'} onClick={() => switchHandlingSourceMode('DIRECT_PURCHASE')} disabled={savingHandling || directPurchaseLineOptions.length === 0}><ReceiptText size={16} /> Beli di Lokasi</button></div></div>
+                {handlingForm.sourceMode === 'DIRECT_PURCHASE' && <div className="form-group"><label className="form-label">Detail Biaya Posted <span className="required">*</span></label><select className="form-select" value={handlingForm.settlementLineRef} onChange={event => selectHandlingSettlementLine(event.target.value)} disabled={savingHandling}><option value="">Pilih detail biaya</option>{directPurchaseLineOptions.map(line => <option key={line._id} value={line._id}>{INCIDENT_SETTLEMENT_CATEGORY_MAP[line.category]} - {line.description} ({formatCurrency(line.linkedExpenseAmount ?? line.amount)})</option>)}</select>{selectedHandlingLine && <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>Alokasi {formatCurrency(directAllocatedTotal)} dari {formatCurrency(selectedHandlingLine.linkedExpenseAmount ?? selectedHandlingLine.amount)}</div>}</div>}
+                <div className="form-row"><div className="form-group"><label className="form-label">Tanggal Penanganan</label><input type="date" className="form-input" value={handlingForm.completedDate} onChange={event => setHandlingForm(prev => ({ ...prev, completedDate: event.target.value }))} disabled={savingHandling} /></div><div className="form-group"><label className="form-label">Odometer</label><FormattedNumberInput allowDecimal={false} value={handlingForm.odometerAtService} onValueChange={value => setHandlingForm(prev => ({ ...prev, odometerAtService: value || 0 }))} disabled={savingHandling} /></div></div>
+                <div className="form-row"><div className="form-group"><label className="form-label">Vendor / Bengkel</label><input className="form-input" value={handlingForm.vendor} onChange={event => setHandlingForm(prev => ({ ...prev, vendor: event.target.value }))} disabled={savingHandling} /></div><div className="form-group"><label className="form-label">Tipe Maintenance</label><input className="form-input" value={handlingForm.maintenanceType} onChange={event => setHandlingForm(prev => ({ ...prev, maintenanceType: event.target.value }))} disabled={savingHandling} /></div></div>
+
+                {handlingForm.sourceMode === 'WAREHOUSE_STOCK' && <div className="form-group"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}><label className="form-label" style={{ marginBottom: 0 }}>Barang Gudang <span className="required">*</span></label><button type="button" className="btn btn-secondary" onClick={addWarehouseHandlingLine} disabled={savingHandling}><Plus size={16} /> Tambah Barang</button></div><div style={{ display: 'grid', gap: 10 }}>{handlingForm.warehouseMaterials.map((row, index) => { const selectedItem = standardWarehouseItems.find(item => item._id === row.warehouseItemRef); return <div key={row.rowId} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}><div className="form-row"><div className="form-group"><label className="form-label">Barang #{index + 1}</label><select className="form-select" value={row.warehouseItemRef} onChange={event => updateWarehouseHandlingLine(row.rowId, { warehouseItemRef: event.target.value })} disabled={savingHandling}><option value="">Pilih barang</option>{stockedStandardWarehouseItems.map(item => <option key={item._id} value={item._id}>{item.itemCode} - {item.name} | Stok {formatQuantity(item.currentStockQty || 0, 3)} {item.unit}</option>)}</select>{selectedItem && <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>Stok tersedia {formatQuantity(selectedItem.currentStockQty || 0, 3)} {selectedItem.unit}</div>}</div><div className="form-group"><label className="form-label">Qty Dipakai</label><FormattedNumberInput allowDecimal maxFractionDigits={3} value={row.quantity} onValueChange={value => updateWarehouseHandlingLine(row.rowId, { quantity: value || 0 })} disabled={savingHandling} /></div></div><div className="form-row"><div className="form-group"><label className="form-label">Komponen Unit</label><input className="form-input" value={row.componentLabel} onChange={event => updateWarehouseHandlingLine(row.rowId, { componentLabel: event.target.value })} disabled={savingHandling || !row.attachToVehicle} /></div><div className="form-group"><label className="form-label">Catatan</label><input className="form-input" value={row.note} onChange={event => updateWarehouseHandlingLine(row.rowId, { note: event.target.value })} disabled={savingHandling} /></div></div><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: '0.85rem' }}><input type="checkbox" checked={row.attachToVehicle} onChange={event => updateWarehouseHandlingLine(row.rowId, { attachToVehicle: event.target.checked })} disabled={savingHandling} /> Digunakan di unit</label><button type="button" className="table-action-btn danger" onClick={() => removeWarehouseHandlingLine(row.rowId)} disabled={savingHandling}><Trash2 size={14} /> Hapus</button></div></div>; })}</div></div>}
+
+                {handlingForm.sourceMode === 'DIRECT_PURCHASE' && <div className="form-group"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}><label className="form-label" style={{ marginBottom: 0 }}>Material Beli Lokal</label><button type="button" className="btn btn-secondary" onClick={addDirectHandlingLine} disabled={savingHandling}><Plus size={16} /> Tambah Material</button></div>{handlingForm.directMaterials.length === 0 ? <div className="empty-state" style={{ padding: '1rem' }}><div className="empty-state-title">Tanpa material</div><div className="empty-state-text">Gunakan untuk perbaikan jasa saja.</div></div> : <div style={{ display: 'grid', gap: 10 }}>{handlingForm.directMaterials.map((row, index) => <div key={row.rowId} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}><div className="form-row"><div className="form-group"><label className="form-label">Acuan Barang #{index + 1}</label><select className="form-select" value={row.linkedWarehouseItemRef} onChange={event => updateDirectHandlingLine(row.rowId, { linkedWarehouseItemRef: event.target.value })} disabled={savingHandling}><option value="">Tidak ada acuan</option>{standardWarehouseItems.map(item => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select></div><div className="form-group"><label className="form-label">Nama Barang</label><input className="form-input" value={row.itemName} onChange={event => updateDirectHandlingLine(row.rowId, { itemName: event.target.value })} disabled={savingHandling} /></div></div><div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={row.unit} onChange={event => updateDirectHandlingLine(row.rowId, { unit: event.target.value as InventoryUnit })} disabled={savingHandling}>{INVENTORY_UNIT_OPTIONS.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Satuan</label><FormattedNumberInput allowDecimal={false} value={row.unitCost} onValueChange={value => updateDirectHandlingLine(row.rowId, { unitCost: value || 0 })} disabled={savingHandling} /></div></div><div className="form-row"><div className="form-group"><label className="form-label">Qty Dipakai</label><FormattedNumberInput allowDecimal maxFractionDigits={3} value={row.quantity} onValueChange={value => updateDirectHandlingLine(row.rowId, { quantity: value || 0 })} disabled={savingHandling} /></div><div className="form-group"><label className="form-label">Sisa Masuk Gudang</label><FormattedNumberInput allowDecimal maxFractionDigits={3} value={row.leftoverQty} onValueChange={value => updateDirectHandlingLine(row.rowId, { leftoverQty: value || 0 })} disabled={savingHandling} /></div></div><div className="form-row"><div className="form-group"><label className="form-label">Barang Gudang Tujuan Sisa</label><select className="form-select" value={row.leftoverWarehouseItemRef} onChange={event => updateDirectHandlingLine(row.rowId, { leftoverWarehouseItemRef: event.target.value })} disabled={savingHandling || row.leftoverQty <= 0}><option value="">Pilih jika ada sisa</option>{standardWarehouseItems.map(item => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select></div><div className="form-group"><label className="form-label">Komponen Unit</label><input className="form-input" value={row.componentLabel} onChange={event => updateDirectHandlingLine(row.rowId, { componentLabel: event.target.value })} disabled={savingHandling || !row.attachToVehicle} /></div></div><div className="form-row"><div className="form-group"><label className="form-label">Catatan</label><input className="form-input" value={row.note} onChange={event => updateDirectHandlingLine(row.rowId, { note: event.target.value })} disabled={savingHandling} /></div><div className="form-group"><label className="form-label">Subtotal</label><input className="form-input" value={formatCurrency((Math.max(row.quantity, 0) + Math.max(row.leftoverQty, 0)) * Math.max(row.unitCost, 0))} readOnly /></div></div><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: '0.85rem' }}><input type="checkbox" checked={row.attachToVehicle} onChange={event => updateDirectHandlingLine(row.rowId, { attachToVehicle: event.target.checked })} disabled={savingHandling} /> Digunakan di unit</label><button type="button" className="table-action-btn danger" onClick={() => removeDirectHandlingLine(row.rowId)} disabled={savingHandling}><Trash2 size={14} /> Hapus</button></div></div>)}</div>}</div>}
+
+                <div className="form-group"><label className="form-label">Catatan Selesai</label><textarea className="form-textarea" rows={3} value={handlingForm.completionNotes} onChange={event => setHandlingForm(prev => ({ ...prev, completionNotes: event.target.value }))} disabled={savingHandling} /></div>
+            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => closeHandlingModal()} disabled={savingHandling}>Batal</button><button className="btn btn-primary" onClick={saveIncidentHandling} disabled={savingHandling || !handlingForm.completedDate || (handlingForm.sourceMode === 'DIRECT_PURCHASE' && (!selectedHandlingLine || directAllocatedTotal > Number(selectedHandlingLine.linkedExpenseAmount ?? selectedHandlingLine.amount ?? 0)))}><Save size={16} /> {savingHandling ? 'Menyimpan...' : 'Simpan Penanganan'}</button></div></div></div>}
 
             {showTireFollowUpModal && tireFollowUpLine && <div className="modal-overlay" onClick={() => closeTireFollowUpModal()}><div className="modal modal-lg" onClick={event => event.stopPropagation()}><div className="modal-header"><h3 className="modal-title">Catat Aset Ban dari Insiden</h3></div><div className="modal-body">
                 <div style={{ padding: '0.85rem 1rem', borderRadius: 12, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
