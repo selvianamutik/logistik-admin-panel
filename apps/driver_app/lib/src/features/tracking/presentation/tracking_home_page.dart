@@ -4823,45 +4823,54 @@ class _DriverIncidentCard extends StatelessWidget {
             }),
             if (actionIncident != null) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: busy ? null : () => onAddCost(actionIncident),
-                  icon: busy
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator.adaptive(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(scheme.primary),
-                          ),
-                        )
-                      : const Icon(Icons.receipt_long_rounded),
-                  label: Text(busy ? 'Mengirim...' : 'Tambah Biaya Insiden'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => onSubmitResolution(actionIncident),
-                  icon: busy
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator.adaptive(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(
-                              scheme.onPrimary,
+              if (actionIncident.canAddResolutionCost) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: busy ? null : () => onAddCost(actionIncident),
+                    icon: busy
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator.adaptive(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                scheme.primary,
+                              ),
                             ),
-                          ),
-                        )
-                      : const Icon(Icons.task_alt_rounded),
-                  label: Text(busy ? 'Mengirim...' : 'Ajukan Selesai Insiden'),
+                          )
+                        : const Icon(Icons.receipt_long_rounded),
+                    label: Text(busy ? 'Mengirim...' : 'Tambah Biaya Insiden'),
+                  ),
                 ),
-              ),
+              ],
+              if (actionIncident.canAddResolutionCost &&
+                  actionIncident.canSubmitResolution)
+                const SizedBox(height: 8),
+              if (actionIncident.canSubmitResolution)
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => onSubmitResolution(actionIncident),
+                    icon: busy
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator.adaptive(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                scheme.onPrimary,
+                              ),
+                            ),
+                          )
+                        : const Icon(Icons.task_alt_rounded),
+                    label: Text(
+                      busy ? 'Mengirim...' : 'Ajukan Selesai Insiden',
+                    ),
+                  ),
+                ),
             ],
           ],
         ),

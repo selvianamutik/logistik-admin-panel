@@ -320,8 +320,14 @@ export async function PATCH(request: Request) {
             log.userRef === auth.session._id &&
             (log.note || '').includes('Driver mengajukan penyelesaian insiden')
         );
-        if (hasDriverResolutionLog && normalizedCosts.length === 0) {
+        const hasPendingDriverResolutionRequest =
+            typeof incident.pendingDriverResolutionRequestedAt === 'string' &&
+            incident.pendingDriverResolutionRequestedAt.trim().length > 0;
+        if ((hasPendingDriverResolutionRequest || hasDriverResolutionLog) && normalizedCosts.length === 0) {
             return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tambahkan biaya baru jika ada perubahan sebelum review admin.' }, { status: 409 });
+        }
+        if (isCostOnlySubmission && !hasPendingDriverResolutionRequest && !hasDriverResolutionLog) {
+            return jsonNoStore({ error: 'Ajukan selesai insiden dulu sebelum menambahkan biaya insiden.' }, { status: 409 });
         }
 
         const now = new Date().toISOString();

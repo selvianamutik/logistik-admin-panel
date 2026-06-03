@@ -532,9 +532,17 @@ class DriverIncident {
   bool get hasPendingDriverResolutionRequest =>
       pendingDriverResolutionRequestedAt?.trim().isNotEmpty == true;
 
-  bool get hasSubmittedResolution => hasPendingDriverResolutionRequest;
+  bool get hasDriverSubmittedSettlementLine =>
+      settlementLines.any((line) => line.isDriverSubmitted);
 
-  bool get hasReviewedResolution => isFinalAdminStage;
+  bool get hasSubmittedResolution =>
+      hasPendingDriverResolutionRequest || hasDriverSubmittedSettlementLine;
+
+  bool get hasReviewedResolution =>
+      isFinalAdminStage ||
+      settlementLines.any(
+        (line) => line.isDriverSubmitted && line.status != 'DRAFT',
+      );
 
   bool get hasPostedResolution => settlementLines.any(
     (line) => line.isDriverSubmitted && line.status == 'POSTED',
@@ -547,7 +555,7 @@ class DriverIncident {
 
   bool get canSubmitResolution => !isFinalAdminStage && !hasSubmittedResolution;
 
-  bool get canAddResolutionCost => !isFinalAdminStage;
+  bool get canAddResolutionCost => isWaitingResolutionReview;
 
   bool get canOpenResolutionForm => canSubmitResolution || canAddResolutionCost;
 
