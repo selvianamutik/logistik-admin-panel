@@ -71,6 +71,7 @@ import {
     handleGenericCreate,
     handleGenericDelete,
     handleGenericUpdate,
+    handleSupplierItemPriceRevise,
     handleTireInstallToSlot,
 } from '@/lib/api/generic-workflows';
 import {
@@ -180,6 +181,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     employees: 'employees',
     'employee-attendance-records': 'attendance',
     suppliers: 'suppliers',
+    'supplier-item-prices': 'suppliers',
     'warehouse-items': 'warehouseItems',
     purchases: 'purchases',
     'purchase-items': 'purchases',
@@ -266,6 +268,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'delete-trip-plan' ||
         action === 'update-trip-plan' ||
         action === 'revise-targets' ||
+        action === 'revise-price' ||
         action === 'set-status' ||
         action === 'set-surat-jalan-status-batch' ||
         action === 'cancel-trip' ||
@@ -1785,6 +1788,10 @@ export async function POST(request: Request) {
 
         if (entity === 'maintenances' && action === 'record-tire-technician-cost') {
             return await handleTireTechnicianCostCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'supplier-item-prices' && action === 'revise-price') {
+            return await handleSupplierItemPriceRevise(session, data, addAuditLog);
         }
 
         if (entity === 'tire-events' && action === 'install-to-slot') {

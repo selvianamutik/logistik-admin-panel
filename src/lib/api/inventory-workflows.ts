@@ -23,6 +23,7 @@ import type {
     Purchase,
     PurchaseItem,
     PurchasePayment,
+    SupplierItemPrice,
     StockMovement,
     StockMovementSourceType,
     TireEvent,
@@ -55,14 +56,17 @@ type AuditLogFn = (
 
 type PurchaseCreateLine = {
     warehouseItemRef: string;
+    supplierItemPriceRef?: string;
     orderedQty: number;
     unitPrice: number;
+    priceOverrideReason?: string;
     notes?: string;
 };
 
 type SupplierDocument = Supplier & { _rev?: string };
 type PurchaseDocument = Purchase & { _rev?: string };
 type PurchaseItemDocument = PurchaseItem & { _rev?: string };
+type SupplierItemPriceDocument = SupplierItemPrice & { _rev?: string };
 type WarehouseItemDocument = WarehouseItem & { _rev?: string };
 
 function formatAuditMoney(amount: number) {
@@ -199,8 +203,10 @@ function normalizePurchaseLines(lines: unknown) {
         }
         const row = line as Record<string, unknown>;
         const warehouseItemRef = normalizeOptionalText(row.warehouseItemRef);
+        const supplierItemPriceRef = normalizeOptionalText(row.supplierItemPriceRef);
         const orderedQty = parseInventoryQuantity(row.orderedQty);
         const unitPrice = parseWholeMoneyAmount(row.unitPrice);
+        const priceOverrideReason = normalizeOptionalText(row.priceOverrideReason);
         const notes = normalizeOptionalText(row.notes);
         if (!warehouseItemRef) {
             throw new Error(`Barang pada baris pembelian #${index + 1} wajib dipilih`);
@@ -213,8 +219,10 @@ function normalizePurchaseLines(lines: unknown) {
         }
         return {
             warehouseItemRef,
+            supplierItemPriceRef,
             orderedQty,
             unitPrice,
+            priceOverrideReason,
             notes,
         } satisfies PurchaseCreateLine;
     });
@@ -225,6 +233,85 @@ function normalizePurchaseLines(lines: unknown) {
     }
 
     return normalizedLines;
+}
+
+function isSupplierPriceEffective(price: SupplierItemPriceDocument, orderDate: string) {
+    const effectiveFrom = normalizeDateOnly(price.effectiveFrom);
+    const effectiveTo = normalizeDateOnly(price.effectiveTo);
+    if (price.active === false && !effectiveTo) return false;
+    if (effectiveFrom && effectiveFrom > orderDate) return false;
+    if (effectiveTo && effectiveTo < orderDate) return false;
+    return true;
+}
+
+async function loadSupplierItemPricesForPurchase(params: {
+    supplierRef: string;
+    orderDate: string;
+    lines: PurchaseCreateLine[];
+}) {
+    const explicitRefs = params.lines.map(line => line.supplierItemPriceRef).filter((value): value is string => Boolean(value));
+    const itemRefs = params.lines.map(line => line.warehouseItemRef);
+    const [explicitPrices, supplierPrices] = await Promise.all([
+        explicitRefs.length > 0
+            ? Promise.all(explicitRefs.map(ref => getDocumentById<SupplierItemPriceDocument>(ref, 'supplierItemPrice')))
+            : Promise.resolve([]),
+        listDocumentsByFilter<SupplierItemPriceDocument>('supplierItemPrice', {
+            supplierRef: params.supplierRef,
+            warehouseItemRef: itemRefs,
+        }),
+    ]);
+
+    const byId = new Map<string, SupplierItemPriceDocument>();
+    for (const price of explicitPrices) {
+        if (price?._type === 'supplierItemPrice') {
+            byId.set(price._id, price);
+        }
+    }
+
+    const byItemRef = new Map<string, SupplierItemPriceDocument>();
+    for (const price of supplierPrices) {
+        if (!isSupplierPriceEffective(price, params.orderDate)) continue;
+        const current = byItemRef.get(price.warehouseItemRef);
+        const currentEffectiveFrom = normalizeDateOnly(current?.effectiveFrom);
+        const nextEffectiveFrom = normalizeDateOnly(price.effectiveFrom);
+        if (
+            !current ||
+            nextEffectiveFrom > currentEffectiveFrom ||
+            (nextEffectiveFrom === currentEffectiveFrom && price.active !== false && current.active === false)
+        ) {
+            byItemRef.set(price.warehouseItemRef, price);
+        }
+    }
+
+    return { byId, byItemRef };
+}
+
+function resolvePurchaseLinePriceSnapshot(params: {
+    line: PurchaseCreateLine;
+    item: WarehouseItemDocument;
+    supplierPrice?: SupplierItemPriceDocument;
+    orderDate: string;
+}) {
+    const supplierPriceAmount = params.supplierPrice
+        ? Math.max(parseWholeMoneyAmount(params.supplierPrice.defaultPurchasePrice), 0)
+        : 0;
+    const warehouseDefaultPrice = Math.max(parseWholeMoneyAmount(params.item.defaultPurchasePrice ?? 0), 0);
+    const sourcePrice = supplierPriceAmount > 0 ? supplierPriceAmount : warehouseDefaultPrice;
+    const unitPrice = Math.max(parseWholeMoneyAmount(params.line.unitPrice), 0);
+    const isManualOverride = sourcePrice > 0 && unitPrice !== sourcePrice;
+
+    return {
+        supplierItemPriceRef: params.supplierPrice?._id,
+        priceSource: isManualOverride
+            ? 'MANUAL'
+            : params.supplierPrice
+                ? 'SUPPLIER_PRICE'
+                : 'WAREHOUSE_DEFAULT',
+        priceEffectiveDate: normalizeDateOnly(params.supplierPrice?.effectiveFrom) || params.orderDate,
+        originalUnitPrice: isManualOverride ? sourcePrice : undefined,
+        priceOverridden: isManualOverride || undefined,
+        priceOverrideReason: isManualOverride ? params.line.priceOverrideReason : undefined,
+    } satisfies Pick<PurchaseItem, 'supplierItemPriceRef' | 'priceSource' | 'priceEffectiveDate' | 'originalUnitPrice' | 'priceOverridden' | 'priceOverrideReason'>;
 }
 
 export async function handlePurchaseCreate(
@@ -252,6 +339,27 @@ export async function handlePurchaseCreate(
 
         const supplier = await resolveSupplierSnapshot(supplierRef);
         const itemSnapshots = await Promise.all(lines.map(line => resolveWarehouseItemSnapshot(line.warehouseItemRef)));
+        const supplierPriceLookup = await loadSupplierItemPricesForPurchase({
+            supplierRef: supplier._id,
+            orderDate,
+            lines,
+        });
+        const lineSupplierPrices = lines.map((line, index) => {
+            const price = line.supplierItemPriceRef
+                ? supplierPriceLookup.byId.get(line.supplierItemPriceRef)
+                : supplierPriceLookup.byItemRef.get(line.warehouseItemRef);
+            if (line.supplierItemPriceRef && !price) {
+                throw new Error(`Harga supplier pada baris pembelian #${index + 1} tidak ditemukan`);
+            }
+            if (!price) return undefined;
+            if (price.supplierRef !== supplier._id || price.warehouseItemRef !== line.warehouseItemRef) {
+                throw new Error(`Harga supplier pada baris pembelian #${index + 1} tidak sesuai supplier atau barang`);
+            }
+            if (!isSupplierPriceEffective(price, orderDate)) {
+                throw new Error(`Harga supplier pada baris pembelian #${index + 1} tidak aktif untuk tanggal pembelian`);
+            }
+            return price;
+        });
         itemSnapshots.forEach((item, index) => {
             if (isTireTrackedWarehouseItem(item)) {
                 assertTrackedTireWarehouseItemDefaults(item);
@@ -263,11 +371,18 @@ export async function handlePurchaseCreate(
 
         const items = lines.map((line, index) => {
             const item = itemSnapshots[index];
+            const priceSnapshot = resolvePurchaseLinePriceSnapshot({
+                line,
+                item,
+                supplierPrice: lineSupplierPrices[index],
+                orderDate,
+            });
             return {
                 _id: `purchase-item-${crypto.randomUUID()}`,
                 _type: 'purchaseItem',
                 purchaseRef: purchaseId,
                 warehouseItemRef: item._id,
+                supplierItemPriceRef: priceSnapshot.supplierItemPriceRef,
                 itemCode: item.itemCode,
                 itemName: item.name,
                 itemUnit: item.unit,
@@ -279,6 +394,11 @@ export async function handlePurchaseCreate(
                 receivedQty: 0,
                 unitPrice: line.unitPrice,
                 subtotal: Math.round(line.orderedQty * line.unitPrice),
+                priceSource: priceSnapshot.priceSource,
+                priceEffectiveDate: priceSnapshot.priceEffectiveDate,
+                originalUnitPrice: priceSnapshot.originalUnitPrice,
+                priceOverridden: priceSnapshot.priceOverridden,
+                priceOverrideReason: priceSnapshot.priceOverrideReason,
                 notes: line.notes,
             } satisfies PurchaseItem;
         });
@@ -447,6 +567,8 @@ export async function handlePurchaseReceive(
             const currentStockQty = Math.max(parseInventoryQuantity(warehouseItem.currentStockQty ?? 0), 0);
             const nextStockQty = currentStockQty + receipt.receivedQty;
             const nextReceivedQty = Math.max(parseInventoryQuantity(item.receivedQty ?? 0), 0) + receipt.receivedQty;
+            const unitCostSnapshot = Math.max(parseWholeMoneyAmount(item.unitPrice), 0);
+            const subtotalCost = Math.round(receipt.receivedQty * unitCostSnapshot);
 
             await updateDocument(item._id, { receivedQty: nextReceivedQty }, 'purchaseItem');
             await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty }, 'warehouseItem');
@@ -460,6 +582,9 @@ export async function handlePurchaseReceive(
                 sourceType: 'PURCHASE_RECEIPT',
                 sourceRef: bundle.purchase._id,
                 sourceNumber: bundle.purchase.purchaseNumber,
+                unitCostSnapshot,
+                subtotalCost,
+                costMethod: 'PURCHASE_PRICE',
                 note: receipt.note,
                 createdBy: session._id,
                 createdByName: session.name,
@@ -610,6 +735,8 @@ export async function handleStockMovementCreate(
             return NextResponse.json({ error: 'Stok barang tidak cukup untuk dikeluarkan' }, { status: 409 });
         }
         const nextStockQty = sourceType === 'MANUAL_OUT' ? currentStockQty - quantity : currentStockQty + quantity;
+        const unitCostSnapshot = Math.max(parseWholeMoneyAmount(warehouseItem.defaultPurchasePrice ?? 0), 0);
+        const subtotalCost = Math.round(quantity * unitCostSnapshot);
         const movementDoc: StockMovement = {
             _id: `stock-movement-${crypto.randomUUID()}`,
             _type: 'stockMovement',
@@ -622,6 +749,9 @@ export async function handleStockMovementCreate(
             sourceType,
             quantity,
             balanceAfter: nextStockQty,
+            unitCostSnapshot,
+            subtotalCost,
+            costMethod: 'WAREHOUSE_DEFAULT',
             note,
             createdBy: session._id,
             createdByName: session.name,
@@ -632,7 +762,7 @@ export async function handleStockMovementCreate(
         await postStockMovementJournal(
             session,
             movementDoc,
-            parseWholeMoneyAmount(warehouseItem.defaultPurchasePrice ?? 0)
+            unitCostSnapshot
         );
 
         await addAuditLog(

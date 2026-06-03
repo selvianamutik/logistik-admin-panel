@@ -62,6 +62,8 @@ type MaintenanceSnapshot = Maintenance & {
 type MaterialUsageInput = {
     warehouseItemRef: string;
     quantity: number;
+    attachToVehicle?: boolean;
+    componentLabel?: string;
     note?: string;
 };
 
@@ -97,6 +99,8 @@ function normalizeMaterialUsageInputs(value: unknown) {
         const row = entry as Record<string, unknown>;
         const warehouseItemRef = normalizeOptionalText(row.warehouseItemRef);
         const quantity = parseInventoryQuantity(row.quantity);
+        const attachToVehicle = row.attachToVehicle === true;
+        const componentLabel = normalizeOptionalText(row.componentLabel);
         const note = normalizeOptionalText(row.note);
         if (!warehouseItemRef) {
             throw new Error(`Barang gudang pada baris material #${index + 1} wajib dipilih`);
@@ -107,6 +111,8 @@ function normalizeMaterialUsageInputs(value: unknown) {
         return {
             warehouseItemRef,
             quantity,
+            attachToVehicle,
+            componentLabel,
             note,
         } satisfies MaterialUsageInput;
     });
@@ -418,6 +424,9 @@ export async function handleMaintenanceComplete(
                 sourceNumber: buildMaintenanceSourceNumber(maintenance),
                 quantity: materialInput.quantity,
                 balanceAfter: nextStockQty,
+                unitCostSnapshot,
+                subtotalCost,
+                costMethod: 'MOVING_AVERAGE',
                 note: materialInput.note || `Dipakai untuk ${maintenance.type} ${maintenance.vehiclePlate || ''}`.trim(),
                 createdBy: session._id,
                 createdByName: session.name,
@@ -435,6 +444,14 @@ export async function handleMaintenanceComplete(
                 quantity: materialInput.quantity,
                 unitCostSnapshot,
                 subtotalCost,
+                attachmentStatus: materialInput.attachToVehicle ? 'INSTALLED' : 'CONSUMED',
+                attachedToVehicle: materialInput.attachToVehicle || undefined,
+                installedOnVehicleRef: materialInput.attachToVehicle ? maintenance.vehicleRef : undefined,
+                installedOnVehiclePlate: materialInput.attachToVehicle ? maintenance.vehiclePlate : undefined,
+                installedAtMaintenanceRef: materialInput.attachToVehicle ? maintenance._id : undefined,
+                installedDate: materialInput.attachToVehicle ? completedDate : undefined,
+                installedOdometer: materialInput.attachToVehicle ? odometerParsed : undefined,
+                componentLabel: materialInput.attachToVehicle ? (materialInput.componentLabel || item.name) : undefined,
                 note: materialInput.note,
             });
         }
@@ -663,6 +680,11 @@ export async function handleTireTechnicianCostCreate(
                 note: 'Konteks ganti/pasang ban',
             });
         }
+        const materialCostTotal = materialUsages.reduce(
+            (sum, usage) => sum + Math.max(parseWholeMoneyAmount(usage.subtotalCost), 0),
+            0,
+        );
+        const totalMaintenanceCost = materialCostTotal + laborCost;
         const maintenanceDoc: Maintenance = {
             _id: maintenanceRef,
             _type: 'maintenance',
@@ -678,10 +700,10 @@ export async function handleTireTechnicianCostCreate(
             attachmentUrls: [],
             materialUsages,
             materialUsageCount: materialUsages.length,
-            materialCostTotal: 0,
+            materialCostTotal,
             laborCost,
-            totalCost: laborCost,
-            cost: laborCost,
+            totalCost: totalMaintenanceCost,
+            cost: totalMaintenanceCost,
             source: 'TIRE_REPLACEMENT',
         };
 

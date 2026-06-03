@@ -4,6 +4,7 @@ export const DOCUMENT_TYPE_MAP: Record<string, string> = {
     employees: 'employee',
     'employee-attendance-records': 'employeeAttendanceRecord',
     suppliers: 'supplier',
+    'supplier-item-prices': 'supplierItemPrice',
     'warehouse-items': 'warehouseItem',
     purchases: 'purchase',
     'purchase-items': 'purchaseItem',

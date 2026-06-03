@@ -18,6 +18,7 @@ type SupportedDocType =
     | 'auditLog'
     | 'customer'
     | 'supplier'
+    | 'supplierItemPrice'
     | 'warehouseItem'
     | 'tireEvent'
     | 'tireHistoryLog'
@@ -299,6 +300,29 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
             defaultTermDays: 'default_term_days',
             active: 'active',
             notes: 'notes',
+        },
+    },
+    supplierItemPrice: {
+        table: 'supplier_item_prices',
+        fieldMap: {
+            supplierRef: 'supplier_ref',
+            supplierCode: 'supplier_code',
+            supplierName: 'supplier_name',
+            warehouseItemRef: 'warehouse_item_ref',
+            itemCode: 'item_code',
+            itemName: 'item_name',
+            itemUnit: 'item_unit',
+            supplierSku: 'supplier_sku',
+            supplierItemName: 'supplier_item_name',
+            defaultPurchasePrice: 'default_purchase_price',
+            minOrderQty: 'min_order_qty',
+            leadTimeDays: 'lead_time_days',
+            effectiveFrom: 'effective_from',
+            effectiveTo: 'effective_to',
+            active: 'active',
+            notes: 'notes',
+            createdAt: 'created_at_business',
+            updatedAt: 'updated_at_business',
         },
     },
     warehouseItem: {
@@ -730,6 +754,7 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
         fieldMap: {
             purchaseRef: 'purchase_ref',
             warehouseItemRef: 'warehouse_item_ref',
+            supplierItemPriceRef: 'supplier_item_price_ref',
             itemCode: 'item_code',
             itemName: 'item_name',
             itemUnit: 'item_unit',
@@ -741,6 +766,11 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
             receivedQty: 'received_qty',
             unitPrice: 'unit_price',
             subtotal: 'subtotal',
+            priceSource: 'price_source',
+            priceEffectiveDate: 'price_effective_date',
+            originalUnitPrice: 'original_unit_price',
+            priceOverridden: 'price_overridden',
+            priceOverrideReason: 'price_override_reason',
             notes: 'notes',
         },
     },
@@ -776,6 +806,9 @@ const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
             sourceNumber: 'source_number',
             quantity: 'quantity',
             balanceAfter: 'balance_after',
+            unitCostSnapshot: 'unit_cost_snapshot',
+            subtotalCost: 'subtotal_cost',
+            costMethod: 'cost_method',
             note: 'note',
             createdBy: 'created_by',
             createdByName: 'created_by_name',

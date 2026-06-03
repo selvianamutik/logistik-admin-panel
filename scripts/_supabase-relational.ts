@@ -29,6 +29,7 @@ const RELATIONAL_SEED_ORDER = [
     'journal_lines',
     'suppliers',
     'warehouse_items',
+    'supplier_item_prices',
     'purchases',
     'purchase_items',
     'purchase_payments',
@@ -86,6 +87,7 @@ export const RELATIONAL_SUPPORTED_DOC_TYPES = [
     'customer',
     'supplier',
     'warehouseItem',
+    'supplierItemPrice',
     'tireEvent',
     'tireHistoryLog',
     'customerProduct',
@@ -360,6 +362,39 @@ function mapWarehouseItems(docs: SeedDoc[]) {
                 'minStockQty', 'currentStockQty', 'defaultSupplierRef', 'defaultSupplierName',
                 'defaultPurchasePrice', 'tireTypeDefault', 'tireBrandDefault', 'tireSizeDefault',
                 'active', 'notes',
+            ]),
+        }));
+}
+
+function mapSupplierItemPrices(docs: SeedDoc[]) {
+    return docs
+        .filter(doc => doc._type === 'supplierItemPrice')
+        .map(doc => ({
+            ...mapCommon(doc),
+            supplier_ref: toText(doc.supplierRef),
+            supplier_code: toText(doc.supplierCode),
+            supplier_name: toText(doc.supplierName),
+            warehouse_item_ref: toText(doc.warehouseItemRef),
+            item_code: toText(doc.itemCode),
+            item_name: toText(doc.itemName),
+            item_unit: toText(doc.itemUnit),
+            supplier_sku: toText(doc.supplierSku),
+            supplier_item_name: toText(doc.supplierItemName),
+            default_purchase_price: toNumber(doc.defaultPurchasePrice) ?? 0,
+            min_order_qty: toNumber(doc.minOrderQty),
+            lead_time_days: toNumber(doc.leadTimeDays),
+            effective_from: toText(doc.effectiveFrom),
+            effective_to: toText(doc.effectiveTo),
+            active: toBoolean(doc.active, true),
+            notes: toText(doc.notes),
+            created_at_business: toTimestamp(doc.createdAt),
+            updated_at_business: toTimestamp(doc.updatedAt),
+            extra_data: omitKeys(doc, [
+                '_id', '_type', '_createdAt', '_updatedAt',
+                'supplierRef', 'supplierCode', 'supplierName', 'warehouseItemRef',
+                'itemCode', 'itemName', 'itemUnit', 'supplierSku', 'supplierItemName',
+                'defaultPurchasePrice', 'minOrderQty', 'leadTimeDays', 'effectiveFrom',
+                'effectiveTo', 'active', 'notes', 'createdAt', 'updatedAt',
             ]),
         }));
 }
@@ -988,12 +1023,20 @@ function mapPurchaseItems(docs: SeedDoc[]) {
             received_qty: toNumber(doc.receivedQty),
             unit_price: toNumber(doc.unitPrice) ?? 0,
             subtotal: toNumber(doc.subtotal) ?? 0,
+            supplier_item_price_ref: toText(doc.supplierItemPriceRef),
+            price_source: toText(doc.priceSource),
+            price_effective_date: toText(doc.priceEffectiveDate),
+            original_unit_price: toNumber(doc.originalUnitPrice),
+            price_overridden: toBoolean(doc.priceOverridden, false),
+            price_override_reason: toText(doc.priceOverrideReason),
             notes: toText(doc.notes),
             extra_data: omitKeys(doc, [
                 '_id', '_type', '_createdAt', '_updatedAt',
                 'purchaseRef', 'warehouseItemRef', 'itemCode', 'itemName', 'itemUnit',
                 'trackingMode', 'tireTypeDefault', 'tireBrandDefault', 'tireSizeDefault',
-                'orderedQty', 'receivedQty', 'unitPrice', 'subtotal', 'notes',
+                'orderedQty', 'receivedQty', 'unitPrice', 'subtotal', 'supplierItemPriceRef',
+                'priceSource', 'priceEffectiveDate', 'originalUnitPrice', 'priceOverridden',
+                'priceOverrideReason', 'notes',
             ]),
         }));
 }
@@ -1041,6 +1084,9 @@ function mapStockMovements(docs: SeedDoc[]) {
             source_number: toText(doc.sourceNumber),
             quantity: toNumber(doc.quantity) ?? 0,
             balance_after: toNumber(doc.balanceAfter),
+            unit_cost_snapshot: toNumber(doc.unitCostSnapshot),
+            subtotal_cost: toNumber(doc.subtotalCost),
+            cost_method: toText(doc.costMethod),
             note: toText(doc.note),
             created_by: resolveSeedUserRef(docs, doc.createdBy),
             created_by_name: toText(doc.createdByName),
@@ -1048,7 +1094,8 @@ function mapStockMovements(docs: SeedDoc[]) {
                 '_id', '_type', '_createdAt', '_updatedAt',
                 'warehouseItemRef', 'itemCode', 'itemName', 'unit', 'movementDate',
                 'type', 'sourceType', 'sourceRef', 'sourceNumber', 'quantity',
-                'balanceAfter', 'note', 'createdBy', 'createdByName',
+                'balanceAfter', 'unitCostSnapshot', 'subtotalCost', 'costMethod',
+                'note', 'createdBy', 'createdByName',
             ]),
         }));
 }
@@ -1940,6 +1987,7 @@ function buildRelationalPayloads(docs: SeedDoc[]) {
         customers: mapCustomers(docs),
         suppliers: mapSuppliers(docs),
         warehouse_items: mapWarehouseItems(docs),
+        supplier_item_prices: mapSupplierItemPrices(docs),
         tire_events: mapTireEvents(docs),
         tire_history_logs: mapTireHistoryLogs(docs),
         customer_products: mapCustomerProducts(docs),

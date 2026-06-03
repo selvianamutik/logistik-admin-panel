@@ -33,6 +33,12 @@ import { useApp, useToast } from '../../../layout';
 type ReceiveLineState = { purchaseItemRef: string; itemName: string; remainingQty: number; receivedQty: number; note: string; unit: string };
 type PaymentFormState = { date: string; bankAccountRef: string; amount: number; note: string };
 
+const PRICE_SOURCE_LABELS: Record<NonNullable<PurchaseItem['priceSource']>, string> = {
+  SUPPLIER_PRICE: 'Harga Supplier',
+  WAREHOUSE_DEFAULT: 'Default Barang',
+  MANUAL: 'Manual',
+};
+
 function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
   const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
   const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
@@ -57,6 +63,11 @@ function getDateOnly(value: string | undefined | null) {
 
 function getMaxDate(...values: Array<string | undefined | null>) {
   return values.map(getDateOnly).filter(Boolean).sort().at(-1) || getBusinessDateValue();
+}
+
+function getPurchaseItemPriceSourceLabel(item: PurchaseItem) {
+  const baseLabel = item.priceSource ? PRICE_SOURCE_LABELS[item.priceSource] || item.priceSource : 'Snapshot';
+  return item.priceOverridden ? `${baseLabel} (Override)` : baseLabel;
 }
 
 function buildReceiveState(items: PurchaseItem[]): ReceiveLineState[] {
@@ -304,7 +315,7 @@ export default function PurchaseDetailPage() {
         <div className="card-body">
           <div className="table-wrapper table-desktop-only">
             <table>
-              <thead><tr><th>Kode</th><th>Barang</th><th>Satuan</th><th>Qty Pesan</th><th>Qty Terima</th><th>Sisa</th><th>Harga</th><th>Subtotal</th></tr></thead>
+              <thead><tr><th>Kode</th><th>Barang</th><th>Satuan</th><th>Qty Pesan</th><th>Qty Terima</th><th>Sisa</th><th>Harga</th><th>Sumber Harga</th><th>Subtotal</th></tr></thead>
               <tbody>
                 {items.map((item) => {
                   const remainingQty = Math.max(Number(item.orderedQty || 0) - Number(item.receivedQty || 0), 0);
@@ -325,6 +336,7 @@ export default function PurchaseDetailPage() {
                       <td>{formatInventoryQuantity(item.receivedQty || 0)}</td>
                       <td>{formatInventoryQuantity(remainingQty)}</td>
                       <td>{formatCurrency(Number(item.unitPrice || 0))}</td>
+                      <td>{getPurchaseItemPriceSourceLabel(item)}</td>
                       <td>{formatCurrency(Number(item.subtotal || 0))}</td>
                     </tr>
                   );
@@ -344,6 +356,7 @@ export default function PurchaseDetailPage() {
                     <div className="mobile-record-field"><span className="mobile-record-label">Qty Terima</span><span className="mobile-record-value">{formatInventoryQuantity(item.receivedQty || 0)}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Sisa</span><span className="mobile-record-value">{formatInventoryQuantity(remainingQty)}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Harga</span><span className="mobile-record-value">{formatCurrency(Number(item.unitPrice || 0))}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Sumber Harga</span><span className="mobile-record-value">{getPurchaseItemPriceSourceLabel(item)}</span></div>
                     <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Subtotal</span><span className="mobile-record-value">{formatCurrency(Number(item.subtotal || 0))}</span></div>
                     {isTireTrackedWarehouseItem(item) && (
                       <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Ban Terdaftar</span><span className="mobile-record-value">{registeredTires.length}/{Math.round(Number(item.receivedQty || 0))}</span></div>
@@ -403,7 +416,7 @@ export default function PurchaseDetailPage() {
           {stockMovements.length === 0 ? <div className="text-muted">Belum ada penerimaan barang untuk pembelian ini.</div> : (
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Tanggal</th><th>Barang</th><th>Sumber</th><th>Qty</th><th>Saldo Setelah</th><th>Catatan</th></tr></thead>
+                <thead><tr><th>Tanggal</th><th>Barang</th><th>Sumber</th><th>Qty</th><th>Harga Snapshot</th><th>Nilai</th><th>Saldo Setelah</th><th>Catatan</th></tr></thead>
                 <tbody>
                   {stockMovements.map((movement) => (
                     <tr key={movement._id}>
@@ -411,6 +424,8 @@ export default function PurchaseDetailPage() {
                       <td>{movement.itemCode || '-'} - {movement.itemName || '-'}</td>
                       <td>{STOCK_MOVEMENT_SOURCE_LABELS[movement.sourceType] || movement.sourceType}</td>
                       <td>{formatInventoryQuantity(movement.quantity)} {movement.unit || ''}</td>
+                      <td>{Number(movement.unitCostSnapshot || 0) > 0 ? formatCurrency(Number(movement.unitCostSnapshot || 0)) : '-'}</td>
+                      <td>{Number(movement.subtotalCost || 0) > 0 ? formatCurrency(Number(movement.subtotalCost || 0)) : '-'}</td>
                       <td>{formatInventoryQuantity(movement.balanceAfter || 0)} {movement.unit || ''}</td>
                       <td>{movement.note || '-'}</td>
                     </tr>

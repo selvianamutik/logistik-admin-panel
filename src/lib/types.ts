@@ -330,6 +330,29 @@ export interface WarehouseItem {
   notes?: string;
 }
 
+export interface SupplierItemPrice {
+  _id: string;
+  _type: 'supplierItemPrice';
+  supplierRef: string;
+  supplierCode?: string;
+  supplierName?: string;
+  warehouseItemRef: string;
+  itemCode?: string;
+  itemName?: string;
+  itemUnit?: InventoryUnit;
+  supplierSku?: string;
+  supplierItemName?: string;
+  defaultPurchasePrice: number;
+  minOrderQty?: number;
+  leadTimeDays?: number;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  active: boolean;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type PurchaseStatus =
   | 'ORDERED'
   | 'PARTIALLY_RECEIVED'
@@ -367,6 +390,7 @@ export interface PurchaseItem {
   _type: 'purchaseItem';
   purchaseRef: string;
   warehouseItemRef: string;
+  supplierItemPriceRef?: string;
   itemCode?: string;
   itemName?: string;
   itemUnit?: InventoryUnit;
@@ -378,6 +402,11 @@ export interface PurchaseItem {
   receivedQty?: number;
   unitPrice: number;
   subtotal: number;
+  priceSource?: 'SUPPLIER_PRICE' | 'WAREHOUSE_DEFAULT' | 'MANUAL';
+  priceEffectiveDate?: string;
+  originalUnitPrice?: number;
+  priceOverridden?: boolean;
+  priceOverrideReason?: string;
   notes?: string;
 }
 
@@ -408,6 +437,13 @@ export type StockMovementSourceType =
   | 'MAINTENANCE_USAGE'
   | 'TIRE_DEPLOYMENT'
   | 'TIRE_RETURN';
+export type StockMovementCostMethod =
+  | 'PURCHASE_PRICE'
+  | 'MOVING_AVERAGE'
+  | 'WAREHOUSE_DEFAULT'
+  | 'MANUAL'
+  | 'TIRE_ASSET'
+  | 'NONE';
 
 export interface StockMovement {
   _id: string;
@@ -423,6 +459,9 @@ export interface StockMovement {
   sourceNumber?: string;
   quantity: number;
   balanceAfter?: number;
+  unitCostSnapshot?: number;
+  subtotalCost?: number;
+  costMethod?: StockMovementCostMethod;
   note?: string;
   createdBy?: string;
   createdByName?: string;
@@ -1249,6 +1288,7 @@ export interface Vehicle {
 // ── Maintenance ──
 export type MaintenanceStatus = 'SCHEDULED' | 'DONE' | 'SKIPPED';
 export type ScheduleType = 'DATE' | 'ODOMETER';
+export type MaintenanceMaterialAttachmentStatus = 'CONSUMED' | 'INSTALLED';
 
 export interface MaintenanceMaterialUsage {
   warehouseItemRef: string;
@@ -1259,6 +1299,14 @@ export interface MaintenanceMaterialUsage {
   quantity: number;
   unitCostSnapshot?: number;
   subtotalCost?: number;
+  attachmentStatus?: MaintenanceMaterialAttachmentStatus;
+  attachedToVehicle?: boolean;
+  installedOnVehicleRef?: string;
+  installedOnVehiclePlate?: string;
+  installedAtMaintenanceRef?: string;
+  installedDate?: string;
+  installedOdometer?: number;
+  componentLabel?: string;
   note?: string;
 }
 

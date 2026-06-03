@@ -15,6 +15,8 @@ const accountingWorkflowsPath = path.join(process.cwd(), 'src/lib/api/accounting
 const accountingWorkflowsSource = fs.readFileSync(accountingWorkflowsPath, 'utf8');
 const backfillAccountingPath = path.join(process.cwd(), 'scripts/backfill-accounting-journals.ts');
 const backfillAccountingSource = fs.readFileSync(backfillAccountingPath, 'utf8');
+const genericWorkflowsPath = path.join(process.cwd(), 'src/lib/api/generic-workflows.ts');
+const genericWorkflowsSource = fs.readFileSync(genericWorkflowsPath, 'utf8');
 const driverWorkflowPath = path.join(process.cwd(), 'src/lib/api/driver-workflows.ts');
 const driverWorkflowSource = fs.readFileSync(driverWorkflowPath, 'utf8');
 const documentStorePath = path.join(process.cwd(), 'src/lib/repositories/document-store.ts');
@@ -205,6 +207,36 @@ for (const item of freightNotaUpdateActions) {
         `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
     );
 }
+
+for (const item of [
+    {
+        entity: 'supplier-item-prices',
+        action: 'revise-price',
+        handler: 'handleSupplierItemPriceRevise',
+    },
+]) {
+    assertActionMappedToUpdate(mutationPermissionBlock, item.action);
+    assertDispatch(postBlock, item.entity, item.action, item.handler);
+    assert(
+        source.includes(item.handler),
+        `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
+    );
+}
+
+const supplierPriceRevisionBlock = extractBalancedBlockFrom(
+    genericWorkflowsSource,
+    'handleSupplierItemPriceRevise',
+    'export async function handleSupplierItemPriceRevise'
+);
+assert(
+    supplierPriceRevisionBlock.includes('supplierPriceHistoricalFieldsChanged') &&
+    supplierPriceRevisionBlock.includes('Harga supplier historis yang sudah dipakai pembelian tidak boleh ditimpa'),
+    'Revisi harga supplier harus menolak overwrite field historis yang sudah dipakai pembelian.'
+);
+assert(
+    supplierPriceRevisionBlock.includes('nextEffectiveFrom < existingEffectiveFrom'),
+    'Revisi harga supplier harus menolak tanggal efektif yang mundur dari versi lama.'
+);
 
 const manualJournalActions = [
     {

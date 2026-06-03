@@ -33,7 +33,7 @@ import {
 } from '@/lib/tire-inventory';
 import { isTireTrackedWarehouseItem } from '@/lib/inventory';
 import { getTripRouteOvertonaseRatePerKg } from '@/lib/trip-route-rate-support';
-import type { BankTransaction, CompanyProfile, Maintenance, TireHistoryLog, User, WarehouseItem } from '@/lib/types';
+import type { BankTransaction, CompanyProfile, Maintenance, SupplierItemPrice, TireHistoryLog, User, WarehouseItem } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -57,6 +57,7 @@ import {
     normalizeCustomerPickupPayload,
     normalizeCustomerProductPayload,
     normalizeCustomerRecipientPayload,
+    normalizeSupplierItemPricePayload,
     normalizeSupplierPayload,
     normalizeTripRouteRatePayload,
     normalizeWarehouseItemPayload,
@@ -618,6 +619,9 @@ function buildCreateAuditSummary(entity: string, newDoc: Record<string, unknown>
     }
     if (entity === 'suppliers') {
         return `Tambah supplier ${buildCreateSummary(newDoc, fallbackId)}`;
+    }
+    if (entity === 'supplier-item-prices') {
+        return `Tambah harga barang supplier ${buildCreateSummary(newDoc, fallbackId)}`;
     }
     if (entity === 'warehouse-items') {
         return `Tambah barang gudang ${buildCreateSummary(newDoc, fallbackId)}`;
@@ -1227,6 +1231,179 @@ function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
     return message.includes(documentId) && /already exists/i.test(message);
 }
 
+function normalizeDateOnlyValue(value: unknown) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
+        ? value.slice(0, 10)
+        : '';
+}
+
+function dateBefore(dateValue: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return '';
+    const date = new Date(`${dateValue}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) return '';
+    date.setUTCDate(date.getUTCDate() - 1);
+    return date.toISOString().slice(0, 10);
+}
+
+function valuesDiffer(left: unknown, right: unknown) {
+    const leftNumber = typeof left === 'number' ? left : Number(left);
+    const rightNumber = typeof right === 'number' ? right : Number(right);
+    if (Number.isFinite(leftNumber) || Number.isFinite(rightNumber)) {
+        return Math.round(Number.isFinite(leftNumber) ? leftNumber : 0) !== Math.round(Number.isFinite(rightNumber) ? rightNumber : 0);
+    }
+    return String(left || '') !== String(right || '');
+}
+
+function supplierPriceHistoricalFieldsChanged(existing: Record<string, unknown>, updates: Record<string, unknown>) {
+    const protectedFields = ['supplierRef', 'warehouseItemRef', 'defaultPurchasePrice', 'effectiveFrom', 'effectiveTo'];
+    return protectedFields.some((field) => {
+        if (!Object.prototype.hasOwnProperty.call(updates, field)) return false;
+        if (field === 'effectiveFrom' || field === 'effectiveTo') {
+            return normalizeDateOnlyValue(existing[field]) !== normalizeDateOnlyValue(updates[field]);
+        }
+        return valuesDiffer(existing[field], updates[field]);
+    });
+}
+
+function supplierPriceRevisionFieldsChanged(existing: SupplierItemPrice, next: Record<string, unknown>) {
+    return (
+        valuesDiffer(existing.defaultPurchasePrice, next.defaultPurchasePrice) ||
+        normalizeDateOnlyValue(existing.effectiveFrom) !== normalizeDateOnlyValue(next.effectiveFrom) ||
+        normalizeDateOnlyValue(existing.effectiveTo) !== normalizeDateOnlyValue(next.effectiveTo)
+    );
+}
+
+export async function handleSupplierItemPriceRevise(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const updatesInput = isPlainObject(data.updates) ? data.updates : null;
+    if (!id || !updatesInput) {
+        return NextResponse.json({ error: 'Data revisi harga barang supplier tidak valid' }, { status: 400 });
+    }
+
+    const existing = await getDocumentById<(SupplierItemPrice & { _rev?: string })>(id, 'supplierItemPrice');
+    if (!existing) {
+        return NextResponse.json({ error: 'Harga barang supplier tidak ditemukan' }, { status: 404 });
+    }
+    if (!existing._rev && !isSupabaseBackendEnabled()) {
+        return NextResponse.json({ error: 'Revisi harga barang supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    let sanitized: Record<string, unknown>;
+    try {
+        sanitized = await normalizeSupplierItemPricePayload(updatesInput, existing as unknown as Record<string, unknown>);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Data harga barang supplier tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const relatedPurchaseItem = await listDocumentsByFilter<{ _id: string }>('purchaseItem', { supplierItemPriceRef: id })
+        .then(rows => rows[0] || null);
+    const shouldCreateRevision =
+        existing.active !== false &&
+        sanitized.active !== false &&
+        Boolean(relatedPurchaseItem) &&
+        supplierPriceRevisionFieldsChanged(existing, sanitized);
+    const touchesHistoricalFields = supplierPriceHistoricalFieldsChanged(
+        existing as unknown as Record<string, unknown>,
+        sanitized
+    );
+
+    if (!shouldCreateRevision) {
+        if (relatedPurchaseItem && touchesHistoricalFields) {
+            return NextResponse.json(
+                { error: 'Harga supplier historis yang sudah dipakai pembelian tidak boleh ditimpa. Gunakan revisi harga dari versi aktif agar histori tetap utuh.' },
+                { status: 409 }
+            );
+        }
+        try {
+            const updated = await updateDocument(id, sanitized, 'supplierItemPrice');
+            await addAuditLog(
+                session,
+                'UPDATE',
+                'supplier-item-prices',
+                id,
+                `Perbarui harga barang supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+            );
+            return NextResponse.json({ success: true, data: updated, id });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Harga barang supplier berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+    }
+
+    const now = new Date().toISOString();
+    const nextEffectiveFrom = normalizeDateOnlyValue(sanitized.effectiveFrom) || getBusinessDateValue();
+    const previousDate = dateBefore(nextEffectiveFrom);
+    const existingEffectiveFrom = normalizeDateOnlyValue(existing.effectiveFrom);
+    if (existingEffectiveFrom && nextEffectiveFrom < existingEffectiveFrom) {
+        return NextResponse.json(
+            { error: 'Tanggal efektif revisi harga tidak boleh lebih awal dari tanggal efektif harga lama.' },
+            { status: 400 }
+        );
+    }
+    const closeEffectiveTo =
+        existingEffectiveFrom && previousDate && previousDate < existingEffectiveFrom
+            ? existingEffectiveFrom
+            : previousDate || nextEffectiveFrom;
+    const previousEffectiveTo = existing.effectiveTo;
+    const previousActive = existing.active !== false;
+    const newId = `supplier-item-price-${crypto.randomUUID()}`;
+    const newDoc = {
+        ...sanitized,
+        _id: newId,
+        _type: 'supplierItemPrice',
+        active: true,
+        effectiveFrom: nextEffectiveFrom,
+        createdAt: now,
+        updatedAt: now,
+    };
+
+    try {
+        await updateDocument(id, {
+            active: false,
+            effectiveTo: closeEffectiveTo,
+            updatedAt: now,
+        }, 'supplierItemPrice');
+        const created = await createDocument(newDoc as { _type: string; [key: string]: unknown });
+        await addAuditLog(
+            session,
+            'UPDATE',
+            'supplier-item-prices',
+            id,
+            `Revisi harga barang supplier ${existing.supplierName || ''} ${existing.itemCode || id}: ${Number(existing.defaultPurchasePrice || 0).toLocaleString('id-ID')} -> ${Number(sanitized.defaultPurchasePrice || 0).toLocaleString('id-ID')}`
+        );
+        return NextResponse.json({ success: true, data: created, id: newId, previousId: id });
+    } catch (error) {
+        try {
+            await updateDocument(id, {
+                active: previousActive,
+                effectiveTo: previousEffectiveTo || null,
+                updatedAt: existing.updatedAt || now,
+            }, 'supplierItemPrice');
+        } catch {
+            // Best-effort rollback only; the caller still receives the original mutation error.
+        }
+        if (isMutationConflictError(error) || isDocumentAlreadyExistsError(error, newId)) {
+            return NextResponse.json(
+                { error: 'Harga barang supplier berubah atau sudah punya revisi aktif lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+}
+
 export async function handleGenericUpdate(
     session: ApiSession,
     entity: string,
@@ -1537,6 +1714,22 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data supplier tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'supplier-item-prices') {
+        const existingSupplierItemPrice = await getDocumentById<Record<string, unknown>>(id, 'supplierItemPrice');
+        if (!existingSupplierItemPrice) {
+            return NextResponse.json({ error: 'Harga barang supplier tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeSupplierItemPricePayload(updates, existingSupplierItemPrice);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data harga barang supplier tidak valid' },
                 { status: 400 }
             );
         }
@@ -1873,6 +2066,19 @@ export async function handleGenericUpdate(
     if (!currentDoc._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (
+        entity === 'supplier-item-prices' &&
+        supplierPriceHistoricalFieldsChanged(currentDoc, persistedNormalizedUpdates)
+    ) {
+        const relatedPurchaseItem = await listDocumentsByFilter<{ _id: string }>('purchaseItem', { supplierItemPriceRef: id })
+            .then(rows => rows[0] || null);
+        if (relatedPurchaseItem) {
+            return NextResponse.json(
+                { error: 'Harga supplier yang sudah dipakai pembelian tidak boleh ditimpa. Gunakan revisi harga agar histori tetap utuh.' },
+                { status: 409 }
+            );
+        }
+    }
 
     let updated: unknown;
     try {
@@ -1973,9 +2179,11 @@ export async function handleGenericUpdate(
                 ? `Perbarui absensi ${buildEmployeeAttendanceSummary(updated as Record<string, unknown>, id)}`
                 : entity === 'suppliers'
                     ? `Perbarui supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                    : entity === 'warehouse-items'
-                        ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                        : entity === 'users'
+                    : entity === 'supplier-item-prices'
+                        ? `Perbarui harga barang supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                        : entity === 'warehouse-items'
+                            ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                            : entity === 'users'
                             ? buildUserUpdateAuditSummary(
                                 currentDoc,
                                 updated as Record<string, unknown>,
@@ -2097,12 +2305,13 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Revisi supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const [relatedPurchase, defaultWarehouseItem] = await Promise.all([
+        const [relatedPurchase, defaultWarehouseItem, relatedSupplierItemPrice] = await Promise.all([
             listDocumentsByFilter<{ _id: string }>('purchase', { supplierRef: id }).then(rows => rows[0] || null),
             listDocumentsByFilter<{ _id: string }>('warehouseItem', { defaultSupplierRef: id }).then(rows => rows[0] || null),
+            listDocumentsByFilter<{ _id: string }>('supplierItemPrice', { supplierRef: id }).then(rows => rows[0] || null),
         ]);
-        if (relatedPurchase || defaultWarehouseItem) {
-            return NextResponse.json({ error: 'Supplier yang sudah dipakai pembelian atau default barang tidak boleh dihapus' }, { status: 409 });
+        if (relatedPurchase || defaultWarehouseItem || relatedSupplierItemPrice) {
+            return NextResponse.json({ error: 'Supplier yang sudah dipakai pembelian, default barang, atau harga barang supplier tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
@@ -2113,6 +2322,46 @@ export async function handleGenericDelete(
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'Supplier berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+    }
+
+    if (entity === 'supplier-item-prices') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Harga barang supplier tidak valid' }, { status: 400 });
+        }
+
+        const supplierItemPrice = await getDocumentById<{ _id: string; _rev?: string; itemCode?: string; supplierName?: string }>(id, 'supplierItemPrice');
+        if (!supplierItemPrice) {
+            return NextResponse.json({ error: 'Harga barang supplier tidak ditemukan' }, { status: 404 });
+        }
+        if (!supplierItemPrice._rev && !isSupabaseBackendEnabled()) {
+            return NextResponse.json({ error: 'Revisi harga barang supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        const relatedPurchaseItem = await listDocumentsByFilter<{ _id: string }>('purchaseItem', { supplierItemPriceRef: id }).then(rows => rows[0] || null);
+        if (relatedPurchaseItem) {
+            return NextResponse.json({ error: 'Harga barang supplier yang sudah dipakai pembelian tidak boleh dihapus. Nonaktifkan saja agar histori tetap utuh.' }, { status: 409 });
+        }
+
+        try {
+            await deleteDocument(id, 'supplierItemPrice');
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted supplier item price ${supplierItemPrice.supplierName || ''} ${supplierItemPrice.itemCode || id}`.trim()
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Harga barang supplier berubah atau baru dipakai transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2134,12 +2383,13 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Revisi barang gudang tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const [relatedPurchaseItem, relatedMovement] = await Promise.all([
+        const [relatedPurchaseItem, relatedMovement, relatedSupplierItemPrice] = await Promise.all([
             listDocumentsByFilter<{ _id: string }>('purchaseItem', { warehouseItemRef: id }).then(rows => rows[0] || null),
             listDocumentsByFilter<{ _id: string }>('stockMovement', { warehouseItemRef: id }).then(rows => rows[0] || null),
+            listDocumentsByFilter<{ _id: string }>('supplierItemPrice', { warehouseItemRef: id }).then(rows => rows[0] || null),
         ]);
-        if (relatedPurchaseItem || relatedMovement) {
-            return NextResponse.json({ error: 'Barang gudang yang sudah punya histori pembelian atau stok tidak boleh dihapus' }, { status: 409 });
+        if (relatedPurchaseItem || relatedMovement || relatedSupplierItemPrice) {
+            return NextResponse.json({ error: 'Barang gudang yang sudah punya histori pembelian, stok, atau harga supplier tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
@@ -2613,6 +2863,18 @@ export async function handleGenericCreate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data supplier tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'supplier-item-prices') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeSupplierItemPricePayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data harga barang supplier tidak valid' },
                 { status: 400 }
             );
         }

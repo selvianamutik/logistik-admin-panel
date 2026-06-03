@@ -15,7 +15,7 @@ import {
 } from '@/lib/inventory';
 import { hasPermission } from '@/lib/rbac';
 import { normalizeTireType } from '@/lib/tire-types';
-import type { Supplier, WarehouseItem } from '@/lib/types';
+import type { Supplier, SupplierItemPrice, WarehouseItem } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
 import { useApp, useToast } from '../../../layout';
@@ -23,13 +23,14 @@ import { useApp, useToast } from '../../../layout';
 type PurchaseLineForm = {
   rowId: string;
   warehouseItemRef: string;
+  supplierItemPriceRef: string;
   orderedQty: number;
   unitPrice: number;
   notes: string;
 };
 
 function createLine(): PurchaseLineForm {
-  return { rowId: crypto.randomUUID(), warehouseItemRef: '', orderedQty: 0, unitPrice: 0, notes: '' };
+  return { rowId: crypto.randomUUID(), warehouseItemRef: '', supplierItemPriceRef: '', orderedQty: 0, unitPrice: 0, notes: '' };
 }
 
 export default function PurchaseNewPage() {
@@ -38,6 +39,7 @@ export default function PurchaseNewPage() {
   const { addToast } = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<WarehouseItem[]>([]);
+  const [supplierItemPrices, setSupplierItemPrices] = useState<SupplierItemPrice[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [supplierRef, setSupplierRef] = useState('');
@@ -50,6 +52,30 @@ export default function PurchaseNewPage() {
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.active !== false), [suppliers]);
   const activeItems = useMemo(() => items.filter((item) => item.active !== false), [items]);
   const selectedSupplier = useMemo(() => activeSuppliers.find((supplier) => supplier._id === supplierRef) || null, [activeSuppliers, supplierRef]);
+  const activeSupplierPrices = useMemo(
+    () => supplierItemPrices.filter((price) => price.supplierRef === supplierRef && (price.active !== false || Boolean(price.effectiveTo))),
+    [supplierItemPrices, supplierRef],
+  );
+  const supplierPricesByItem = useMemo(() => {
+    const map = new Map<string, SupplierItemPrice>();
+    activeSupplierPrices.forEach((price) => {
+      if (!price.warehouseItemRef) return;
+      const effectiveFrom = typeof price.effectiveFrom === 'string' ? price.effectiveFrom.slice(0, 10) : '';
+      const effectiveTo = typeof price.effectiveTo === 'string' ? price.effectiveTo.slice(0, 10) : '';
+      if (effectiveFrom && effectiveFrom > orderDate) return;
+      if (effectiveTo && effectiveTo < orderDate) return;
+      const current = map.get(price.warehouseItemRef);
+      const currentEffectiveFrom = typeof current?.effectiveFrom === 'string' ? current.effectiveFrom.slice(0, 10) : '';
+      if (
+        !current ||
+        effectiveFrom > currentEffectiveFrom ||
+        (effectiveFrom === currentEffectiveFrom && price.active !== false && current.active === false)
+      ) {
+        map.set(price.warehouseItemRef, price);
+      }
+    });
+    return map;
+  }, [activeSupplierPrices, orderDate]);
   const totals = useMemo(() => {
     const totalQty = lines.reduce((sum, line) => sum + Number(line.orderedQty || 0), 0);
     const totalAmount = lines.reduce((sum, line) => sum + (Number(line.orderedQty || 0) * Number(line.unitPrice || 0)), 0);
@@ -60,12 +86,14 @@ export default function PurchaseNewPage() {
     async function loadReferences() {
       setLoading(true);
       try {
-        const [supplierRows, itemRows] = await Promise.all([
+        const [supplierRows, itemRows, supplierPriceRows] = await Promise.all([
           fetchAllAdminCollectionData<Supplier>('/api/data?entity=suppliers&pageSize=200', 'Gagal memuat supplier', 200),
           fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items&pageSize=200', 'Gagal memuat barang gudang', 200),
+          fetchAllAdminCollectionData<SupplierItemPrice>('/api/data?entity=supplier-item-prices&pageSize=1000', 'Gagal memuat harga barang supplier', 1000),
         ]);
         setSuppliers(supplierRows || []);
         setItems(itemRows || []);
+        setSupplierItemPrices(supplierPriceRows || []);
         const firstSupplier = (supplierRows || []).find((supplier) => supplier.active !== false);
         if (firstSupplier) {
           setSupplierRef(firstSupplier._id);
@@ -92,10 +120,27 @@ export default function PurchaseNewPage() {
   const addLine = () => setLines((current) => [...current, createLine()]);
   const removeLine = (rowId: string) => setLines((current) => current.length === 1 ? current : current.filter((line) => line.rowId !== rowId));
 
-  const handleItemChange = (rowId: string, warehouseItemRef: string) => {
+  const getDefaultLinePrice = (warehouseItemRef: string) => {
     const selectedItem = activeItems.find((item) => item._id === warehouseItemRef);
-    updateLine(rowId, { warehouseItemRef, unitPrice: selectedItem?.defaultPurchasePrice || 0 });
+    const supplierPrice = supplierPricesByItem.get(warehouseItemRef);
+    return {
+      unitPrice: supplierPrice?.defaultPurchasePrice || selectedItem?.defaultPurchasePrice || 0,
+      supplierItemPriceRef: supplierPrice?._id || '',
+    };
   };
+
+  const handleItemChange = (rowId: string, warehouseItemRef: string) => {
+    updateLine(rowId, { warehouseItemRef, ...getDefaultLinePrice(warehouseItemRef) });
+  };
+
+  useEffect(() => {
+    setLines((current) => current.map((line) => {
+      if (!line.warehouseItemRef) return line;
+      return { ...line, ...getDefaultLinePrice(line.warehouseItemRef) };
+    }));
+    // Reprice selected lines only when supplier/date references change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierRef, supplierPricesByItem]);
 
   const handleSave = async () => {
     if (!canCreatePurchase) return addToast('error', 'Anda tidak punya hak membuat pembelian');
@@ -117,6 +162,7 @@ export default function PurchaseNewPage() {
             notes: notes || undefined,
             items: validLines.map((line) => ({
               warehouseItemRef: line.warehouseItemRef,
+              supplierItemPriceRef: line.supplierItemPriceRef || undefined,
               orderedQty: line.orderedQty,
               unitPrice: line.unitPrice,
               notes: line.notes || undefined,
@@ -169,6 +215,7 @@ export default function PurchaseNewPage() {
           <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
             {lines.map((line, index) => {
               const selectedItem = activeItems.find((item) => item._id === line.warehouseItemRef);
+              const selectedSupplierPrice = line.supplierItemPriceRef ? supplierItemPrices.find((price) => price._id === line.supplierItemPriceRef) : null;
               const isTrackedTireItem = isTireTrackedWarehouseItem(selectedItem);
               const lineSubtotal = Number(line.orderedQty || 0) * Number(line.unitPrice || 0);
               return (
@@ -190,6 +237,7 @@ export default function PurchaseNewPage() {
                     {selectedItem && (
                       <div className="text-muted text-xs" style={{ display: 'grid', gap: '0.2rem' }}>
                         <div>Satuan {selectedItem.unit} | Stok saat ini {formatInventoryQuantity(selectedItem.currentStockQty || 0)} {selectedItem.unit}</div>
+                        <div>{selectedSupplierPrice ? `Harga supplier ${selectedSupplier?.name || ''}: ${formatCurrency(Number(selectedSupplierPrice.defaultPurchasePrice || 0))}` : 'Harga memakai default master barang'}</div>
                         <div>Mode {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedItem.trackingMode || 'STANDARD']}</div>
                         {isTrackedTireItem && (
                           <div>

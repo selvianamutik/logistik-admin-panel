@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { CreditCard, Edit, Package, Receipt, Save, X } from 'lucide-react';
+import { CreditCard, Edit, Package, Plus, Receipt, Save, X } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
@@ -23,7 +23,7 @@ import {
   buildSupplierRelatedItems,
   type SupplierRelatedItem,
 } from '@/lib/supplier-purchase-support';
-import type { Purchase, PurchaseItem, PurchasePayment, Supplier, WarehouseItem } from '@/lib/types';
+import type { Purchase, PurchaseItem, PurchasePayment, Supplier, SupplierItemPrice, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate, formatQuantity } from '@/lib/utils';
 
 import { useApp, useToast } from '../../layout';
@@ -41,6 +41,19 @@ type SupplierFormState = {
   active: boolean;
 };
 
+type SupplierItemPriceFormState = {
+  warehouseItemRef: string;
+  supplierSku: string;
+  supplierItemName: string;
+  defaultPurchasePrice: number;
+  minOrderQty: number;
+  leadTimeDays: number;
+  effectiveFrom: string;
+  effectiveTo: string;
+  notes: string;
+  active: boolean;
+};
+
 const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => ({
   supplierCode: supplier?.supplierCode || '',
   name: supplier?.name || '',
@@ -50,6 +63,19 @@ const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => (
   defaultTermDays: typeof supplier?.defaultTermDays === 'number' ? supplier.defaultTermDays : 14,
   notes: supplier?.notes || '',
   active: supplier?.active !== false,
+});
+
+const createDefaultSupplierItemPriceForm = (price?: Partial<SupplierItemPrice>): SupplierItemPriceFormState => ({
+  warehouseItemRef: price?.warehouseItemRef || '',
+  supplierSku: price?.supplierSku || '',
+  supplierItemName: price?.supplierItemName || '',
+  defaultPurchasePrice: typeof price?.defaultPurchasePrice === 'number' ? price.defaultPurchasePrice : 0,
+  minOrderQty: typeof price?.minOrderQty === 'number' ? price.minOrderQty : 0,
+  leadTimeDays: typeof price?.leadTimeDays === 'number' ? price.leadTimeDays : 0,
+  effectiveFrom: typeof price?.effectiveFrom === 'string' ? price.effectiveFrom.slice(0, 10) : getBusinessDateValue(),
+  effectiveTo: typeof price?.effectiveTo === 'string' ? price.effectiveTo.slice(0, 10) : '',
+  notes: price?.notes || '',
+  active: price?.active !== false,
 });
 
 function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
@@ -77,12 +103,20 @@ export default function SupplierDetailPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<PurchasePayment[]>([]);
   const [items, setItems] = useState<SupplierRelatedItem[]>([]);
+  const [supplierItemPrices, setSupplierItemPrices] = useState<SupplierItemPrice[]>([]);
+  const [allWarehouseItems, setAllWarehouseItems] = useState<WarehouseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SupplierDetailTab>('detail');
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [editingPrice, setEditingPrice] = useState<SupplierItemPrice | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingPrice, setSavingPrice] = useState(false);
   const [form, setForm] = useState<SupplierFormState>(createDefaultForm());
+  const [priceForm, setPriceForm] = useState<SupplierItemPriceFormState>(createDefaultSupplierItemPriceForm());
   const canManage = user ? hasPermission(user.role, 'suppliers', 'create') || hasPermission(user.role, 'suppliers', 'update') : false;
+  const canCreateSupplierPrice = user ? hasPermission(user.role, 'suppliers', 'create') : false;
+  const canUpdateSupplierPrice = user ? hasPermission(user.role, 'suppliers', 'update') : false;
   const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
   const canOpenItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
@@ -97,10 +131,14 @@ export default function SupplierDetailPage() {
         return;
       }
 
-      const [purchaseRows, paymentRows, defaultItemRows] = await Promise.all([
+      const [purchaseRows, paymentRows, defaultItemRows, supplierPriceRows, allWarehouseItemRows] = await Promise.all([
         fetchAllAdminCollectionData<Purchase>(`/api/data?entity=purchases&filter=${encodeURIComponent(JSON.stringify({ supplierRef: supplierId }))}&sortField=orderDate&sortDir=desc`, 'Gagal memuat pembelian supplier'),
         fetchAllAdminCollectionData<PurchasePayment>(`/api/data?entity=purchase-payments&filter=${encodeURIComponent(JSON.stringify({ supplierRef: supplierId }))}&sortField=date&sortDir=desc`, 'Gagal memuat pembayaran supplier'),
         fetchAllAdminCollectionData<WarehouseItem>(`/api/data?entity=warehouse-items&filter=${encodeURIComponent(JSON.stringify({ defaultSupplierRef: supplierId }))}&sortField=itemCode&sortDir=asc`, 'Gagal memuat barang gudang supplier'),
+        fetchAllAdminCollectionData<SupplierItemPrice>(`/api/data?entity=supplier-item-prices&filter=${encodeURIComponent(JSON.stringify({ supplierRef: supplierId }))}&sortField=itemCode&sortDir=asc`, 'Gagal memuat harga barang supplier'),
+        canOpenItems
+          ? fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items&pageSize=1000&sortField=itemCode&sortDir=asc', 'Gagal memuat master barang gudang', 1000)
+          : Promise.resolve([] as WarehouseItem[]),
       ]);
       const purchaseIds = (purchaseRows || []).map((purchase) => purchase._id).filter(Boolean);
       const purchaseItemRows = purchaseIds.length > 0
@@ -128,12 +166,19 @@ export default function SupplierDetailPage() {
       setPurchases((purchaseRows || []).sort((a, b) => String(b.orderDate || '').localeCompare(String(a.orderDate || ''))));
       setPayments((paymentRows || []).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))));
       setItems(relatedItems);
+      setSupplierItemPrices((supplierPriceRows || []).sort((a, b) => {
+        const itemCompare = `${a.itemCode || ''}-${a.itemName || ''}`.localeCompare(`${b.itemCode || ''}-${b.itemName || ''}`);
+        if (itemCompare !== 0) return itemCompare;
+        if ((a.active !== false) !== (b.active !== false)) return a.active !== false ? -1 : 1;
+        return String(b.effectiveFrom || '').localeCompare(String(a.effectiveFrom || ''));
+      }));
+      setAllWarehouseItems((allWarehouseItemRows || []).sort((a, b) => String(a.itemCode || '').localeCompare(String(b.itemCode || ''))));
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supplier');
     } finally {
       setLoading(false);
     }
-  }, [addToast, supplierId]);
+  }, [addToast, canOpenItems, supplierId]);
 
   useEffect(() => { void loadSupplierDetail(); }, [loadSupplierDetail]);
 
@@ -164,6 +209,25 @@ export default function SupplierDetailPage() {
     () => items.filter((item) => item.relationType === 'DEFAULT').length,
     [items],
   );
+  const activeWarehouseItems = useMemo(
+    () => allWarehouseItems.filter((item) => item.active !== false),
+    [allWarehouseItems],
+  );
+  const supplierPriceByItemRef = useMemo(() => {
+    const map = new Map<string, SupplierItemPrice>();
+    supplierItemPrices
+      .filter((price) => price.active !== false)
+      .forEach((price) => {
+        if (!price.warehouseItemRef) return;
+        const current = map.get(price.warehouseItemRef);
+        const currentEffectiveFrom = typeof current?.effectiveFrom === 'string' ? current.effectiveFrom.slice(0, 10) : '';
+        const nextEffectiveFrom = typeof price.effectiveFrom === 'string' ? price.effectiveFrom.slice(0, 10) : '';
+        if (!current || nextEffectiveFrom >= currentEffectiveFrom) {
+          map.set(price.warehouseItemRef, price);
+        }
+      });
+    return map;
+  }, [supplierItemPrices]);
 
   const openEditModal = () => {
     if (!supplier || !canManage) return;
@@ -175,6 +239,33 @@ export default function SupplierDetailPage() {
     if (saving) return;
     setShowEditModal(false);
     setForm(createDefaultForm(supplier || undefined));
+  };
+
+  const openCreatePriceModal = () => {
+    if (!supplier || !canCreateSupplierPrice || !canOpenItems) return;
+    setEditingPrice(null);
+    setPriceForm(createDefaultSupplierItemPriceForm());
+    setShowPriceModal(true);
+  };
+
+  const openEditPriceModal = (price: SupplierItemPrice) => {
+    if (!supplier || !canUpdateSupplierPrice || !canOpenItems) return;
+    setEditingPrice(price);
+    setPriceForm(createDefaultSupplierItemPriceForm(price));
+    setShowPriceModal(true);
+  };
+
+  const closePriceModal = () => {
+    if (savingPrice) return;
+    setShowPriceModal(false);
+    setEditingPrice(null);
+    setPriceForm(createDefaultSupplierItemPriceForm());
+  };
+
+  const formatEffectiveRange = (price: SupplierItemPrice) => {
+    const from = typeof price.effectiveFrom === 'string' && price.effectiveFrom ? formatDate(price.effectiveFrom.slice(0, 10)) : '-';
+    const to = typeof price.effectiveTo === 'string' && price.effectiveTo ? formatDate(price.effectiveTo.slice(0, 10)) : 'Seterusnya';
+    return `${from} - ${to}`;
   };
 
   const handleSave = async () => {
@@ -220,6 +311,64 @@ export default function SupplierDetailPage() {
       addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan supplier');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSavePrice = async () => {
+    if (!supplier) return;
+    const canSave = editingPrice ? canUpdateSupplierPrice : canCreateSupplierPrice;
+    if (!canSave || !canOpenItems) {
+      addToast('error', 'Anda tidak punya hak mengubah harga barang supplier');
+      return;
+    }
+    if (!priceForm.warehouseItemRef) {
+      addToast('error', 'Barang gudang wajib dipilih');
+      return;
+    }
+    if (Number(priceForm.defaultPurchasePrice || 0) <= 0) {
+      addToast('error', 'Harga supplier wajib lebih dari 0');
+      return;
+    }
+    if (priceForm.effectiveFrom && priceForm.effectiveTo && priceForm.effectiveTo < priceForm.effectiveFrom) {
+      addToast('error', 'Tanggal akhir efektif tidak boleh sebelum tanggal mulai');
+      return;
+    }
+
+    setSavingPrice(true);
+    try {
+      const payload = {
+        supplierRef: supplier._id,
+        warehouseItemRef: priceForm.warehouseItemRef,
+        supplierSku: priceForm.supplierSku || undefined,
+        supplierItemName: priceForm.supplierItemName || undefined,
+        defaultPurchasePrice: priceForm.defaultPurchasePrice,
+        minOrderQty: Number(priceForm.minOrderQty || 0) > 0 ? priceForm.minOrderQty : undefined,
+        leadTimeDays: Number(priceForm.leadTimeDays || 0) > 0 ? priceForm.leadTimeDays : undefined,
+        effectiveFrom: priceForm.effectiveFrom || undefined,
+        effectiveTo: priceForm.effectiveTo || undefined,
+        notes: priceForm.notes || undefined,
+        active: priceForm.active,
+      };
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity: 'supplier-item-prices',
+          action: editingPrice ? 'revise-price' : 'create',
+          data: editingPrice
+            ? { id: editingPrice._id, updates: payload }
+            : payload,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Gagal menyimpan harga barang supplier');
+      addToast('success', editingPrice ? 'Harga barang supplier diperbarui' : 'Harga barang supplier ditambahkan');
+      closePriceModal();
+      await loadSupplierDetail();
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan harga barang supplier');
+    } finally {
+      setSavingPrice(false);
     }
   };
 
@@ -529,108 +678,314 @@ export default function SupplierDetailPage() {
       )}
 
       {activeTab === 'items' && (
-      <div className="card">
-        <div className="card-header">
-          <span className="card-header-title">Barang Gudang Terkait</span>
-        </div>
-        <div className="card-body">
-          {items.length === 0 ? (
-            <div className="empty-state">
-              <Package size={40} className="empty-state-icon" />
-              <div className="empty-state-title">Belum ada barang default atau riwayat pembelian untuk supplier ini</div>
-            </div>
-          ) : (
-            <>
-              <div className="text-muted" style={{ marginBottom: '1rem', lineHeight: 1.6 }}>
-                Barang di bawah ini diambil dari dua sumber: master barang yang memakai supplier ini sebagai default, dan item yang benar-benar pernah dibeli dari supplier ini.
+      <div style={{ display: 'grid', gap: '1.5rem' }}>
+        <div className="card">
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+            <span className="card-header-title">Harga Barang Supplier</span>
+            {canCreateSupplierPrice && canOpenItems && (
+              <button type="button" className="btn btn-secondary" onClick={openCreatePriceModal}>
+                <Plus size={16} /> Tambah Harga
+              </button>
+            )}
+          </div>
+          <div className="card-body">
+            {supplierItemPrices.length === 0 ? (
+              <div className="empty-state">
+                <Package size={40} className="empty-state-icon" />
+                <div className="empty-state-title">Belum ada harga barang supplier</div>
               </div>
-              <div className="table-wrapper table-desktop-only">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Kode</th>
-                      <th>Barang</th>
-                      <th>Relasi</th>
-                      <th>Qty Diterima</th>
-                      <th>Stok</th>
-                      <th>Pembelian Terakhir</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={item._id}>
-                        <td className="font-mono">
-                          {canOpenItems ? (
-                            <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
-                              {item.itemCode}
-                            </Link>
-                          ) : item.itemCode}
-                        </td>
-                        <td>{item.name}</td>
-                        <td>
-                          <span className={`badge ${item.relationType === 'DEFAULT' ? 'badge-info' : item.relationType === 'PURCHASED' ? 'badge-warning' : 'badge-success'}`}>
-                            {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
-                          </span>
-                        </td>
-                        <td>{formatQuantity(item.totalReceivedQty)} {item.unit}</td>
-                        <td>{formatQuantity(item.currentStockQty)} {item.unit}</td>
-                        <td>{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</td>
-                        <td>
+            ) : (
+              <>
+                <div className="table-wrapper table-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Kode</th>
+                        <th>Barang</th>
+                        <th>SKU Supplier</th>
+                        <th>Harga</th>
+                        <th>MOQ</th>
+                        <th>Lead Time</th>
+                        <th>Efektif</th>
+                        <th>Status</th>
+                        {canUpdateSupplierPrice && canOpenItems && <th>Aksi</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {supplierItemPrices.map((price) => (
+                        <tr key={price._id}>
+                          <td className="font-mono">
+                            {canOpenItems && price.warehouseItemRef ? (
+                              <Link href={`/inventory/items/${price.warehouseItemRef}`} style={{ color: 'var(--color-primary)' }}>
+                                {price.itemCode || '-'}
+                              </Link>
+                            ) : (price.itemCode || '-')}
+                          </td>
+                          <td>{price.supplierItemName || price.itemName || '-'}</td>
+                          <td>{price.supplierSku || '-'}</td>
+                          <td>{formatCurrency(Number(price.defaultPurchasePrice || 0))}</td>
+                          <td>{Number(price.minOrderQty || 0) > 0 ? `${formatQuantity(Number(price.minOrderQty || 0))} ${price.itemUnit || ''}` : '-'}</td>
+                          <td>{Number(price.leadTimeDays || 0) > 0 ? `${price.leadTimeDays} hari` : '-'}</td>
+                          <td>{formatEffectiveRange(price)}</td>
+                          <td>
+                            <span className={`badge ${price.active !== false ? 'badge-success' : 'badge-gray'}`}>
+                              {price.active !== false ? 'Aktif' : 'Nonaktif'}
+                            </span>
+                          </td>
+                          {canUpdateSupplierPrice && canOpenItems && (
+                            <td>
+                              <button type="button" className="btn btn-secondary btn-sm" onClick={() => openEditPriceModal(price)}>
+                                <Edit size={14} /> Edit
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-record-list">
+                  {supplierItemPrices.map((price) => (
+                    <div key={price._id} className="mobile-record-card">
+                      <div className="mobile-record-header">
+                        <div>
+                          <div className="mobile-record-title">{price.supplierItemName || price.itemName || '-'}</div>
+                          <div className="mobile-record-subtitle">{price.itemCode || '-'}{price.supplierSku ? ` | ${price.supplierSku}` : ''}</div>
+                        </div>
+                        <span className={`badge ${price.active !== false ? 'badge-success' : 'badge-gray'}`}>
+                          {price.active !== false ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </div>
+                      <div className="mobile-record-grid">
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Harga</span>
+                          <span className="mobile-record-value">{formatCurrency(Number(price.defaultPurchasePrice || 0))}</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">MOQ</span>
+                          <span className="mobile-record-value">{Number(price.minOrderQty || 0) > 0 ? `${formatQuantity(Number(price.minOrderQty || 0))} ${price.itemUnit || ''}` : '-'}</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Lead Time</span>
+                          <span className="mobile-record-value">{Number(price.leadTimeDays || 0) > 0 ? `${price.leadTimeDays} hari` : '-'}</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Efektif</span>
+                          <span className="mobile-record-value">{formatEffectiveRange(price)}</span>
+                        </div>
+                        {canUpdateSupplierPrice && canOpenItems && (
+                          <div className="mobile-record-field mobile-record-field-full">
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => openEditPriceModal(price)}>
+                              <Edit size={14} /> Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-header-title">Barang Gudang Terkait</span>
+          </div>
+          <div className="card-body">
+            {items.length === 0 ? (
+              <div className="empty-state">
+                <Package size={40} className="empty-state-icon" />
+                <div className="empty-state-title">Belum ada barang default atau riwayat pembelian untuk supplier ini</div>
+              </div>
+            ) : (
+              <>
+                <div className="text-muted" style={{ marginBottom: '1rem', lineHeight: 1.6 }}>
+                  Barang di bawah ini diambil dari master default dan riwayat pembelian supplier.
+                </div>
+                <div className="table-wrapper table-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Kode</th>
+                        <th>Barang</th>
+                        <th>Relasi</th>
+                        <th>Harga Supplier</th>
+                        <th>Qty Diterima</th>
+                        <th>Stok</th>
+                        <th>Pembelian Terakhir</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const supplierPrice = supplierPriceByItemRef.get(item._id);
+                        return (
+                          <tr key={item._id}>
+                            <td className="font-mono">
+                              {canOpenItems ? (
+                                <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
+                                  {item.itemCode}
+                                </Link>
+                              ) : item.itemCode}
+                            </td>
+                            <td>{item.name}</td>
+                            <td>
+                              <span className={`badge ${item.relationType === 'DEFAULT' ? 'badge-info' : item.relationType === 'PURCHASED' ? 'badge-warning' : 'badge-success'}`}>
+                                {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
+                              </span>
+                            </td>
+                            <td>{supplierPrice ? formatCurrency(Number(supplierPrice.defaultPurchasePrice || 0)) : '-'}</td>
+                            <td>{formatQuantity(item.totalReceivedQty)} {item.unit}</td>
+                            <td>{formatQuantity(item.currentStockQty)} {item.unit}</td>
+                            <td>{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</td>
+                            <td>
+                              <span className={`badge ${item.active ? 'badge-success' : 'badge-gray'}`}>
+                                {item.active ? 'Aktif' : 'Nonaktif'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-record-list">
+                  {items.map((item) => {
+                    const supplierPrice = supplierPriceByItemRef.get(item._id);
+                    return (
+                      <div key={item._id} className="mobile-record-card">
+                        <div className="mobile-record-header">
+                          <div>
+                            <div className="mobile-record-title">
+                              {canOpenItems ? (
+                                <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
+                                  {item.name}
+                                </Link>
+                              ) : item.name}
+                            </div>
+                            <div className="mobile-record-subtitle">{item.itemCode}</div>
+                          </div>
                           <span className={`badge ${item.active ? 'badge-success' : 'badge-gray'}`}>
                             {item.active ? 'Aktif' : 'Nonaktif'}
                           </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mobile-record-list">
-                {items.map((item) => (
-                  <div key={item._id} className="mobile-record-card">
-                    <div className="mobile-record-header">
-                      <div>
-                        <div className="mobile-record-title">
-                          {canOpenItems ? (
-                            <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
-                              {item.name}
-                            </Link>
-                          ) : item.name}
                         </div>
-                        <div className="mobile-record-subtitle">{item.itemCode}</div>
+                        <div className="mobile-record-grid">
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Relasi</span>
+                            <span className="mobile-record-value">
+                              {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
+                            </span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Harga Supplier</span>
+                            <span className="mobile-record-value">{supplierPrice ? formatCurrency(Number(supplierPrice.defaultPurchasePrice || 0)) : '-'}</span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Qty Diterima</span>
+                            <span className="mobile-record-value">{formatQuantity(item.totalReceivedQty)} {item.unit}</span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Stok</span>
+                            <span className="mobile-record-value">{formatQuantity(item.currentStockQty)} {item.unit}</span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Pembelian Terakhir</span>
+                            <span className="mobile-record-value">{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</span>
+                          </div>
+                        </div>
                       </div>
-                      <span className={`badge ${item.active ? 'badge-success' : 'badge-gray'}`}>
-                        {item.active ? 'Aktif' : 'Nonaktif'}
-                      </span>
-                    </div>
-                    <div className="mobile-record-grid">
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Relasi</span>
-                        <span className="mobile-record-value">
-                          {item.relationType === 'DEFAULT' ? 'Default' : item.relationType === 'PURCHASED' ? 'Dibeli' : 'Default + Dibeli'}
-                        </span>
-                      </div>
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Qty Diterima</span>
-                        <span className="mobile-record-value">{formatQuantity(item.totalReceivedQty)} {item.unit}</span>
-                      </div>
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Stok</span>
-                        <span className="mobile-record-value">{formatQuantity(item.currentStockQty)} {item.unit}</span>
-                      </div>
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Pembelian Terakhir</span>
-                        <span className="mobile-record-value">{item.lastPurchaseDate ? formatDate(item.lastPurchaseDate) : '-'}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
+      )}
+
+      {showPriceModal && (
+        <div className="modal-overlay" onClick={closePriceModal}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{editingPrice ? 'Revisi Harga Barang Supplier' : 'Tambah Harga Barang Supplier'}</h3>
+              <button className="modal-close" onClick={closePriceModal} disabled={savingPrice}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Barang Gudang</label>
+                  <select
+                    className="form-select"
+                    value={priceForm.warehouseItemRef}
+                    onChange={(event) => setPriceForm((current) => ({ ...current, warehouseItemRef: event.target.value }))}
+                    disabled={Boolean(editingPrice) || savingPrice}
+                  >
+                    <option value="">Pilih barang</option>
+                    {activeWarehouseItems.map((item) => (
+                      <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Harga Beli Supplier (Rp)</label>
+                  <FormattedNumberInput allowDecimal={false} min={0} value={priceForm.defaultPurchasePrice} onValueChange={(value) => setPriceForm((current) => ({ ...current, defaultPurchasePrice: value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">SKU Supplier</label>
+                  <input className="form-input" value={priceForm.supplierSku} onChange={(event) => setPriceForm((current) => ({ ...current, supplierSku: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Nama Barang di Supplier</label>
+                  <input className="form-input" value={priceForm.supplierItemName} onChange={(event) => setPriceForm((current) => ({ ...current, supplierItemName: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">MOQ</label>
+                  <FormattedNumberInput min={0} maxFractionDigits={3} value={priceForm.minOrderQty} onValueChange={(value) => setPriceForm((current) => ({ ...current, minOrderQty: value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Lead Time (hari)</label>
+                  <FormattedNumberInput allowDecimal={false} min={0} value={priceForm.leadTimeDays} onValueChange={(value) => setPriceForm((current) => ({ ...current, leadTimeDays: value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Efektif Mulai</label>
+                  <input type="date" className="form-input" value={priceForm.effectiveFrom} onChange={(event) => setPriceForm((current) => ({ ...current, effectiveFrom: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Efektif Sampai</label>
+                  <input type="date" className="form-input" value={priceForm.effectiveTo} onChange={(event) => setPriceForm((current) => ({ ...current, effectiveTo: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Catatan</label>
+                <textarea className="form-textarea" rows={3} value={priceForm.notes} onChange={(event) => setPriceForm((current) => ({ ...current, notes: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-select" value={priceForm.active ? 'active' : 'inactive'} onChange={(event) => setPriceForm((current) => ({ ...current, active: event.target.value === 'active' }))}>
+                  <option value="active">Aktif</option>
+                  <option value="inactive">Nonaktif</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closePriceModal} disabled={savingPrice}>Batal</button>
+              <button className="btn btn-primary" onClick={() => void handleSavePrice()} disabled={savingPrice}>
+                <Save size={16} /> {savingPrice ? 'Menyimpan...' : editingPrice ? 'Simpan Revisi' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showEditModal && (

@@ -59,6 +59,9 @@ export function buildTrackedTireStockMovementDoc(params: {
   warehouseItem: Pick<WarehouseItem, '_id' | 'itemCode' | 'name' | 'unit'>;
   quantity: number;
   balanceAfter: number;
+  unitCostSnapshot?: number;
+  subtotalCost?: number;
+  costMethod?: StockMovement['costMethod'];
   movementDate: string;
   type: StockMovement['type'];
   sourceType: StockMovement['sourceType'];
@@ -82,6 +85,9 @@ export function buildTrackedTireStockMovementDoc(params: {
     sourceNumber: params.sourceNumber,
     quantity: params.quantity,
     balanceAfter: params.balanceAfter,
+    unitCostSnapshot: params.unitCostSnapshot,
+    subtotalCost: params.subtotalCost,
+    costMethod: params.costMethod,
     note: params.note,
     createdBy: params.createdBy,
     createdByName: params.createdByName,

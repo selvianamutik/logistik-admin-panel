@@ -44,6 +44,7 @@ import {
 } from '@/lib/vehicle-detail-page-support';
 import { VEHICLE_OWNERSHIP_LABELS } from '@/lib/fleet-vehicle-page-support';
 import {
+    getInstalledVehicleComponentRows,
     getMaintenanceMaterialOverflowCount,
     getMaintenanceMaterialPreview,
     getMaintenanceRecordedCost,
@@ -242,6 +243,7 @@ export default function VehicleDetailPage() {
         isVehicleMaintenanceExpense(expense) &&
         (!expense.relatedMaintenanceRef || !maintenanceRefsWithRecordedCost.has(expense.relatedMaintenanceRef))
     );
+    const installedComponentRows = getInstalledVehicleComponentRows(maints);
 
     const renderMaintenanceMaterialUsage = (item: Maintenance) => {
         if (item.status !== 'DONE') {
@@ -257,7 +259,7 @@ export default function VehicleDetailPage() {
         return (
             <div style={{ display: 'grid', gap: '0.2rem' }}>
                 {materialPreview.map((usage) => {
-                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
+                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${usage.attachedToVehicle ? ' | Terpasang di unit' : ''}`;
                     const usageContent = (
                         <span>
                             {usageLabel}
@@ -992,60 +994,116 @@ export default function VehicleDetailPage() {
             )}
 
             {tab === 'maintenance' && (
-                <div className="card">
-                    <div className="card-header" style={{ justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                        <div>
-                            <span className="card-header-title">Servis & Maintenance</span>
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                    <div className="card">
+                        <div className="card-header">
+                            <span className="card-header-title">Komponen Terpasang dari Maintenance</span>
                         </div>
-                        {canCreateMaintenance && <button className="btn btn-primary" onClick={openVehicleMaintenance}>
-                            <Plus size={16} /> Jadwalkan Servis
-                        </button>}
-                    </div>
-                    <div className="card-body">
-                        <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Material Gudang</th><th>Odometer</th><th>Vendor</th>{isOwner && <th>Biaya Internal</th>}</tr></thead>
-                            <tbody>{maints.length === 0 ? <tr><td colSpan={isOwner ? 7 : 6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => {
-                                return (
-                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{renderMaintenanceMaterialUsage(m)}</td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td>{isOwner && <td>{m.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(m)) : '-'}</td>}</tr>
-                                );
-                            })}</tbody>
-                        </table></div>
-                        <div className="mobile-record-list">
-                            {maints.length === 0 ? (
-                                <div className="mobile-record-card">
-                                    <div className="mobile-record-title">Belum ada jadwal maintenance</div>
-                                </div>
-                            ) : maints.map(m => (
-                                <div key={m._id} className="mobile-record-card">
-                                    <div className="mobile-record-header">
-                                        <div>
-                                            <div className="mobile-record-title">{m.type}</div>
-                                            <div className="mobile-record-subtitle">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</div>
-                                        </div>
-                                        <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span>
+                        <div className="card-body">
+                            {installedComponentRows.length === 0 ? (
+                                <div className="text-muted">Belum ada material maintenance yang ditandai terpasang di unit.</div>
+                            ) : (
+                                <>
+                                    <div className="table-wrapper table-desktop-only">
+                                        <table>
+                                            <thead><tr><th>Tanggal Pasang</th><th>Komponen</th><th>Qty</th><th>Nilai Snapshot</th><th>Odometer</th><th>Sumber</th><th>Catatan</th></tr></thead>
+                                            <tbody>
+                                                {installedComponentRows.map((row) => (
+                                                    <tr key={row.id}>
+                                                        <td>{row.installedDate ? formatDate(row.installedDate) : '-'}</td>
+                                                        <td>
+                                                            <div className="font-medium">{row.displayLabel}</div>
+                                                            <div className="text-muted text-sm">{row.itemCode || row.warehouseItemRef}</div>
+                                                        </td>
+                                                        <td>{formatQuantity(row.quantity, 3)} {row.unit}</td>
+                                                        <td>{Number(row.subtotalCost || 0) > 0 ? formatCurrency(Number(row.subtotalCost || 0)) : '-'}</td>
+                                                        <td>{row.installedOdometer ? `${formatQuantity(row.installedOdometer, 0)} km` : '-'}</td>
+                                                        <td><Link href={`/fleet/maintenance?vehicleRef=${vehicle._id}`} style={{ color: 'var(--color-primary)' }}>{row.maintenanceType}</Link></td>
+                                                        <td>{row.note || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div className="mobile-record-meta">
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Vendor</span>
-                                            <span className="mobile-record-value">{m.vendor || '-'}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Odometer</span>
-                                            <span className="mobile-record-value">{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Material Gudang</span>
-                                            <div className="mobile-record-value">{renderMaintenanceMaterialUsage(m)}</div>
-                                        </div>
-                                        {isOwner && m.status === 'DONE' && (
-                                            <div className="mobile-record-kv">
-                                                <span className="mobile-record-label">Biaya Internal</span>
-                                                <span className="mobile-record-value">{formatCurrency(getMaintenanceRecordedCost(m))}</span>
+                                    <div className="mobile-record-list">
+                                        {installedComponentRows.map((row) => (
+                                            <div key={row.id} className="mobile-record-card">
+                                                <div className="mobile-record-header">
+                                                    <div>
+                                                        <div className="mobile-record-title">{row.displayLabel}</div>
+                                                        <div className="mobile-record-subtitle">{row.installedDate ? formatDate(row.installedDate) : '-'} | {row.itemCode || row.warehouseItemRef}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="mobile-record-meta">
+                                                    <div className="mobile-record-kv"><span className="mobile-record-label">Qty</span><span className="mobile-record-value">{formatQuantity(row.quantity, 3)} {row.unit}</span></div>
+                                                    <div className="mobile-record-kv"><span className="mobile-record-label">Nilai Snapshot</span><span className="mobile-record-value">{Number(row.subtotalCost || 0) > 0 ? formatCurrency(Number(row.subtotalCost || 0)) : '-'}</span></div>
+                                                    <div className="mobile-record-kv"><span className="mobile-record-label">Odometer</span><span className="mobile-record-value">{row.installedOdometer ? `${formatQuantity(row.installedOdometer, 0)} km` : '-'}</span></div>
+                                                    <div className="mobile-record-kv"><span className="mobile-record-label">Sumber</span><span className="mobile-record-value">{row.maintenanceType}</span></div>
+                                                    <div className="mobile-record-kv"><span className="mobile-record-label">Catatan</span><span className="mobile-record-value">{row.note || '-'}</span></div>
+                                                </div>
                                             </div>
-                                        )}
+                                        ))}
                                     </div>
-                                </div>
-                            ))}
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-header" style={{ justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                            <div>
+                                <span className="card-header-title">Servis & Maintenance</span>
+                            </div>
+                            {canCreateMaintenance && <button className="btn btn-primary" onClick={openVehicleMaintenance}>
+                                <Plus size={16} /> Jadwalkan Servis
+                            </button>}
+                        </div>
+                        <div className="card-body">
+                            <div className="table-wrapper table-desktop-only"><table>
+                                <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Material Gudang</th><th>Odometer</th><th>Vendor</th>{isOwner && <th>Biaya Internal</th>}</tr></thead>
+                                <tbody>{maints.length === 0 ? <tr><td colSpan={isOwner ? 7 : 6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => {
+                                    return (
+                                    <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{renderMaintenanceMaterialUsage(m)}</td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td>{isOwner && <td>{m.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(m)) : '-'}</td>}</tr>
+                                    );
+                                })}</tbody>
+                            </table></div>
+                            <div className="mobile-record-list">
+                                {maints.length === 0 ? (
+                                    <div className="mobile-record-card">
+                                        <div className="mobile-record-title">Belum ada jadwal maintenance</div>
+                                    </div>
+                                ) : maints.map(m => (
+                                    <div key={m._id} className="mobile-record-card">
+                                        <div className="mobile-record-header">
+                                            <div>
+                                                <div className="mobile-record-title">{m.type}</div>
+                                                <div className="mobile-record-subtitle">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</div>
+                                            </div>
+                                            <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span>
+                                        </div>
+                                        <div className="mobile-record-meta">
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Vendor</span>
+                                                <span className="mobile-record-value">{m.vendor || '-'}</span>
+                                            </div>
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Odometer</span>
+                                                <span className="mobile-record-value">{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</span>
+                                            </div>
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Material Gudang</span>
+                                                <div className="mobile-record-value">{renderMaintenanceMaterialUsage(m)}</div>
+                                            </div>
+                                            {isOwner && m.status === 'DONE' && (
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Biaya Internal</span>
+                                                    <span className="mobile-record-value">{formatCurrency(getMaintenanceRecordedCost(m))}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -521,7 +521,13 @@ export default function MaintenancePage() {
                 .map((line, index) => {
                     if (!line.warehouseItemRef) throw new Error(`Pilih barang gudang pada material #${index + 1}`);
                     if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new Error(`Qty material #${index + 1} tidak valid`);
-                    return { warehouseItemRef: line.warehouseItemRef, quantity: line.quantity, note: line.note.trim() || undefined };
+                    return {
+                        warehouseItemRef: line.warehouseItemRef,
+                        quantity: line.quantity,
+                        attachToVehicle: line.attachToVehicle || undefined,
+                        componentLabel: line.attachToVehicle ? line.componentLabel.trim() || undefined : undefined,
+                        note: line.note.trim() || undefined,
+                    };
                 });
 
             setSavingCompletion(true);
@@ -575,7 +581,7 @@ export default function MaintenancePage() {
                     const usageCost = typeof usage.subtotalCost === 'number' && usage.subtotalCost > 0
                         ? ` - ${formatCurrency(usage.subtotalCost)}`
                         : '';
-                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${usageCost}`;
+                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}${usageCost}${usage.attachedToVehicle ? ' | Terpasang di unit' : ''}`;
                     return canOpenWarehouseItems && !usage.warehouseItemRef.startsWith('tire:') ? (
                         <Link
                             key={`${item._id}-${usage.warehouseItemRef}`}
@@ -1033,6 +1039,13 @@ export default function MaintenancePage() {
                                                             <div className="form-group"><label className="form-label">Barang Gudang</label><select className="form-select" value={line.warehouseItemRef} onChange={event => updateCompletionLine(index, { warehouseItemRef: event.target.value })} disabled={savingCompletion}><option value="">Pilih barang</option>{materialOptions.map((option) => <option key={option._id} value={option._id}>{option.itemCode} - {option.name}</option>)}</select></div>
                                                             <div className="form-group"><label className="form-label">Qty Pakai</label><FormattedNumberInput value={line.quantity} onValueChange={(value) => updateCompletionLine(index, { quantity: value })} maxFractionDigits={3} disabled={savingCompletion} zeroAsEmpty /></div>
                                                         </div>
+                                                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
+                                                            <input type="checkbox" checked={line.attachToVehicle} onChange={event => updateCompletionLine(index, { attachToVehicle: event.target.checked })} disabled={savingCompletion} />
+                                                            Terpasang di unit
+                                                        </label>
+                                                        {line.attachToVehicle && (
+                                                            <div className="form-group"><label className="form-label">Label Komponen</label><input className="form-input" value={line.componentLabel} onChange={event => updateCompletionLine(index, { componentLabel: event.target.value })} placeholder={selectedOption ? selectedOption.name : 'Contoh: Filter solar kanan'} disabled={savingCompletion} /></div>
+                                                        )}
                                                         <div className="form-group"><label className="form-label">Catatan Material</label><input className="form-input" value={line.note} onChange={event => updateCompletionLine(index, { note: event.target.value })} placeholder="Opsional" disabled={savingCompletion} /></div>
                                                         {selectedOption && <div style={{ display: 'grid', gap: '0.25rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}><div className="font-medium">{selectedOption.itemCode} - {selectedOption.name}</div><div className="text-muted text-sm">{selectedOption.category || 'Tanpa kategori'} • stok tersedia {formatQuantity(selectedOption.currentStockQty, 3)} {selectedOption.unit}</div></div>}
                                                     </div>

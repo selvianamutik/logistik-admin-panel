@@ -19,6 +19,8 @@ export type MaintenanceMaterialOption = {
 export type MaintenanceCompletionMaterialLine = {
   warehouseItemRef: string;
   quantity: number;
+  attachToVehicle: boolean;
+  componentLabel: string;
   note: string;
 };
 
@@ -48,6 +50,8 @@ export function createEmptyMaintenanceMaterialLine(): MaintenanceCompletionMater
   return {
     warehouseItemRef: '',
     quantity: 0,
+    attachToVehicle: false,
+    componentLabel: '',
     note: '',
   };
 }
@@ -96,4 +100,39 @@ export function getMaintenanceMaterialSummary(item: Maintenance) {
 export function getMaintenanceMaterialOverflowCount(item: Maintenance) {
   const usages = Array.isArray(item.materialUsages) ? item.materialUsages : [];
   return usages.length > 2 ? usages.length - 2 : 0;
+}
+
+export type InstalledVehicleComponentRow = MaintenanceMaterialUsage & {
+  id: string;
+  maintenanceRef: string;
+  maintenanceType: string;
+  vehicleRef: string;
+  vehiclePlate?: string;
+  displayLabel: string;
+};
+
+export function isAttachedMaintenanceMaterial(usage: MaintenanceMaterialUsage) {
+  return usage.attachedToVehicle === true || usage.attachmentStatus === 'INSTALLED';
+}
+
+export function getInstalledVehicleComponentRows(maintenances: Maintenance[]): InstalledVehicleComponentRow[] {
+  return maintenances
+    .filter((maintenance) => maintenance.status === 'DONE')
+    .flatMap((maintenance) => {
+      const usages = Array.isArray(maintenance.materialUsages) ? maintenance.materialUsages : [];
+      return usages
+        .filter(isAttachedMaintenanceMaterial)
+        .map((usage, index) => ({
+          ...usage,
+          id: `${maintenance._id}-${usage.warehouseItemRef}-${index}`,
+          maintenanceRef: maintenance._id,
+          maintenanceType: maintenance.type,
+          vehicleRef: usage.installedOnVehicleRef || maintenance.vehicleRef,
+          vehiclePlate: usage.installedOnVehiclePlate || maintenance.vehiclePlate,
+          installedDate: usage.installedDate || maintenance.completedDate || maintenance.plannedDate,
+          installedOdometer: usage.installedOdometer ?? maintenance.odometerAtService,
+          displayLabel: usage.componentLabel || getMaintenanceMaterialDisplayLabel(usage),
+        }));
+    })
+    .sort((left, right) => `${right.installedDate || ''}-${right.id}`.localeCompare(`${left.installedDate || ''}-${left.id}`));
 }

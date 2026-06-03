@@ -30,7 +30,7 @@ import {
 } from '@/lib/inventory';
 import { findMatchingTripRouteRate, stripTripRouteOvertonaseRateNote } from '@/lib/trip-route-rate-support';
 import { normalizeOptionalTireType } from '@/lib/tire-types';
-import type { TripRouteRate } from '@/lib/types';
+import type { Supplier, TripRouteRate, WarehouseItem } from '@/lib/types';
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
@@ -320,6 +320,135 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
         next.currentStockQty = 0;
     } else if (Object.prototype.hasOwnProperty.call(existing, 'currentStockQty')) {
         next.currentStockQty = parseInventoryQuantity(existing.currentStockQty ?? 0);
+    }
+
+    return next;
+}
+
+function normalizeIsoDateInput(value: unknown, label: string) {
+    const text = normalizeOptionalText(value);
+    if (!text) return undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        throw new Error(`${label} tidak valid`);
+    }
+    return text;
+}
+
+export async function normalizeSupplierItemPricePayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const supplierRef =
+        Object.prototype.hasOwnProperty.call(data, 'supplierRef') || !existing
+            ? normalizeOptionalText(data.supplierRef)
+            : normalizeOptionalText(existing?.supplierRef);
+    const warehouseItemRef =
+        Object.prototype.hasOwnProperty.call(data, 'warehouseItemRef') || !existing
+            ? normalizeOptionalText(data.warehouseItemRef)
+            : normalizeOptionalText(existing?.warehouseItemRef);
+
+    if (!supplierRef) {
+        throw new Error('Supplier harga barang wajib dipilih');
+    }
+    if (!warehouseItemRef) {
+        throw new Error('Barang gudang harga supplier wajib dipilih');
+    }
+
+    const [supplier, item] = await Promise.all([
+        getDocumentById<Supplier>(supplierRef, 'supplier'),
+        getDocumentById<WarehouseItem>(warehouseItemRef, 'warehouseItem'),
+    ]);
+    if (!supplier || supplier._type !== 'supplier') {
+        throw new Error('Supplier harga barang tidak ditemukan');
+    }
+    if (supplier.active === false) {
+        throw new Error('Supplier harga barang tidak aktif');
+    }
+    if (!item || item._type !== 'warehouseItem') {
+        throw new Error('Barang gudang harga supplier tidak ditemukan');
+    }
+    if (item.active === false) {
+        throw new Error('Barang gudang harga supplier tidak aktif');
+    }
+
+    const defaultPurchasePrice =
+        Object.prototype.hasOwnProperty.call(data, 'defaultPurchasePrice') || !existing
+            ? parseWholeMoneyAmount(data.defaultPurchasePrice ?? 0)
+            : parseWholeMoneyAmount(existing?.defaultPurchasePrice ?? 0);
+    if (!Number.isFinite(defaultPurchasePrice) || defaultPurchasePrice <= 0) {
+        throw new Error('Harga beli supplier wajib lebih besar dari 0');
+    }
+
+    const minOrderQty =
+        Object.prototype.hasOwnProperty.call(data, 'minOrderQty') || !existing
+            ? parseInventoryQuantity(data.minOrderQty ?? 0)
+            : parseInventoryQuantity(existing?.minOrderQty ?? 0);
+    if (!Number.isFinite(minOrderQty) || minOrderQty < 0) {
+        throw new Error('Minimum order supplier tidak valid');
+    }
+
+    const leadTimeDays =
+        Object.prototype.hasOwnProperty.call(data, 'leadTimeDays') || !existing
+            ? parseStrictNumericInput(data.leadTimeDays ?? 0, 'Lead time supplier tidak valid', { allowDecimal: false, maxFractionDigits: 0 })
+            : parseStrictNumericInput(existing?.leadTimeDays ?? 0, 'Lead time supplier tidak valid', { allowDecimal: false, maxFractionDigits: 0 });
+    if (!Number.isFinite(leadTimeDays) || leadTimeDays < 0) {
+        throw new Error('Lead time supplier tidak valid');
+    }
+
+    const effectiveFrom =
+        Object.prototype.hasOwnProperty.call(data, 'effectiveFrom') || !existing
+            ? normalizeIsoDateInput(data.effectiveFrom, 'Tanggal mulai harga supplier')
+            : normalizeIsoDateInput(existing?.effectiveFrom, 'Tanggal mulai harga supplier');
+    const effectiveTo =
+        Object.prototype.hasOwnProperty.call(data, 'effectiveTo') || !existing
+            ? normalizeIsoDateInput(data.effectiveTo, 'Tanggal akhir harga supplier')
+            : normalizeIsoDateInput(existing?.effectiveTo, 'Tanggal akhir harga supplier');
+    if (effectiveFrom && effectiveTo && effectiveTo < effectiveFrom) {
+        throw new Error('Tanggal akhir harga supplier tidak boleh lebih awal dari tanggal mulai');
+    }
+
+    const active =
+        Object.prototype.hasOwnProperty.call(data, 'active') || !existing
+            ? data.active !== false
+            : existing?.active !== false;
+    if (active) {
+        const duplicate = (await listDocumentsByFilter<{ _id: string }>('supplierItemPrice', {
+            supplierRef,
+            warehouseItemRef,
+            active: true,
+        })).find(row => row._id !== (existingId || '')) || null;
+        if (duplicate) {
+            throw new Error('Harga aktif untuk kombinasi supplier dan barang ini sudah ada');
+        }
+    }
+
+    next.supplierRef = supplier._id;
+    next.supplierCode = supplier.supplierCode;
+    next.supplierName = supplier.name;
+    next.warehouseItemRef = item._id;
+    next.itemCode = item.itemCode;
+    next.itemName = item.name;
+    next.itemUnit = item.unit;
+    next.supplierSku =
+        Object.prototype.hasOwnProperty.call(data, 'supplierSku') || !existing
+            ? normalizeOptionalText(data.supplierSku)
+            : normalizeOptionalText(existing?.supplierSku);
+    next.supplierItemName =
+        Object.prototype.hasOwnProperty.call(data, 'supplierItemName') || !existing
+            ? normalizeOptionalText(data.supplierItemName)
+            : normalizeOptionalText(existing?.supplierItemName);
+    next.defaultPurchasePrice = defaultPurchasePrice;
+    next.minOrderQty = minOrderQty > 0 ? minOrderQty : undefined;
+    next.leadTimeDays = leadTimeDays > 0 ? Math.round(leadTimeDays) : undefined;
+    next.effectiveFrom = effectiveFrom;
+    next.effectiveTo = effectiveTo;
+    next.active = active;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    next.updatedAt = new Date().toISOString();
+    if (!existing) {
+        next.createdAt = next.updatedAt;
     }
 
     return next;

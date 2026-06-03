@@ -298,10 +298,13 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             ],
         },
         {
-            label: 'SDM',
+            label: 'Armada',
             items: [
-                { label: 'Karyawan', href: '/employees', icon: 'Users', module: 'employees' },
-                { label: 'Absensi', href: '/attendance', icon: 'ScrollText', module: 'attendance' },
+                { label: 'Kendaraan', href: '/fleet/vehicles', icon: 'Car', module: 'vehicles' },
+                { label: 'Supir', href: '/fleet/drivers', icon: 'UserCircle', module: 'drivers' },
+                { label: 'Maintenance', href: '/fleet/maintenance', icon: 'Wrench', module: 'maintenance' },
+                { label: 'Ban', href: '/fleet/tires', icon: 'Wrench', module: 'tires' },
+                { label: 'Insiden', href: '/fleet/incidents', icon: 'AlertTriangle', module: 'incidents' },
             ],
         },
         {
@@ -325,22 +328,19 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             ],
         },
         {
+            label: 'SDM',
+            items: [
+                { label: 'Karyawan', href: '/employees', icon: 'Users', module: 'employees' },
+                { label: 'Absensi', href: '/attendance', icon: 'ScrollText', module: 'attendance' },
+            ],
+        },
+        {
             label: 'Master Data',
             items: [
                 { label: 'Customer', href: '/customers', icon: 'Users', module: 'customers' },
                 { label: 'Biaya Rute Trip', href: '/trip-rates', icon: 'MapPin', module: 'tripRouteRates' },
                 { label: 'Jenis Armada', href: '/services', icon: 'Layers', module: 'services' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
-            ],
-        },
-        {
-            label: 'Armada',
-            items: [
-                { label: 'Kendaraan', href: '/fleet/vehicles', icon: 'Car', module: 'vehicles' },
-                { label: 'Supir', href: '/fleet/drivers', icon: 'UserCircle', module: 'drivers' },
-                { label: 'Maintenance', href: '/fleet/maintenance', icon: 'Wrench', module: 'maintenance' },
-                { label: 'Ban', href: '/fleet/tires', icon: 'Wrench', module: 'tires' },
-                { label: 'Insiden', href: '/fleet/incidents', icon: 'AlertTriangle', module: 'incidents' },
             ],
         },
         {
