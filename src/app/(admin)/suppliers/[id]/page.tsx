@@ -78,6 +78,37 @@ const createDefaultSupplierItemPriceForm = (price?: Partial<SupplierItemPrice>):
   active: price?.active !== false,
 });
 
+type SupplierPriceUseStatus = 'available' | 'future' | 'expired' | 'inactive';
+
+const SUPPLIER_PRICE_STATUS_LABELS: Record<SupplierPriceUseStatus, string> = {
+  available: 'Bisa dipakai',
+  future: 'Belum mulai',
+  expired: 'Sudah lewat',
+  inactive: 'Tidak dipakai',
+};
+
+const SUPPLIER_PRICE_STATUS_BADGES: Record<SupplierPriceUseStatus, string> = {
+  available: 'badge-success',
+  future: 'badge-info',
+  expired: 'badge-warning',
+  inactive: 'badge-gray',
+};
+
+function getDateOnly(value: string | undefined | null) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
+    ? value.slice(0, 10)
+    : '';
+}
+
+function getSupplierPriceUseStatus(price: SupplierItemPrice, referenceDate: string): SupplierPriceUseStatus {
+  if (price.active === false) return 'inactive';
+  const effectiveFrom = getDateOnly(price.effectiveFrom);
+  const effectiveTo = getDateOnly(price.effectiveTo);
+  if (effectiveFrom && effectiveFrom > referenceDate) return 'future';
+  if (effectiveTo && effectiveTo < referenceDate) return 'expired';
+  return 'available';
+}
+
 function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
   const receiptStatus = getDerivedPurchaseReceiptStatus(purchase);
   const paymentStatus = getDerivedPurchasePaymentStatus(purchase);
@@ -216,7 +247,7 @@ export default function SupplierDetailPage() {
   const supplierPriceByItemRef = useMemo(() => {
     const map = new Map<string, SupplierItemPrice>();
     supplierItemPrices
-      .filter((price) => price.active !== false)
+      .filter((price) => getSupplierPriceUseStatus(price, today) === 'available')
       .forEach((price) => {
         if (!price.warehouseItemRef) return;
         const current = map.get(price.warehouseItemRef);
@@ -227,7 +258,7 @@ export default function SupplierDetailPage() {
         }
       });
     return map;
-  }, [supplierItemPrices]);
+  }, [supplierItemPrices, today]);
 
   const openEditModal = () => {
     if (!supplier || !canManage) return;
@@ -326,7 +357,7 @@ export default function SupplierDetailPage() {
       return;
     }
     if (Number(priceForm.defaultPurchasePrice || 0) <= 0) {
-      addToast('error', 'Harga supplier wajib lebih dari 0');
+      addToast('error', 'Harga dari supplier wajib lebih dari 0');
       return;
     }
     if (priceForm.effectiveFrom && priceForm.effectiveTo && priceForm.effectiveTo < priceForm.effectiveFrom) {
@@ -417,7 +448,7 @@ export default function SupplierDetailPage() {
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Outstanding</div>
+            <div className="kpi-label">Sisa Tagihan</div>
             <div className="kpi-value">{formatCurrency(outstandingTotal)}</div>
             <div className="kpi-sub">{overdueCount} pembelian jatuh tempo</div>
           </div>
@@ -519,7 +550,7 @@ export default function SupplierDetailPage() {
                       <th>Tanggal</th>
                       <th>Jatuh Tempo</th>
                       <th>Total</th>
-                      <th>Outstanding</th>
+                      <th>Sisa Tagihan</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -571,7 +602,7 @@ export default function SupplierDetailPage() {
                         <span className="mobile-record-value">{formatCurrency(Number(purchase.totalAmount || 0))}</span>
                       </div>
                       <div className="mobile-record-field mobile-record-field-full">
-                        <span className="mobile-record-label">Outstanding</span>
+                        <span className="mobile-record-label">Sisa Tagihan</span>
                         <span className="mobile-record-value">{formatCurrency(Number(purchase.outstandingAmount || 0))}</span>
                       </div>
                     </div>
@@ -681,10 +712,10 @@ export default function SupplierDetailPage() {
       <div style={{ display: 'grid', gap: '1.5rem' }}>
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-            <span className="card-header-title">Harga Barang Supplier</span>
+            <span className="card-header-title">Daftar Harga dari Supplier</span>
             {canCreateSupplierPrice && canOpenItems && (
               <button type="button" className="btn btn-secondary" onClick={openCreatePriceModal}>
-                <Plus size={16} /> Tambah Harga
+                <Plus size={16} /> Tambah Harga Barang
               </button>
             )}
           </div>
@@ -692,7 +723,7 @@ export default function SupplierDetailPage() {
             {supplierItemPrices.length === 0 ? (
               <div className="empty-state">
                 <Package size={40} className="empty-state-icon" />
-                <div className="empty-state-title">Belum ada harga barang supplier</div>
+                <div className="empty-state-title">Belum ada harga dari supplier</div>
               </div>
             ) : (
               <>
@@ -702,17 +733,19 @@ export default function SupplierDetailPage() {
                       <tr>
                         <th>Kode</th>
                         <th>Barang</th>
-                        <th>SKU Supplier</th>
+                        <th>Kode di Supplier</th>
                         <th>Harga</th>
-                        <th>MOQ</th>
-                        <th>Lead Time</th>
-                        <th>Efektif</th>
+                        <th>Minimal Beli</th>
+                        <th>Estimasi Datang</th>
+                        <th>Masa Berlaku</th>
                         <th>Status</th>
                         {canUpdateSupplierPrice && canOpenItems && <th>Aksi</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {supplierItemPrices.map((price) => (
+                      {supplierItemPrices.map((price) => {
+                        const priceStatus = getSupplierPriceUseStatus(price, today);
+                        return (
                         <tr key={price._id}>
                           <td className="font-mono">
                             {canOpenItems && price.warehouseItemRef ? (
@@ -728,8 +761,8 @@ export default function SupplierDetailPage() {
                           <td>{Number(price.leadTimeDays || 0) > 0 ? `${price.leadTimeDays} hari` : '-'}</td>
                           <td>{formatEffectiveRange(price)}</td>
                           <td>
-                            <span className={`badge ${price.active !== false ? 'badge-success' : 'badge-gray'}`}>
-                              {price.active !== false ? 'Aktif' : 'Nonaktif'}
+                            <span className={`badge ${SUPPLIER_PRICE_STATUS_BADGES[priceStatus]}`}>
+                              {SUPPLIER_PRICE_STATUS_LABELS[priceStatus]}
                             </span>
                           </td>
                           {canUpdateSupplierPrice && canOpenItems && (
@@ -740,20 +773,23 @@ export default function SupplierDetailPage() {
                             </td>
                           )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
                 <div className="mobile-record-list">
-                  {supplierItemPrices.map((price) => (
+                  {supplierItemPrices.map((price) => {
+                    const priceStatus = getSupplierPriceUseStatus(price, today);
+                    return (
                     <div key={price._id} className="mobile-record-card">
                       <div className="mobile-record-header">
                         <div>
                           <div className="mobile-record-title">{price.supplierItemName || price.itemName || '-'}</div>
                           <div className="mobile-record-subtitle">{price.itemCode || '-'}{price.supplierSku ? ` | ${price.supplierSku}` : ''}</div>
                         </div>
-                        <span className={`badge ${price.active !== false ? 'badge-success' : 'badge-gray'}`}>
-                          {price.active !== false ? 'Aktif' : 'Nonaktif'}
+                        <span className={`badge ${SUPPLIER_PRICE_STATUS_BADGES[priceStatus]}`}>
+                          {SUPPLIER_PRICE_STATUS_LABELS[priceStatus]}
                         </span>
                       </div>
                       <div className="mobile-record-grid">
@@ -762,15 +798,15 @@ export default function SupplierDetailPage() {
                           <span className="mobile-record-value">{formatCurrency(Number(price.defaultPurchasePrice || 0))}</span>
                         </div>
                         <div className="mobile-record-field">
-                          <span className="mobile-record-label">MOQ</span>
+                          <span className="mobile-record-label">Minimal Beli</span>
                           <span className="mobile-record-value">{Number(price.minOrderQty || 0) > 0 ? `${formatQuantity(Number(price.minOrderQty || 0))} ${price.itemUnit || ''}` : '-'}</span>
                         </div>
                         <div className="mobile-record-field">
-                          <span className="mobile-record-label">Lead Time</span>
+                          <span className="mobile-record-label">Estimasi Datang</span>
                           <span className="mobile-record-value">{Number(price.leadTimeDays || 0) > 0 ? `${price.leadTimeDays} hari` : '-'}</span>
                         </div>
                         <div className="mobile-record-field">
-                          <span className="mobile-record-label">Efektif</span>
+                          <span className="mobile-record-label">Masa Berlaku</span>
                           <span className="mobile-record-value">{formatEffectiveRange(price)}</span>
                         </div>
                         {canUpdateSupplierPrice && canOpenItems && (
@@ -782,7 +818,8 @@ export default function SupplierDetailPage() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -879,7 +916,7 @@ export default function SupplierDetailPage() {
                             </span>
                           </div>
                           <div className="mobile-record-field">
-                            <span className="mobile-record-label">Harga Supplier</span>
+                            <span className="mobile-record-label">Harga dari Supplier</span>
                             <span className="mobile-record-value">{supplierPrice ? formatCurrency(Number(supplierPrice.defaultPurchasePrice || 0)) : '-'}</span>
                           </div>
                           <div className="mobile-record-field">
@@ -910,7 +947,7 @@ export default function SupplierDetailPage() {
         <div className="modal-overlay" onClick={closePriceModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{editingPrice ? 'Revisi Harga Barang Supplier' : 'Tambah Harga Barang Supplier'}</h3>
+              <h3 className="modal-title">{editingPrice ? 'Ubah Harga dari Supplier' : 'Tambah Harga dari Supplier'}</h3>
               <button className="modal-close" onClick={closePriceModal} disabled={savingPrice}>
                 <X size={20} />
               </button>
@@ -932,13 +969,13 @@ export default function SupplierDetailPage() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Harga Beli Supplier (Rp)</label>
+                  <label className="form-label">Harga dari Supplier (Rp)</label>
                   <FormattedNumberInput allowDecimal={false} min={0} value={priceForm.defaultPurchasePrice} onValueChange={(value) => setPriceForm((current) => ({ ...current, defaultPurchasePrice: value }))} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">SKU Supplier</label>
+                  <label className="form-label">Kode Barang di Supplier</label>
                   <input className="form-input" value={priceForm.supplierSku} onChange={(event) => setPriceForm((current) => ({ ...current, supplierSku: event.target.value }))} />
                 </div>
                 <div className="form-group">
@@ -948,22 +985,25 @@ export default function SupplierDetailPage() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">MOQ</label>
+                  <label className="form-label">Minimal Beli</label>
                   <FormattedNumberInput min={0} maxFractionDigits={3} value={priceForm.minOrderQty} onValueChange={(value) => setPriceForm((current) => ({ ...current, minOrderQty: value }))} />
+                  <div className="text-muted text-xs" style={{ marginTop: 6 }}>Isi kalau supplier punya batas minimal pembelian.</div>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Lead Time (hari)</label>
+                  <label className="form-label">Estimasi Datang (hari)</label>
                   <FormattedNumberInput allowDecimal={false} min={0} value={priceForm.leadTimeDays} onValueChange={(value) => setPriceForm((current) => ({ ...current, leadTimeDays: value }))} />
+                  <div className="text-muted text-xs" style={{ marginTop: 6 }}>Perkiraan berapa hari barang datang setelah dipesan.</div>
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Efektif Mulai</label>
+                  <label className="form-label">Harga Berlaku Mulai</label>
                   <input type="date" className="form-input" value={priceForm.effectiveFrom} onChange={(event) => setPriceForm((current) => ({ ...current, effectiveFrom: event.target.value }))} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Efektif Sampai</label>
+                  <label className="form-label">Harga Berlaku Sampai</label>
                   <input type="date" className="form-input" value={priceForm.effectiveTo} onChange={(event) => setPriceForm((current) => ({ ...current, effectiveTo: event.target.value }))} />
+                  <div className="text-muted text-xs" style={{ marginTop: 6 }}>Kosongkan kalau harga ini berlaku terus.</div>
                 </div>
               </div>
               <div className="form-group">
@@ -971,17 +1011,17 @@ export default function SupplierDetailPage() {
                 <textarea className="form-textarea" rows={3} value={priceForm.notes} onChange={(event) => setPriceForm((current) => ({ ...current, notes: event.target.value }))} />
               </div>
               <div className="form-group">
-                <label className="form-label">Status</label>
+                <label className="form-label">Status Harga</label>
                 <select className="form-select" value={priceForm.active ? 'active' : 'inactive'} onChange={(event) => setPriceForm((current) => ({ ...current, active: event.target.value === 'active' }))}>
-                  <option value="active">Aktif</option>
-                  <option value="inactive">Nonaktif</option>
+                  <option value="active">Bisa dipakai</option>
+                  <option value="inactive">Jangan dipakai</option>
                 </select>
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closePriceModal} disabled={savingPrice}>Batal</button>
               <button className="btn btn-primary" onClick={() => void handleSavePrice()} disabled={savingPrice}>
-                <Save size={16} /> {savingPrice ? 'Menyimpan...' : editingPrice ? 'Simpan Revisi' : 'Simpan'}
+                <Save size={16} /> {savingPrice ? 'Menyimpan...' : editingPrice ? 'Simpan Harga Baru' : 'Simpan'}
               </button>
             </div>
           </div>

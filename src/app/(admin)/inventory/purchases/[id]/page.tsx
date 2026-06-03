@@ -34,9 +34,9 @@ type ReceiveLineState = { purchaseItemRef: string; itemName: string; remainingQt
 type PaymentFormState = { date: string; bankAccountRef: string; amount: number; note: string };
 
 const PRICE_SOURCE_LABELS: Record<NonNullable<PurchaseItem['priceSource']>, string> = {
-  SUPPLIER_PRICE: 'Harga Supplier',
-  WAREHOUSE_DEFAULT: 'Default Barang',
-  MANUAL: 'Manual',
+  SUPPLIER_PRICE: 'Dari harga supplier',
+  WAREHOUSE_DEFAULT: 'Dari harga default barang',
+  MANUAL: 'Diisi manual',
 };
 
 function PurchaseLifecycleBadges({ purchase }: { purchase: Purchase }) {
@@ -66,8 +66,8 @@ function getMaxDate(...values: Array<string | undefined | null>) {
 }
 
 function getPurchaseItemPriceSourceLabel(item: PurchaseItem) {
-  const baseLabel = item.priceSource ? PRICE_SOURCE_LABELS[item.priceSource] || item.priceSource : 'Snapshot';
-  return item.priceOverridden ? `${baseLabel} (Override)` : baseLabel;
+  if (item.priceOverridden) return 'Diisi manual';
+  return item.priceSource ? PRICE_SOURCE_LABELS[item.priceSource] || item.priceSource : 'Harga saat itu';
 }
 
 function buildReceiveState(items: PurchaseItem[]): ReceiveLineState[] {
@@ -251,10 +251,10 @@ export default function PurchaseDetailPage() {
           </div>
           <table><tbody>
             <tr><td>Jatuh Tempo</td><td>${escapeHtml(purchase.dueDate ? formatDate(purchase.dueDate) : '-')}</td><td>Total</td><td class="r">${escapeHtml(formatCurrency(Number(summary.totalAmount || 0)))}</td></tr>
-            <tr><td>Outstanding</td><td>${escapeHtml(formatCurrency(Number(summary.outstandingAmount || 0)))}</td><td>Dibayar</td><td class="r">${escapeHtml(formatCurrency(Number(summary.paidAmount || 0)))}</td></tr>
+            <tr><td>Sisa Tagihan</td><td>${escapeHtml(formatCurrency(Number(summary.outstandingAmount || 0)))}</td><td>Dibayar</td><td class="r">${escapeHtml(formatCurrency(Number(summary.paidAmount || 0)))}</td></tr>
           </tbody></table>
           <h3 style="margin-top:1.5rem">Item Pembelian</h3>
-          <table><thead><tr><th>Kode</th><th>Barang</th><th class="c">Satuan</th><th class="r">Qty Pesan</th><th class="r">Qty Terima</th><th class="r">Harga</th><th class="r">Subtotal</th></tr></thead><tbody>${itemRows}</tbody></table>
+          <table><thead><tr><th>Kode</th><th>Barang</th><th class="c">Satuan</th><th class="r">Jumlah Pesan</th><th class="r">Jumlah Terima</th><th class="r">Harga</th><th class="r">Subtotal</th></tr></thead><tbody>${itemRows}</tbody></table>
           <h3 style="margin-top:1.5rem">Pembayaran Supplier</h3>
           <table><thead><tr><th>Tanggal</th><th>Rekening</th><th class="r">Nominal</th><th>Catatan</th></tr></thead><tbody>${paymentRows}</tbody></table>
         `,
@@ -281,8 +281,8 @@ export default function PurchaseDetailPage() {
 
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Pembelian</div><div className="kpi-value">{formatCurrency(Number(summary.totalAmount || 0))}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatCurrency(Number(summary.outstandingAmount || 0))}</div></div></div>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Qty Diterima</div><div className="kpi-value">{formatInventoryQuantity(summary.totalReceivedQty)}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sisa Tagihan</div><div className="kpi-value">{formatCurrency(Number(summary.outstandingAmount || 0))}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Jumlah Diterima</div><div className="kpi-value">{formatInventoryQuantity(summary.totalReceivedQty)}</div></div></div>
         <div className="kpi-card">
           <div className="kpi-content">
             <div className="kpi-label">Status</div>
@@ -315,7 +315,7 @@ export default function PurchaseDetailPage() {
         <div className="card-body">
           <div className="table-wrapper table-desktop-only">
             <table>
-              <thead><tr><th>Kode</th><th>Barang</th><th>Satuan</th><th>Qty Pesan</th><th>Qty Terima</th><th>Sisa</th><th>Harga</th><th>Sumber Harga</th><th>Subtotal</th></tr></thead>
+              <thead><tr><th>Kode</th><th>Barang</th><th>Satuan</th><th>Jumlah Pesan</th><th>Jumlah Terima</th><th>Belum Diterima</th><th>Harga</th><th>Harga Dari</th><th>Subtotal</th></tr></thead>
               <tbody>
                 {items.map((item) => {
                   const remainingQty = Math.max(Number(item.orderedQty || 0) - Number(item.receivedQty || 0), 0);
@@ -352,11 +352,11 @@ export default function PurchaseDetailPage() {
                 <div key={item._id} className="mobile-record-card">
                   <div className="mobile-record-header"><div><div className="mobile-record-title">{item.itemName || '-'}</div><div className="mobile-record-subtitle">{item.itemCode || '-'} | {item.itemUnit || '-'}{isTireTrackedWarehouseItem(item) ? ` | ${WAREHOUSE_ITEM_TRACKING_MODE_LABELS[item.trackingMode || 'STANDARD']}` : ''}</div></div></div>
                   <div className="mobile-record-grid">
-                    <div className="mobile-record-field"><span className="mobile-record-label">Qty Pesan</span><span className="mobile-record-value">{formatInventoryQuantity(item.orderedQty)}</span></div>
-                    <div className="mobile-record-field"><span className="mobile-record-label">Qty Terima</span><span className="mobile-record-value">{formatInventoryQuantity(item.receivedQty || 0)}</span></div>
-                    <div className="mobile-record-field"><span className="mobile-record-label">Sisa</span><span className="mobile-record-value">{formatInventoryQuantity(remainingQty)}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Jumlah Pesan</span><span className="mobile-record-value">{formatInventoryQuantity(item.orderedQty)}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Jumlah Terima</span><span className="mobile-record-value">{formatInventoryQuantity(item.receivedQty || 0)}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Belum Diterima</span><span className="mobile-record-value">{formatInventoryQuantity(remainingQty)}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Harga</span><span className="mobile-record-value">{formatCurrency(Number(item.unitPrice || 0))}</span></div>
-                    <div className="mobile-record-field"><span className="mobile-record-label">Sumber Harga</span><span className="mobile-record-value">{getPurchaseItemPriceSourceLabel(item)}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Harga Dari</span><span className="mobile-record-value">{getPurchaseItemPriceSourceLabel(item)}</span></div>
                     <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Subtotal</span><span className="mobile-record-value">{formatCurrency(Number(item.subtotal || 0))}</span></div>
                     {isTireTrackedWarehouseItem(item) && (
                       <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Ban Terdaftar</span><span className="mobile-record-value">{registeredTires.length}/{Math.round(Number(item.receivedQty || 0))}</span></div>
@@ -416,7 +416,7 @@ export default function PurchaseDetailPage() {
           {stockMovements.length === 0 ? <div className="text-muted">Belum ada penerimaan barang untuk pembelian ini.</div> : (
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Tanggal</th><th>Barang</th><th>Sumber</th><th>Qty</th><th>Harga Snapshot</th><th>Nilai</th><th>Saldo Setelah</th><th>Catatan</th></tr></thead>
+                <thead><tr><th>Tanggal</th><th>Barang</th><th>Sumber</th><th>Jumlah</th><th>Harga Saat Itu</th><th>Nilai</th><th>Saldo Setelah</th><th>Catatan</th></tr></thead>
                 <tbody>
                   {stockMovements.map((movement) => (
                     <tr key={movement._id}>
@@ -477,11 +477,11 @@ export default function PurchaseDetailPage() {
                       {isTireTrackedWarehouseItem(items.find((item) => item._id === line.purchaseItemRef)) && (
                         <div className="info-banner" style={{ marginBottom: '0.75rem' }}>
                           <div className="info-banner-title">Registrasi Ban Otomatis</div>
-                          <div className="info-banner-text">Qty yang diterima akan otomatis membuat kartu ban individual di gudang ban.</div>
+                          <div className="info-banner-text">Jumlah yang diterima akan otomatis membuat kartu ban per unit di gudang ban.</div>
                         </div>
                       )}
                       <div className="form-row">
-                        <div className="form-group"><label className="form-label">Qty Terima</label><FormattedNumberInput min={0} maxFractionDigits={3} value={line.receivedQty} onValueChange={(value) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, receivedQty: value } : row))} /></div>
+                        <div className="form-group"><label className="form-label">Jumlah Terima</label><FormattedNumberInput min={0} maxFractionDigits={3} value={line.receivedQty} onValueChange={(value) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, receivedQty: value } : row))} /></div>
                         <div className="form-group"><label className="form-label">Catatan</label><input className="form-input" value={line.note} onChange={(event) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, note: event.target.value } : row))} /></div>
                       </div>
                   </div>
@@ -507,7 +507,7 @@ export default function PurchaseDetailPage() {
               </div>
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Nominal Bayar (Rp)</label><FormattedNumberInput allowDecimal={false} value={paymentForm.amount} onValueChange={(value) => setPaymentForm((current) => ({ ...current, amount: value }))} placeholder="Ketik nominal pembayaran" /></div>
-                <div className="form-group"><label className="form-label">Outstanding Saat Ini</label><input className="form-input" value={formatCurrency(Number(summary.outstandingAmount || 0))} readOnly /></div>
+                <div className="form-group"><label className="form-label">Sisa Tagihan Saat Ini</label><input className="form-input" value={formatCurrency(Number(summary.outstandingAmount || 0))} readOnly /></div>
               </div>
               <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={paymentForm.note} onChange={(event) => setPaymentForm((current) => ({ ...current, note: event.target.value }))} /></div>
             </div>

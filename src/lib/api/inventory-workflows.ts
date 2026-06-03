@@ -214,7 +214,7 @@ function normalizePurchaseLines(lines: unknown) {
         if (!Number.isFinite(orderedQty) || orderedQty <= 0) {
             throw new Error(`Qty pada baris pembelian #${index + 1} tidak valid`);
         }
-        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
             throw new Error(`Harga pada baris pembelian #${index + 1} tidak valid`);
         }
         return {

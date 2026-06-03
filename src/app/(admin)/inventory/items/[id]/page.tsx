@@ -498,7 +498,7 @@ export default function WarehouseItemDetailPage() {
             <>
               <div className="table-wrapper table-desktop-only">
                 <table>
-                  <thead><tr><th>Pembelian</th><th>Tanggal</th><th>Supplier</th><th>Qty Pesan</th><th>Qty Terima</th><th>Harga</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Pembelian</th><th>Tanggal</th><th>Supplier</th><th>Jumlah Pesan</th><th>Jumlah Terima</th><th>Harga</th><th>Status</th></tr></thead>
                   <tbody>
                     {purchaseRows.map(({ purchaseItem, purchase }) => (
                       <tr key={purchaseItem._id}>
@@ -526,8 +526,8 @@ export default function WarehouseItemDetailPage() {
                     </div>
                     <div className="mobile-record-grid">
                       <div className="mobile-record-field"><span className="mobile-record-label">Tanggal</span><span className="mobile-record-value">{purchase?.orderDate ? formatDate(purchase.orderDate) : '-'}</span></div>
-                      <div className="mobile-record-field"><span className="mobile-record-label">Qty Pesan</span><span className="mobile-record-value">{formatInventoryQuantity(purchaseItem.orderedQty)} {purchaseItem.itemUnit || item.unit}</span></div>
-                      <div className="mobile-record-field"><span className="mobile-record-label">Qty Terima</span><span className="mobile-record-value">{formatInventoryQuantity(purchaseItem.receivedQty || 0)} {purchaseItem.itemUnit || item.unit}</span></div>
+                      <div className="mobile-record-field"><span className="mobile-record-label">Jumlah Pesan</span><span className="mobile-record-value">{formatInventoryQuantity(purchaseItem.orderedQty)} {purchaseItem.itemUnit || item.unit}</span></div>
+                      <div className="mobile-record-field"><span className="mobile-record-label">Jumlah Terima</span><span className="mobile-record-value">{formatInventoryQuantity(purchaseItem.receivedQty || 0)} {purchaseItem.itemUnit || item.unit}</span></div>
                       <div className="mobile-record-field"><span className="mobile-record-label">Harga</span><span className="mobile-record-value">{formatCurrency(Number(purchaseItem.unitPrice || 0))}</span></div>
                     </div>
                   </div>

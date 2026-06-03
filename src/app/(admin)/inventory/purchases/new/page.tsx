@@ -76,6 +76,16 @@ export default function PurchaseNewPage() {
     });
     return map;
   }, [activeSupplierPrices, orderDate]);
+  const supplierPriceHistoryByItem = useMemo(() => {
+    const map = new Map<string, SupplierItemPrice[]>();
+    supplierItemPrices
+      .filter((price) => price.supplierRef === supplierRef)
+      .forEach((price) => {
+        if (!price.warehouseItemRef) return;
+        map.set(price.warehouseItemRef, [...(map.get(price.warehouseItemRef) || []), price]);
+      });
+    return map;
+  }, [supplierItemPrices, supplierRef]);
   const totals = useMemo(() => {
     const totalQty = lines.reduce((sum, line) => sum + Number(line.orderedQty || 0), 0);
     const totalAmount = lines.reduce((sum, line) => sum + (Number(line.orderedQty || 0) * Number(line.unitPrice || 0)), 0);
@@ -123,8 +133,9 @@ export default function PurchaseNewPage() {
   const getDefaultLinePrice = (warehouseItemRef: string) => {
     const selectedItem = activeItems.find((item) => item._id === warehouseItemRef);
     const supplierPrice = supplierPricesByItem.get(warehouseItemRef);
+    const hasSupplierPriceHistory = supplierPriceHistoryByItem.has(warehouseItemRef);
     return {
-      unitPrice: supplierPrice?.defaultPurchasePrice || selectedItem?.defaultPurchasePrice || 0,
+      unitPrice: supplierPrice?.defaultPurchasePrice || (!hasSupplierPriceHistory ? selectedItem?.defaultPurchasePrice || 0 : 0),
       supplierItemPriceRef: supplierPrice?._id || '',
     };
   };
@@ -140,13 +151,16 @@ export default function PurchaseNewPage() {
     }));
     // Reprice selected lines only when supplier/date references change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supplierRef, supplierPricesByItem]);
+  }, [supplierRef, supplierPricesByItem, supplierPriceHistoryByItem]);
 
   const handleSave = async () => {
     if (!canCreatePurchase) return addToast('error', 'Anda tidak punya hak membuat pembelian');
     const validLines = lines.filter((line) => line.warehouseItemRef && Number(line.orderedQty || 0) > 0);
     if (!supplierRef) return addToast('error', 'Supplier wajib dipilih');
     if (validLines.length === 0) return addToast('error', 'Isi minimal satu barang pembelian');
+    if (validLines.some((line) => Number(line.unitPrice || 0) <= 0)) {
+      return addToast('error', 'Harga per satuan wajib diisi lebih dari 0');
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/data', {
@@ -216,8 +230,16 @@ export default function PurchaseNewPage() {
             {lines.map((line, index) => {
               const selectedItem = activeItems.find((item) => item._id === line.warehouseItemRef);
               const selectedSupplierPrice = line.supplierItemPriceRef ? supplierItemPrices.find((price) => price._id === line.supplierItemPriceRef) : null;
+              const hasSupplierPriceHistory = line.warehouseItemRef ? supplierPriceHistoryByItem.has(line.warehouseItemRef) : false;
               const isTrackedTireItem = isTireTrackedWarehouseItem(selectedItem);
               const lineSubtotal = Number(line.orderedQty || 0) * Number(line.unitPrice || 0);
+              const priceHelpText = selectedSupplierPrice
+                ? `Harga dari supplier ${selectedSupplier?.name || ''}: ${formatCurrency(Number(selectedSupplierPrice.defaultPurchasePrice || 0))}`
+                : hasSupplierPriceHistory
+                  ? 'Belum ada harga supplier yang berlaku di tanggal pembelian ini. Isi harga manual atau ubah masa berlaku harga di Supplier.'
+                  : selectedItem && Number(selectedItem.defaultPurchasePrice || 0) > 0
+                    ? `Belum ada harga supplier. Sementara memakai harga default barang: ${formatCurrency(Number(selectedItem.defaultPurchasePrice || 0))}`
+                    : 'Isi harga manual untuk barang ini.';
               return (
                 <div key={line.rowId} className="card" style={{ border: '1px solid var(--color-border)' }}>
                   <div className="card-body">
@@ -226,22 +248,22 @@ export default function PurchaseNewPage() {
                       {lines.length > 1 && <button className="btn btn-secondary" type="button" onClick={() => removeLine(line.rowId)}><Trash2 size={16} /> Hapus</button>}
                     </div>
                     <div className="form-row">
-                      <div className="form-group"><label className="form-label">Barang Gudang</label><select className="form-select" value={line.warehouseItemRef} onChange={(event) => handleItemChange(line.rowId, event.target.value)}><option value="">Pilih barang</option>{activeItems.map((item) => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Qty Pesan</label><FormattedNumberInput min={0} maxFractionDigits={isTrackedTireItem ? 0 : 3} allowDecimal={!isTrackedTireItem} value={line.orderedQty} onValueChange={(value) => updateLine(line.rowId, { orderedQty: value })} /></div>
+                      <div className="form-group"><label className="form-label">Barang</label><select className="form-select" value={line.warehouseItemRef} onChange={(event) => handleItemChange(line.rowId, event.target.value)}><option value="">Pilih barang</option>{activeItems.map((item) => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Jumlah Dibeli</label><FormattedNumberInput min={0} maxFractionDigits={isTrackedTireItem ? 0 : 3} allowDecimal={!isTrackedTireItem} value={line.orderedQty} onValueChange={(value) => updateLine(line.rowId, { orderedQty: value })} /></div>
                     </div>
                     <div className="form-row">
-                      <div className="form-group"><label className="form-label">Harga Satuan (Rp)</label><FormattedNumberInput allowDecimal={false} value={line.unitPrice} onValueChange={(value) => updateLine(line.rowId, { unitPrice: value })} placeholder="Ketik harga satuan" /></div>
+                      <div className="form-group"><label className="form-label">Harga per Satuan (Rp)</label><FormattedNumberInput allowDecimal={false} value={line.unitPrice} onValueChange={(value) => updateLine(line.rowId, { unitPrice: value })} placeholder="Ketik harga satuan" /></div>
                       <div className="form-group"><label className="form-label">Subtotal</label><input className="form-input" value={lineSubtotal > 0 ? formatCurrency(lineSubtotal) : '-'} readOnly /></div>
                     </div>
-                    <div className="form-group"><label className="form-label">Catatan Baris</label><textarea className="form-textarea" rows={2} value={line.notes} onChange={(event) => updateLine(line.rowId, { notes: event.target.value })} /></div>
+                    <div className="form-group"><label className="form-label">Catatan Barang</label><textarea className="form-textarea" rows={2} value={line.notes} onChange={(event) => updateLine(line.rowId, { notes: event.target.value })} /></div>
                     {selectedItem && (
                       <div className="text-muted text-xs" style={{ display: 'grid', gap: '0.2rem' }}>
                         <div>Satuan {selectedItem.unit} | Stok saat ini {formatInventoryQuantity(selectedItem.currentStockQty || 0)} {selectedItem.unit}</div>
-                        <div>{selectedSupplierPrice ? `Harga supplier ${selectedSupplier?.name || ''}: ${formatCurrency(Number(selectedSupplierPrice.defaultPurchasePrice || 0))}` : 'Harga memakai default master barang'}</div>
-                        <div>Mode {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedItem.trackingMode || 'STANDARD']}</div>
+                        <div>{priceHelpText}</div>
+                        <div>Cara stok: {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedItem.trackingMode || 'STANDARD']}</div>
                         {isTrackedTireItem && (
                           <div>
-                            Penerimaan barang akan otomatis membuat kartu ban individual dengan default {selectedItem.tireBrandDefault || '-'} | {selectedItem.tireSizeDefault || '-'} | {normalizeTireType(selectedItem.tireTypeDefault)}.
+                            Saat barang diterima, sistem otomatis membuat kartu ban per unit dengan {selectedItem.tireBrandDefault || '-'} | {selectedItem.tireSizeDefault || '-'} | {normalizeTireType(selectedItem.tireTypeDefault)}.
                           </div>
                         )}
                       </div>

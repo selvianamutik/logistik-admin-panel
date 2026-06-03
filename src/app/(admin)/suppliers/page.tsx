@@ -263,13 +263,13 @@ export default function SuppliersPage() {
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-content">
-                        <div className="kpi-label">Supplier Dengan Outstanding</div>
+                        <div className="kpi-label">Supplier Ada Tagihan</div>
                         <div className="kpi-value">{suppliersWithOutstanding}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-content">
-                        <div className="kpi-label">Outstanding Supplier</div>
+                        <div className="kpi-label">Sisa Tagihan Supplier</div>
                         <div className="kpi-value">{formatCurrency(supplierOutstandingTotal)}</div>
                     </div>
                 </div>
@@ -304,7 +304,7 @@ export default function SuppliersPage() {
                                 <th>Nama Supplier</th>
                                 <th>PIC</th>
                                 <th>Termin</th>
-                                <th>Outstanding</th>
+                                <th>Sisa Tagihan</th>
                                 <th>Pembelian Terakhir</th>
                                 <th>Status</th>
                                 <th>Aksi</th>
@@ -423,7 +423,7 @@ export default function SuppliersPage() {
                                         <span className="mobile-record-value">{supplier.defaultTermDays || 0} hari</span>
                                     </div>
                                     <div className="mobile-record-field">
-                                        <span className="mobile-record-label">Outstanding</span>
+                                        <span className="mobile-record-label">Sisa Tagihan</span>
                                         <span className="mobile-record-value">{formatCurrency(supplierSummaryMap[supplier._id]?.outstandingAmount || 0)}</span>
                                     </div>
                                     <div className="mobile-record-field">

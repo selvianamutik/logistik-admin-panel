@@ -227,7 +227,7 @@ export default function InventoryOverviewPage() {
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
         <div className="kpi-card">
           <div className="kpi-content">
-            <div className="kpi-label">Outstanding Pembelian</div>
+            <div className="kpi-label">Sisa Tagihan Pembelian</div>
             <div className="kpi-value">{formatCurrency(outstandingAmount)}</div>
           </div>
         </div>
@@ -296,7 +296,7 @@ export default function InventoryOverviewPage() {
                         <span className="mobile-record-value">{purchase.dueDate ? formatDate(purchase.dueDate) : '-'}</span>
                       </div>
                       <div className="mobile-record-field">
-                        <span className="mobile-record-label">Outstanding</span>
+                        <span className="mobile-record-label">Sisa Tagihan</span>
                         <span className="mobile-record-value">{formatCurrency(Number(purchase.outstandingAmount || 0))}</span>
                       </div>
                     </div>

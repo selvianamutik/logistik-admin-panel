@@ -194,7 +194,7 @@ export default function PurchasesPage() {
           { header: 'Jatuh Tempo', key: 'jatuhTempo', width: 16 },
           { header: 'Total', key: 'total', width: 18 },
           { header: 'Dibayar', key: 'dibayar', width: 18 },
-          { header: 'Outstanding', key: 'outstanding', width: 18 },
+          { header: 'Sisa Tagihan', key: 'outstanding', width: 18 },
           { header: 'Status Penerimaan', key: 'statusPenerimaan', width: 20 },
           { header: 'Status Pembayaran', key: 'statusPembayaran', width: 20 },
           { header: 'Catatan', key: 'catatan', width: 30 },
@@ -224,7 +224,7 @@ export default function PurchasesPage() {
       </div>
 
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
-        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatCurrency(outstandingTotal)}</div></div></div>
+        <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sisa Tagihan</div><div className="kpi-value">{formatCurrency(outstandingTotal)}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Lunas</div><div className="kpi-value">{openCount}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Jatuh Tempo</div><div className="kpi-value">{overdueCount}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pembelian Periode</div><div className="kpi-value">{formatCurrency(purchaseAmountForPeriod)}</div><div className="kpi-sub">{periodPurchases.length} dokumen</div></div></div>
@@ -282,7 +282,7 @@ export default function PurchasesPage() {
         <div className="table-wrapper table-desktop-only">
           <table>
             <thead>
-              <tr><th>Nomor</th><th>Supplier</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Total</th><th>Outstanding</th><th>Status</th><th>Aksi</th></tr>
+              <tr><th>Nomor</th><th>Supplier</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Total</th><th>Sisa Tagihan</th><th>Status</th><th>Aksi</th></tr>
             </thead>
             <tbody>
               {loading ? [1, 2, 3].map((index) => <tr key={index}>{[1, 2, 3, 4, 5, 6, 7, 8].map((cell) => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>) : filteredTotal === 0 ? (
@@ -335,7 +335,7 @@ export default function PurchasesPage() {
                   <div className="mobile-record-field"><span className="mobile-record-label">Tanggal</span><span className="mobile-record-value">{formatDate(purchase.orderDate)}</span></div>
                   <div className="mobile-record-field"><span className="mobile-record-label">Jatuh Tempo</span><span className="mobile-record-value">{purchase.dueDate ? formatDate(purchase.dueDate) : '-'}</span></div>
                   <div className="mobile-record-field"><span className="mobile-record-label">Total</span><span className="mobile-record-value">{formatCurrency(Number(purchase.totalAmount || 0))}</span></div>
-                  <div className="mobile-record-field"><span className="mobile-record-label">Outstanding</span><span className="mobile-record-value">{formatCurrency(Number(purchase.outstandingAmount || 0))}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Sisa Tagihan</span><span className="mobile-record-value">{formatCurrency(Number(purchase.outstandingAmount || 0))}</span></div>
                   <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Catatan</span><span className="mobile-record-value">{purchase.notes || '-'}</span></div>
                 </div>
                 <div className="mobile-record-actions"><Link href={`/inventory/purchases/${purchase._id}`} className="btn btn-secondary">Lihat Detail</Link></div>
