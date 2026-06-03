@@ -630,7 +630,8 @@ async function main() {
     for (const movement of stockMovements) {
         const warehouseItem = warehouseItemById.get(movement.warehouseItemRef);
         assert(warehouseItem, `Mutasi stok ${movement._id} mengarah ke barang gudang yang tidak ditemukan.`);
-        assert(money(movement.quantity) > 0, `Mutasi stok ${movement._id} quantity tidak valid.`);
+        const movementQuantity = quantity(movement.quantity);
+        assert(movementQuantity > 0, `Mutasi stok ${movement._id} quantity tidak valid.`);
 
         for (const event of stockMovementEvents) {
             if (event !== movement.sourceType) {
@@ -638,8 +639,17 @@ async function main() {
             }
         }
 
-        const unitValue = money(warehouseItem.defaultPurchasePrice);
-        const movementValue = money(movement.quantity) * unitValue;
+        const unitValue = money(movement.unitCostSnapshot) > 0
+            ? money(movement.unitCostSnapshot)
+            : money(warehouseItem.defaultPurchasePrice);
+        const snapshotValue = money(movement.subtotalCost);
+        const movementValue = snapshotValue > 0 ? snapshotValue : money(movementQuantity * unitValue);
+        if (snapshotValue > 0 && unitValue > 0) {
+            assert(
+                money(movementQuantity * unitValue) === snapshotValue,
+                `Mutasi stok ${movement._id} subtotalCost tidak sinkron dengan quantity x unitCostSnapshot.`
+            );
+        }
         const shouldHaveUsageJournal = stockMovementEvents.includes(movement.sourceType) && movementValue > 0;
         if (!shouldHaveUsageJournal) continue;
 

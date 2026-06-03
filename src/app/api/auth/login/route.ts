@@ -6,17 +6,16 @@ import { createSession, setSessionCookie, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { getDocumentById } from '@/lib/repositories/document-store';
 import { findActiveUserByEmail, updateUserLoginState } from '@/lib/repositories/user-store';
-import { DRIVER_SESSION_COOKIE, isSessionConfigError, SESSION_COOKIE } from '@/lib/session';
+import { isSessionConfigError, SESSION_COOKIE } from '@/lib/session';
 import { isSupabaseConfigError, SupabaseServiceError } from '@/lib/supabase';
-import type { Driver, User } from '@/lib/types';
+import type { User } from '@/lib/types';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 
-function buildLoginRateLimitKey(request: Request, email: string, scope: 'ADMIN' | 'DRIVER') {
-    return `login:${scope}:${email.toLowerCase()}:${getRequestIp(request)}`;
+function buildLoginRateLimitKey(request: Request, email: string) {
+    return `login:ADMIN:${email.toLowerCase()}:${getRequestIp(request)}`;
 }
 
 function tooManyAttemptsResponse(retryAfterSeconds: number) {
@@ -58,46 +57,15 @@ export async function GET() {
 }
 
 async function syncSuccessfulLogin(
-    user: User,
-    loginScope: 'ADMIN' | 'DRIVER'
+    user: User
 ): Promise<{ user: User } | { errorResponse: Response }> {
-    if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
-        return {
-            errorResponse: jsonNoStore(
-                { error: 'Akun ini bukan akun mobile driver' },
-                { status: 403 }
-            ),
-        };
-    }
-
-    if (loginScope === 'ADMIN' && user.role === 'DRIVER') {
+    if (user.role === 'DRIVER') {
         return {
             errorResponse: jsonNoStore(
                 { error: 'Akun driver harus login dari aplikasi driver' },
                 { status: 403 }
             ),
         };
-    }
-
-    if (user.role === 'DRIVER') {
-        if (!user.driverRef) {
-            return {
-                errorResponse: jsonNoStore(
-                    { error: 'Akun driver belum terhubung ke data supir' },
-                    { status: 409 }
-                ),
-            };
-        }
-
-        const driver = await getDocumentById<Driver>(user.driverRef, 'driver');
-        if (!driver || driver.active === false) {
-            return {
-                errorResponse: jsonNoStore(
-                    { error: 'Akun driver tidak aktif atau data supir tidak tersedia' },
-                    { status: 409 }
-                ),
-            };
-        }
     }
 
     const lastLoginAt = new Date().toISOString();
@@ -129,8 +97,7 @@ export async function POST(request: Request) {
         }
         const body = parsedBody.data;
 
-        const { email, password, scope } = body;
-        const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
+        const { email, password } = body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
         const normalizedPassword = typeof password === 'string' ? password : '';
 
@@ -141,7 +108,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail, loginScope);
+        const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail);
         const rateLimitStatus = await recordLoginAttempt(
             rateLimitKey,
             LOGIN_ATTEMPT_LIMIT,
@@ -161,7 +128,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
-        const syncResult = await syncSuccessfulLogin(user, loginScope);
+        const syncResult = await syncSuccessfulLogin(user);
         if ('errorResponse' in syncResult) {
             return syncResult.errorResponse;
         }
@@ -170,16 +137,13 @@ export async function POST(request: Request) {
         await clearFailedAttempts(rateLimitKey);
 
         const token = await createSession(syncedUser);
-        await setSessionCookie(
-            token,
-            loginScope === 'DRIVER' ? DRIVER_SESSION_COOKIE : SESSION_COOKIE
-        );
+        await setSessionCookie(token, SESSION_COOKIE);
         await writeAuditLog(
             { _id: syncedUser._id, name: syncedUser.name, email: syncedUser.email, role: syncedUser.role },
             'LOGIN',
-            loginScope === 'DRIVER' ? 'driver-web-auth' : 'admin-web-auth',
+            'admin-web-auth',
             syncedUser._id,
-            loginScope === 'DRIVER' ? 'Login portal driver' : 'Login admin web'
+            'Login admin web'
         );
 
         return jsonNoStore({

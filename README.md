@@ -35,14 +35,16 @@ Stack utama:
 9. Workflow utama trip driver memakai Uang Jalan Trip yang tertaut ke 1 DO untuk uang jalan awal, top up, biaya perjalanan aktual, upah trip, dan settlement akhir.
 
 Dokumen alur lengkap ada di:
-- [WORKFLOW.md](C:\LOGISTIK\app\WORKFLOW.md)
-- [docs/SYSTEM_MODULES_AND_WORKFLOWS.md](C:\LOGISTIK\app\docs\SYSTEM_MODULES_AND_WORKFLOWS.md)
-- [docs/UAT_ALL_MODULES_COMPREHENSIVE.md](C:\LOGISTIK\app\docs\UAT_ALL_MODULES_COMPREHENSIVE.md)
-- [AUDIT.md](C:\LOGISTIK\app\AUDIT.md)
-- [security_best_practices_report.md](C:\LOGISTIK\app\security_best_practices_report.md)
+- [WORKFLOW.md](./WORKFLOW.md)
+- [docs/HANDOFF.md](./docs/HANDOFF.md) — indeks handoff: peta halaman → API, redundansi, sumber kebenaran
+- [docs/HANDOFF-API.md](./docs/HANDOFF-API.md) — indeks `/api/data`: entity, action, workflow handlers
+- [docs/SYSTEM_MODULES_AND_WORKFLOWS.md](./docs/SYSTEM_MODULES_AND_WORKFLOWS.md)
+- [docs/UAT_ALL_MODULES_COMPREHENSIVE.md](./docs/UAT_ALL_MODULES_COMPREHENSIVE.md)
+- [AUDIT.md](./AUDIT.md)
+- [security_best_practices_report.md](./security_best_practices_report.md)
 
 Workbook UAT lengkap:
-- [artifacts/uat/UAT_ALL_MODULES_COMPREHENSIVE.xlsx](C:\LOGISTIK\app\artifacts\uat\UAT_ALL_MODULES_COMPREHENSIVE.xlsx)
+- [artifacts/uat/UAT_ALL_MODULES_COMPREHENSIVE.xlsx](./artifacts/uat/UAT_ALL_MODULES_COMPREHENSIVE.xlsx)
 
 ## Demo seed
 
@@ -93,7 +95,8 @@ Catatan penting:
 ## Driver mobile
 
 App driver resmi ada di:
-- [apps/driver_app/README.md](C:\LOGISTIK\app\apps\driver_app\README.md)
+- [apps/driver_app/README.md](./apps/driver_app/README.md) — build & signing Android
+- [docs/HANDOFF-MOBILE.md](./docs/HANDOFF-MOBILE.md) — layar Flutter, API `/api/driver/*`
 
 Flow mobile:
 - login driver

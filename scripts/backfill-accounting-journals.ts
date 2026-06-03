@@ -383,7 +383,7 @@ async function main() {
             continue;
         }
         const warehouseItem = warehouseItemsById.get(movement.warehouseItemRef);
-        const unitValue = positiveNumber(warehouseItem?.defaultPurchasePrice);
+        const unitValue = positiveNumber(movement.unitCostSnapshot) || positiveNumber(warehouseItem?.defaultPurchasePrice);
         if (unitValue <= 0 || positiveNumber(movement.quantity) <= 0) {
             inc('skipped');
             continue;

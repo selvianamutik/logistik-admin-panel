@@ -50,16 +50,12 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/settings/audit-logs', module: 'auditLogs' },
 ];
 
-function isDriverPortalPath(pathname: string) {
-    return matchesPathSegment(pathname, '/driver');
-}
-
-function isDriverLoginPath(pathname: string) {
-    return matchesPathSegment(pathname, '/driver/login');
-}
-
 function isAdminLoginPath(pathname: string) {
     return matchesPathSegment(pathname, '/login');
+}
+
+function isRemovedDriverPortalPath(pathname: string) {
+    return matchesPathSegment(pathname, '/driver');
 }
 
 function getModuleForPath(pathname: string) {
@@ -79,16 +75,12 @@ function getRequiredModuleAction(pathname: string): keyof ModulePermissions {
 
 async function getLiveSessionUser(
     request: NextRequest,
-    token: string,
-    scope: 'ADMIN' | 'DRIVER'
+    token: string
 ): Promise<{ user: SessionUser | null; checkedLive: boolean }> {
-    const cookieName = scope === 'DRIVER' ? DRIVER_SESSION_COOKIE : SESSION_COOKIE;
-    const sessionUrl = scope === 'DRIVER' ? '/api/driver/session' : '/api/auth/session';
-
     try {
-        const response = await fetch(new URL(sessionUrl, request.url), {
+        const response = await fetch(new URL('/api/auth/session', request.url), {
             headers: {
-                cookie: `${cookieName}=${token}`,
+                cookie: `${SESSION_COOKIE}=${token}`,
             },
             cache: 'no-store',
         });
@@ -104,11 +96,13 @@ async function getLiveSessionUser(
     }
 }
 
+function clearDriverWebSessionCookie(response: NextResponse) {
+    response.cookies.delete(DRIVER_SESSION_COOKIE);
+}
+
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
-    const driverLoginPath = isDriverLoginPath(pathname);
     const adminLoginPath = isAdminLoginPath(pathname);
-    const driverPortalPath = isDriverPortalPath(pathname) && !driverLoginPath;
 
     if (
         pathname.startsWith('/api/') ||
@@ -119,25 +113,18 @@ export async function proxy(request: NextRequest) {
         return NextResponse.next();
     }
 
+    if (isRemovedDriverPortalPath(pathname)) {
+        const response = NextResponse.redirect(new URL('/login', request.url));
+        clearDriverWebSessionCookie(response);
+        return response;
+    }
+
     const adminToken = request.cookies.get(SESSION_COOKIE)?.value;
-    const driverToken = request.cookies.get(DRIVER_SESSION_COOKIE)?.value;
+    const legacyDriverToken = request.cookies.get(DRIVER_SESSION_COOKIE)?.value;
 
-    if (driverLoginPath) {
-        if (driverToken) {
-            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            const user = live.user;
-            if (user?.role === 'DRIVER') {
-                return NextResponse.redirect(new URL('/driver', request.url));
-            }
-            if (!user) {
-                const response = NextResponse.next();
-                response.cookies.delete(DRIVER_SESSION_COOKIE);
-                return response;
-            }
-        }
-
+    if (adminLoginPath) {
         if (adminToken) {
-            const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
+            const live = await getLiveSessionUser(request, adminToken);
             const user = live.user;
             if (user && user.role !== 'DRIVER') {
                 return NextResponse.redirect(new URL('/dashboard', request.url));
@@ -149,34 +136,10 @@ export async function proxy(request: NextRequest) {
             }
         }
 
-        return NextResponse.next();
-    }
-
-    if (adminLoginPath) {
-        if (adminToken) {
-            const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-            const user = live.user;
-            if (user) {
-                return NextResponse.redirect(new URL(user.role === 'DRIVER' ? '/driver' : '/dashboard', request.url));
-            }
-            if (!user) {
-                const response = NextResponse.next();
-                response.cookies.delete(SESSION_COOKIE);
-                return response;
-            }
-        }
-
-        if (driverToken) {
-            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            const user = live.user;
-            if (user?.role === 'DRIVER') {
-                return NextResponse.redirect(new URL('/driver', request.url));
-            }
-            if (!user) {
-                const response = NextResponse.next();
-                response.cookies.delete(DRIVER_SESSION_COOKIE);
-                return response;
-            }
+        if (legacyDriverToken) {
+            const response = NextResponse.next();
+            clearDriverWebSessionCookie(response);
+            return response;
         }
 
         return NextResponse.next();
@@ -184,55 +147,44 @@ export async function proxy(request: NextRequest) {
 
     if (pathname === '/') {
         if (adminToken) {
-            const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
+            const live = await getLiveSessionUser(request, adminToken);
             const user = live.user;
             if (user && user.role !== 'DRIVER') {
                 return NextResponse.redirect(new URL('/dashboard', request.url));
             }
         }
-        if (driverToken) {
-            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            const user = live.user;
-            if (user?.role === 'DRIVER') {
-                return NextResponse.redirect(new URL('/driver', request.url));
-            }
+        const response = NextResponse.redirect(new URL('/login', request.url));
+        if (legacyDriverToken) {
+            clearDriverWebSessionCookie(response);
         }
-        return NextResponse.redirect(new URL('/login', request.url));
+        return response;
     }
 
     try {
-        if (driverPortalPath) {
-            if (!driverToken) {
-                return NextResponse.redirect(new URL('/driver/login', request.url));
-            }
-
-            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            const user = live.user;
-            if (!user) {
-                const response = NextResponse.redirect(new URL('/driver/login', request.url));
-                response.cookies.delete(DRIVER_SESSION_COOKIE);
-                return response;
-            }
-            if (user.role !== 'DRIVER') {
-                return NextResponse.redirect(new URL('/dashboard', request.url));
-            }
-            return NextResponse.next();
-        }
-
         if (!adminToken) {
-            return NextResponse.redirect(new URL('/login', request.url));
+            const response = NextResponse.redirect(new URL('/login', request.url));
+            if (legacyDriverToken) {
+                clearDriverWebSessionCookie(response);
+            }
+            return response;
         }
 
-        const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
+        const live = await getLiveSessionUser(request, adminToken);
         const user = live.user;
         if (!user) {
             const response = NextResponse.redirect(new URL('/login', request.url));
             response.cookies.delete(SESSION_COOKIE);
+            if (legacyDriverToken) {
+                clearDriverWebSessionCookie(response);
+            }
             return response;
         }
 
         if (user.role === 'DRIVER') {
-            return NextResponse.redirect(new URL('/driver', request.url));
+            const response = NextResponse.redirect(new URL('/login', request.url));
+            response.cookies.delete(SESSION_COOKIE);
+            clearDriverWebSessionCookie(response);
+            return response;
         }
 
         const targetModule = getModuleForPath(pathname);
@@ -247,15 +199,15 @@ export async function proxy(request: NextRequest) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 
-        return NextResponse.next();
-    } catch {
-        const loginPath = driverPortalPath ? '/driver/login' : '/login';
-        const response = NextResponse.redirect(new URL(loginPath, request.url));
-        if (driverPortalPath) {
-            response.cookies.delete(DRIVER_SESSION_COOKIE);
-        } else {
-            response.cookies.delete(SESSION_COOKIE);
+        const response = NextResponse.next();
+        if (legacyDriverToken) {
+            clearDriverWebSessionCookie(response);
         }
+        return response;
+    } catch {
+        const response = NextResponse.redirect(new URL('/login', request.url));
+        response.cookies.delete(SESSION_COOKIE);
+        clearDriverWebSessionCookie(response);
         return response;
     }
 }

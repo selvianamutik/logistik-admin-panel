@@ -41,8 +41,7 @@ export default function LoginPage() {
                 return;
             }
 
-            const destination = data.user?.role === 'DRIVER' ? '/driver' : '/dashboard';
-            window.location.assign(destination);
+            window.location.assign('/dashboard');
         } catch {
             setError('Tidak dapat terhubung ke server');
             setLoading(false);

@@ -689,7 +689,10 @@ export async function postStockMovementJournal(
         await voidJournalEntryForSource(session, 'STOCK_MOVEMENT', movement._id, movement.sourceType);
         return;
     }
-    const amount = cleanLineAmount(unitValue * cleanLineAmount(movement.quantity));
+    const snapshotSubtotal = cleanLineAmount(movement.subtotalCost);
+    const amount = snapshotSubtotal > 0
+        ? snapshotSubtotal
+        : cleanLineAmount(unitValue * cleanLineAmount(movement.quantity));
     if (amount <= 0) return;
 
     const isStockIn = movement.type === 'IN' && movement.sourceType === 'MANUAL_IN';
