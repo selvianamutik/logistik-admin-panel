@@ -413,6 +413,44 @@ async function auditIncidentDraftCorrection(params: {
             updates: { amount: 88000 },
         },
     }, { expectStatus: 409 });
+
+    const incidentBeforeResolved = await requestJson<{ data: Incident }>(
+        `/api/data?entity=incidents&id=${encodeURIComponent(incident._id)}`,
+        params.adminCookie
+    );
+    await postData<Incident>(params.adminCookie, {
+        entity: 'incidents',
+        action: 'set-status',
+        data: {
+            id: incident._id,
+            revision: incidentBeforeResolved.data._rev || '',
+            status: 'RESOLVED',
+            note: 'Audit admin sudah menyatakan insiden selesai',
+        },
+    });
+    const rejectedAfterResolved = await driverRequest<{ settlementLines: IncidentSettlementLine[] }>(
+        'PATCH',
+        params.driverToken,
+        '/api/driver/incidents',
+        {
+            action: 'submit-resolution',
+            incidentRef: incident._id,
+            resolutionNote: 'Audit biaya susulan setelah admin selesai',
+            costs: [
+                {
+                    category: 'REPAIR',
+                    amount: 22000,
+                    description: 'Biaya susulan yang harus ditolak',
+                    payeeName: 'Bengkel Audit',
+                },
+            ],
+        },
+        { expectStatus: 409 }
+    );
+    assert(
+        /final admin|selesai|ditutup/i.test(rejectedAfterResolved.error || ''),
+        `Driver tidak boleh tambah biaya setelah insiden RESOLVED, got: ${rejectedAfterResolved.error}`
+    );
 }
 
 function buildActualItem(item: DeliveryOrderItem, overrides?: { qty?: number; weight?: number; volume?: number }) {
@@ -582,6 +620,20 @@ async function main() {
         )).data;
         const firstPending = pendingDeliveryOrder.pendingDriverRequests?.[0];
         assert(firstPending?.requestId, 'Submit aktual driver harus masuk pending approval');
+
+        const pendingActualEdit = await postData<DeliveryOrder>(adminCookie, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: {
+                id: state.deliveryOrderId,
+                suratJalanRef: sjARef,
+                actualItems: [buildActualItem(itemA, { qty: 1, weight: 92, volume: 1 })],
+            },
+        }, { expectStatus: 409 });
+        assert(
+            /approval|menunggu/i.test(pendingActualEdit.error || ''),
+            `Edit aktual saat pending approval harus ditolak dengan pesan approval, got: ${pendingActualEdit.error}`
+        );
 
         await driverRequest('PATCH', driverToken, '/api/driver/delivery-orders/cargo-item', {
             id: state.deliveryOrderId,
@@ -784,7 +836,7 @@ async function main() {
         });
 
         console.log(
-            'Driver approval correction audit OK: pending aktual bisa reject/resubmit/approve, SJ lain tetap bisa diubah, odometer closure guard valid, dan biaya incident draft bisa dikoreksi sebelum approve.'
+            'Driver approval correction audit OK: pending aktual mengunci edit aktual admin, bisa reject/resubmit/approve, SJ lain tetap bisa diubah, odometer closure guard valid, biaya incident draft bisa dikoreksi sebelum approve, dan biaya susulan ditolak setelah insiden selesai admin.'
         );
     } finally {
         await cleanupState(state);

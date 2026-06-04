@@ -301,11 +301,6 @@ export async function PATCH(request: Request) {
         if (invalidCostIndex >= 0) {
             return jsonNoStore({ error: `Biaya insiden baris ${invalidCostIndex + 1} wajib berisi nominal dan deskripsi.` }, { status: 400 });
         }
-        const isCostOnlySubmission = normalizedCosts.length > 0;
-        if (incident.status === 'CLOSED' || (incident.status === 'RESOLVED' && !isCostOnlySubmission)) {
-            return jsonNoStore({ error: 'Insiden ini sudah masuk tahap final admin.' }, { status: 409 });
-        }
-
         const resolutionNote = typeof parsedBody.data.resolutionNote === 'string'
             ? parsedBody.data.resolutionNote.trim()
             : '';
@@ -323,21 +318,24 @@ export async function PATCH(request: Request) {
         const hasPendingDriverResolutionRequest =
             typeof incident.pendingDriverResolutionRequestedAt === 'string' &&
             incident.pendingDriverResolutionRequestedAt.trim().length > 0;
-        if ((hasPendingDriverResolutionRequest || hasDriverResolutionLog) && normalizedCosts.length === 0) {
-            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tambahkan biaya baru jika ada perubahan sebelum review admin.' }, { status: 409 });
+        const hasSubmittedResolution = hasPendingDriverResolutionRequest || hasDriverResolutionLog;
+        const isCostOnlySubmission = normalizedCosts.length > 0 && hasSubmittedResolution;
+        if (incident.status === 'CLOSED' || incident.status === 'RESOLVED') {
+            return jsonNoStore({ error: 'Insiden ini sudah masuk tahap final admin.' }, { status: 409 });
         }
-        if (isCostOnlySubmission && !hasPendingDriverResolutionRequest && !hasDriverResolutionLog) {
-            return jsonNoStore({ error: 'Ajukan selesai insiden dulu sebelum menambahkan biaya insiden.' }, { status: 409 });
+        if (hasSubmittedResolution && normalizedCosts.length === 0) {
+            return jsonNoStore({ error: 'Penyelesaian insiden sudah diajukan. Tambahkan biaya baru jika ada perubahan sebelum review admin.' }, { status: 409 });
         }
 
         const now = new Date().toISOString();
+        const requestedCostAmount = normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0);
         const pendingDriverResolutionPatch = isCostOnlySubmission ? {} : {
             pendingDriverResolutionRequestedAt: now,
             pendingDriverResolutionRequestedBy: auth.session._id,
             pendingDriverResolutionRequestedByName: auth.session.name,
             pendingDriverResolutionNote: resolutionNote,
-            pendingDriverResolutionCostCount: 0,
-            pendingDriverResolutionAmount: 0,
+            pendingDriverResolutionCostCount: normalizedCosts.length,
+            pendingDriverResolutionAmount: requestedCostAmount,
         };
         if (!isCostOnlySubmission && incident.status === 'OPEN') {
             await updateDocument<Incident>(incident._id, { status: 'IN_PROGRESS', ...pendingDriverResolutionPatch }, 'incident');
@@ -358,7 +356,7 @@ export async function PATCH(request: Request) {
             !isCostOnlySubmission && locationText ? `Lokasi akhir: ${locationText}` : '',
             odometer > 0 ? `Odometer akhir: ${odometer.toLocaleString('id-ID')} km` : '',
             normalizedCosts.length > 0
-                ? `Biaya diajukan: ${normalizedCosts.length} baris / Rp ${normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0).toLocaleString('id-ID')}`
+                ? `Biaya diajukan: ${normalizedCosts.length} baris / Rp ${requestedCostAmount.toLocaleString('id-ID')}`
                 : 'Tidak ada biaya yang diajukan driver.',
         ].filter(Boolean).join(' | ');
 
@@ -412,7 +410,7 @@ export async function PATCH(request: Request) {
             driverName: incident.driverName || auth.driver.name,
             doNumber: incident.relatedDONumber,
             costCount: createdLines.length,
-            amount: normalizedCosts.reduce((sum, cost) => sum + cost.amount, 0),
+            amount: requestedCostAmount,
             mode: isCostOnlySubmission ? 'COST_ADDITION' : 'RESOLUTION',
         }));
 

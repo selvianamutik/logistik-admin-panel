@@ -157,9 +157,9 @@ type AuditLogFn = (
 ) => void | Promise<void>;
 
 async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'SJ/barang') {
-    const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
+    const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string; status?: string }>('freightNotaItem', {
         doRef: id,
-    }))[0] || null;
+    })).find(item => item.status !== 'VOID') || null;
     if (hasNotaReference) {
         return `${label} tidak boleh diubah karena DO ini sudah masuk invoice.`;
     }
@@ -169,6 +169,98 @@ async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'S
     }))[0] || null;
     if (hasBoronganReference) {
         return `${label} tidak boleh diubah karena DO ini sudah masuk arsip slip borongan.`;
+    }
+
+    return '';
+}
+
+type DeliveryOrderInvoiceUsageRow = {
+    _id: string;
+    notaRef?: string;
+    doRef?: string;
+    doNumber?: string;
+    noSJ?: string;
+    deliveryOrderItemRef?: string;
+    deliveryOrderItemRefs?: string[];
+    actualDropPointKey?: string;
+    status?: string;
+};
+
+function getFreightNotaUsageItemRefs(row: Pick<DeliveryOrderInvoiceUsageRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
+    const refs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+        ? row.deliveryOrderItemRefs
+        : row.deliveryOrderItemRef
+            ? [row.deliveryOrderItemRef]
+            : [];
+    return [...new Set(refs.map(ref => normalizeOptionalText(ref)).filter((ref): ref is string => Boolean(ref)))];
+}
+
+function normalizeInvoiceLookupText(value: unknown) {
+    return normalizeOptionalText(value)?.toUpperCase() || '';
+}
+
+function collectActualDropPointKeys(points: NonNullable<DeliveryOrder['actualDropPoints']>) {
+    const keys = new Set<string>();
+    points.forEach((point, index) => {
+        const explicitKey = normalizeOptionalText(point._key);
+        if (explicitKey) {
+            keys.add(explicitKey);
+        }
+        const sequence = normalizeNumber(point.sequence);
+        if (sequence > 0) {
+            keys.add(String(sequence));
+        } else if (!explicitKey) {
+            keys.add(String(index));
+        }
+    });
+    return keys;
+}
+
+async function getDeliveryOrderActualCargoInvoiceLockMessage(params: {
+    id: string;
+    label: string;
+    targetItemRefs: string[];
+    targetNoSJs: Array<string | undefined>;
+    targetActualDropPoints: NonNullable<DeliveryOrder['actualDropPoints']>;
+}) {
+    const activeNotaItems = (await listDocumentsByFilter<DeliveryOrderInvoiceUsageRow>('freightNotaItem', {
+        doRef: params.id,
+    })).filter(item => item.status !== 'VOID');
+    if (activeNotaItems.length === 0) {
+        return '';
+    }
+
+    const targetItemRefs = new Set(
+        params.targetItemRefs
+            .map(ref => normalizeOptionalText(ref))
+            .filter((ref): ref is string => Boolean(ref))
+    );
+    const targetNoSJs = new Set(
+        params.targetNoSJs
+            .map(normalizeInvoiceLookupText)
+            .filter(Boolean)
+    );
+    const targetDropPointKeys = collectActualDropPointKeys(params.targetActualDropPoints);
+
+    for (const item of activeNotaItems) {
+        const itemRefs = getFreightNotaUsageItemRefs(item);
+        if (itemRefs.some(ref => targetItemRefs.has(ref))) {
+            return `${params.label} tidak boleh diubah karena sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`;
+        }
+
+        const itemNoSJ = normalizeInvoiceLookupText(item.noSJ);
+        if (itemNoSJ && targetNoSJs.has(itemNoSJ)) {
+            return `${params.label} tidak boleh diubah karena sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`;
+        }
+
+        const actualDropPointKey = normalizeOptionalText(item.actualDropPointKey);
+        if (actualDropPointKey && targetDropPointKeys.has(actualDropPointKey)) {
+            return `${params.label} tidak boleh diubah karena titik drop ini sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`;
+        }
+
+        if (itemRefs.length === 0 && !itemNoSJ && !actualDropPointKey) {
+            return `${params.label} tidak boleh diubah karena DO ini sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`;
+        }
     }
 
     return '';
@@ -6693,6 +6785,20 @@ export async function handleDeliveryOrderSuratJalanActualCargoUpdate(
             }
         });
     });
+    const invoiceLockMessage = await getDeliveryOrderActualCargoInvoiceLockMessage({
+        id,
+        label: `Aktual SJ ${suratJalanRecord.suratJalanNumber || suratJalanRef}`,
+        targetItemRefs: [...targetItemIds],
+        targetNoSJs: [
+            suratJalanRecord.suratJalanNumber,
+            recordNumber,
+            ...targetItems.map(item => item.shipperReferenceNumber),
+        ],
+        targetActualDropPoints: previousTargetedBillablePoints,
+    });
+    if (invoiceLockMessage) {
+        return NextResponse.json({ error: invoiceLockMessage }, { status: 409 });
+    }
     const nextDropPoints: NonNullable<DeliveryOrder['actualDropPoints']> = hasProvidedActualDropPoints && scopedActualDropPoints
         ? scopedActualDropPoints.filter(point => point.stopType === 'DROP' || point.stopType === 'EXTRA_DROP')
         : targetItems.map((item, index) => {
@@ -7401,9 +7507,9 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         return NextResponse.json({ error: pendingReferenceMutationMessage }, { status: 409 });
     }
 
-    const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
+    const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string; status?: string }>('freightNotaItem', {
         doRef: id,
-    }))[0] || null;
+    })).find(item => item.status !== 'VOID') || null;
     if (hasNotaReference) {
         return NextResponse.json(
                         { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk invoice' },
@@ -7977,9 +8083,9 @@ export async function handleOrderCancel(
 
     const relatedDeliveryOrderIds = relatedDeliveryOrders.map(item => item._id);
     if (relatedDeliveryOrderIds.length > 0) {
-        const relatedNotaItem = (await listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {
+        const relatedNotaItem = (await listDocumentsByFilter<{ _id: string; notaRef?: string; status?: string }>('freightNotaItem', {
             doRef: relatedDeliveryOrderIds,
-        }))[0] || null;
+        })).find(item => item.status !== 'VOID') || null;
         if (relatedNotaItem) {
             return NextResponse.json(
                 { error: 'Order/resi yang sudah masuk invoice tidak bisa dibatalkan.' },

@@ -19,6 +19,8 @@ const genericWorkflowsPath = path.join(process.cwd(), 'src/lib/api/generic-workf
 const genericWorkflowsSource = fs.readFileSync(genericWorkflowsPath, 'utf8');
 const driverWorkflowPath = path.join(process.cwd(), 'src/lib/api/driver-workflows.ts');
 const driverWorkflowSource = fs.readFileSync(driverWorkflowPath, 'utf8');
+const orderWorkflowPath = path.join(process.cwd(), 'src/lib/api/order-workflows.ts');
+const orderWorkflowSource = fs.readFileSync(orderWorkflowPath, 'utf8');
 const documentStorePath = path.join(process.cwd(), 'src/lib/repositories/document-store.ts');
 const documentStoreSource = fs.readFileSync(documentStorePath, 'utf8');
 const reportsSupportPath = path.join(process.cwd(), 'src/lib/reports-support.ts');
@@ -162,6 +164,11 @@ const deliveryOrderActions = [
         action: 'update-shipper-reference',
         handler: 'handleDeliveryOrderShipperReferenceUpdate',
         specialRoles: ['OWNER', 'OPERASIONAL', 'FINANCE'],
+    },
+    {
+        action: 'update-surat-jalan-actual-cargo',
+        handler: 'handleDeliveryOrderSuratJalanActualCargoUpdate',
+        specialRoles: ['OWNER', 'OPERASIONAL', 'ARMADA'],
     },
     {
         action: 'reject-driver-status-request',
@@ -420,6 +427,52 @@ assert(
         source.includes("entity === 'freight-nota-items'") &&
         source.includes("items = items.filter(item => item.status !== 'VOID');"),
     'Item invoice VOID harus disembunyikan dari UI aktif dan tidak boleh ikut guard double billing.'
+);
+const actualCargoInvoiceLockStart = orderWorkflowSource.indexOf('async function getDeliveryOrderActualCargoInvoiceLockMessage');
+assert(actualCargoInvoiceLockStart >= 0, 'getDeliveryOrderActualCargoInvoiceLockMessage tidak ditemukan.');
+const actualCargoInvoiceLockEnd = orderWorkflowSource.indexOf('async function applyTripClosureOdometerUpdates', actualCargoInvoiceLockStart);
+assert(actualCargoInvoiceLockEnd > actualCargoInvoiceLockStart, 'Block getDeliveryOrderActualCargoInvoiceLockMessage tidak tertutup sebelum helper berikutnya.');
+const actualCargoInvoiceLockBlock = orderWorkflowSource.slice(actualCargoInvoiceLockStart, actualCargoInvoiceLockEnd);
+assert(
+    actualCargoInvoiceLockBlock.includes("item.status !== 'VOID'") &&
+        orderWorkflowSource.includes("function getFreightNotaUsageItemRefs(row: Pick<DeliveryOrderInvoiceUsageRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>)") &&
+        actualCargoInvoiceLockBlock.includes('actualDropPointKey') &&
+        actualCargoInvoiceLockBlock.includes('targetNoSJs'),
+    'Lock edit aktual SJ harus granular per item/SJ/titik drop dan mengabaikan item invoice VOID.'
+);
+const suratJalanActualCargoUpdateBlock = extractBalancedBlockFrom(
+    orderWorkflowSource,
+    'handleDeliveryOrderSuratJalanActualCargoUpdate',
+    'export async function handleDeliveryOrderSuratJalanActualCargoUpdate'
+);
+assert(
+    suratJalanActualCargoUpdateBlock.includes('getDeliveryOrderActualCargoInvoiceLockMessage') &&
+        suratJalanActualCargoUpdateBlock.includes("suratJalanRecord.tripStatus !== 'DELIVERED'") &&
+        suratJalanActualCargoUpdateBlock.includes('deliveryOrder.tripClosedByAdminAt') &&
+        suratJalanActualCargoUpdateBlock.includes('hasPendingDriverApprovalRequest(deliveryOrder)') &&
+        suratJalanActualCargoUpdateBlock.includes('targetActualDropPoints: previousTargetedBillablePoints') &&
+        suratJalanActualCargoUpdateBlock.includes('return NextResponse.json({ error: invoiceLockMessage }, { status: 409 });'),
+    'Edit aktual SJ harus hanya untuk SJ delivered, menolak trip ditutup/pending approval, dan ditolak sebelum mutation ketika SJ/barang/titik drop sudah masuk invoice aktif.'
+);
+const shipperReferenceUpdateBlock = extractBalancedBlockFrom(
+    orderWorkflowSource,
+    'handleDeliveryOrderShipperReferenceUpdate',
+    'export async function handleDeliveryOrderShipperReferenceUpdate'
+);
+assert(
+    shipperReferenceUpdateBlock.includes("status?: string") &&
+        shipperReferenceUpdateBlock.includes("find(item => item.status !== 'VOID')"),
+    'Ubah nomor SJ harus mengabaikan item invoice VOID agar invoice yang sudah dibatalkan tidak tetap mengunci data.'
+);
+const orderCancelBlock = extractBalancedBlockFrom(
+    orderWorkflowSource,
+    'handleOrderCancel',
+    'export async function handleOrderCancel'
+);
+assert(
+    orderCancelBlock.includes("status?: string") &&
+        orderCancelBlock.includes("find(item => item.status !== 'VOID')"),
+    'Batal order harus mengabaikan item invoice VOID saat mengecek histori invoice aktif.'
 );
 const receivableSnapshotBlock = extractBalancedBlockFrom(
     financeWorkflowSource,

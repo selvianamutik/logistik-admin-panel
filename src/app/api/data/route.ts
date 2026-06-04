@@ -278,6 +278,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'update-cargo-item' ||
         action === 'remove-cargo-item' ||
         action === 'update-shipper-reference' ||
+        action === 'update-surat-jalan-actual-cargo' ||
         action === 'set-trip-closure' ||
         action === 'continue-held-cargo' ||
         action === 'reject-driver-status-request' ||
@@ -321,6 +322,10 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
 
     if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
         return role === 'OWNER' || role === 'OPERASIONAL' || role === 'FINANCE';
+    }
+
+    if (entity === 'delivery-orders' && action === 'update-surat-jalan-actual-cargo') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
     }
 
     if (entity === 'delivery-orders' && action === 'set-trip-closure') {

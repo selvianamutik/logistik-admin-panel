@@ -954,6 +954,29 @@ async function main() {
             ],
         });
 
+        const doOneDocsAfterDelivered = await getSuratJalanDocuments(cookieHeader, doOneId);
+        const sjADocumentAfterDelivered = doOneDocsAfterDelivered.find(document => document.suratJalanNumber === sjA);
+        assert(sjADocumentAfterDelivered?._id, 'Dokumen SJ A harus tersedia setelah finalisasi DO trip 1.');
+        const sjAActualEditPayload = {
+            id: doOneId,
+            suratJalanRef: sjADocumentAfterDelivered._id,
+            actualItems: sjAItems.map(item => ({
+                deliveryOrderItemRef: item._id,
+                actualQtyKoli: normalizeNumber(item.orderItemQtyKoli),
+                actualWeightInputValue: normalizeNumber(item.orderItemWeight),
+                actualWeightInputUnit: 'KG',
+                actualVolumeInputValue: normalizeNumber(item.orderItemVolumeInputValue ?? item.orderItemVolumeM3),
+                actualVolumeInputUnit: item.orderItemVolumeInputUnit || 'M3',
+            })),
+        };
+
+        auditStep('pastikan aktual SJ delivered masih boleh diedit sebelum masuk invoice');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: sjAActualEditPayload,
+        });
+
         auditStep('pastikan order yang sudah punya DO tidak boleh dihapus');
         await postData(cookieHeader, {
             entity: 'orders',
@@ -1014,6 +1037,16 @@ async function main() {
         );
         assert(cancelledDoState.data.status === 'CANCELLED', 'DO batal harus berstatus CANCELLED.');
         assert(cancelledDoState.data.trackingState === 'STOPPED', 'DO batal harus menghentikan tracking.');
+        auditStep('pastikan edit aktual SJ ditolak untuk trip batal');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: {
+                id: doCancelId,
+                suratJalanRef: `${doCancelId}:cancelled-actual-edit-test`,
+                actualItems: [],
+            },
+        }, { expectStatus: 409 });
         const cancelledOrderItemResponse = await requestJson<{ data: Array<{ _id: string; status?: string; assignedQtyKoli?: number; assignedWeight?: number }> }>(
             `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ sourceDeliveryOrderRef: doCancelId }))}`,
             cookieHeader
@@ -1568,6 +1601,16 @@ async function main() {
             newDocAfterDelivered?.tripStatus === 'CREATED',
             `SJ baru pada trip terkirim harus mulai CREATED/dibuat, sekarang ${newDocAfterDelivered?.tripStatus}.`
         );
+        auditStep('pastikan edit aktual SJ belum delivered ditolak');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: {
+                id: doSplitId,
+                suratJalanRef: newDocAfterDelivered?._id,
+                actualItems: [],
+            },
+        }, { expectStatus: 409 });
 
         const deliveredOrder = await requestJson<{ data: Order }>(
             `/api/data?entity=orders&id=${encodeURIComponent(createdState.orderId)}`,
@@ -1634,6 +1677,13 @@ async function main() {
             notaItems.every(item => normalizeText(item.tujuan).startsWith('Audit Drop')),
             'Tujuan nota harus berasal dari titik drop aktual per SJ.'
         );
+
+        auditStep('pastikan aktual SJ yang sudah masuk invoice aktif tidak boleh diedit');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: sjAActualEditPayload,
+        }, { expectStatus: 409 });
 
         auditStep('pastikan nomor SJ tidak boleh diubah setelah masuk nota');
         await postData(cookieHeader, {
@@ -1703,7 +1753,48 @@ async function main() {
         );
         assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menyembunyikan row freightNotaItem VOID dari tagihan aktif.');
 
-        console.log('Order to nota E2E audit OK: create/delete order, cancel trip, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, split drop/hold same item, append/edit/delete cargo, hold-only completion, nota create/void verified.');
+        auditStep('pastikan edit aktual SJ kembali boleh setelah invoice dibatalkan');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: sjAActualEditPayload,
+        });
+
+        auditStep('pastikan invoice void tidak lagi menjadi alasan kunci nomor SJ final');
+        const shipperReferenceAfterVoid = await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-shipper-reference',
+            data: {
+                id: doOneId,
+                customerDoNumber: `${sjA}-VOID-REV`,
+                shipperReferences: [
+                    { referenceNumber: `${sjA}-VOID-REV`, pickupStopKey: pickupOneKey },
+                    { referenceNumber: sjB, pickupStopKey: pickupOneKey },
+                ],
+            },
+        }, { expectStatus: 409 });
+        assert(
+            !/invoice|nota/i.test(shipperReferenceAfterVoid.error || ''),
+            `Setelah invoice void, ubah nomor SJ boleh tetap ditolak karena status final, tapi bukan karena invoice aktif. Got: ${shipperReferenceAfterVoid.error}`
+        );
+
+        auditStep('pastikan edit aktual SJ ditolak setelah trip ditutup admin');
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'set-trip-closure',
+            data: {
+                id: doOneId,
+                closed: true,
+                newOdometer: 2000,
+            },
+        });
+        await postData(cookieHeader, {
+            entity: 'delivery-orders',
+            action: 'update-surat-jalan-actual-cargo',
+            data: sjAActualEditPayload,
+        }, { expectStatus: 409 });
+
+        console.log('Order to nota E2E audit OK: create/delete order, cancel trip, multi-trip DO, multi-item SJ, ambiguous drop guard, mixed drop/hold SJ, split drop/hold same item, append/edit/delete cargo, hold-only completion, delivered actual edit before invoice, cancelled/not-delivered/closed trip actual edit guards, nota create/void, shipper reference void-invoice guard, and invoice-locked actual edit verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);

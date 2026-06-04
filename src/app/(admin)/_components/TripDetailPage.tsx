@@ -126,7 +126,7 @@ import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import { roundToPrecision } from '@/lib/number-precision';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, FreightNotaItem, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -179,6 +179,7 @@ export default function TripDetailPage() {
     const [tripData, setTripData] = useState<Trip | null>(null);
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
+    const [tripFreightNotaItems, setTripFreightNotaItems] = useState<FreightNotaItem[]>([]);
     const [suratJalanDocuments, setSuratJalanDocuments] = useState<SuratJalanDocument[]>([]);
     const [trackingLogs, setTrackingLogs] = useState<TripTrackingEvent[]>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -553,6 +554,13 @@ export default function TripDetailPage() {
         setTripData(trip);
         setDoData(resolvedDeliveryOrder);
         setSuratJalanDocuments(tripDetail?.suratJalanDocuments || []);
+        const activeInvoiceItems = resolvedDeliveryOrder?._id
+            ? await fetchAdminCollectionData<FreightNotaItem[]>(
+                `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: resolvedDeliveryOrder._id }))}`,
+                'Gagal memuat invoice trip'
+            ).catch(() => [] as FreightNotaItem[])
+            : [];
+        setTripFreightNotaItems((activeInvoiceItems || []).filter(item => item.status !== 'VOID'));
         setLinkedVoucher(tripDetail?.linkedVoucher || null);
         setLinkedTripCashLink(tripDetail?.tripCashLink || null);
         setLinkedVoucherBonNumber(tripDetail?.linkedVoucher?.bonNumber || tripDetail?.tripCashLink?.bonNumber || '');
@@ -2186,6 +2194,64 @@ export default function TripDetailPage() {
         });
     };
 
+    const getFreightNotaItemRefs = (item: Pick<FreightNotaItem, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) => {
+        const refs = Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
+            ? item.deliveryOrderItemRefs
+            : item.deliveryOrderItemRef
+                ? [item.deliveryOrderItemRef]
+                : [];
+        return [...new Set(refs.map(ref => (ref || '').trim()).filter(Boolean))];
+    };
+
+    const getSuratJalanActualEditInvoiceLockItem = (document: SuratJalanDocument) => {
+        const documentItems = getDeliveryOrderItemsForSuratJalanDocument(document);
+        const documentItemIds = new Set(documentItems.map(item => item._id));
+        const documentNumbers = new Set(
+            [
+                document.suratJalanNumber,
+                ...documentItems.map(item => item.shipperReferenceNumber),
+            ]
+                .map(value => (value || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+        const dropPointKeys = new Set<string>();
+        getSuratJalanActualEditDropSourcePoints(document, documentItems).forEach((point, index) => {
+            const explicitKey = (point._key || '').trim();
+            if (explicitKey) {
+                dropPointKeys.add(explicitKey);
+            }
+            if (point.sequence) {
+                dropPointKeys.add(String(point.sequence));
+            } else if (!explicitKey) {
+                dropPointKeys.add(String(index));
+            }
+        });
+
+        return tripFreightNotaItems.find(item => {
+            if (item.status === 'VOID') {
+                return false;
+            }
+            const itemRefs = getFreightNotaItemRefs(item);
+            if (itemRefs.some(ref => documentItemIds.has(ref))) {
+                return true;
+            }
+            const itemNoSJ = (item.noSJ || '').trim().toUpperCase();
+            if (itemNoSJ && documentNumbers.has(itemNoSJ)) {
+                return true;
+            }
+            const dropPointKey = (item.actualDropPointKey || '').trim();
+            if (dropPointKey && dropPointKeys.has(dropPointKey)) {
+                return true;
+            }
+            return itemRefs.length === 0 && !itemNoSJ && !dropPointKey;
+        }) || null;
+    };
+
+    const getSuratJalanActualEditInvoiceLockMessage = (document: SuratJalanDocument) =>
+        getSuratJalanActualEditInvoiceLockItem(document)
+            ? 'SJ ini sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.'
+            : '';
+
     const openSuratJalanActualEditModal = (document?: SuratJalanDocument) => {
         if (!canManageDeliveryStatus || isTripClosedByAdmin) {
             return;
@@ -2199,6 +2265,11 @@ export default function TripDetailPage() {
     };
 
     const openSuratJalanActualEditDocument = (document: SuratJalanDocument) => {
+        const invoiceLockMessage = getSuratJalanActualEditInvoiceLockMessage(document);
+        if (invoiceLockMessage) {
+            addToast('error', invoiceLockMessage);
+            return;
+        }
         const documentItems = getDeliveryOrderItemsForSuratJalanDocument(document);
         if (documentItems.length === 0) {
             addToast('error', 'Item SJ tidak ditemukan untuk diedit.');
@@ -4099,10 +4170,21 @@ export default function TripDetailPage() {
         const identity = getDeliveryOrderItemIdentity(deliveryOrderItem);
         return formatItemCodeNameLabel(identity.code, identity.name || item.description, fallbackIndex !== undefined ? `Item ${fallbackIndex + 1}` : item.deliveryOrderItemRef);
     };
-    const suratJalanActualEditDocumentOptions = suratJalanDocuments.filter(document =>
+    const suratJalanActualEditCandidateDocumentOptions = suratJalanDocuments.filter(document =>
         document.tripStatus === 'DELIVERED' &&
         getDeliveryOrderItemsForSuratJalanDocument(document).some(hasDeliveryOrderItemActualCargo)
     );
+    const lockedSuratJalanActualEditDocumentCount = suratJalanActualEditCandidateDocumentOptions.filter(document =>
+        Boolean(getSuratJalanActualEditInvoiceLockItem(document))
+    ).length;
+    const suratJalanActualEditDocumentOptions = suratJalanActualEditCandidateDocumentOptions.filter(document =>
+        !getSuratJalanActualEditInvoiceLockItem(document)
+    );
+    const suratJalanActualEditUnavailableReason = suratJalanActualEditCandidateDocumentOptions.length === 0
+        ? 'Belum ada SJ delivered dengan muatan aktual'
+        : lockedSuratJalanActualEditDocumentCount === suratJalanActualEditCandidateDocumentOptions.length
+            ? 'Semua SJ delivered yang punya muatan aktual sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.'
+            : 'Belum ada SJ delivered yang bisa diedit';
     const selectedSuratJalanActualEditItemRefs = new Set(
         selectedSuratJalanActualEditDocument
             ? getDeliveryOrderItemsForSuratJalanDocument(selectedSuratJalanActualEditDocument)
@@ -6240,7 +6322,7 @@ export default function TripDetailPage() {
                                     className="btn btn-secondary btn-sm"
                                     onClick={() => openSuratJalanActualEditModal()}
                                     disabled={savingSuratJalanActualEdit || suratJalanActualEditDocumentOptions.length === 0}
-                                    title={suratJalanActualEditDocumentOptions.length === 0 ? 'Belum ada SJ delivered dengan muatan aktual' : 'Edit aktual barang SJ'}
+                                    title={suratJalanActualEditDocumentOptions.length === 0 ? suratJalanActualEditUnavailableReason : 'Edit aktual barang SJ'}
                                 >
                                     <Edit size={14} /> Edit Aktual
                                 </button>
@@ -8971,6 +9053,11 @@ export default function TripDetailPage() {
                                                 </option>
                                             ))}
                                         </select>
+                                        {lockedSuratJalanActualEditDocumentCount > 0 && (
+                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                {lockedSuratJalanActualEditDocumentCount} SJ sudah masuk invoice dan tidak ditampilkan di pilihan edit.
+                                            </div>
+                                        )}
                                     </div>
                                     {suratJalanActualEditSelectableItems.length === 0 || !selectedSuratJalanActualEditItem ? (
                                         <div className="empty-state">
