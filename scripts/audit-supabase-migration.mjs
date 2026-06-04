@@ -106,7 +106,8 @@ const functionChecks = [
     name: 'handleDeliveryOrderShipperReferenceUpdate',
     mustInclude: [
       "const deliveryOrder = await getDocumentById<{",
-      "listDocumentsByFilter<{ _id: string; notaRef?: string }>('freightNotaItem', {",
+      "listDocumentsByFilter<{ _id: string; notaRef?: string; status?: string }>('freightNotaItem', {",
+      "item.status !== 'VOID'",
       "listDocumentsByFilter<{ _id: string; boronganRef?: string }>('driverBoronganItem', {",
       "const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder')",
       "await updateDocument(id, {",

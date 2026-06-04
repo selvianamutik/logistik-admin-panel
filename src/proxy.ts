@@ -22,7 +22,7 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/suppliers', module: 'suppliers' },
     { path: '/inventory/purchases', module: 'purchases' },
     { path: '/inventory/items', module: 'warehouseItems' },
-    { path: '/inventory/material-usage', module: 'warehouseItems' },
+    { path: '/inventory/material-usage', module: 'maintenance' },
     { path: '/inventory/stock-recap', module: 'warehouseItems' },
     { path: '/inventory', module: 'warehouseItems' },
     { path: '/customers', module: 'customers' },

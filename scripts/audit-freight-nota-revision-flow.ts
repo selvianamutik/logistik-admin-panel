@@ -1,5 +1,6 @@
 import { loadScriptEnv } from './_env';
 import { buildNotaRowsFromDeliveryOrder, type NotaItemRow } from '../src/lib/invoice-create-page-support';
+import { buildTripResourceLocks } from '../src/lib/trip-resource-lock-support';
 import type {
     DeliveryOrder,
     DeliveryOrderItem,
@@ -357,13 +358,15 @@ function pickFixtureResources(params: {
     vehicles: Vehicle[];
     drivers: Driver[];
     bankAccounts: BankAccountLike[];
+    orders: Order[];
     deliveryOrders: DeliveryOrder[];
 }) {
-    const activeDeliveryOrders = params.deliveryOrders.filter(item =>
-        ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status))
-    );
-    const busyVehicleIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.vehicleRef)).filter(Boolean));
-    const busyDriverIds = new Set(activeDeliveryOrders.map(item => normalizeText(item.driverRef)).filter(Boolean));
+    const tripResourceLocks = buildTripResourceLocks({
+        deliveryOrders: params.deliveryOrders,
+        orders: params.orders,
+    });
+    const busyVehicleIds = new Set(tripResourceLocks.busyVehicleIds);
+    const busyDriverIds = new Set(tripResourceLocks.busyDriverIds);
     const activeServices = params.services.filter(item => item.active !== false);
     const availableVehicles = params.vehicles.filter(item =>
         item.status !== 'SOLD' &&
@@ -477,12 +480,13 @@ async function createFixtureIfNeeded(cookieHeader: string, createdState: Created
     const tripKey = `audit-revision-trip-${suffix}`;
     const sjNumber = `AUD-REV-${suffix}`;
 
-    const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, deliveryOrderResponse] = await Promise.all([
+    const [customerResponse, serviceResponse, vehicleResponse, driverResponse, bankResponse, orderResponse, deliveryOrderResponse] = await Promise.all([
         requestJson<{ data: CustomerLike[] }>('/api/data?entity=customers', cookieHeader),
         requestJson<{ data: ServiceLike[] }>('/api/data?entity=services', cookieHeader),
         requestJson<{ data: Vehicle[] }>('/api/data?entity=vehicles', cookieHeader),
         requestJson<{ data: Driver[] }>('/api/data?entity=drivers', cookieHeader),
         requestJson<{ data: BankAccountLike[] }>('/api/data?entity=bank-accounts', cookieHeader),
+        requestJson<{ data: Order[] }>('/api/data?entity=orders', cookieHeader),
         requestJson<{ data: DeliveryOrder[] }>('/api/data?entity=delivery-orders', cookieHeader),
     ]);
 
@@ -492,6 +496,7 @@ async function createFixtureIfNeeded(cookieHeader: string, createdState: Created
         vehicles: vehicleResponse.data || [],
         drivers: driverResponse.data || [],
         bankAccounts: bankResponse.data || [],
+        orders: orderResponse.data || [],
         deliveryOrders: deliveryOrderResponse.data || [],
     });
 
