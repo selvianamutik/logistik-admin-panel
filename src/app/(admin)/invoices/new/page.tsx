@@ -20,9 +20,11 @@ import {
     normalizeFreightNotaBillingMode,
 } from '@/lib/freight-nota-billing';
 import {
-    buildFreightNotaCoverageRowKeys,
     buildNotaRowsFromDeliveryOrder,
     createEmptyNotaRow,
+    getFreightNotaItemCoverageKeys,
+    getInvoiceRowAvailabilityCoverageKeys,
+    getInvoiceRowItemCoverageKeys,
     getSuggestedNotaDueDate,
     isEmptyNotaRow,
     type NotaItemRow,
@@ -41,25 +43,6 @@ type PendingDeliveryOrderSelection = {
     selectedGroupKeys: string[];
 };
 
-function getInvoiceRowItemRefs(row: Pick<NotaItemRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
-    return Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
-        ? row.deliveryOrderItemRefs
-        : row.deliveryOrderItemRef
-            ? [row.deliveryOrderItemRef]
-            : [];
-}
-
-function getInvoiceRowItemCoverageKeys(row: Pick<NotaItemRow, 'doRef' | 'deliveryOrderItemRef' | 'deliveryOrderItemRefs' | 'tujuan' | 'actualDropPointKey'>) {
-    const itemRefs = getInvoiceRowItemRefs(row);
-    const doRef = row.doRef || 'manual';
-    const actualDropPointKey = row.actualDropPointKey?.trim();
-    if (actualDropPointKey) {
-        const tujuan = row.tujuan?.trim() || '-';
-        return itemRefs.map(itemRef => `${doRef}::item::${itemRef}::tujuan::${tujuan}::drop::${actualDropPointKey}`);
-    }
-    return itemRefs.map(itemRef => `${doRef}::item::${itemRef}`);
-}
-
 function getInvoiceRowSjGroupKey(row: NotaItemRow) {
     return `${row.doRef || 'manual'}::sj::${row.noSJ?.trim() || row.doNumber || row.id}::customer::${row.customerRef || ''}`;
 }
@@ -70,6 +53,8 @@ export default function NewNotaPage() {
     const { addToast } = useToast();
     const editNotaId = searchParams.get('edit')?.trim() || '';
     const returnTo = searchParams.get('returnTo')?.trim() || '';
+    const sourceOrderRef = searchParams.get('orderRef')?.trim() || '';
+    const sourceDoRef = searchParams.get('doRef')?.trim() || '';
     const isEditMode = Boolean(editNotaId);
     const skipCustomerDefaultsRef = useRef(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -129,10 +114,14 @@ export default function NewNotaPage() {
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
-                setDeliveryOrders((dos || []).filter((item: DeliveryOrder) =>
-                    item.status === 'DELIVERED' ||
-                    (item.status !== 'CANCELLED' && hasDeliveryOrderBillableCargo(item))
-                ));
+                setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => {
+                    const readyForInvoice =
+                        item.status === 'DELIVERED' ||
+                        (item.status !== 'CANCELLED' && hasDeliveryOrderBillableCargo(item));
+                    const matchesSourceOrder = !sourceOrderRef || item.orderRef === sourceOrderRef;
+                    const matchesSourceDo = !sourceDoRef || item._id === sourceDoRef;
+                    return readyForInvoice && matchesSourceOrder && matchesSourceDo;
+                }));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
                 setCustomerBillingRates((billingRates || []).filter(rate => rate.active !== false));
@@ -140,44 +129,9 @@ export default function NewNotaPage() {
                 const deliveryOrderMap = new Map((dos || []).map(item => [item._id, item]));
                 setUsedNotaDoRowKeys(
                     usableNotaItems.flatMap(item => {
-                        const doRef = item.doRef?.trim();
-                        const itemRefs =
-                            Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
-                                ? item.deliveryOrderItemRefs
-                                : item.deliveryOrderItemRef
-                                    ? [item.deliveryOrderItemRef]
-                                    : [];
-                        if (!doRef) {
-                            return [];
-                        }
+                        const doRef = item.doRef?.trim() || '';
                         const matchedDeliveryOrder = deliveryOrderMap.get(doRef);
-                        if (!matchedDeliveryOrder) {
-                            const noSJ = item.noSJ?.trim();
-                            return itemRefs.length > 0
-                                ? getInvoiceRowItemCoverageKeys({
-                                    doRef,
-                                    deliveryOrderItemRef: itemRefs[0],
-                                    deliveryOrderItemRefs: itemRefs,
-                                    tujuan: item.tujuan || '',
-                                    actualDropPointKey: item.actualDropPointKey,
-                                })
-                                : noSJ
-                                    ? [`${doRef}::${noSJ}`]
-                                    : [];
-                        }
-                        return itemRefs.length > 0
-                            ? getInvoiceRowItemCoverageKeys({
-                                doRef,
-                                deliveryOrderItemRef: itemRefs[0],
-                                deliveryOrderItemRefs: itemRefs,
-                                tujuan: item.tujuan || '',
-                                actualDropPointKey: item.actualDropPointKey,
-                            })
-                            : buildFreightNotaCoverageRowKeys({
-                                deliveryOrder: matchedDeliveryOrder,
-                                noSJ: item.noSJ,
-                                deliveryOrderItemRefs: itemRefs,
-                            });
+                        return getFreightNotaItemCoverageKeys(item, matchedDeliveryOrder);
                     })
                 );
                 setUsedNotaDoItemRefs(
@@ -259,7 +213,7 @@ export default function NewNotaPage() {
         }
 
         void loadData();
-    }, [addToast, editNotaId]);
+    }, [addToast, editNotaId, sourceDoRef, sourceOrderRef]);
 
     useEffect(() => {
         const nextDueDate = getSuggestedNotaDueDate({
@@ -410,10 +364,7 @@ export default function NewNotaPage() {
             if (targetCustomerRef && (row.customerRef || '') !== targetCustomerRef) {
                 return false;
             }
-            const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
-            const rowCoverageKeys = rowItemCoverageKeys.length > 0
-                ? rowItemCoverageKeys
-                : [rowKey];
+            const rowCoverageKeys = getInvoiceRowAvailabilityCoverageKeys(row, deliveryOrder);
             if (rowCoverageKeys.some(key => usedDoRowKeySet.has(key) || selectedRowKeys.has(key))) {
                 return false;
             }
@@ -703,6 +654,18 @@ export default function NewNotaPage() {
             rowCount: nextRows.length,
         }];
     });
+    const sourceOrder = sourceOrderRef ? orders.find(item => item._id === sourceOrderRef) || null : null;
+    const sourceDo = sourceDoRef ? deliveryOrders.find(item => item._id === sourceDoRef) || null : null;
+    const hasSourceContext = Boolean(sourceOrderRef || sourceDoRef);
+    const sourceContextLabel = sourceDo
+        ? formatInternalDeliveryOrderNumber(sourceDo)
+        : sourceOrder
+            ? sourceOrder.masterResi || 'order ini'
+            : sourceDoRef
+                ? 'DO yang dipilih'
+                : sourceOrderRef
+                    ? 'order yang dipilih'
+                    : '';
 
     return (
         <div>
@@ -860,6 +823,20 @@ export default function NewNotaPage() {
                             <span className="card-header-title">Tambah dari Surat Jalan</span>
                         </div>
                         <div className="card-body">
+                            {hasSourceContext && (
+                                <div
+                                    className="text-sm"
+                                    style={{
+                                        marginBottom: '0.75rem',
+                                        padding: '0.65rem 0.75rem',
+                                        borderRadius: '0.5rem',
+                                        background: 'var(--color-primary-light)',
+                                        color: 'var(--color-primary-800)',
+                                    }}
+                                >
+                                    Menampilkan SJ siap tagih dari {sourceContextLabel}. SJ yang sudah masuk invoice lain tetap disembunyikan.
+                                </div>
+                            )}
                             <select
                                 className="form-select"
                                 onChange={event => {
@@ -869,11 +846,13 @@ export default function NewNotaPage() {
                                     }
                                 }}
                             >
-                                <option value="">-- Pilih DO yang selesai --</option>
+                                <option value="">-- Pilih SJ siap tagih --</option>
                                 {availableDeliveryOrderOptions.length > 0 && (
                                     <optgroup
                                         label={
-                                            customerRef
+                                            hasSourceContext
+                                                ? `SJ siap tagih dari ${sourceContextLabel}`
+                                                : customerRef
                                                 ? `DO dengan SJ customer ${customerName || '-'} (${availableDeliveryOrderOptions.length})`
                                                 : `SJ Siap Ditagih (${availableDeliveryOrderOptions.length})`
                                         }

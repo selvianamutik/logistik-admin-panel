@@ -78,6 +78,11 @@ import {
 } from '@/lib/order-detail-direct-cargo-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
+import {
+    buildNotaRowsFromDeliveryOrder,
+    getFreightNotaItemCoverageKeys,
+    getInvoiceRowAvailabilityCoverageKeys,
+} from '@/lib/invoice-create-page-support';
 import { buildServiceCapacityRangeMap, formatUnitCapacityLabel } from '@/lib/service-capacity-support';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { BankAccount, Customer, CustomerPickupLocation, CustomerProduct, Driver, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, ExpenseCategory, FreightNota, FreightNotaItem, Service, TripRouteRate, Vehicle } from '@/lib/types';
@@ -100,6 +105,7 @@ export default function OrderDetailPage() {
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
+    const [notaItems, setNotaItems] = useState<FreightNotaItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [showDOModal, setShowDOModal] = useState(false);
     const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
@@ -269,6 +275,9 @@ export default function OrderDetailPage() {
             setItems(itemData || []);
             setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems || []);
+            if (includeNotas) {
+                setNotaItems(notaItems || []);
+            }
             const {
                 busyVehicleIds: nextBusyVehicleIds,
                 busyDriverIds: nextBusyDriverIds,
@@ -373,6 +382,7 @@ export default function OrderDetailPage() {
             setItems(itemData || []);
             setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems);
+            setNotaItems(notaItems || []);
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             const {
                 busyVehicleIds: nextBusyVehicleIds,
@@ -441,10 +451,40 @@ export default function OrderDetailPage() {
         doActualCargoById,
         progress,
     } = buildOrderDetailMetrics(items, dos, doItems);
-    const billableDeliveredDoCount = dos.filter(
-        deliveryOrder => deliveryOrder.status === 'DELIVERED' && hasDeliveryOrderBillableCargo(deliveryOrder)
+    const isReadyForFreightNota = (deliveryOrder: DeliveryOrder) =>
+        deliveryOrder.status === 'DELIVERED' ||
+        (deliveryOrder.status !== 'CANCELLED' && hasDeliveryOrderBillableCargo(deliveryOrder));
+    const activeNotaItems = notaItems.filter(item => item.status !== 'VOID');
+    const notaById = new Map(notas.map(nota => [nota._id, nota]));
+    const doById = new Map(dos.map(deliveryOrder => [deliveryOrder._id, deliveryOrder]));
+    const usedNotaCoverageKeySet = new Set(activeNotaItems.flatMap(item =>
+        getFreightNotaItemCoverageKeys(item, item.doRef ? doById.get(item.doRef) : null)
+    ));
+    const getAvailableFreightNotaRowsForDeliveryOrder = (deliveryOrder: DeliveryOrder) =>
+        buildNotaRowsFromDeliveryOrder({
+            deliveryOrder,
+            orders: order ? [order] : [],
+            deliveryOrderItems: doItems,
+        }).filter(row => {
+            const rowCoverageKeys = getInvoiceRowAvailabilityCoverageKeys(row, deliveryOrder);
+            return !rowCoverageKeys.some(key => usedNotaCoverageKeySet.has(key));
+        });
+    const billableReadyDoCount = dos.filter(deliveryOrder =>
+        isReadyForFreightNota(deliveryOrder) &&
+        getAvailableFreightNotaRowsForDeliveryOrder(deliveryOrder).length > 0
     ).length;
-    const canStartFreightNota = canCreateInvoice && billableDeliveredDoCount > 0;
+    const canStartFreightNota = canCreateInvoice && billableReadyDoCount > 0;
+    const createFreightNotaHref = withReturnTo(`/invoices/new?orderRef=${encodeURIComponent(orderId)}`);
+    const getActiveInvoiceLinksForDeliveryOrder = (deliveryOrderId: string) => {
+        const notaRefs = [...new Set(
+            activeNotaItems
+                .filter(item => item.doRef === deliveryOrderId && item.notaRef)
+                .map(item => item.notaRef)
+        )];
+        return notaRefs
+            .map(notaRef => notaById.get(notaRef))
+            .filter((nota): nota is FreightNota => Boolean(nota));
+    };
 
     const createDefaultShipmentSelection = useCallback(
         (item: OrderItem): SelectedShipmentMap[string] => buildDefaultShipmentSelection(item, itemProgressById[item._id]),
@@ -1572,11 +1612,11 @@ export default function OrderDetailPage() {
                     {canCreateInvoice && (
                         <button
                             className="btn btn-secondary"
-                            onClick={() => router.push(withReturnTo('/invoices/new'))}
+                            onClick={() => router.push(createFreightNotaHref)}
                             disabled={!canStartFreightNota}
-                            title={!canStartFreightNota ? 'Belum ada DO selesai dengan realisasi drop yang bisa ditagihkan' : 'Buat nota'}
+                            title={!canStartFreightNota ? 'Belum ada SJ siap tagih pada order ini' : 'Buat invoice dari SJ siap tagih pada order ini'}
                         >
-                                                <FileText size={16} /> Buat Invoice
+                                                <FileText size={16} /> Invoice SJ Siap Tagih
                         </button>
                     )}
                     <button
@@ -2143,9 +2183,9 @@ export default function OrderDetailPage() {
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, relatedDeliveryOrderItems, 3);
                                 const shipperReferenceLinks = buildDeliveryOrderShipperReferenceLinks(d, relatedDeliveryOrderItems);
                                 const doStatusMeta = getDeliveryOrderDisplayStatusMeta(d);
-                                const billableCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderBillableCargoSummary(d) : null;
-                                const holdCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderHoldCargoSummary(d) : null;
-                                const returnCargoSummary = d.status === 'DELIVERED' ? getDeliveryOrderReturnCargoSummary(d) : null;
+                                const billableCargoSummary = hasDeliveryOrderBillableCargo(d) ? getDeliveryOrderBillableCargoSummary(d) : null;
+                                const holdCargoSummary = d.status === 'DELIVERED' || d.status === 'PARTIAL_HOLD' ? getDeliveryOrderHoldCargoSummary(d) : null;
+                                const returnCargoSummary = d.status === 'DELIVERED' || d.status === 'PARTIAL_HOLD' ? getDeliveryOrderReturnCargoSummary(d) : null;
                                 const hasBillableCargo = Boolean(
                                     billableCargoSummary &&
                                     (billableCargoSummary.qtyKoli > 0 || billableCargoSummary.weightKg > 0 || billableCargoSummary.volumeM3 > 0)
@@ -2158,6 +2198,7 @@ export default function OrderDetailPage() {
                                     returnCargoSummary &&
                                     (returnCargoSummary.qtyKoli > 0 || returnCargoSummary.weightKg > 0 || returnCargoSummary.volumeM3 > 0)
                                 );
+                                const activeInvoiceLinks = getActiveInvoiceLinksForDeliveryOrder(d._id);
                                 return (
                                 <tr key={d._id}>
                                     <td>
@@ -2211,11 +2252,25 @@ export default function OrderDetailPage() {
                                         <div className="text-muted text-sm">
                                             {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana Trip (estimasi)'}
                                         </div>
-                                        {d.status === 'DELIVERED' && (hasBillableCargo || hasHoldCargo || hasReturnCargo) && (
+                                        {(hasBillableCargo || hasHoldCargo || hasReturnCargo) && (
                                             <div style={{ display: 'grid', gap: '0.15rem', marginTop: '0.35rem' }}>
                                                 {hasBillableCargo && (
                                                     <div className="text-muted text-sm">
-                                                Masuk invoice: {formatCargoSummary(billableCargoSummary || {})}
+                                                        Masuk invoice: {formatCargoSummary(billableCargoSummary || {})}
+                                                        {activeInvoiceLinks.length > 0 && (
+                                                            <span>
+                                                                {' '}(
+                                                                {activeInvoiceLinks.map((nota, index) => (
+                                                                    <span key={nota._id}>
+                                                                        {index > 0 ? ', ' : ''}
+                                                                        <Link href={withReturnTo(`/invoices/${nota._id}`)} style={{ color: 'var(--color-primary)' }}>
+                                                                            {nota.notaDisplayNumber || nota.notaNumber}
+                                                                        </Link>
+                                                                    </span>
+                                                                ))}
+                                                                )
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 )}
                                                 {hasHoldCargo && (
@@ -2254,7 +2309,7 @@ export default function OrderDetailPage() {
                             {notas.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>
-                                        {billableDeliveredDoCount === 0 ? 'Belum ada DO selesai dengan realisasi drop billable' : 'Belum ada invoice untuk order ini'}
+                                        {billableReadyDoCount === 0 ? 'Belum ada SJ siap tagih pada order ini' : 'Belum ada invoice untuk order ini'}
                                     </td>
                                 </tr>
                             ) : notas.map(nota => (

@@ -88,6 +88,88 @@ export function isEmptyNotaRow(row: NotaItemRow) {
     );
 }
 
+export function getInvoiceRowItemRefs(row: Pick<NotaItemRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
+    return Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+        ? row.deliveryOrderItemRefs
+        : row.deliveryOrderItemRef
+            ? [row.deliveryOrderItemRef]
+            : [];
+}
+
+export function getInvoiceRowItemCoverageKeys(row: Pick<NotaItemRow, 'doRef' | 'deliveryOrderItemRef' | 'deliveryOrderItemRefs' | 'tujuan' | 'actualDropPointKey'>) {
+    const itemRefs = getInvoiceRowItemRefs(row);
+    const doRef = row.doRef || 'manual';
+    const actualDropPointKey = row.actualDropPointKey?.trim();
+    if (actualDropPointKey) {
+        const tujuan = row.tujuan?.trim() || '-';
+        return itemRefs.map(itemRef => `${doRef}::item::${itemRef}::tujuan::${tujuan}::drop::${actualDropPointKey}`);
+    }
+    return itemRefs.map(itemRef => `${doRef}::item::${itemRef}`);
+}
+
+export type FreightNotaCoverageItem = {
+    doRef?: string | null;
+    noSJ?: string | null;
+    deliveryOrderItemRef?: string | null;
+    deliveryOrderItemRefs?: string[] | null;
+    tujuan?: string | null;
+    actualDropPointKey?: string | null;
+};
+
+export function getFreightNotaItemCoverageKeys(
+    item: FreightNotaCoverageItem,
+    deliveryOrder?: Parameters<typeof buildFreightNotaCoverageRowKeys>[0]['deliveryOrder'] | null
+) {
+    const doRef = item.doRef?.trim();
+    if (!doRef) {
+        return [];
+    }
+    const itemRefs = Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
+        ? item.deliveryOrderItemRefs
+        : item.deliveryOrderItemRef
+            ? [item.deliveryOrderItemRef]
+            : [];
+    if (itemRefs.length > 0) {
+        return getInvoiceRowItemCoverageKeys({
+            doRef,
+            deliveryOrderItemRef: itemRefs[0],
+            deliveryOrderItemRefs: itemRefs,
+            tujuan: item.tujuan || '',
+            actualDropPointKey: item.actualDropPointKey || '',
+        });
+    }
+    if (deliveryOrder) {
+        return buildFreightNotaCoverageRowKeys({
+            deliveryOrder,
+            noSJ: item.noSJ,
+            deliveryOrderItemRefs: itemRefs,
+        });
+    }
+    const noSJ = item.noSJ?.trim();
+    return noSJ ? [`${doRef}::${noSJ}`] : [];
+}
+
+export function getInvoiceRowAvailabilityCoverageKeys(
+    row: NotaItemRow,
+    deliveryOrder?: Parameters<typeof buildFreightNotaCoverageRowKeys>[0]['deliveryOrder'] | null
+) {
+    const rowItemCoverageKeys = getInvoiceRowItemCoverageKeys(row);
+    const rowItemBaseCoverageKeys = row.actualDropPointKey?.trim()
+        ? getInvoiceRowItemRefs(row).map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
+        : [];
+    const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
+    const rowShipperCoverageKeys = deliveryOrder && row.doRef === deliveryOrder._id
+        ? buildFreightNotaCoverageRowKeys({
+            deliveryOrder,
+            noSJ: row.noSJ,
+            deliveryOrderItemRefs: [],
+        })
+        : [];
+    return rowItemCoverageKeys.length > 0 || rowItemBaseCoverageKeys.length > 0 || rowShipperCoverageKeys.length > 0
+        ? [...rowItemCoverageKeys, ...rowItemBaseCoverageKeys, ...rowShipperCoverageKeys]
+        : [rowKey];
+}
+
 export function calculateNotaDueDate(baseDate: string, termDays: number) {
     return addDaysToDateValue(baseDate, termDays);
 }

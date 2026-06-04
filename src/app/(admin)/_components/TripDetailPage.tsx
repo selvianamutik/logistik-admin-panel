@@ -126,7 +126,7 @@ import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import { roundToPrecision } from '@/lib/number-precision';
 import type { SuratJalanDocument, Trip, TripCashLinkSummary, TripDetailReferencesSnapshot, TripDetailSnapshot, TripTrackingEvent } from '@/lib/trip-document-types';
-import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, FreightNotaItem, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
+import type { BankAccount, Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, CompanyProfile, FreightNota, FreightNotaItem, Order, OrderItem, Driver, DriverVoucher, DriverVoucherDisbursement, ExpenseCategory, PendingDriverStatusRequest, Service, TireEvent, TripRouteRate, Vehicle } from '@/lib/types';
 
 const BATCH_SURAT_JALAN_STATUS_OPTIONS = ['ON_DELIVERY', 'ARRIVED', 'DELIVERED'] as const;
 
@@ -180,6 +180,7 @@ export default function TripDetailPage() {
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
     const [tripFreightNotaItems, setTripFreightNotaItems] = useState<FreightNotaItem[]>([]);
+    const [tripFreightNotas, setTripFreightNotas] = useState<FreightNota[]>([]);
     const [suratJalanDocuments, setSuratJalanDocuments] = useState<SuratJalanDocument[]>([]);
     const [trackingLogs, setTrackingLogs] = useState<TripTrackingEvent[]>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -560,7 +561,16 @@ export default function TripDetailPage() {
                 'Gagal memuat invoice trip'
             ).catch(() => [] as FreightNotaItem[])
             : [];
-        setTripFreightNotaItems((activeInvoiceItems || []).filter(item => item.status !== 'VOID'));
+        const filteredActiveInvoiceItems = (activeInvoiceItems || []).filter(item => item.status !== 'VOID');
+        const activeInvoiceIds = [...new Set(filteredActiveInvoiceItems.map(item => item.notaRef).filter(Boolean))];
+        const activeInvoiceHeaders = activeInvoiceIds.length > 0
+            ? await fetchAdminCollectionData<FreightNota[]>(
+                `/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: activeInvoiceIds }))}`,
+                'Gagal memuat nomor invoice trip'
+            ).catch(() => [] as FreightNota[])
+            : [];
+        setTripFreightNotaItems(filteredActiveInvoiceItems);
+        setTripFreightNotas((activeInvoiceHeaders || []).filter(item => item.status !== 'VOID'));
         setLinkedVoucher(tripDetail?.linkedVoucher || null);
         setLinkedTripCashLink(tripDetail?.tripCashLink || null);
         setLinkedVoucherBonNumber(tripDetail?.linkedVoucher?.bonNumber || tripDetail?.tripCashLink?.bonNumber || '');
@@ -2203,6 +2213,60 @@ export default function TripDetailPage() {
         return [...new Set(refs.map(ref => (ref || '').trim()).filter(Boolean))];
     };
 
+    const tripFreightNotaById = new Map(tripFreightNotas.map(nota => [nota._id, nota]));
+    const getFreightNotaItemDisplayNumber = (item: Pick<FreightNotaItem, 'notaRef'>) => {
+        const nota = item.notaRef ? tripFreightNotaById.get(item.notaRef) : null;
+        return nota?.notaDisplayNumber || nota?.notaNumber || item.notaRef || 'invoice terkait';
+    };
+    const getFreightNotaLinksForItems = (items: FreightNotaItem[]) => {
+        const notaRefs = [...new Set(items.map(item => item.notaRef).filter(Boolean))];
+        return notaRefs.map(notaRef => {
+            const nota = tripFreightNotaById.get(notaRef);
+            return {
+                _id: notaRef,
+                label: nota?.notaDisplayNumber || nota?.notaNumber || notaRef,
+            };
+        });
+    };
+    const renderFreightNotaLinks = (items: FreightNotaItem[]) => {
+        const invoiceLinks = getFreightNotaLinksForItems(items);
+        if (invoiceLinks.length === 0) {
+            return null;
+        }
+        return (
+            <span>
+                {invoiceLinks.map((invoiceLink, index) => (
+                    <span key={invoiceLink._id}>
+                        {index > 0 ? ', ' : ''}
+                        <Link href={withReturnTo(`/invoices/${invoiceLink._id}`)} style={{ color: 'var(--color-primary)' }}>
+                            {invoiceLink.label}
+                        </Link>
+                    </span>
+                ))}
+            </span>
+        );
+    };
+    const getFreightNotaItemsForActualDropPoint = (point: NonNullable<DeliveryOrder['actualDropPoints']>[number]) => {
+        const pointKey = (point._key || '').trim();
+        const pointItemRefs = new Set([
+            point.deliveryOrderItemRef,
+            ...(Array.isArray(point.deliveryOrderItemRefs) ? point.deliveryOrderItemRefs : []),
+        ].map(ref => (ref || '').trim()).filter(Boolean));
+        const pointNoSJ = (point.shipperReferenceNumber || '').trim().toUpperCase();
+        return tripFreightNotaItems.filter(item => {
+            const itemDropKey = (item.actualDropPointKey || '').trim();
+            if (pointKey && itemDropKey && pointKey === itemDropKey) {
+                return true;
+            }
+            const itemRefs = getFreightNotaItemRefs(item);
+            if (itemRefs.some(ref => pointItemRefs.has(ref))) {
+                return true;
+            }
+            const itemNoSJ = (item.noSJ || '').trim().toUpperCase();
+            return Boolean(itemNoSJ && pointNoSJ && itemNoSJ === pointNoSJ);
+        });
+    };
+
     const getSuratJalanActualEditInvoiceLockItem = (document: SuratJalanDocument) => {
         const documentItems = getDeliveryOrderItemsForSuratJalanDocument(document);
         const documentItemIds = new Set(documentItems.map(item => item._id));
@@ -2247,10 +2311,12 @@ export default function TripDetailPage() {
         }) || null;
     };
 
-    const getSuratJalanActualEditInvoiceLockMessage = (document: SuratJalanDocument) =>
-        getSuratJalanActualEditInvoiceLockItem(document)
-            ? 'SJ ini sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.'
+    const getSuratJalanActualEditInvoiceLockMessage = (document: SuratJalanDocument) => {
+        const lockItem = getSuratJalanActualEditInvoiceLockItem(document);
+        return lockItem
+            ? `SJ ini sudah masuk invoice ${getFreightNotaItemDisplayNumber(lockItem)}. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`
             : '';
+    };
 
     const openSuratJalanActualEditModal = (document?: SuratJalanDocument) => {
         if (!canManageDeliveryStatus || isTripClosedByAdmin) {
@@ -4180,10 +4246,13 @@ export default function TripDetailPage() {
     const suratJalanActualEditDocumentOptions = suratJalanActualEditCandidateDocumentOptions.filter(document =>
         !getSuratJalanActualEditInvoiceLockItem(document)
     );
+    const suratJalanActualEditLockInvoiceLabel = getFreightNotaLinksForItems(tripFreightNotaItems)
+        .map(item => item.label)
+        .join(', ');
     const suratJalanActualEditUnavailableReason = suratJalanActualEditCandidateDocumentOptions.length === 0
         ? 'Belum ada SJ delivered dengan muatan aktual'
         : lockedSuratJalanActualEditDocumentCount === suratJalanActualEditCandidateDocumentOptions.length
-            ? 'Semua SJ delivered yang punya muatan aktual sudah masuk invoice. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.'
+            ? `Semua SJ delivered yang punya muatan aktual sudah masuk invoice${suratJalanActualEditLockInvoiceLabel ? ` ${suratJalanActualEditLockInvoiceLabel}` : ''}. Revisi atau batalkan invoice dulu jika data final perlu dikoreksi.`
             : 'Belum ada SJ delivered yang bisa diedit';
     const selectedSuratJalanActualEditItemRefs = new Set(
         selectedSuratJalanActualEditDocument
@@ -6478,6 +6547,11 @@ export default function TripDetailPage() {
                             <div className="detail-label">Masuk Invoice</div>
                             <div className="detail-value" style={{ marginTop: '0.25rem' }}>{formatCargoSummary(billableCargoSummary)}</div>
                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Hanya DROP dan EXTRA_DROP yang ikut invoice.</div>
+                            {tripFreightNotaItems.length > 0 && (
+                                <div className="text-sm" style={{ marginTop: '0.35rem' }}>
+                                    Invoice terkait: {renderFreightNotaLinks(tripFreightNotaItems)}
+                                </div>
+                            )}
                         </div>
                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                             <div className="detail-label">Hold / Transit</div>
@@ -6509,6 +6583,11 @@ export default function TripDetailPage() {
                                     .map((group, index) => {
                                         const point = group.firstPoint;
                                         const stopTypeLabels = Array.from(new Set(group.sortedPoints.map(item => DO_ACTUAL_DROP_TYPE_MAP[item.stopType]?.label || item.stopType)));
+                                        const groupInvoiceItems = Array.from(new Map(
+                                            group.sortedPoints
+                                                .flatMap(item => getFreightNotaItemsForActualDropPoint(item))
+                                                .map(item => [item._id, item] as const)
+                                        ).values());
                                         return (
                                             <div key={group.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)', display: 'grid', gap: '0.85rem' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -6524,6 +6603,11 @@ export default function TripDetailPage() {
                                                         </span>
                                                     </div>
                                                 </div>
+                                                {groupInvoiceItems.length > 0 && (
+                                                    <div className="text-sm">
+                                                        Invoice titik ini: {renderFreightNotaLinks(groupInvoiceItems)}
+                                                    </div>
+                                                )}
                                                 <div className="detail-row">
                                                     <div className="detail-item">
                                                         <div className="detail-label">Nama Drop Point</div>

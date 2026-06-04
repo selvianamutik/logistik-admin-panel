@@ -1,21 +1,42 @@
 import { loadScriptEnv } from './_env';
+import {
+    buildNotaRowsFromDeliveryOrder,
+    getFreightNotaItemCoverageKeys,
+    getInvoiceRowAvailabilityCoverageKeys,
+} from '../src/lib/invoice-create-page-support';
+import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order } from '../src/lib/types';
 
 loadScriptEnv();
 
 type DeliveryOrderLike = {
     _id: string;
     doNumber?: string;
+    orderRef?: string;
+    customerRef?: string;
+    customerName?: string;
+    customerDoNumber?: string;
+    vehiclePlate?: string;
+    date?: string;
+    pickupAddress?: string;
+    receiverAddress?: string;
+    shipperReferences?: DeliveryOrder['shipperReferences'];
     status?: string;
     cargoFinalizedAt?: string | null;
     actualTotalWeightKg?: number | null;
-    actualDropPoints?: Array<unknown> | null;
+    actualDropPoints?: DeliveryOrder['actualDropPoints'] | null;
 };
 
 type DeliveryOrderItemLike = {
     _id: string;
     deliveryOrderRef?: string;
+    orderItemDescription?: string | null;
+    orderItemQtyKoli?: number | null;
+    orderItemWeight?: number | null;
+    orderItemVolumeM3?: number | null;
+    shipperReferenceNumber?: string | null;
     actualQtyKoli?: number | null;
     actualWeightKg?: number | null;
+    actualVolumeM3?: number | null;
 };
 
 type FreightNotaItemLike = {
@@ -27,6 +48,16 @@ type FreightNotaItemLike = {
     tujuan?: string | null;
     deliveryOrderItemRef?: string | null;
     deliveryOrderItemRefs?: string[] | null;
+    actualDropPointKey?: string | null;
+    status?: string | null;
+};
+
+type OrderLike = {
+    _id: string;
+    customerRef?: string;
+    customerName?: string;
+    pickupAddress?: string;
+    receiverAddress?: string;
 };
 
 type AuditIssue = {
@@ -110,15 +141,17 @@ async function loginAndGetCookieHeader() {
 
 async function main() {
     const cookieHeader = await loginAndGetCookieHeader();
-    const [deliveryOrderResponse, deliveryOrderItemResponse, freightNotaItemResponse] = await Promise.all([
+    const [deliveryOrderResponse, deliveryOrderItemResponse, freightNotaItemResponse, orderResponse] = await Promise.all([
         requestJson<{ data: DeliveryOrderLike[] }>('/api/data?entity=delivery-orders', cookieHeader),
         requestJson<{ data: DeliveryOrderItemLike[] }>('/api/data?entity=delivery-order-items', cookieHeader),
         requestJson<{ data: FreightNotaItemLike[] }>('/api/data?entity=freight-nota-items', cookieHeader),
+        requestJson<{ data: OrderLike[] }>('/api/data?entity=orders', cookieHeader),
     ]);
 
     const deliveryOrders = Array.isArray(deliveryOrderResponse.data) ? deliveryOrderResponse.data : [];
     const deliveryOrderItems = Array.isArray(deliveryOrderItemResponse.data) ? deliveryOrderItemResponse.data : [];
     const freightNotaItems = Array.isArray(freightNotaItemResponse.data) ? freightNotaItemResponse.data : [];
+    const orders = Array.isArray(orderResponse.data) ? orderResponse.data : [];
 
     const itemGroups = new Map<string, DeliveryOrderItemLike[]>();
     for (const item of deliveryOrderItems) {
@@ -131,6 +164,7 @@ async function main() {
 
     const issues: AuditIssue[] = [];
     const deliveredOrders = deliveryOrders.filter(item => item.status === 'DELIVERED');
+    const deliveryOrderById = new Map(deliveryOrders.map(item => [item._id, item]));
 
     for (const deliveryOrder of deliveredOrders) {
         const linkedItems = itemGroups.get(deliveryOrder._id) || [];
@@ -175,6 +209,60 @@ async function main() {
                 ref: deliveryOrder.doNumber || deliveryOrder._id,
                 message: 'DELIVERED tanpa actualDropPoints padahal muatan aktual sudah ada',
             });
+        }
+    }
+
+    const activeFreightNotaItems = freightNotaItems.filter(item => item.status !== 'VOID');
+    const activeCoverageKeys = new Set(activeFreightNotaItems.flatMap(item =>
+        getFreightNotaItemCoverageKeys(
+            item as FreightNotaItem,
+            item.doRef ? deliveryOrderById.get(item.doRef) as DeliveryOrder | undefined : undefined,
+        )
+    ));
+
+    for (const deliveryOrder of deliveryOrders) {
+        const linkedInvoiceItems = activeFreightNotaItems.filter(item => normalizeText(item.doRef) === deliveryOrder._id);
+        if (linkedInvoiceItems.length === 0) continue;
+
+        const availableRows = buildNotaRowsFromDeliveryOrder({
+            deliveryOrder: deliveryOrder as DeliveryOrder,
+            orders: orders as Order[],
+            deliveryOrderItems: deliveryOrderItems as DeliveryOrderItem[],
+        }).filter(row =>
+            !getInvoiceRowAvailabilityCoverageKeys(row, deliveryOrder as DeliveryOrder)
+                .some(key => activeCoverageKeys.has(key))
+        );
+
+        for (const invoiceItem of linkedInvoiceItems) {
+            const invoiceItemRefs = [
+                normalizeText(invoiceItem.deliveryOrderItemRef),
+                ...(Array.isArray(invoiceItem.deliveryOrderItemRefs) ? invoiceItem.deliveryOrderItemRefs.map(ref => normalizeText(ref)) : []),
+            ].filter(Boolean);
+            const invoiceDropKey = normalizeText(invoiceItem.actualDropPointKey);
+            const invoiceCoverageKeys = new Set(getFreightNotaItemCoverageKeys(invoiceItem as FreightNotaItem, deliveryOrder as DeliveryOrder));
+            const staleAvailableRows = availableRows.filter(row => {
+                const rowItemRefs = [
+                    normalizeText(row.deliveryOrderItemRef),
+                    ...(Array.isArray(row.deliveryOrderItemRefs) ? row.deliveryOrderItemRefs.map(ref => normalizeText(ref)) : []),
+                ].filter(Boolean);
+                const rowDropKey = normalizeText(row.actualDropPointKey);
+                const overlapsItemInvoice =
+                    invoiceItemRefs.length > 0 &&
+                    rowItemRefs.some(ref => invoiceItemRefs.includes(ref)) &&
+                    (!invoiceDropKey || !rowDropKey || invoiceDropKey === rowDropKey);
+                const overlapsFullSjInvoice =
+                    invoiceItemRefs.length === 0 &&
+                    getInvoiceRowAvailabilityCoverageKeys(row, deliveryOrder as DeliveryOrder)
+                        .some(key => invoiceCoverageKeys.has(key));
+                return overlapsItemInvoice || overlapsFullSjInvoice;
+            });
+            if (staleAvailableRows.length > 0) {
+                issues.push({
+                    kind: 'freight-nota-availability',
+                    ref: `${deliveryOrder.doNumber || deliveryOrder._id}/${invoiceItem.noSJ || invoiceItem._id}`,
+                    message: 'SJ/barang yang sudah tertagih masih muncul sebagai pilihan invoice tersisa',
+                });
+            }
         }
     }
 
