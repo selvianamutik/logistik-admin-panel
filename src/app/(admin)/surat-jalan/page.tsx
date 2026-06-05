@@ -11,6 +11,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
 import type { SuratJalanDocument } from '@/lib/trip-document-types';
 import { hasPageAccess } from '@/lib/rbac';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { useApp, useToast } from '../layout';
 
 function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
@@ -35,6 +36,7 @@ export default function SuratJalanPage() {
     const { addToast } = useToast();
     const [rows, setRows] = useState<SuratJalanDocument[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
@@ -43,6 +45,7 @@ export default function SuratJalanPage() {
 
     const loadSuratJalan = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const params = new URLSearchParams({
                 entity: 'surat-jalan',
@@ -55,7 +58,14 @@ export default function SuratJalanPage() {
             );
             setRows(documents || []);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat surat jalan');
+            const message = getAdminErrorMessage(error, 'Gagal memuat surat jalan');
+            setRows([]);
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Surat Jalan',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Surat Jalan.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
@@ -159,8 +169,8 @@ export default function SuratJalanPage() {
                                     <td colSpan={12}>
                                         <div className="empty-state">
                                             <FileText size={48} className="empty-state-icon" />
-                                            <div className="empty-state-title">Belum ada surat jalan</div>
-                                            <div className="empty-state-text">SJ akan muncul per nomor dokumen, termasuk saat satu trip membawa beberapa SJ.</div>
+                                            <div className="empty-state-title">{loadNotice?.title || 'Belum ada surat jalan'}</div>
+                                            <div className="empty-state-text">{loadNotice?.text || 'SJ akan muncul per nomor dokumen, termasuk saat satu trip membawa beberapa SJ.'}</div>
                                         </div>
                                     </td>
                                 </tr>
@@ -187,6 +197,12 @@ export default function SuratJalanPage() {
                     </table>
                 </div>
                 <div className="mobile-card-list">
+                    {!loading && pageRows.length === 0 && (
+                        <div className="mobile-data-card">
+                            <div className="mobile-record-title">{loadNotice?.title || 'Belum ada surat jalan'}</div>
+                            <div className="mobile-record-subtitle">{loadNotice?.text || 'SJ akan muncul per nomor dokumen, termasuk saat satu trip membawa beberapa SJ.'}</div>
+                        </div>
+                    )}
                     {pageRows.map(row => {
                         const statusMeta = row.tripStatus ? DO_STATUS_MAP[row.tripStatus] : null;
                         return (

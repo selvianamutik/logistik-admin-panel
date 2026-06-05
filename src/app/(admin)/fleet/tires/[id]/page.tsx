@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { ArrowLeft, Edit, History, Truck, Warehouse } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchOptionalAdminCollectionData, fetchOptionalAdminData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import {
     getSelectableInternalTireSlotOptions,
     getSelectableTireVehiclesByVehicleCategory,
@@ -50,7 +51,6 @@ const BAN_DETAIL_STATUS_OPTIONS = TIRE_STATUS_OPTIONS.filter(option => option.va
 
 export default function TireDetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { user } = useApp();
     const { addToast } = useToast();
     const tireId = params.id as string;
@@ -62,6 +62,7 @@ export default function TireDetailPage() {
     const [warehouseItems, setWarehouseItems] = useState<WarehouseItem[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
     const [historyRows, setHistoryRows] = useState<TireHistoryLog[]>([]);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showEditModal, setShowEditModal] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
     const [editForm, setEditForm] = useState<TireDetailEditForm>({
@@ -99,26 +100,36 @@ export default function TireDetailPage() {
     useEffect(() => {
         const loadDetail = async () => {
             setLoading(true);
+            setLoadNotice(null);
             try {
                 const tireData = await fetchAdminData<TireEvent | null>(`/api/data?entity=tire-events&id=${tireId}`, 'Ban tidak ditemukan');
                 if (!tireData) {
                     throw new Error('Ban tidak ditemukan');
                 }
                 const historyFilter = encodeURIComponent(JSON.stringify({ tireEventRef: tireId }));
+                const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
                 const [vehicleData, warehouseItemData, historyData, vehicleRows, warehouseItemRows, tireRows] = await Promise.all([
                     tireData.vehicleRef
-                        ? fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${tireData.vehicleRef}`, 'Gagal memuat kendaraan ban')
+                        ? fetchOptionalAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${tireData.vehicleRef}`, 'Gagal memuat kendaraan ban', optionalFetchOptions)
                         : Promise.resolve(null),
                     tireData.linkedWarehouseItemRef
-                        ? fetchAdminData<WarehouseItem | null>(`/api/data?entity=warehouse-items&id=${tireData.linkedWarehouseItemRef}`, 'Gagal memuat item gudang ban')
+                        ? fetchOptionalAdminData<WarehouseItem | null>(`/api/data?entity=warehouse-items&id=${tireData.linkedWarehouseItemRef}`, 'Gagal memuat item gudang ban', optionalFetchOptions)
                         : Promise.resolve(null),
-                    fetchAdminCollectionData<TireHistoryLog[]>(
+                    fetchOptionalAdminCollectionData<TireHistoryLog>(
                         `/api/data?entity=tire-history-logs&filter=${historyFilter}&sortField=timestamp&sortDir=desc`,
-                        'Gagal memuat riwayat ban'
+                        'Gagal memuat riwayat ban',
+                        undefined,
+                        optionalFetchOptions
                     ),
-                    fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles&pageSize=500', 'Gagal memuat data kendaraan'),
-                    fetchAdminCollectionData<WarehouseItem[]>('/api/data?entity=warehouse-items&pageSize=500', 'Gagal memuat data gudang'),
-                    fetchAdminCollectionData<TireEvent[]>('/api/data?entity=tire-events&pageSize=500', 'Gagal memuat master ban'),
+                    canManageTires
+                        ? fetchOptionalAdminCollectionData<Vehicle>('/api/data?entity=vehicles&pageSize=500', 'Gagal memuat data kendaraan', undefined, optionalFetchOptions)
+                        : Promise.resolve([] as Vehicle[]),
+                    canManageTires
+                        ? fetchOptionalAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items&pageSize=500', 'Gagal memuat data gudang', undefined, optionalFetchOptions)
+                        : Promise.resolve([] as WarehouseItem[]),
+                    canManageTires
+                        ? fetchOptionalAdminCollectionData<TireEvent>('/api/data?entity=tire-events&pageSize=500', 'Gagal memuat master ban', undefined, optionalFetchOptions)
+                        : Promise.resolve([] as TireEvent[]),
                 ]);
                 setTire(tireData);
                 setVehicle(vehicleData);
@@ -128,21 +139,26 @@ export default function TireDetailPage() {
                 setWarehouseItems((warehouseItemRows || []).filter(item => item.active !== false));
                 setAllTireEvents(tireRows || []);
             } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail ban');
-                router.push('/fleet/tires');
+                const message = getAdminErrorMessage(error, 'Gagal memuat detail ban');
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'Ban',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Ban.'
+                ));
+                addToast('error', message);
             } finally {
                 setLoading(false);
             }
         };
 
         void loadDetail();
-    }, [addToast, router, tireId]);
+    }, [addToast, canManageTires, tireId]);
 
     if (loading) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 260 }} /></div>;
     }
     if (!tire) {
-        return <div className="empty-state"><div className="empty-state-title">Ban tidak ditemukan</div></div>;
+        return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Ban tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
     }
 
     const resolvedTire = resolveFleetTireEvents([tire])[0];
@@ -307,9 +323,9 @@ export default function TireDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary" type="button" onClick={() => router.push('/fleet/tires')}>
+                    <Link className="btn btn-secondary" href="/fleet/tires">
                         <ArrowLeft size={16} /> Daftar Ban
-                    </button>
+                    </Link>
                     {canManageTires && (
                         <button className="btn btn-primary" type="button" onClick={openEditModal}>
                             <Edit size={16} /> Edit

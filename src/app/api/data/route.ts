@@ -233,6 +233,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'driver-borongans': 'driverBorongans',
     'driver-borogan-items': 'driverBorongans',
     'driver-borongan-items': 'driverBorongans',
+    'driver-scores': 'driverScores',
     users: 'userManagement',
     'audit-logs': 'auditLogs',
 };

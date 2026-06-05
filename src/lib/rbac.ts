@@ -313,6 +313,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Supplier', href: '/suppliers', icon: 'Building2', module: 'suppliers' },
                 { label: 'Barang Gudang', href: '/inventory/items', icon: 'Package', module: 'warehouseItems' },
                 { label: 'Pembelian', href: '/inventory/purchases', icon: 'Receipt', module: 'purchases' },
+                { label: 'Pemakaian Barang', href: '/inventory/material-usage', icon: 'BarChart3', module: 'maintenance' },
                 { label: 'Laporan Stok', href: '/inventory/stock-recap', icon: 'BarChart3', module: 'warehouseItems' },
             ],
         },

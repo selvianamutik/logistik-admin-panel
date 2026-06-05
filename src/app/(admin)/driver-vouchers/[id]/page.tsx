@@ -9,6 +9,7 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildDriverVoucherCashBreakdown,
@@ -49,6 +50,7 @@ export default function DriverVoucherDetailPage() {
     const [disbursements, setDisbursements] = useState<DriverVoucherDisbursement[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showAddItem, setShowAddItem] = useState(false);
     const [showTopUpModal, setShowTopUpModal] = useState(false);
     const [showSettleModal, setShowSettleModal] = useState(false);
@@ -80,6 +82,7 @@ export default function DriverVoucherDetailPage() {
 
     const loadVoucherDetail = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const [voucherData, voucherItems, voucherDisbursements, accounts] = await Promise.all([
                 fetchAdminData<DriverVoucher | null>(`/api/data?entity=driver-vouchers&id=${params.id}`, 'Gagal memuat detail uang jalan trip'),
@@ -100,7 +103,13 @@ export default function DriverVoucherDetailPage() {
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
             setIssueBankRepairRef(voucherData?.issueBankRef || '');
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail uang jalan trip');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail uang jalan trip');
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Uang Jalan Trip',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Uang Jalan Trip.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
@@ -639,8 +648,12 @@ export default function DriverVoucherDetailPage() {
         ? getManualOvertonasePreview(manualOvertonaseReviewMode === 'automatic')
         : null;
 
-    if (loading || !voucher) {
+    if (loading) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
+    }
+
+    if (!voucher) {
+        return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Uang jalan trip tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
     }
 
     return (

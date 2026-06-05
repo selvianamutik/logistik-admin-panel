@@ -2,6 +2,15 @@ const DEFAULT_REFERENCE_PAGE_SIZE = 500;
 const ADMIN_FETCH_TIMEOUT_MS = 20000;
 const inFlightAdminRequests = new Map<string, Promise<unknown>>();
 
+type OptionalAdminFetchOptions = {
+    onError?: (message: string) => void;
+    silentAccessDenied?: boolean;
+};
+
+function isAccessDeniedMessage(message: string) {
+    return /forbidden|tidak punya|akses|permission|unauthorized/i.test(message);
+}
+
 export function withAdminCollectionPageSize(url: string, pageSize: number = DEFAULT_REFERENCE_PAGE_SIZE): string {
     const resolvedUrl = new URL(url, 'http://localhost');
     if (!resolvedUrl.searchParams.has('page')) {
@@ -60,6 +69,39 @@ export async function fetchAllAdminCollectionData<T>(
     return allItems;
 }
 
+export async function fetchOptionalAdminData<T>(
+    url: string,
+    fallbackMessage: string,
+    options: OptionalAdminFetchOptions = {}
+): Promise<T | null> {
+    try {
+        return await fetchAdminData<T>(url, fallbackMessage);
+    } catch (error) {
+        const message = getErrorMessage(error, fallbackMessage);
+        if (!(options.silentAccessDenied && isAccessDeniedMessage(message))) {
+            options.onError?.(message);
+        }
+        return null;
+    }
+}
+
+export async function fetchOptionalAdminCollectionData<T>(
+    url: string,
+    fallbackMessage: string,
+    pageSize: number = DEFAULT_REFERENCE_PAGE_SIZE,
+    options: OptionalAdminFetchOptions = {}
+): Promise<T[]> {
+    try {
+        return await fetchAllAdminCollectionData<T>(url, fallbackMessage, pageSize);
+    } catch (error) {
+        const message = getErrorMessage(error, fallbackMessage);
+        if (!(options.silentAccessDenied && isAccessDeniedMessage(message))) {
+            options.onError?.(message);
+        }
+        return [];
+    }
+}
+
 async function fetchAdminPayload<T>(url: string, fallbackMessage: string): Promise<T> {
     const existing = inFlightAdminRequests.get(url);
     if (existing) {
@@ -94,6 +136,12 @@ async function fetchAdminPayload<T>(url: string, fallbackMessage: string): Promi
 
     inFlightAdminRequests.set(url, request);
     return request;
+}
+
+function getErrorMessage(error: unknown, fallbackMessage: string) {
+    return error instanceof Error && error.message.trim()
+        ? error.message
+        : fallbackMessage;
 }
 
 async function readJsonPayload(response: Response): Promise<unknown> {

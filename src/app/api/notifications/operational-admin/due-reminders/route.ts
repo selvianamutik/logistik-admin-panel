@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth';
 import { runOperationalDueReminder } from '@/lib/api/operational-admin-reminders';
-import { jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { normalizeUserRole } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +44,11 @@ async function authorizeReminderRequest(request: Request) {
             { error: 'Scheduled GET reminders require CRON_SECRET or WHATSAPP_REMINDER_SECRET.' },
             { status: 401 }
         );
+    }
+
+    const originError = ensureSameOriginRequest(request);
+    if (originError) {
+        return originError;
     }
 
     const session = await getSession();

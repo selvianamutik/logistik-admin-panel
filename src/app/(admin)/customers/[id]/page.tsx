@@ -7,7 +7,8 @@ import { useApp, useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
-import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminData, fetchOptionalAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { summarizeCustomerCreditUsage } from '@/lib/customer-credit-limit';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
 import { buildPph23Label, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
@@ -115,6 +116,7 @@ export default function CustomerDetailPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showProductModal, setShowProductModal] = useState(false);
@@ -152,22 +154,27 @@ export default function CustomerDetailPage() {
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
     const [pickupForm, setPickupForm] = useState<CustomerPickupForm>(DEFAULT_PICKUP_FORM);
     const canOpenCustomerOrderHistory = user ? hasPageAccess(user.role, 'orders') : false;
+    const canManageCustomer = user ? hasPermission(user.role, 'customers', 'update') : false;
 
     useEffect(() => {
         const loadCustomerDetail = async () => {
             setLoading(true);
+            setLoadNotice(null);
             try {
-                const [cust, productRows, billingRateRows, recipientRows, pickupRows, serviceRows, customerOrders, customerNotas] = await Promise.all([
-                    fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer'),
-                    fetchAllAdminCollectionData<CustomerProduct>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
-                    fetchAllAdminCollectionData<CustomerBillingRate>(`/api/data?entity=customer-billing-rates&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data tarif customer'),
-                    fetchAllAdminCollectionData<CustomerRecipient>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
-                    fetchAllAdminCollectionData<CustomerPickupLocation>(`/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
-                    fetchAllAdminCollectionData<Service>('/api/data?entity=services', 'Gagal memuat jenis armada'),
+                const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
+                const cust = await fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer');
+                const [productRows, billingRateRows, recipientRows, pickupRows, serviceRows, customerOrders, customerNotas] = await Promise.all([
+                    fetchOptionalAdminCollectionData<CustomerProduct>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat barang customer', undefined, optionalFetchOptions),
+                    fetchOptionalAdminCollectionData<CustomerBillingRate>(`/api/data?entity=customer-billing-rates&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat tarif customer', undefined, optionalFetchOptions),
+                    fetchOptionalAdminCollectionData<CustomerRecipient>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat tujuan customer', undefined, optionalFetchOptions),
+                    fetchOptionalAdminCollectionData<CustomerPickupLocation>(`/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat lokasi ambil customer', undefined, optionalFetchOptions),
+                    canManageCustomer
+                        ? fetchOptionalAdminCollectionData<Service>('/api/data?entity=services', 'Gagal memuat jenis armada', undefined, optionalFetchOptions)
+                        : Promise.resolve([] as Service[]),
                     canOpenCustomerOrderHistory
-                        ? fetchAllAdminCollectionData<Order>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer')
+                        ? fetchOptionalAdminCollectionData<Order>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat riwayat order customer', undefined, optionalFetchOptions)
                         : Promise.resolve([] as Order[]),
-                    fetchAllAdminCollectionData<FreightNota>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchOptionalAdminCollectionData<FreightNota>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat riwayat invoice customer', undefined, optionalFetchOptions),
                 ]);
 
                 setCustomer(cust);
@@ -195,14 +202,20 @@ export default function CustomerDetailPage() {
                     });
                 }
             } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data customer');
+                const message = getAdminErrorMessage(error, 'Gagal memuat data customer');
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'Customer',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Customer.'
+                ));
+                addToast('error', message);
             } finally {
                 setLoading(false);
             }
         };
 
         void loadCustomerDetail();
-    }, [addToast, canOpenCustomerOrderHistory, customerId]);
+    }, [addToast, canManageCustomer, canOpenCustomerOrderHistory, customerId]);
 
     const openNewProduct = () => {
         setEditProduct(null);
@@ -566,7 +579,7 @@ export default function CustomerDetailPage() {
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
-    if (!customer) return <div className="empty-state"><div className="empty-state-title">Customer tidak ditemukan</div></div>;
+    if (!customer) return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Customer tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
 
     const activeOrderCount = orders.filter(order => !['COMPLETE', 'CANCELLED'].includes(order.status)).length;
     const activeNotas = notas.filter(nota => nota.status !== 'VOID');
@@ -585,8 +598,6 @@ export default function CustomerDetailPage() {
         }
         return (a.label || '').localeCompare(b.label || '');
     });
-    const canManageCustomer = user ? hasPermission(user.role, 'customers', 'update') : false;
-
     return (
         <div>
             <div className="page-header">

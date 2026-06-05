@@ -7,7 +7,8 @@ import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye, Plus, Trash2, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchOptionalAdminCollectionData, fetchOptionalAdminData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     getDeliveryOrderBillableCargoSummary,
@@ -107,6 +108,7 @@ export default function OrderDetailPage() {
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [notaItems, setNotaItems] = useState<FreightNotaItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showDOModal, setShowDOModal] = useState(false);
     const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
     const [creatingDO, setCreatingDO] = useState(false);
@@ -162,6 +164,7 @@ export default function OrderDetailPage() {
     const loadedVehicleOptionsRef = useRef(false);
     const loadedTripPlanSupportRef = useRef(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
+    const canViewFreightNotas = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
     const canManageOrderTrips = user ? hasPermission(user.role, 'orders', 'update') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
@@ -186,23 +189,28 @@ export default function OrderDetailPage() {
     }, [hasOpenModal]);
 
     const loadOrderReferenceData = useCallback(async (orderData: Order | null) => {
+        const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
         const [customerData, serviceData, customerProductData, customerPickupData] = await Promise.all([
             orderData?.customerRef
-                ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
+                ? fetchOptionalAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order', optionalFetchOptions)
                 : Promise.resolve(null),
             orderData?.serviceRef
-                ? fetchAdminData<Service | null>(`/api/data?entity=services&id=${orderData.serviceRef}`, 'Gagal memuat detail order')
+                ? fetchOptionalAdminData<Service | null>(`/api/data?entity=services&id=${orderData.serviceRef}`, 'Gagal memuat detail order', optionalFetchOptions)
                 : Promise.resolve(null),
             orderData?.customerRef
-                ? fetchAdminCollectionData<CustomerProduct[]>(
+                ? fetchOptionalAdminCollectionData<CustomerProduct>(
                     `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}`,
-                    'Gagal memuat detail order'
+                    'Gagal memuat detail order',
+                    undefined,
+                    optionalFetchOptions
                 )
                 : Promise.resolve([] as CustomerProduct[]),
             orderData?.customerRef
-                ? fetchAdminCollectionData<CustomerPickupLocation[]>(
+                ? fetchOptionalAdminCollectionData<CustomerPickupLocation>(
                     `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
-                    'Gagal memuat master pickup customer'
+                    'Gagal memuat master pickup customer',
+                    undefined,
+                    optionalFetchOptions
                 )
                 : Promise.resolve([] as CustomerPickupLocation[]),
         ]);
@@ -212,7 +220,7 @@ export default function OrderDetailPage() {
         setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
         setCustomerPickups((customerPickupData || []).filter(pickup => pickup.active !== false));
         loadedReferenceSignatureRef.current = `${orderData?.customerRef || ''}|${orderData?.serviceRef || ''}`;
-    }, []);
+    }, [addToast]);
 
     const refreshOrderCoreState = useCallback(async (fallbackMessage: string = 'Gagal memuat ulang detail order') => {
         try {
@@ -355,27 +363,33 @@ export default function OrderDetailPage() {
     const loadOrderDetail = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
             setLoading(true);
+            setLoadNotice(null);
         }
         try {
+            const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
             const [orderData, itemData, deliveryOrders, activeDeliveryOrders, activeOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL'] }))}`, 'Gagal memuat detail order'),
+                canManageOrderTrips
+                    ? fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'ON_DELIVERY', 'ARRIVED', 'PARTIAL_HOLD', 'DELIVERED'] }))}`, 'Gagal memuat detail order')
+                    : Promise.resolve([] as DeliveryOrder[]),
+                canManageOrderTrips
+                    ? fetchAdminCollectionData<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ status: ['OPEN', 'PARTIAL'] }))}`, 'Gagal memuat detail order')
+                    : Promise.resolve([] as Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
-                deliveryOrderIds.length > 0
-                    ? fetchAdminCollectionData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
+                canViewFreightNotas && deliveryOrderIds.length > 0
+                    ? fetchOptionalAdminCollectionData<FreightNotaItem>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`, 'Gagal memuat detail invoice order', undefined, optionalFetchOptions)
                     : Promise.resolve([] as FreightNotaItem[]),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
-            const orderNotas = notaIds.length > 0
-                ? await fetchAdminCollectionData<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`, 'Gagal memuat detail order')
+            const orderNotas = canViewFreightNotas && notaIds.length > 0
+                ? await fetchOptionalAdminCollectionData<FreightNota>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`, 'Gagal memuat detail invoice order', undefined, optionalFetchOptions)
                 : [];
 
             setOrder(orderData);
@@ -394,7 +408,7 @@ export default function OrderDetailPage() {
             setBusyVehicleIds(nextBusyVehicleIds);
             setBusyDriverIds(nextBusyDriverIds);
 
-            if (mode === 'initial' || !loadedVehicleOptionsRef.current) {
+            if (canManageOrderTrips && (mode === 'initial' || !loadedVehicleOptionsRef.current)) {
                 await loadVehicleOptions();
             }
             const shouldReloadReferences =
@@ -404,13 +418,21 @@ export default function OrderDetailPage() {
                 await loadOrderReferenceData(orderData);
             }
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail order');
+            if (mode === 'initial') {
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'Order',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Order / Resi.'
+                ));
+            }
+            addToast('error', message);
         } finally {
             if (mode === 'initial') {
                 setLoading(false);
             }
         }
-    }, [addToast, loadOrderReferenceData, loadVehicleOptions, orderId]);
+    }, [addToast, canManageOrderTrips, canViewFreightNotas, loadOrderReferenceData, loadVehicleOptions, orderId]);
 
     useEffect(() => {
         void loadOrderDetail('initial');
@@ -1578,7 +1600,7 @@ export default function OrderDetailPage() {
     }
 
     if (!order) {
-        return <div className="empty-state"><div className="empty-state-title">Order tidak ditemukan</div></div>;
+        return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Order tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
     }
 
     const auditTrailEntityRefs = Array.from(new Set([

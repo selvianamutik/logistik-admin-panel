@@ -9,6 +9,7 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     formatFreightNotaDisplayWeight,
@@ -45,6 +46,7 @@ export default function NotaDetailPage() {
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [customer, setCustomer] = useState<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showPayModal, setShowPayModal] = useState(false);
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
     const [showPph23Modal, setShowPph23Modal] = useState(false);
@@ -79,6 +81,7 @@ export default function NotaDetailPage() {
 
     const loadNotaDetail = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const [notaData, notaItems, paymentRows, adjustmentRows, accounts, companyData] = await Promise.all([
                 fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`, 'Gagal memuat detail invoice'),
@@ -112,7 +115,13 @@ export default function NotaDetailPage() {
             setCompany(companyData);
             setCustomer(customerData);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail invoice');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail invoice');
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Invoice',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Invoice.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
@@ -604,7 +613,7 @@ export default function NotaDetailPage() {
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
-    if (!nota) return <div className="empty-state"><div className="empty-state-title">Invoice tidak ditemukan</div></div>;
+    if (!nota) return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Invoice tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
 
     const displayStatus = isVoidedInvoice ? 'VOID' : deriveReceivableStatus(nota, totalPaid);
     const statusConf = INVOICE_DETAIL_STATUS_MAP[displayStatus] || { label: displayStatus, color: 'secondary' };

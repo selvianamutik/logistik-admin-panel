@@ -9,6 +9,7 @@ import AppPagination from '@/components/AppPagination';
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminData, fetchAdminListPayload } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildExpenseLookup,
@@ -133,6 +134,7 @@ export default function BankAccountDetailPage() {
     const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
     const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [transactionsLoading, setTransactionsLoading] = useState(true);
     const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
     const canPrintBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'print') : false;
@@ -204,6 +206,7 @@ export default function BankAccountDetailPage() {
     useEffect(() => {
         const loadAccountOverview = async () => {
             setLoading(true);
+            setLoadNotice(null);
             try {
                 const summaryParams = new URLSearchParams({
                     entity: 'bank-transactions-summary',
@@ -229,7 +232,13 @@ export default function BankAccountDetailPage() {
                 setTransactionTotal(summaryData?.totalTransactions || 0);
                 setCompany(companyData || null);
             } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail rekening');
+                const message = getAdminErrorMessage(error, 'Gagal memuat detail rekening');
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'Rekening',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Rekening & Kas.'
+                ));
+                addToast('error', message);
             } finally {
                 setLoading(false);
             }
@@ -353,7 +362,7 @@ export default function BankAccountDetailPage() {
     }
 
     if (!account) {
-        return <div className="card"><div className="card-body">Rekening tidak ditemukan</div></div>;
+        return <div className="card"><div className="card-body"><div className="empty-state-title">{loadNotice?.title || 'Rekening tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div></div>;
     }
 
     const cashAccount = isCashAccount(account);

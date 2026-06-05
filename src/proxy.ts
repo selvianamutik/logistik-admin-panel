@@ -10,7 +10,13 @@ import { hasPageAccess, hasPermission, type AppModule, type ModulePermissions } 
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { SessionUser } from '@/lib/types';
 
-const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
+type InternalPathAccess = {
+    path: string;
+    module: AppModule;
+    fallbackModules?: AppModule[];
+};
+
+const INTERNAL_PATH_MODULES: InternalPathAccess[] = [
     { path: '/dashboard', module: 'dashboard' },
     { path: '/orders', module: 'orders' },
     { path: '/trips', module: 'deliveryOrders' },
@@ -24,7 +30,7 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/inventory/items', module: 'warehouseItems' },
     { path: '/inventory/material-usage', module: 'maintenance' },
     { path: '/inventory/stock-recap', module: 'warehouseItems' },
-    { path: '/inventory', module: 'warehouseItems' },
+    { path: '/inventory', module: 'warehouseItems', fallbackModules: ['suppliers', 'purchases', 'maintenance'] },
     { path: '/customers', module: 'customers' },
     { path: '/trip-rates', module: 'tripRouteRates' },
     { path: '/services', module: 'services' },
@@ -32,6 +38,7 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/expenses', module: 'expenses' },
     { path: '/reports', module: 'reports' },
     { path: '/fleet/vehicles', module: 'vehicles' },
+    { path: '/fleet/drivers/skors', module: 'driverScores' },
     { path: '/fleet/drivers', module: 'drivers' },
     { path: '/fleet/maintenance', module: 'maintenance' },
     { path: '/fleet/tires', module: 'tires' },
@@ -46,6 +53,7 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/settings/profile', module: 'profile' },
     { path: '/settings/password', module: 'profile' },
     { path: '/settings/company', module: 'companySettings' },
+    { path: '/settings/import-data', module: 'dataImports' },
     { path: '/settings/users', module: 'userManagement' },
     { path: '/settings/audit-logs', module: 'auditLogs' },
 ];
@@ -58,9 +66,9 @@ function isRemovedDriverPortalPath(pathname: string) {
     return matchesPathSegment(pathname, '/driver');
 }
 
-function getModuleForPath(pathname: string) {
+function getAccessForPath(pathname: string) {
     const matched = INTERNAL_PATH_MODULES.find(item => matchesPathSegment(pathname, item.path));
-    return matched?.module || null;
+    return matched || null;
 }
 
 function getRequiredModuleAction(pathname: string): keyof ModulePermissions {
@@ -187,15 +195,18 @@ export async function proxy(request: NextRequest) {
             return response;
         }
 
-        const targetModule = getModuleForPath(pathname);
+        const targetAccess = getAccessForPath(pathname);
         const requiredAction = getRequiredModuleAction(pathname);
-        const hasAccess = targetModule
-            ? (requiredAction === 'view'
-                ? hasPageAccess(user.role, targetModule)
-                : hasPermission(user.role, targetModule, requiredAction))
+        const targetModules = targetAccess
+            ? [targetAccess.module, ...(targetAccess.fallbackModules || [])]
+            : [];
+        const hasAccess = targetModules.length > 0
+            ? targetModules.some(module => (requiredAction === 'view'
+                ? hasPageAccess(user.role, module)
+                : hasPermission(user.role, module, requiredAction)))
             : true;
 
-        if (targetModule && !hasAccess) {
+        if (targetAccess && !hasAccess) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 

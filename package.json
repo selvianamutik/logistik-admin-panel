@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "node scripts/clean-next.mjs && next build --webpack",
     "build:turbopack": "node scripts/clean-next.mjs && next build",
     "start": "next start",
@@ -24,6 +24,7 @@
     "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",
     "audit:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts",
     "audit:delivery-order-actual-edit-permissions": "npx tsx --conditions react-server scripts/audit-delivery-order-actual-edit-permissions.ts",
+    "audit:role-access-e2e": "npx tsx --conditions react-server scripts/audit-role-access-e2e.ts",
     "repair:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts --fix",
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
     "audit:driver-approval-corrections-flow": "npx tsx --conditions react-server scripts/audit-driver-approval-corrections-flow.ts",

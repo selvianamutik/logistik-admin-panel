@@ -3,6 +3,31 @@ import path from 'node:path';
 
 const routePath = path.join(process.cwd(), 'src/app/api/data/route.ts');
 const source = fs.readFileSync(routePath, 'utf8');
+const adminAppDir = path.join(process.cwd(), 'src/app/(admin)');
+const dataImportRoutePath = path.join(process.cwd(), 'src/app/api/data-import/route.ts');
+const dataImportRouteSource = fs.readFileSync(dataImportRoutePath, 'utf8');
+const reminderRoutePath = path.join(process.cwd(), 'src/app/api/notifications/operational-admin/due-reminders/route.ts');
+const reminderRouteSource = fs.readFileSync(reminderRoutePath, 'utf8');
+const driverScoringRoutePath = path.join(process.cwd(), 'src/app/api/driver/scoring/acknowledge/route.ts');
+const driverScoringRouteSource = fs.readFileSync(driverScoringRoutePath, 'utf8');
+const proxyPath = path.join(process.cwd(), 'src/proxy.ts');
+const proxySource = fs.readFileSync(proxyPath, 'utf8');
+const rbacPath = path.join(process.cwd(), 'src/lib/rbac.ts');
+const rbacSource = fs.readFileSync(rbacPath, 'utf8');
+const suratJalanListPagePath = path.join(process.cwd(), 'src/app/(admin)/surat-jalan/page.tsx');
+const suratJalanListPageSource = fs.readFileSync(suratJalanListPagePath, 'utf8');
+const suratJalanDetailPagePath = path.join(process.cwd(), 'src/app/(admin)/surat-jalan/[id]/page.tsx');
+const suratJalanDetailPageSource = fs.readFileSync(suratJalanDetailPagePath, 'utf8');
+const adminClientPath = path.join(process.cwd(), 'src/lib/api/admin-client.ts');
+const adminClientSource = fs.readFileSync(adminClientPath, 'utf8');
+const customerDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/customers/[id]/page.tsx'), 'utf8');
+const incidentDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/fleet/incidents/[id]/page.tsx'), 'utf8');
+const driverDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/fleet/drivers/[id]/page.tsx'), 'utf8');
+const tripDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/_components/TripDetailPage.tsx'), 'utf8');
+const orderDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/orders/[id]/page.tsx'), 'utf8');
+const driverVoucherDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/driver-vouchers/[id]/page.tsx'), 'utf8');
+const documentTypesPath = path.join(process.cwd(), 'src/lib/document-types.ts');
+const documentTypesSource = fs.readFileSync(documentTypesPath, 'utf8');
 const financeWorkflowPath = path.join(process.cwd(), 'src/lib/api/finance-workflows.ts');
 const financeWorkflowSource = fs.readFileSync(financeWorkflowPath, 'utf8');
 const accountingStatementsPath = path.join(process.cwd(), 'src/app/(admin)/accounting/statements/page.tsx');
@@ -29,11 +54,27 @@ const accountingLedgerMigrationPath = path.join(process.cwd(), 'supabase/migrati
 const accountingLedgerMigrationSource = fs.readFileSync(accountingLedgerMigrationPath, 'utf8').toLowerCase();
 const accountingRevisionMigrationPath = path.join(process.cwd(), 'supabase/migrations/0016_accounting_journal_revision_unique_index.sql');
 const accountingRevisionMigrationSource = fs.readFileSync(accountingRevisionMigrationPath, 'utf8').toLowerCase();
+const migrationsDir = path.join(process.cwd(), 'supabase/migrations');
+const migrationSources = fs.readdirSync(migrationsDir)
+    .filter(fileName => fileName.endsWith('.sql'))
+    .sort()
+    .map(fileName => ({
+        fileName,
+        source: fs.readFileSync(path.join(migrationsDir, fileName), 'utf8'),
+    }));
 
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
+}
+
+function assertBefore(sourceText, firstNeedle, secondNeedle, label) {
+    const firstIndex = sourceText.indexOf(firstNeedle);
+    const secondIndex = sourceText.indexOf(secondNeedle);
+    assert(firstIndex >= 0, `${label}: marker pertama tidak ditemukan.`);
+    assert(secondIndex >= 0, `${label}: marker kedua tidak ditemukan.`);
+    assert(firstIndex < secondIndex, `${label}: urutan marker salah.`);
 }
 
 function extractBalancedBlockFrom(sourceText, label, startNeedle) {
@@ -133,6 +174,181 @@ const specialPermissionBlock = extractBalancedBlock(
     'function hasSpecialMutationPermission'
 );
 const postBlock = extractBalancedBlock('POST /api/data', 'export async function POST');
+const entityModuleMapBlock = extractBalancedBlock('ENTITY_MODULE_MAP', 'const ENTITY_MODULE_MAP');
+
+const documentTypeEntities = Array.from(
+    documentTypesSource.matchAll(/^\s*'?([a-z0-9-]+)'?:\s*'[^']+'/gm),
+    match => match[1]
+);
+const intentionallyUnmappedEntities = new Set(['company', 'incomes']);
+for (const entity of documentTypeEntities) {
+    if (intentionallyUnmappedEntities.has(entity)) {
+        continue;
+    }
+    const escapedEntity = entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert(
+        new RegExp(`(?:'${escapedEntity}'|${escapedEntity}):\\s*'`).test(entityModuleMapBlock),
+        `Entity ${entity} belum punya mapping module API.`
+    );
+}
+
+function matchesPathSegment(pathname, basePath) {
+    return pathname === basePath || pathname.startsWith(`${basePath}/`);
+}
+
+function getAdminPageRoutes() {
+    const routes = [];
+
+    function walk(currentDir) {
+        for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+            const entryPath = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+                walk(entryPath);
+                continue;
+            }
+            if (entry.name !== 'page.tsx') {
+                continue;
+            }
+
+            const relativeDir = path.relative(adminAppDir, currentDir)
+                .replace(/\\/g, '/')
+                .split('/')
+                .filter(segment => segment && !segment.startsWith('('))
+                .join('/');
+            routes.push(relativeDir ? `/${relativeDir}` : '/');
+        }
+    }
+
+    walk(adminAppDir);
+    return routes.sort();
+}
+
+function getProxyGuardPaths() {
+    return Array.from(proxySource.matchAll(/\{\s*path:\s*'([^']+)'/g), match => match[1]);
+}
+
+function getSidebarHrefs() {
+    return Array.from(rbacSource.matchAll(/href:\s*'([^']+)'/g), match => match[1]);
+}
+
+function auditAdminRouteProxyCoverage() {
+    const proxyPaths = getProxyGuardPaths();
+    const uncoveredAdminRoutes = getAdminPageRoutes()
+        .filter(route => route !== '/')
+        .filter(route => !proxyPaths.some(proxyPath => matchesPathSegment(route, proxyPath)));
+    const uncoveredSidebarHrefs = getSidebarHrefs()
+        .filter(href => !proxyPaths.some(proxyPath => matchesPathSegment(href, proxyPath)));
+
+    assert(
+        uncoveredAdminRoutes.length === 0,
+        `Halaman admin belum punya proxy guard: ${uncoveredAdminRoutes.join(', ')}`
+    );
+    assert(
+        uncoveredSidebarHrefs.length === 0,
+        `Link sidebar belum punya proxy guard: ${uncoveredSidebarHrefs.join(', ')}`
+    );
+}
+
+function auditSupabaseRlsCoverage() {
+    const createdTables = new Set();
+    const rlsEnabledTables = new Set();
+    const publicViews = [];
+    const securityDefinerFiles = [];
+
+    for (const migration of migrationSources) {
+        for (const match of migration.source.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z0-9_]+)/gi)) {
+            createdTables.add(match[1]);
+        }
+        for (const match of migration.source.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?public\.([a-z0-9_]+)\s+enable\s+row\s+level\s+security/gi)) {
+            rlsEnabledTables.add(match[1]);
+        }
+
+        const dynamicRlsList = migration.source.match(/foreach\s+table_name\s+in\s+array\s+array\[([\s\S]*?)\]/i);
+        if (dynamicRlsList) {
+            for (const match of dynamicRlsList[1].matchAll(/'([a-z0-9_]+)'/gi)) {
+                rlsEnabledTables.add(match[1]);
+            }
+        }
+
+        for (const match of migration.source.matchAll(/create\s+(?:or\s+replace\s+)?view\s+public\.([a-z0-9_]+)/gi)) {
+            publicViews.push(`${migration.fileName}:${match[1]}`);
+        }
+
+        if (/security\s+definer/i.test(migration.source)) {
+            securityDefinerFiles.push(migration.fileName);
+        }
+    }
+
+    const missingRlsTables = [...createdTables].filter(tableName => !rlsEnabledTables.has(tableName)).sort();
+    assert(
+        missingRlsTables.length === 0,
+        `Table Supabase public belum enable RLS: ${missingRlsTables.join(', ')}`
+    );
+    assert(
+        publicViews.length === 0,
+        `Public view harus diaudit security_invoker atau dipindah dari exposed schema: ${publicViews.join(', ')}`
+    );
+    assert(
+        securityDefinerFiles.length === 0,
+        `Migration tidak boleh menambah SECURITY DEFINER di exposed schema tanpa audit eksplisit: ${securityDefinerFiles.join(', ')}`
+    );
+}
+
+assert(
+    entityModuleMapBlock.includes("'driver-scores': 'driverScores'"),
+    'Entity driver-scores harus dikunci ke module driverScores.'
+);
+assert(
+    proxySource.includes("{ path: '/fleet/drivers/skors', module: 'driverScores' }"),
+    'Route /fleet/drivers/skors harus dikunci ke module driverScores.'
+);
+assertBefore(
+    proxySource,
+    "{ path: '/fleet/drivers/skors', module: 'driverScores' }",
+    "{ path: '/fleet/drivers', module: 'drivers' }",
+    'Proxy route skors supir harus lebih spesifik dari route supir'
+);
+assert(
+    proxySource.includes("{ path: '/settings/import-data', module: 'dataImports' }"),
+    'Route /settings/import-data harus dikunci ke module dataImports.'
+);
+assert(
+    proxySource.includes("{ path: '/inventory', module: 'warehouseItems', fallbackModules: ['suppliers', 'purchases', 'maintenance'] }"),
+    'Route /inventory harus bisa dibuka oleh role yang punya salah satu akses anak inventory.'
+);
+assert(
+    rbacSource.includes("{ label: 'Pemakaian Barang', href: '/inventory/material-usage', icon: 'BarChart3', module: 'maintenance' }"),
+    'Sidebar harus menampilkan Pemakaian Barang untuk role yang punya akses maintenance.'
+);
+assert(
+    suratJalanListPageSource.includes('buildAdminLoadNotice') &&
+        suratJalanListPageSource.includes('loadNotice?.title'),
+    'List Surat Jalan harus menampilkan pesan akses/error yang jelas, bukan selalu empty-state data kosong.'
+);
+assert(
+    suratJalanDetailPageSource.includes('loadOptionalCollection') &&
+        suratJalanDetailPageSource.includes('detail.deliveryOrder.customerRef && canEditSuratJalan && canOpenCustomerPage'),
+    'Detail Surat Jalan harus memperlakukan master barang customer sebagai data pendukung optional sesuai role.'
+);
+assert(
+    suratJalanDetailPageSource.includes('buildAdminLoadNotice') &&
+        suratJalanDetailPageSource.includes("'detail Surat Jalan'"),
+    'Detail Surat Jalan harus menampilkan pesan akses terbatas saat data inti ditolak permission.'
+);
+assert(
+    dataImportRouteSource.includes("hasPermission(session.role, 'dataImports', 'view')"),
+    'POST /api/data-import harus mengunci akses ke module dataImports, bukan hanya target import.'
+);
+assert(
+    reminderRouteSource.includes('ensureSameOriginRequest(request)'),
+    'Manual POST reminder harus memakai same-origin guard saat tidak memakai secret bearer.'
+);
+assert(
+    driverScoringRouteSource.includes('hasBearerDriverAuth(request)'),
+    'Driver scoring acknowledge harus bypass same-origin hanya untuk Bearer token driver.'
+);
+auditAdminRouteProxyCoverage();
+auditSupabaseRlsCoverage();
 
 const deliveryOrderActions = [
     {
@@ -670,4 +886,44 @@ for (const routeGuard of [
     assert(postBlock.includes(handler), `Route ${entity} tidak mengarah ke ${handler}.`);
 }
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, ${manualJournalActions.length} manual-journal actions, receivable document-type guard, accounting date/ledger guards, accounting revision history, accounting mutation guards, manual journal control-account guards, and ledger workflow route guards verified.`);
+assert(
+    adminClientSource.includes('fetchOptionalAdminData') &&
+        adminClientSource.includes('fetchOptionalAdminCollectionData') &&
+        adminClientSource.includes('silentAccessDenied'),
+    'Admin client harus punya fetch opsional untuk data pendukung role-limited.'
+);
+
+for (const [label, pageSource] of [
+    ['Surat Jalan detail', suratJalanDetailPageSource],
+    ['Trip/DO detail', tripDetailPageSource],
+    ['Customer detail', customerDetailPageSource],
+    ['Incident detail', incidentDetailPageSource],
+    ['Driver detail', driverDetailPageSource],
+    ['Order detail', orderDetailPageSource],
+    ['Uang Jalan detail', driverVoucherDetailPageSource],
+]) {
+    assert(
+        pageSource.includes('buildAdminLoadNotice') && pageSource.includes('AdminLoadNotice'),
+        `${label} harus memakai pesan akses root yang jelas, bukan hanya "tidak ditemukan".`
+    );
+}
+
+for (const [label, pageSource, requiredNeedles] of [
+    ['Surat Jalan detail', suratJalanDetailPageSource, ['loadOptionalCollection', 'customer-products']],
+    ['Trip/DO detail', tripDetailPageSource, ['fetchOptionalAdminData', 'trip-detail-references', 'fetchOptionalAdminCollectionData']],
+    ['Customer detail', customerDetailPageSource, ['fetchOptionalAdminCollectionData', 'canManageCustomer', 'services']],
+    ['Incident detail', incidentDetailPageSource, ['fetchOptionalAdminCollectionData', 'warehouse-items', 'fetchOptionalAdminData']],
+    ['Driver detail', driverDetailPageSource, ['fetchOptionalAdminCollectionData', 'canViewDriverScores', 'buildDriverScoresQuery']],
+    ['Order detail', orderDetailPageSource, ['fetchOptionalAdminCollectionData', 'canViewFreightNotas', 'freight-nota-items']],
+]) {
+    for (const needle of requiredNeedles) {
+        assert(pageSource.includes(needle), `${label} belum mengamankan data pendukung ${needle}.`);
+    }
+}
+
+assert(
+    !driverVoucherDetailPageSource.includes('if (loading || !voucher)'),
+    'Uang Jalan detail tidak boleh menampilkan skeleton terus saat voucher tidak ditemukan/akses ditolak.'
+);
+
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions, ${freightNotaUpdateActions.length} freight-nota update actions, ${manualJournalActions.length} manual-journal actions, role entity/proxy/menu guards, role-limited detail UI guards, import/reminder/driver API security guards, Supabase RLS coverage, receivable document-type guard, accounting date/ledger guards, accounting revision history, accounting mutation guards, manual journal control-account guards, and ledger workflow route guards verified.`);

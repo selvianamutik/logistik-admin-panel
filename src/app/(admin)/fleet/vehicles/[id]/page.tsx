@@ -33,6 +33,7 @@ import type { Vehicle, Maintenance, Incident, DeliveryOrder, DeliveryOrderItem, 
 import PageBackButton from '@/components/PageBackButton';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     buildVehicleTireDetailState,
@@ -127,6 +128,7 @@ export default function VehicleDetailPage() {
     const [tireUsageCostRows, setTireUsageCostRows] = useState<TireHistoryLog[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [tab, setTab] = useState('profil');
     const [showTireModal, setShowTireModal] = useState(false);
     const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultVehicleTireForm());
@@ -148,6 +150,7 @@ export default function VehicleDetailPage() {
 
     const loadVehicleDetail = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const vehicleFilter = encodeURIComponent(JSON.stringify({ vehicleRef: vehicleId }));
             const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
@@ -200,7 +203,13 @@ export default function VehicleDetailPage() {
             setTireUsageCostRows([...(tireUsageCostLogs || [])].sort((a, b) => `${b.timestamp || ''}-${b._id}`.localeCompare(`${a.timestamp || ''}-${a._id}`)));
             setExpenses([...(expenseRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail kendaraan');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail kendaraan');
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Kendaraan',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Kendaraan.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
@@ -220,7 +229,7 @@ export default function VehicleDetailPage() {
     }, [searchParams, vehicleTabs]);
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
-    if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
+    if (!vehicle) return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Kendaraan tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
 
     const incidentExpenses = expenses.filter(isIncidentExpense);
     const incidentExpenseTotalByRef = incidentExpenses.reduce((map, expense) => {

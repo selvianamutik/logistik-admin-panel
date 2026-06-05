@@ -6,7 +6,8 @@ import { AlertTriangle, CheckCircle2, Pencil, Plus, Printer, ReceiptText, Save, 
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminData, fetchAllAdminCollectionData, fetchOptionalAdminCollectionData, fetchOptionalAdminData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import {
     buildIncidentPrintHtml,
     canDeleteIncidentSettlementLine,
@@ -275,6 +276,7 @@ export default function IncidentDetailPage() {
     const [incidentVehicle, setIncidentVehicle] = useState<Vehicle | null>(null);
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [actionNote, setActionNote] = useState('');
@@ -303,20 +305,22 @@ export default function IncidentDetailPage() {
 
     const loadDetail = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const filter = encodeURIComponent(JSON.stringify({ incidentRef: incidentId }));
+            const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
             const tasks: Array<Promise<unknown>> = [
                 fetchAdminData<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
                 fetchAllAdminCollectionData<IncidentActionLog>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
                 fetchAllAdminCollectionData<IncidentSettlementLine>(`/api/data?entity=incident-settlement-lines&filter=${filter}`, 'Gagal memuat detail biaya insiden'),
                 canCreateExpense
-                    ? fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat referensi pengeluaran')
+                    ? fetchOptionalAdminCollectionData<ExpenseCategory>('/api/data?entity=expense-categories', 'Gagal memuat referensi pengeluaran', undefined, optionalFetchOptions)
                     : Promise.resolve([]),
                 canCreateExpense
-                    ? fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat referensi pengeluaran')
+                    ? fetchOptionalAdminCollectionData<BankAccount>('/api/data?entity=bank-accounts', 'Gagal memuat referensi pengeluaran', undefined, optionalFetchOptions)
                     : Promise.resolve([]),
                 (canCreateTires || canCreateMaintenance)
-                    ? fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items', 'Gagal memuat master barang gudang')
+                    ? fetchOptionalAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items', 'Gagal memuat master barang gudang', undefined, optionalFetchOptions)
                     : Promise.resolve([]),
             ];
             const [incidentData, actionLogs, lineRows, categoryRows, accountRows, warehouseRows] = await Promise.all(tasks);
@@ -324,9 +328,9 @@ export default function IncidentDetailPage() {
             const [vehicleData, tireRows] = canInstallTires
                 ? await Promise.all([
                     nextIncident?.vehicleRef
-                        ? fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${nextIncident.vehicleRef}`, 'Gagal memuat unit insiden')
+                        ? fetchOptionalAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${nextIncident.vehicleRef}`, 'Gagal memuat unit insiden', optionalFetchOptions)
                         : Promise.resolve(null),
-                    fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat data ban'),
+                    fetchOptionalAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat data ban', undefined, optionalFetchOptions),
                 ])
                 : [null, []];
             setIncident(nextIncident);
@@ -348,7 +352,13 @@ export default function IncidentDetailPage() {
             setIncidentVehicle((vehicleData as Vehicle | null) || null);
             setTireEvents(canInstallTires ? ((tireRows as TireEvent[]) || []) : []);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail insiden');
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Insiden',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Insiden.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
@@ -1067,7 +1077,7 @@ export default function IncidentDetailPage() {
     );
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 260 }} /></div>;
-    if (!incident) return <div className="empty-state"><div className="empty-state-title">Insiden tidak ditemukan</div></div>;
+    if (!incident) return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Insiden tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
 
     return (
         <div>

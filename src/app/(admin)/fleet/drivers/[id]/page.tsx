@@ -6,7 +6,8 @@ import { useParams } from 'next/navigation';
 import { Car, Smartphone, Truck, Wallet } from 'lucide-react';
 import { useApp, useToast } from '../../../layout';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminData, fetchOptionalAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { buildDriverScoresQuery, DRIVER_SCORE_TYPE_META, getDriverScoreStatusMeta, getLatestDriverScoreSummary } from '@/lib/driver-scoring-support';
 import { buildDriverAccountMap, isDriverAccountActive, type DriverMobileAccount } from '@/lib/fleet-asset-page-support';
 import { buildDriverVoucherSettlementDisplay, DRIVER_VOUCHER_STATUS_MAP, inferDriverVoucherDisbursementCount } from '@/lib/driver-voucher-detail-support';
@@ -34,6 +35,7 @@ export default function DriverDetailPage() {
     const [scores, setScores] = useState<DriverScore[]>([]);
     const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
 
     const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
     const canViewDriverScores = user ? hasPermission(user.role, 'driverScores', 'view') : false;
@@ -45,13 +47,15 @@ export default function DriverDetailPage() {
 
     const loadDriverDetail = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const driverFilter = encodeURIComponent(JSON.stringify({ driverRef: driverId }));
-            const [driverData, doRows, voucherRows, accountRows, scoreRows] = await Promise.all([
-                fetchAdminData<Driver | null>(`/api/data?entity=drivers&id=${driverId}`, 'Gagal memuat data supir'),
-                fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${driverFilter}&sortField=date&sortDir=desc`, 'Gagal memuat riwayat DO'),
+            const optionalFetchOptions = { onError: (message: string) => addToast('error', message), silentAccessDenied: true };
+            const loadedDriver = await fetchAdminData<Driver | null>(`/api/data?entity=drivers&id=${driverId}`, 'Gagal memuat data supir');
+            const [doRows, voucherRows, accountRows, scoreRows] = await Promise.all([
+                fetchOptionalAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${driverFilter}&sortField=date&sortDir=desc`, 'Gagal memuat riwayat DO', undefined, optionalFetchOptions),
                 canViewDriverVouchers
-                    ? fetchAllAdminCollectionData<DriverVoucher>(`/api/data?entity=driver-vouchers&filter=${driverFilter}&sortField=issuedDate&sortDir=desc`, 'Gagal memuat riwayat uang jalan')
+                    ? fetchOptionalAdminCollectionData<DriverVoucher>(`/api/data?entity=driver-vouchers&filter=${driverFilter}&sortField=issuedDate&sortDir=desc`, 'Gagal memuat riwayat uang jalan', undefined, optionalFetchOptions)
                     : Promise.resolve([] as DriverVoucher[]),
                 canViewDriverAccounts
                     ? fetch(`/api/driver/accounts?driverRefs=${encodeURIComponent(driverId)}`)
@@ -60,24 +64,38 @@ export default function DriverDetailPage() {
                             if (!res.ok) throw new Error(payload.error || 'Gagal memuat akses mobile driver');
                             return (payload.data || []) as DriverMobileAccount[];
                         })
+                        .catch(error => {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal memuat akses mobile driver');
+                            return [] as DriverMobileAccount[];
+                        })
                     : Promise.resolve([] as DriverMobileAccount[]),
-                fetchAllAdminCollectionData<DriverScore>(
-                    `/api/data?${buildDriverScoresQuery({ page: 1, pageSize: 500, driverRef: driverId })}`,
-                    'Gagal memuat riwayat scoring supir'
-                ),
+                canViewDriverScores
+                    ? fetchOptionalAdminCollectionData<DriverScore>(
+                        `/api/data?${buildDriverScoresQuery({ page: 1, pageSize: 500, driverRef: driverId })}`,
+                        'Gagal memuat riwayat scoring supir',
+                        undefined,
+                        optionalFetchOptions
+                    )
+                    : Promise.resolve([] as DriverScore[]),
             ]);
 
-            setDriver(driverData);
+            setDriver(loadedDriver);
             setDeliveryOrders((doRows || []).sort((a, b) => `${b.date}-${b._id}`.localeCompare(`${a.date}-${a._id}`)));
             setVouchers((voucherRows || []).sort((a, b) => `${b.issuedDate}-${b._id}`.localeCompare(`${a.issuedDate}-${a._id}`)));
             setAccounts(accountRows || []);
             setScores((scoreRows || []).sort((a, b) => `${b.effectiveDate}-${b.createdAt}-${b._id}`.localeCompare(`${a.effectiveDate}-${a.createdAt}-${a._id}`)));
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supir');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail supir');
+            setLoadNotice(buildAdminLoadNotice(
+                message,
+                'Supir',
+                'Halaman ini hanya bisa dilihat oleh role yang punya akses Supir.'
+            ));
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
-    }, [addToast, canViewDriverAccounts, canViewDriverVouchers, driverId]);
+    }, [addToast, canViewDriverAccounts, canViewDriverScores, canViewDriverVouchers, driverId]);
 
     useEffect(() => {
         void loadDriverDetail();
@@ -104,7 +122,7 @@ export default function DriverDetailPage() {
     }
 
     if (!driver) {
-        return <div className="empty-state"><div className="empty-state-title">Supir tidak ditemukan</div></div>;
+        return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Supir tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
     }
 
     return (

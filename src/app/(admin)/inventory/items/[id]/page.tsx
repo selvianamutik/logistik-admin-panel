@@ -8,6 +8,7 @@ import { Edit, History, Receipt, Save, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import {
   formatInventoryQuantity,
   INVENTORY_UNIT_OPTIONS,
@@ -131,6 +132,7 @@ export default function WarehouseItemDetailPage() {
   const [maintenancesById, setMaintenancesById] = useState<Record<string, Maintenance>>({});
   const [linkedTires, setLinkedTires] = useState<TireEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>('detail');
   const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -146,6 +148,7 @@ export default function WarehouseItemDetailPage() {
 
   const loadItemDetail = useCallback(async () => {
     setLoading(true);
+    setLoadNotice(null);
     try {
       const itemData = await fetchAdminData<WarehouseItem | null>(`/api/data?entity=warehouse-items&id=${itemId}`, 'Gagal memuat barang gudang');
       if (!itemData) {
@@ -225,7 +228,13 @@ export default function WarehouseItemDetailPage() {
         }, {})
       );
     } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail barang gudang');
+      const message = getAdminErrorMessage(error, 'Gagal memuat detail barang gudang');
+      setLoadNotice(buildAdminLoadNotice(
+        message,
+        'Barang Gudang',
+        'Halaman ini hanya bisa dilihat oleh role yang punya akses Barang Gudang.'
+      ));
+      addToast('error', message);
     } finally {
       setLoading(false);
     }
@@ -418,7 +427,10 @@ export default function WarehouseItemDetailPage() {
   if (!item) {
     return (
       <div className="card">
-        <div className="card-body">Barang gudang tidak ditemukan</div>
+        <div className="card-body">
+          <div className="empty-state-title">{loadNotice?.title || 'Barang gudang tidak ditemukan'}</div>
+          {loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}
+        </div>
       </div>
     );
   }

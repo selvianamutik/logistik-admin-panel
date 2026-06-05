@@ -48,6 +48,13 @@ import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderSh
 import type { SuratJalanDetailSnapshot, SuratJalanDocument, SuratJalanDocumentItem } from '@/lib/trip-document-types';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import {
+    buildAdminLoadNotice,
+    getAdminErrorMessage,
+    isAccessDeniedMessage,
+    isNotFoundMessage,
+    type AdminLoadNotice,
+} from '@/lib/admin-access-messages';
 import { useApp, useToast } from '../../layout';
 
 type ActualDropItemValueDraft = Pick<
@@ -143,6 +150,7 @@ export default function SuratJalanDetailPage() {
     const [linkedOrderItems, setLinkedOrderItems] = useState<Array<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showActualEditModal, setShowActualEditModal] = useState(false);
@@ -198,6 +206,17 @@ export default function SuratJalanDetailPage() {
     const updateEditForm = (patch: Partial<EditSuratJalanForm>) => {
         setEditForm(current => ({ ...current, ...patch }));
     };
+    const loadOptionalCollection = useCallback(async <T,>(url: string, fallbackMessage: string): Promise<T[]> => {
+        try {
+            return await fetchAdminCollectionData<T[]>(url, fallbackMessage);
+        } catch (error) {
+            const message = getAdminErrorMessage(error, fallbackMessage);
+            if (!isAccessDeniedMessage(message)) {
+                addToast('error', message);
+            }
+            return [];
+        }
+    }, [addToast]);
     const getFallbackShipperReference = (): DeliveryOrderShipperReference => ({
         _key: suratJalanDocument?.referenceKey && suratJalanDocument.referenceKey !== 'primary'
             ? suratJalanDocument.referenceKey
@@ -501,6 +520,7 @@ export default function SuratJalanDetailPage() {
 
     const loadDocument = useCallback(async () => {
         setLoading(true);
+        setLoadNotice(null);
         try {
             const detail = await fetchAdminData<SuratJalanDetailSnapshot | null>(
                 `/api/data?entity=surat-jalan-detail&id=${encodeURIComponent(id)}`,
@@ -525,13 +545,13 @@ export default function SuratJalanDetailPage() {
                     .filter((value): value is string => Boolean(value))
             ));
             const loadedLinkedOrderItems = linkedOrderItemRefs.length > 0
-                ? await fetchAdminCollectionData<Array<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>>(
+                ? await loadOptionalCollection<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>(
                     `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
                     'Gagal memuat item order surat jalan'
                 )
                 : [];
-            const productRows = detail.deliveryOrder.customerRef
-                ? await fetchAdminCollectionData<CustomerProduct[]>(
+            const productRows = detail.deliveryOrder.customerRef && canEditSuratJalan && canOpenCustomerPage
+                ? await loadOptionalCollection<CustomerProduct>(
                     `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: detail.deliveryOrder.customerRef, active: true }))}`,
                     'Gagal memuat master barang customer'
                 )
@@ -544,11 +564,19 @@ export default function SuratJalanDetailPage() {
             setLinkedOrderItems(loadedLinkedOrderItems || []);
             setCustomerProducts(productRows || []);
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail surat jalan');
+            if (!isNotFoundMessage(message)) {
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'detail Surat Jalan',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Surat Jalan.'
+                ));
+            }
+            addToast('error', message);
         } finally {
             setLoading(false);
         }
-    }, [addToast, id]);
+    }, [addToast, canEditSuratJalan, canOpenCustomerPage, id, loadOptionalCollection]);
 
     useEffect(() => {
         void loadDocument();
@@ -559,6 +587,15 @@ export default function SuratJalanDetailPage() {
     }
 
     if (!deliveryOrder || !suratJalanDocument) {
+        if (loadNotice) {
+            return (
+                <div className="empty-state">
+                    <FileText size={48} className="empty-state-icon" />
+                    <div className="empty-state-title">{loadNotice.title}</div>
+                    <div className="empty-state-text">{loadNotice.text}</div>
+                </div>
+            );
+        }
         return <div className="empty-state"><div className="empty-state-title">Surat jalan tidak ditemukan</div></div>;
     }
 

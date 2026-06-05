@@ -8,6 +8,7 @@ import { CreditCard, Edit, Package, Plus, Receipt, Save, X } from 'lucide-react'
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
   getDerivedPurchasePaymentStatus,
@@ -137,6 +138,7 @@ export default function SupplierDetailPage() {
   const [supplierItemPrices, setSupplierItemPrices] = useState<SupplierItemPrice[]>([]);
   const [allWarehouseItems, setAllWarehouseItems] = useState<WarehouseItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
   const [activeTab, setActiveTab] = useState<SupplierDetailTab>('detail');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState(false);
@@ -155,6 +157,7 @@ export default function SupplierDetailPage() {
 
   const loadSupplierDetail = useCallback(async () => {
     setLoading(true);
+    setLoadNotice(null);
     try {
       const supplierData = await fetchAdminData<Supplier | null>(`/api/data?entity=suppliers&id=${supplierId}`, 'Gagal memuat supplier');
       if (!supplierData) {
@@ -205,7 +208,13 @@ export default function SupplierDetailPage() {
       }));
       setAllWarehouseItems((allWarehouseItemRows || []).sort((a, b) => String(a.itemCode || '').localeCompare(String(b.itemCode || ''))));
     } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supplier');
+      const message = getAdminErrorMessage(error, 'Gagal memuat detail supplier');
+      setLoadNotice(buildAdminLoadNotice(
+        message,
+        'Supplier',
+        'Halaman ini hanya bisa dilihat oleh role yang punya akses Supplier.'
+      ));
+      addToast('error', message);
     } finally {
       setLoading(false);
     }
@@ -416,7 +425,10 @@ export default function SupplierDetailPage() {
   if (!supplier) {
     return (
       <div className="card">
-        <div className="card-body">Supplier tidak ditemukan</div>
+        <div className="card-body">
+          <div className="empty-state-title">{loadNotice?.title || 'Supplier tidak ditemukan'}</div>
+          {loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}
+        </div>
       </div>
     );
   }

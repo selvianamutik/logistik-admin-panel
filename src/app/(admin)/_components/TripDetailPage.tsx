@@ -11,7 +11,8 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import SplitDecimalNumberInput from '@/components/SplitDecimalNumberInput';
 import { formatFormattedNumberValue, parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData, fetchOptionalAdminCollectionData, fetchOptionalAdminData } from '@/lib/api/admin-client';
+import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildDeliveryOrderDetailState,
@@ -191,6 +192,7 @@ export default function TripDetailPage() {
     const [activeTrips, setActiveTrips] = useState<Trip[]>([]);
     const [activeOrders, setActiveOrders] = useState<Array<Pick<Order, '_id' | 'masterResi' | 'status' | 'tripPlans'>>>([]);
     const [loading, setLoading] = useState(true);
+    const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
     const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
@@ -493,9 +495,11 @@ export default function TripDetailPage() {
             )
         );
         const linkedOrderItems = linkedOrderItemRefs.length > 0
-            ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>(
+            ? await fetchOptionalAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>(
                 `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
-                'Gagal memuat detail trip'
+                'Gagal memuat detail trip',
+                undefined,
+                { onError: (message) => addToast('error', message), silentAccessDenied: true }
             )
             : [];
         const linkedOrderItemMap = new Map(
@@ -518,7 +522,7 @@ export default function TripDetailPage() {
                 return acc;
             }, {})
         );
-    }, [doId]);
+    }, [addToast, doId]);
 
     const loadDOReferences = useCallback(async (deliveryOrder: DeliveryOrder | null) => {
         if (!deliveryOrder?._id) {
@@ -531,9 +535,10 @@ export default function TripDetailPage() {
             return;
         }
 
-        const snapshot = await fetchAdminData<TripDetailReferencesSnapshot | null>(
+        const snapshot = await fetchOptionalAdminData<TripDetailReferencesSnapshot | null>(
             `/api/data?entity=trip-detail-references&id=${deliveryOrder._id}`,
-            'Gagal memuat referensi trip'
+            'Gagal memuat referensi trip',
+            { onError: (message) => addToast('error', message), silentAccessDenied: true }
         );
 
         setBillingCustomers(snapshot?.billingCustomers || []);
@@ -542,7 +547,7 @@ export default function TripDetailPage() {
         setShipperReferenceFormat((snapshot?.customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
         setTripRouteRates(snapshot?.tripRouteRates || []);
         loadedReferenceCustomerRef.current = deliveryOrder?.customerRef || '';
-    }, []);
+    }, [addToast]);
 
     const applyTripDetailSnapshot = useCallback(async (tripDetail: TripDetailSnapshot | null) => {
         const trip = tripDetail?.trip || null;
@@ -607,6 +612,7 @@ export default function TripDetailPage() {
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
             setLoading(true);
+            setLoadNotice(null);
         }
 
         try {
@@ -623,7 +629,15 @@ export default function TripDetailPage() {
                 await loadDOReferences(deliveryOrder);
             }
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail trip');
+            const message = getAdminErrorMessage(error, 'Gagal memuat detail trip');
+            if (mode === 'initial') {
+                setLoadNotice(buildAdminLoadNotice(
+                    message,
+                    'Trip',
+                    'Halaman ini hanya bisa dilihat oleh role yang punya akses Trip / Surat Jalan.'
+                ));
+            }
+            addToast('error', message);
         } finally {
             if (mode === 'initial') {
                 setLoading(false);
@@ -4036,7 +4050,7 @@ export default function TripDetailPage() {
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
-    if (!doData) return <div className="empty-state"><div className="empty-state-title">Trip tidak ditemukan</div></div>;
+    if (!doData) return <div className="empty-state"><div className="empty-state-title">{loadNotice?.title || 'Trip tidak ditemukan'}</div>{loadNotice?.text && <div className="empty-state-text">{loadNotice.text}</div>}</div>;
 
     const hasTripResourcesAssigned = Boolean(doData.vehicleRef && doData.driverRef);
     const displayTripStatus = tripData?.status || doData.status;

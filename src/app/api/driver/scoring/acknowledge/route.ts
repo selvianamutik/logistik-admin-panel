@@ -1,5 +1,5 @@
 import { acknowledgeDriverWarningScore } from '@/lib/api/driver-score-workflows';
-import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { getDriverPortalAccessNotice, hasBearerDriverAuth, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDataServiceErrorInfo } from '@/lib/service-errors';
@@ -9,8 +9,7 @@ export const revalidate = 0;
 
 export async function POST(request: Request) {
     try {
-        const clientType = request.headers.get('x-client-type');
-        if (clientType !== 'driver-app') {
+        if (!hasBearerDriverAuth(request)) {
             const originError = ensureSameOriginRequest(request);
             if (originError) {
                 return originError;
