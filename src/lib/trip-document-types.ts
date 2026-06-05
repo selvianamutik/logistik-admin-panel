@@ -18,6 +18,16 @@ export interface CargoSummary {
 
 export type TripStatus = DOStatus;
 
+export interface TripShipperReferenceSummary {
+    id: string;
+    label: string;
+    itemCount: number;
+    cargoSummary: CargoSummary;
+    billableCargo: CargoSummary;
+    holdCargo: CargoSummary;
+    returnCargo: CargoSummary;
+}
+
 export interface Trip {
     _id: string;
     _type: 'trip';
@@ -58,6 +68,12 @@ export interface Trip {
     taripBorongan?: number;
     notes?: string;
     shipperReferenceCount: number;
+    shipperReferenceLinks: TripShipperReferenceSummary[];
+    cargoSummary: CargoSummary;
+    actualCargo: CargoSummary;
+    billableCargo: CargoSummary;
+    holdCargo: CargoSummary;
+    returnCargo: CargoSummary;
 }
 
 export interface TripRecord {

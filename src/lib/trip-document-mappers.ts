@@ -5,7 +5,7 @@ import {
 } from './delivery-order-completion';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import type { DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, TrackingLog } from './types';
-import type { CargoSummary, SuratJalanDocument, SuratJalanDocumentItem, SuratJalanItemRecord, SuratJalanRecord, Trip, TripRecord, TripTrackingEvent } from './trip-document-types';
+import type { CargoSummary, SuratJalanDocument, SuratJalanDocumentItem, SuratJalanItemRecord, SuratJalanRecord, Trip, TripRecord, TripShipperReferenceSummary, TripTrackingEvent } from './trip-document-types';
 import {
     formatInternalDeliveryOrderNumber,
     formatShipperDeliveryOrderNumber,
@@ -27,6 +27,22 @@ function summarizeDeliveryOrderItems(items: DeliveryOrderItem[]): CargoSummary {
         qtyKoli: sum.qtyKoli + (item.orderItemQtyKoli || item.shippedQtyKoli || 0),
         weightKg: sum.weightKg + (item.orderItemWeight || item.shippedWeight || 0),
         volumeM3: sum.volumeM3 + (item.orderItemVolumeM3 || 0),
+    }), createCargoSummary());
+}
+
+function summarizeActualDeliveryOrderItems(items: DeliveryOrderItem[]): CargoSummary {
+    return items.reduce<CargoSummary>((sum, item) => ({
+        qtyKoli: sum.qtyKoli + (item.actualQtyKoli || 0),
+        weightKg: sum.weightKg + (item.actualWeightKg || 0),
+        volumeM3: sum.volumeM3 + (item.actualVolumeM3 || 0),
+    }), createCargoSummary());
+}
+
+function summarizeCargoSummaries(items: CargoSummary[]): CargoSummary {
+    return items.reduce<CargoSummary>((sum, item) => ({
+        qtyKoli: sum.qtyKoli + (item.qtyKoli || 0),
+        weightKg: sum.weightKg + (item.weightKg || 0),
+        volumeM3: sum.volumeM3 + (item.volumeM3 || 0),
     }), createCargoSummary());
 }
 
@@ -204,6 +220,17 @@ export function deriveTripStatusFromDocuments(
 
 export function mapDeliveryOrderToTrip(deliveryOrder: DeliveryOrder, deliveryOrderItems: DeliveryOrderItem[] = []): Trip {
     const documents = mapDeliveryOrderToSuratJalanDocuments(deliveryOrder, deliveryOrderItems);
+    const shipperReferenceLinks: TripShipperReferenceSummary[] = documents
+        .filter(document => document.suratJalanNumber && document.suratJalanNumber !== '-')
+        .map(document => ({
+            id: document._id,
+            label: document.suratJalanNumber,
+            itemCount: document.itemCount,
+            cargoSummary: document.cargoSummary,
+            billableCargo: document.billableCargo,
+            holdCargo: document.holdCargo,
+            returnCargo: document.returnCargo,
+        }));
     return {
         _id: deliveryOrder._id,
         _type: 'trip',
@@ -244,6 +271,12 @@ export function mapDeliveryOrderToTrip(deliveryOrder: DeliveryOrder, deliveryOrd
         taripBorongan: deliveryOrder.taripBorongan,
         notes: deliveryOrder.notes,
         shipperReferenceCount: getShipperReferenceCount(deliveryOrder),
+        shipperReferenceLinks,
+        cargoSummary: summarizeDeliveryOrderItems(deliveryOrderItems),
+        actualCargo: summarizeActualDeliveryOrderItems(deliveryOrderItems),
+        billableCargo: summarizeCargoSummaries(documents.map(document => document.billableCargo)),
+        holdCargo: summarizeCargoSummaries(documents.map(document => document.holdCargo)),
+        returnCargo: summarizeCargoSummaries(documents.map(document => document.returnCargo)),
     };
 }
 
@@ -288,6 +321,12 @@ export function mapTripRecordToTrip(tripRecord: TripRecord): Trip {
         taripBorongan: tripRecord.taripBorongan,
         notes: tripRecord.notes,
         shipperReferenceCount: 0,
+        shipperReferenceLinks: [],
+        cargoSummary: createCargoSummary(),
+        actualCargo: createCargoSummary(),
+        billableCargo: createCargoSummary(),
+        holdCargo: createCargoSummary(),
+        returnCargo: createCargoSummary(),
     };
 }
 

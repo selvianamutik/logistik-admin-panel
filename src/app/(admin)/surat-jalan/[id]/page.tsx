@@ -44,7 +44,7 @@ import {
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
-import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, Order, OrderItem } from '@/lib/types';
+import type { CustomerProduct, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, FreightNota, FreightNotaItem, Order, OrderItem } from '@/lib/types';
 import type { SuratJalanDetailSnapshot, SuratJalanDocument, SuratJalanDocumentItem } from '@/lib/trip-document-types';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
@@ -148,6 +148,7 @@ export default function SuratJalanDetailPage() {
     const [documentItems, setDocumentItems] = useState<SuratJalanDocumentItem[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [linkedOrderItems, setLinkedOrderItems] = useState<Array<Pick<OrderItem, '_id' | 'customerProductRef' | 'customerProductCode' | 'customerProductName'>>>([]);
+    const [linkedFreightNotas, setLinkedFreightNotas] = useState<FreightNota[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
@@ -188,6 +189,8 @@ export default function SuratJalanDetailPage() {
     const canOpenTripPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canOpenOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
+    const canOpenInvoicePage = user ? hasPageAccess(user.role, 'invoices') : false;
+    const canViewFreightNotas = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canEditSuratJalan = canManageDeliveryStatus;
     const currentPath = pathname || `/surat-jalan/${encodeURIComponent(id)}`;
@@ -533,6 +536,7 @@ export default function SuratJalanDetailPage() {
                 setDocumentItems([]);
                 setDeliveryOrderItems([]);
                 setLinkedOrderItems([]);
+                setLinkedFreightNotas([]);
                 return;
             }
             const loadedDeliveryOrderItems = await fetchAdminCollectionData<DeliveryOrderItem[]>(
@@ -556,12 +560,33 @@ export default function SuratJalanDetailPage() {
                     'Gagal memuat master barang customer'
                 )
                 : [];
+            const invoiceItems = canViewFreightNotas
+                ? await loadOptionalCollection<FreightNotaItem>(
+                    `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: detail.deliveryOrder._id }))}`,
+                    'Gagal memuat invoice surat jalan'
+                )
+                : [];
+            const normalizedSuratJalanNumber = (detail.suratJalanDocument.suratJalanNumber || '').trim().toUpperCase();
+            const activeInvoiceRefs = Array.from(new Set(
+                (invoiceItems || [])
+                    .filter(item => item.status !== 'VOID')
+                    .filter(item => !normalizedSuratJalanNumber || (item.noSJ || '').trim().toUpperCase() === normalizedSuratJalanNumber)
+                    .map(item => item.notaRef)
+                    .filter((value): value is string => Boolean(value))
+            ));
+            const freightNotas = activeInvoiceRefs.length > 0
+                ? await loadOptionalCollection<FreightNota>(
+                    `/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: activeInvoiceRefs }))}`,
+                    'Gagal memuat invoice surat jalan'
+                )
+                : [];
             setSuratJalanDocument(detail.suratJalanDocument);
             setDeliveryOrder(detail.deliveryOrder);
             setSourceOrder(detail.sourceOrder);
             setDocumentItems(detail.documentItems || []);
             setDeliveryOrderItems(loadedDeliveryOrderItems || []);
             setLinkedOrderItems(loadedLinkedOrderItems || []);
+            setLinkedFreightNotas((freightNotas || []).filter(item => item.status !== 'VOID'));
             setCustomerProducts(productRows || []);
         } catch (error) {
             const message = getAdminErrorMessage(error, 'Gagal memuat detail surat jalan');
@@ -576,7 +601,7 @@ export default function SuratJalanDetailPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, canEditSuratJalan, canOpenCustomerPage, id, loadOptionalCollection]);
+    }, [addToast, canEditSuratJalan, canOpenCustomerPage, canViewFreightNotas, id, loadOptionalCollection]);
 
     useEffect(() => {
         void loadDocument();
@@ -1735,6 +1760,22 @@ export default function SuratJalanDetailPage() {
                         <div className="detail-item"><div className="detail-label">Total</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.cargoSummary)}</div></div>
                         <div className="detail-item"><div className="detail-label">Hold</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.holdCargo)}</div></div>
                         <div className="detail-item"><div className="detail-label">Masuk Invoice</div><div className="detail-value">{formatCargoSummary(suratJalanDocument.billableCargo)}</div></div>
+                        {linkedFreightNotas.length > 0 && (
+                            <div className="detail-item">
+                                <div className="detail-label">Invoice Terkait</div>
+                                <div className="detail-value" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {linkedFreightNotas.map(nota => (
+                                        canOpenInvoicePage ? (
+                                            <Link key={nota._id} href={withReturnTo(`/invoices/${nota._id}`)} style={{ color: 'var(--color-primary)' }}>
+                                                {nota.notaDisplayNumber || nota.notaNumber}
+                                            </Link>
+                                        ) : (
+                                            <span key={nota._id}>{nota.notaDisplayNumber || nota.notaNumber}</span>
+                                        )
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         {isDeliveredStatus && (
                             <>
                                 <div className="detail-item"><div className="detail-label">Item Terkirim Aktual</div><div className="detail-value">{deliveredItemCount} item</div></div>

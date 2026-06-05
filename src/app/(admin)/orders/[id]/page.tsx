@@ -1831,7 +1831,7 @@ export default function OrderDetailPage() {
             )}
 
             {hasPlannedTrips && (
-                <div className="card mt-6">
+                <div className="card mt-6" id="order-surat-jalan-section">
                     <div className="card-header">
                         <span className="card-header-title">Rencana Trip ({orderTripPlans.length})</span>
                         {isHeaderOnlyOrder && !orderIsCancelled && (
@@ -1855,6 +1855,7 @@ export default function OrderDetailPage() {
                             const linkedShipperReferenceItems = linkedDeliveryOrder ? doItems.filter(item => item.deliveryOrderRef === linkedDeliveryOrder._id) : [];
                             const linkedShipperReferenceCount = linkedDeliveryOrder ? getDeliveryOrderShipperReferenceNumbers(linkedDeliveryOrder, linkedShipperReferenceItems).length : 0;
                             const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, linkedShipperReferenceItems, 3) : null;
+                            const linkedShipperReferenceLinks = linkedDeliveryOrder ? buildDeliveryOrderShipperReferenceLinks(linkedDeliveryOrder, linkedShipperReferenceItems) : [];
                             const canInputSuratJalan =
                                 !linkedDeliveryOrder;
                             const canCancelCurrentTrip = canCancelTripPlanFromOrder(tripPlan, linkedDeliveryOrder);
@@ -1905,8 +1906,15 @@ export default function OrderDetailPage() {
                                                 {linkedShipperReferenceCount > 0 ? `${formatNumber(linkedShipperReferenceCount)} SJ tercatat` : 'Belum ada SJ pengirim'}
                                             </div>
                                             {linkedShipperReferencePreview && (
-                                                <div className="text-muted text-sm font-mono" style={{ marginTop: '0.25rem', wordBreak: 'break-word' }}>
-                                                    {linkedShipperReferencePreview}
+                                                <div className="text-muted text-sm font-mono" style={{ marginTop: '0.25rem', wordBreak: 'break-word', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                    {linkedShipperReferenceLinks.length > 0
+                                                        ? linkedShipperReferenceLinks.slice(0, 3).map(link => (
+                                                            <Link key={link.id} href={withReturnTo(`/surat-jalan/${encodeURIComponent(link.id)}`)} style={{ color: 'var(--color-primary)' }}>
+                                                                {link.label}
+                                                            </Link>
+                                                        ))
+                                                        : linkedShipperReferencePreview}
+                                                    {linkedShipperReferenceLinks.length > 3 && <span>+{linkedShipperReferenceLinks.length - 3} SJ</span>}
                                                 </div>
                                             )}
                                         </div>
@@ -1988,10 +1996,19 @@ export default function OrderDetailPage() {
                                             <div className="text-muted text-sm">{shipperManifests.length} SJ pengirim</div>
                                         </div>
                                         <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                            {shipperManifests.map(manifest => (
+                                            {shipperManifests.map(manifest => {
+                                                const manifestLink = buildDeliveryOrderShipperReferenceLinks(deliveryOrder, manifest.items)
+                                                    .find(link => link.label.trim().toUpperCase() === manifest.referenceNumber.trim().toUpperCase());
+                                                return (
                                                 <div key={`${deliveryOrder._id}-${manifest.referenceNumber}-${manifest.pickupAddress || '-'}`} style={{ padding: '0.85rem 1rem', borderRadius: '0.8rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                                        <div className="font-semibold font-mono">{manifest.referenceNumber}</div>
+                                                        <div className="font-semibold font-mono">
+                                                            {manifestLink ? (
+                                                                <Link href={withReturnTo(`/surat-jalan/${encodeURIComponent(manifestLink.id)}`)} style={{ color: 'var(--color-primary)' }}>
+                                                                    {manifest.referenceNumber}
+                                                                </Link>
+                                                            ) : manifest.referenceNumber}
+                                                        </div>
                                                         <div className="text-muted text-sm">{manifest.itemCount} barang</div>
                                                     </div>
                                                     {(manifest.pickupLabel || manifest.pickupAddress) && (
@@ -2056,7 +2073,8 @@ export default function OrderDetailPage() {
                                                         </details>
                                                     )}
                                                 </div>
-                                            ))}
+                                            );
+                                            })}
                                         </div>
                                     </div>
                                 ))}
@@ -2191,7 +2209,7 @@ export default function OrderDetailPage() {
 
             {/* DOs */}
             {(!hasPlannedTrips || unplannedDos.length > 0) && (
-            <div className="card mt-6" id="order-surat-jalan-section">
+            <div className="card mt-6" id={hasPlannedTrips ? undefined : 'order-surat-jalan-section'}>
                 <div className="card-header"><span className="card-header-title">Trip / DO Internal ({displayedDoList.length})</span></div>
                 <div className="table-wrapper">
                     <table>

@@ -6018,8 +6018,14 @@ export default function TripDetailPage() {
                     {pendingDriverRequests.map(request => {
                         const requestMeta = DO_STATUS_MAP[request.status] || pendingDriverStatusMeta;
                         const requestIsTripClosure = isPendingDriverTripClosureRequest(request);
-                        const requestSuratJalanNumbers = (request.targetSuratJalanRefs || [])
-                            .map(ref => suratJalanDocuments.find(document => document._id === ref)?.suratJalanNumber || ref.split(':').pop() || ref)
+                        const requestSuratJalanLinks = (request.targetSuratJalanRefs || [])
+                            .map(ref => {
+                                const document = suratJalanDocuments.find(item => item._id === ref);
+                                return {
+                                    id: document?._id || '',
+                                    label: document?.suratJalanNumber || ref.split(':').pop() || ref,
+                                };
+                            })
                             .filter(Boolean);
                         return (
                             <div key={request.requestId} className="card" style={{ border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
@@ -6038,8 +6044,19 @@ export default function TripDetailPage() {
                                             <div className="text-muted text-sm">
                                                 {(request.requestedByName || doData.pendingDriverStatusRequestedByName || 'Driver')} | {formatDateTime(request.requestedAt || doData.pendingDriverStatusRequestedAt)}
                                             </div>
-                                            {requestSuratJalanNumbers.length > 0 && (
-                                                <div className="text-muted text-sm">SJ: {requestSuratJalanNumbers.join(', ')}</div>
+                                            {requestSuratJalanLinks.length > 0 && (
+                                                <div className="text-muted text-sm" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    <span>SJ:</span>
+                                                    {requestSuratJalanLinks.map((link, index) => (
+                                                        link.id ? (
+                                                            <Link key={link.id} href={withReturnTo(`/surat-jalan/${encodeURIComponent(link.id)}`)} style={{ color: 'var(--color-primary)' }}>
+                                                                {link.label}
+                                                            </Link>
+                                                        ) : (
+                                                            <span key={`${link.label}-${index}`}>{link.label}</span>
+                                                        )
+                                                    ))}
+                                                </div>
                                             )}
                                             {request.note && (
                                                 <div className="text-muted text-sm">Catatan driver: {request.note}</div>
@@ -7008,7 +7025,17 @@ export default function TripDetailPage() {
                                             <div className="trip-sj-accordion-title-row">
                                                 <div>
                                                     <div className="detail-label">Surat Jalan</div>
-                                                    <div className="detail-value font-mono">{displayReferenceNumber}</div>
+                                                    <div className="detail-value font-mono">
+                                                        {group.document ? (
+                                                            <Link
+                                                                href={withReturnTo(`/surat-jalan/${encodeURIComponent(group.document._id)}`)}
+                                                                onClick={event => event.stopPropagation()}
+                                                                style={{ color: 'var(--color-primary)' }}
+                                                            >
+                                                                {displayReferenceNumber}
+                                                            </Link>
+                                                        ) : displayReferenceNumber}
+                                                    </div>
                                                 </div>
                                                 <span className={`badge badge-${statusDetails.meta.color}`}>
                                                     <span className="badge-dot" /> {statusDetails.meta.label}

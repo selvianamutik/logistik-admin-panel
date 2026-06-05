@@ -8,12 +8,14 @@ import SortableTableHeader, { type SortDirection } from '@/components/SortableTa
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
-import type { Trip } from '@/lib/trip-document-types';
+import { formatCargoSummary } from '@/lib/measurement';
+import type { CargoSummary, Trip } from '@/lib/trip-document-types';
 import type { DriverVoucher } from '@/lib/types';
 import { hasPageAccess } from '@/lib/rbac';
 import { useApp, useToast } from '../layout';
 
 type TripBonStatusMeta = { label: string; color: string };
+type TripConditionFilter = '' | 'driver-approval' | 'has-hold' | 'multi-sj' | 'no-sj' | 'unfinished' | 'completed' | 'bon-open';
 
 function getTripBonStatusMeta(trip: Trip, voucher?: DriverVoucher): TripBonStatusMeta {
     if (trip.status === 'CANCELLED') {
@@ -48,7 +50,70 @@ function matchesTripSearch(trip: Trip, search: string) {
         trip.tripDestinationArea,
         trip.pickupAddress,
         trip.receiverAddress,
+        ...(trip.shipperReferenceLinks || []).map(item => item.label),
     ].some(value => String(value || '').toLowerCase().includes(needle));
+}
+
+function hasCargoSummaryValue(summary?: Partial<CargoSummary> | null) {
+    return Boolean((summary?.qtyKoli || 0) > 0 || (summary?.weightKg || 0) > 0 || (summary?.volumeM3 || 0) > 0);
+}
+
+function isTripFinal(trip: Trip) {
+    return trip.status === 'DELIVERED' || trip.status === 'PARTIAL_HOLD';
+}
+
+function matchesTripCondition(trip: Trip, voucher: DriverVoucher | undefined, conditionFilter: TripConditionFilter) {
+    if (!conditionFilter) return true;
+    if (conditionFilter === 'driver-approval') return Boolean(trip.pendingDriverStatus);
+    if (conditionFilter === 'has-hold') return hasCargoSummaryValue(trip.holdCargo);
+    if (conditionFilter === 'multi-sj') return trip.shipperReferenceCount > 1;
+    if (conditionFilter === 'no-sj') return trip.shipperReferenceCount === 0;
+    if (conditionFilter === 'unfinished') return !isTripFinal(trip) && trip.status !== 'CANCELLED';
+    if (conditionFilter === 'completed') return isTripFinal(trip);
+    if (conditionFilter === 'bon-open') return trip.status !== 'CANCELLED' && voucher?.status !== 'SETTLED';
+    return true;
+}
+
+function renderTripCargoSummary(trip: Trip) {
+    const finalTrip = isTripFinal(trip);
+    const primarySummary = finalTrip && hasCargoSummaryValue(trip.actualCargo) ? trip.actualCargo : trip.cargoSummary;
+    const primaryLabel = finalTrip && hasCargoSummaryValue(trip.actualCargo) ? 'Aktual' : 'Rencana';
+    const parts = [`${primaryLabel}: ${hasCargoSummaryValue(primarySummary) ? formatCargoSummary(primarySummary) : '-'}`];
+    if (hasCargoSummaryValue(trip.holdCargo)) {
+        parts.push(`Hold: ${formatCargoSummary(trip.holdCargo)}`);
+    }
+    return parts.join(' | ');
+}
+
+function renderTripSuratJalanLinks(trip: Trip) {
+    const links = trip.shipperReferenceLinks || [];
+    if (links.length === 0) {
+        return <span className="text-muted text-sm">Belum ada SJ</span>;
+    }
+    const visibleLinks = links.slice(0, 3);
+    const hiddenCount = links.length - visibleLinks.length;
+    return (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {visibleLinks.map(link => (
+                <Link
+                    key={link.id}
+                    href={`/surat-jalan/${encodeURIComponent(link.id)}`}
+                    className="font-mono"
+                    style={{
+                        color: 'var(--color-primary)',
+                        fontSize: '0.78rem',
+                        padding: '0.15rem 0.4rem',
+                        border: '1px solid var(--color-primary)',
+                        borderRadius: '0.45rem',
+                        background: 'var(--color-primary-light)',
+                    }}
+                >
+                    {link.label}
+                </Link>
+            ))}
+            {hiddenCount > 0 && <span className="text-muted text-sm">+{hiddenCount} SJ</span>}
+        </div>
+    );
 }
 
 export default function TripsPage() {
@@ -58,6 +123,7 @@ export default function TripsPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [conditionFilter, setConditionFilter] = useState<TripConditionFilter>('');
     const [page, setPage] = useState(1);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const [voucherByDeliveryOrderRef, setVoucherByDeliveryOrderRef] = useState<Record<string, DriverVoucher>>({});
@@ -106,11 +172,16 @@ export default function TripsPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [search, statusFilter]);
+    }, [search, statusFilter, conditionFilter]);
 
     const filteredItems = useMemo(
-        () => items.filter(item => (!statusFilter || item.status === statusFilter) && matchesTripSearch(item, search)),
-        [items, search, statusFilter]
+        () => items.filter(item => {
+            const voucher = voucherByDeliveryOrderRef[item.sourceDeliveryOrderRef || item._id];
+            return (!statusFilter || item.status === statusFilter)
+                && matchesTripCondition(item, voucher, conditionFilter)
+                && matchesTripSearch(item, search);
+        }),
+        [conditionFilter, items, search, statusFilter, voucherByDeliveryOrderRef]
     );
     const pageItems = filteredItems.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
     const activeTripCount = items.filter(item => ['CREATED', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)).length;
@@ -159,6 +230,16 @@ export default function TripsPage() {
                         <select className="form-select" style={{ width: 'auto', minWidth: 150 }} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(DO_STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                        </select>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={conditionFilter} onChange={event => setConditionFilter(event.target.value as TripConditionFilter)}>
+                            <option value="">Semua Kondisi</option>
+                            <option value="driver-approval">Butuh approval driver</option>
+                            <option value="has-hold">Ada hold</option>
+                            <option value="multi-sj">Multi-SJ</option>
+                            <option value="no-sj">Belum ada SJ</option>
+                            <option value="unfinished">Belum final</option>
+                            <option value="completed">Selesai</option>
+                            <option value="bon-open">Bon belum selesai</option>
                         </select>
                     </div>
                 </div>
@@ -211,7 +292,10 @@ export default function TripsPage() {
                                         <td>{item.vehiclePlate || '-'}</td>
                                         <td>{item.driverName || '-'}</td>
                                         <td>{formatDate(item.date)}</td>
-                                        <td>{item.shipperReferenceCount} SJ</td>
+                                        <td>
+                                            {renderTripSuratJalanLinks(item)}
+                                            <div className="text-muted text-sm" style={{ marginTop: 4 }}>{renderTripCargoSummary(item)}</div>
+                                        </td>
                                         <td><span className={`badge badge-${statusMeta?.color || 'gray'}`}><span className="badge-dot" /> {statusMeta?.label || item.status}</span></td>
                                         <td>
                                             <span className={`badge badge-${bonStatusMeta.color}`}>
@@ -246,7 +330,9 @@ export default function TripsPage() {
                                 <div className="mobile-card-body">
                                     <div><strong>{item.masterResi || '-'}</strong> | {item.customerName || '-'}</div>
                                     <div>{item.vehiclePlate || '-'} | {item.driverName || '-'}</div>
-                                    <div>{formatDate(item.date)} | {item.shipperReferenceCount} SJ</div>
+                                    <div>{formatDate(item.date)}</div>
+                                    <div>{renderTripSuratJalanLinks(item)}</div>
+                                    <div className="text-muted text-sm">{renderTripCargoSummary(item)}</div>
                                     <div>
                                         Bon: <span className={`badge badge-${bonStatusMeta.color}`}><span className="badge-dot" /> {bonStatusMeta.label}</span>
                                     </div>

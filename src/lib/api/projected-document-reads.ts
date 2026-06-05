@@ -548,7 +548,13 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                 return {
                     ...item,
                     status: derivedTrip?.status || item.status,
-                    shipperReferenceCount: derivedTrip?.shipperReferenceCount || item.shipperReferenceCount,
+                    shipperReferenceCount: derivedTrip ? derivedTrip.shipperReferenceCount : item.shipperReferenceCount,
+                    shipperReferenceLinks: derivedTrip?.shipperReferenceLinks || item.shipperReferenceLinks,
+                    cargoSummary: derivedTrip?.cargoSummary || item.cargoSummary,
+                    actualCargo: derivedTrip?.actualCargo || item.actualCargo,
+                    billableCargo: derivedTrip?.billableCargo || item.billableCargo,
+                    holdCargo: derivedTrip?.holdCargo || item.holdCargo,
+                    returnCargo: derivedTrip?.returnCargo || item.returnCargo,
                 };
             }),
             ...derivedTrips.filter(item => !realTripByLegacyKey.has(item._id)),
@@ -612,7 +618,17 @@ export async function getProjectedDocumentRead(params: ProjectedListParams) {
                     const derivedTrip = mapDeliveryOrderToTrip(deliveryOrder, deliveryOrderItems);
                     const realTrip = realTrips.find(item => item._id === id || item.sourceDeliveryOrderRef === deliveryOrder._id);
                     return realTrip
-                        ? { ...realTrip, status: derivedTrip.status, shipperReferenceCount: derivedTrip.shipperReferenceCount }
+                        ? {
+                            ...realTrip,
+                            status: derivedTrip.status,
+                            shipperReferenceCount: derivedTrip.shipperReferenceCount,
+                            shipperReferenceLinks: derivedTrip.shipperReferenceLinks,
+                            cargoSummary: derivedTrip.cargoSummary,
+                            actualCargo: derivedTrip.actualCargo,
+                            billableCargo: derivedTrip.billableCargo,
+                            holdCargo: derivedTrip.holdCargo,
+                            returnCargo: derivedTrip.returnCargo,
+                        }
                         : derivedTrip;
                 })(),
                 deliveryOrder,

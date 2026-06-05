@@ -14,6 +14,8 @@ import { hasPageAccess } from '@/lib/rbac';
 import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { useApp, useToast } from '../layout';
 
+type SuratJalanConditionFilter = '' | 'has-hold' | 'billable' | 'not-billable' | 'multi-sj' | 'unfinished' | 'completed';
+
 function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
@@ -31,6 +33,14 @@ function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
     ].some(value => String(value || '').toLowerCase().includes(needle));
 }
 
+function hasCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; volumeM3?: number } | null) {
+    return Boolean((summary?.qtyKoli || 0) > 0 || (summary?.weightKg || 0) > 0 || (summary?.volumeM3 || 0) > 0);
+}
+
+function isSuratJalanFinal(row: SuratJalanDocument) {
+    return row.tripStatus === 'DELIVERED' || row.tripStatus === 'PARTIAL_HOLD';
+}
+
 export default function SuratJalanPage() {
     const { user } = useApp();
     const { addToast } = useToast();
@@ -39,8 +49,10 @@ export default function SuratJalanPage() {
     const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [conditionFilter, setConditionFilter] = useState<SuratJalanConditionFilter>('');
     const [page, setPage] = useState(1);
     const [dateSortDir, setDateSortDir] = useState<SortDirection>('desc');
+    const canOpenTripPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
 
     const loadSuratJalan = useCallback(async () => {
@@ -77,20 +89,37 @@ export default function SuratJalanPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [search, statusFilter]);
+    }, [conditionFilter, search, statusFilter]);
+    const tripSjCountByTripRef = useMemo(
+        () => rows.reduce<Map<string, number>>((acc, row) => {
+            acc.set(row.tripRef, (acc.get(row.tripRef) || 0) + 1);
+            return acc;
+        }, new Map()),
+        [rows]
+    );
     const filteredRows = useMemo(
-        () => rows.filter(row => (!statusFilter || row.tripStatus === statusFilter) && matchesSuratJalanSearch(row, search)),
-        [rows, search, statusFilter]
+        () => rows.filter(row => {
+            const matchesCondition = (() => {
+                if (!conditionFilter) return true;
+                if (conditionFilter === 'has-hold') return hasCargoSummaryValue(row.holdCargo);
+                if (conditionFilter === 'billable') return hasCargoSummaryValue(row.billableCargo);
+                if (conditionFilter === 'not-billable') return !hasCargoSummaryValue(row.billableCargo);
+                if (conditionFilter === 'multi-sj') return (tripSjCountByTripRef.get(row.tripRef) || 0) > 1;
+                if (conditionFilter === 'unfinished') return !isSuratJalanFinal(row) && row.tripStatus !== 'CANCELLED';
+                if (conditionFilter === 'completed') return isSuratJalanFinal(row);
+                return true;
+            })();
+            return (!statusFilter || row.tripStatus === statusFilter)
+                && matchesCondition
+                && matchesSuratJalanSearch(row, search);
+        }),
+        [conditionFilter, rows, search, statusFilter, tripSjCountByTripRef]
     );
     const pageRows = filteredRows.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
     const multiSjTripCount = useMemo(() => {
-        const counts = rows.reduce<Map<string, number>>((acc, row) => {
-            acc.set(row.tripRef, (acc.get(row.tripRef) || 0) + 1);
-            return acc;
-        }, new Map());
-        return Array.from(counts.values()).filter(count => count > 1).length;
-    }, [rows]);
-    const holdRowCount = rows.filter(row => row.holdCargo.qtyKoli > 0 || row.holdCargo.weightKg > 0 || row.holdCargo.volumeM3 > 0).length;
+        return Array.from(tripSjCountByTripRef.values()).filter(count => count > 1).length;
+    }, [tripSjCountByTripRef]);
+    const holdRowCount = rows.filter(row => hasCargoSummaryValue(row.holdCargo)).length;
 
     return (
         <div>
@@ -135,6 +164,15 @@ export default function SuratJalanPage() {
                             <option value="">Semua Status Operasional</option>
                             {Object.entries(DO_STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
                         </select>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={conditionFilter} onChange={event => setConditionFilter(event.target.value as SuratJalanConditionFilter)}>
+                            <option value="">Semua Kondisi</option>
+                            <option value="has-hold">Ada hold</option>
+                            <option value="billable">Masuk tagihan</option>
+                            <option value="not-billable">Belum masuk tagihan</option>
+                            <option value="multi-sj">Trip multi-SJ</option>
+                            <option value="unfinished">Belum final</option>
+                            <option value="completed">Sudah final</option>
+                        </select>
                     </div>
                 </div>
                 <div className="table-wrapper table-desktop-only">
@@ -154,9 +192,9 @@ export default function SuratJalanPage() {
                                 <th>Customer</th>
                                 <th>Pickup</th>
                                 <th>Tujuan</th>
-                                <th>Muatan</th>
-                                <th>Invoice</th>
-                                <th>Hold</th>
+                                <th>Total di SJ</th>
+                                <th>Masuk Tagihan</th>
+                                <th>Ditahan</th>
                                 <th>Status Operasional</th>
                                 <th>Aksi</th>
                             </tr>
@@ -180,7 +218,7 @@ export default function SuratJalanPage() {
                                     <tr key={row._id}>
                                         <td className="font-semibold"><Link href={`/surat-jalan/${encodeURIComponent(row._id)}`} style={{ color: 'var(--color-primary)' }}>{row.suratJalanNumber || '-'}</Link></td>
                                         <td>{formatDate(row.tripDate)}</td>
-                                        <td><Link href={`/trips/${row.tripRef}`} style={{ color: 'var(--color-primary)' }}>{row.tripNumber}</Link></td>
+                                        <td>{canOpenTripPage ? <Link href={`/trips/${row.tripRef}`} style={{ color: 'var(--color-primary)' }}>{row.tripNumber}</Link> : row.tripNumber}</td>
                                         <td>{canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}</td>
                                         <td>{row.customerName || '-'}</td>
                                         <td>{row.pickupAddress || '-'}</td>
@@ -213,9 +251,15 @@ export default function SuratJalanPage() {
                                 </div>
                                 <div className="mobile-card-body">
                                     <div>{formatDate(row.tripDate)}</div>
-                                    <div><strong>{row.tripNumber}</strong> | {row.masterResi || '-'}</div>
+                                    <div>
+                                        <strong>
+                                            {canOpenTripPage ? <Link href={`/trips/${row.tripRef}`}>{row.tripNumber}</Link> : row.tripNumber}
+                                        </strong>
+                                        {' | '}
+                                        {canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}
+                                    </div>
                                     <div>{row.customerName || '-'}</div>
-                                    <div>{row.itemCount} item | Invoice {formatCargoSummary(row.billableCargo)} | Hold {formatCargoSummary(row.holdCargo)}</div>
+                                    <div>{row.itemCount} item | Masuk tagihan {formatCargoSummary(row.billableCargo)} | Ditahan {formatCargoSummary(row.holdCargo)}</div>
                                     <Link className="btn btn-secondary btn-sm" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link>
                                 </div>
                             </div>

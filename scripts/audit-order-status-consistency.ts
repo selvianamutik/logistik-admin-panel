@@ -1,5 +1,5 @@
 import { loadScriptEnv } from './_env';
-import { deriveOrderItemStatusFromProgress, getOrderItemProgress } from '../src/lib/order-item-progress';
+import { getOrderItemProgress } from '../src/lib/order-item-progress';
 import type { Order } from '../src/lib/types';
 
 loadScriptEnv();
@@ -33,26 +33,38 @@ type OrderItemResponse = {
     description?: string | null;
 };
 
-function deriveOrderStatusFromItems(items: Array<{ status?: string | null }>) {
-    const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
-    const anyDelivered = items.some(item =>
-        item.status === 'DELIVERED'
-        || item.status === 'PARTIAL'
+type OrderItemStatusSummary = ReturnType<typeof sanitizeOrderItemProgressSource>;
+
+function deriveExpectedOrderStatusFromItems(items: OrderItemStatusSummary[]) {
+    const itemProgress = items.map(item => getOrderItemProgress(item));
+    const allDelivered = itemProgress.length > 0 && itemProgress.every(progress => {
+        const totalBasis =
+            progress.totalQtyKoli > 0
+                ? progress.totalQtyKoli
+                : progress.totalWeight > 0
+                    ? progress.totalWeight
+                    : progress.totalVolume;
+        const deliveredBasis =
+            progress.totalQtyKoli > 0
+                ? progress.deliveredQtyKoli
+                : progress.totalWeight > 0
+                    ? progress.deliveredWeight
+                    : progress.deliveredVolume;
+        return totalBasis > 0 && deliveredBasis >= totalBasis;
+    });
+    const anyDelivered = itemProgress.some(progress =>
+        progress.deliveredQtyKoli > 0 ||
+        progress.deliveredWeight > 0 ||
+        progress.deliveredVolume > 0
     );
-    const anyNonDeliveryResolved = items.some(item =>
-        item.status === 'HOLD'
-        || item.status === 'RETURNED'
+    const anyHeld = itemProgress.some(progress =>
+        progress.heldQtyKoli > 0 ||
+        progress.heldWeight > 0 ||
+        progress.heldVolume > 0
     );
-    const anyInTransit = items.some(item => item.status === 'ON_DELIVERY');
 
-    if (allDelivered) {
-        return 'COMPLETE';
-    }
-
-    if (anyDelivered || anyInTransit || anyNonDeliveryResolved) {
-        return 'PARTIAL';
-    }
-
+    if (allDelivered) return 'COMPLETE';
+    if (anyDelivered || anyHeld) return 'PARTIAL';
     return 'OPEN';
 }
 
@@ -148,14 +160,12 @@ async function main() {
     const orders = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
     const orderItems = Array.isArray(orderItemsResponse.data) ? orderItemsResponse.data : [];
 
-    const itemsByOrderRef = new Map<string, Array<{ status: string }>>();
+    const itemsByOrderRef = new Map<string, OrderItemStatusSummary[]>();
     for (const item of orderItems) {
         const orderRef = normalizeText(item.orderRef);
         if (!orderRef) continue;
         const current = itemsByOrderRef.get(orderRef) || [];
-        current.push({
-            status: deriveOrderItemStatusFromProgress(getOrderItemProgress(sanitizeOrderItemProgressSource(item))),
-        });
+        current.push(sanitizeOrderItemProgressSource(item));
         itemsByOrderRef.set(orderRef, current);
     }
 
@@ -164,7 +174,7 @@ async function main() {
         .map(order => {
             const linkedItems = itemsByOrderRef.get(order._id) || [];
             const expectedStatus = linkedItems.length > 0
-                ? deriveOrderStatusFromItems(linkedItems)
+                ? deriveExpectedOrderStatusFromItems(linkedItems)
                 : normalizeText(order.status) || 'OPEN';
             return {
                 orderId: order._id,
@@ -188,7 +198,7 @@ async function main() {
         );
         const linkedItems = itemsByOrderRef.get(sampleOrder._id) || [];
         const expectedStatus = linkedItems.length > 0
-            ? deriveOrderStatusFromItems(linkedItems)
+            ? deriveExpectedOrderStatusFromItems(linkedItems)
             : normalizeText(sampleOrder.status) || 'OPEN';
         assert(
             normalizeText(singleResponse.data?.status) === expectedStatus,

@@ -7,14 +7,51 @@ import { useToast } from '../layout';
 import { Plus, Search, Eye, Edit, Trash2, Package } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
-import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
+import { formatDate, getShipperReferenceCount, ORDER_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { DeliveryOrder, DriverVoucher, Order, Service } from '@/lib/types';
+import { getDeliveryOrderHoldCargoSummary, hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 
 type TripCashStatusCode = 'NO_DO' | 'NEEDS_BON' | 'BON_DRAFT' | 'BON_ISSUED' | 'BON_SETTLED' | 'NOT_REQUIRED';
 type TripCashStatusMeta = { code: TripCashStatusCode; label: string; color: string };
+type OrderDocumentSummary = {
+    tripCount: number;
+    sjCount: number;
+    hasHold: boolean;
+    hasBillable: boolean;
+};
 const ORDER_STATUS_FILTER_OPTIONS = Object.entries(ORDER_STATUS_MAP).filter(([status]) => status !== 'ON_HOLD');
+
+function hasCargoSummaryValue(summary?: { qtyKoli?: number; weightKg?: number; volumeM3?: number } | null) {
+    return Boolean((summary?.qtyKoli || 0) > 0 || (summary?.weightKg || 0) > 0 || (summary?.volumeM3 || 0) > 0);
+}
+
+function buildOrderDocumentSummary(deliveryOrders: DeliveryOrder[]): OrderDocumentSummary {
+    const activeDeliveryOrders = deliveryOrders.filter(item => item.status !== 'CANCELLED');
+    return {
+        tripCount: activeDeliveryOrders.length,
+        sjCount: activeDeliveryOrders.reduce((sum, item) => sum + getShipperReferenceCount(item), 0),
+        hasHold: activeDeliveryOrders.some(item => hasCargoSummaryValue(getDeliveryOrderHoldCargoSummary(item))),
+        hasBillable: activeDeliveryOrders.some(item => hasDeliveryOrderBillableCargo(item)),
+    };
+}
+
+function renderOrderDocumentSummary(summary?: OrderDocumentSummary) {
+    if (!summary || summary.tripCount === 0) {
+        return <span className="text-muted text-sm">Belum ada Trip/SJ</span>;
+    }
+
+    return (
+        <div style={{ display: 'grid', gap: '0.25rem' }}>
+            <div className="font-medium">{summary.tripCount} Trip | {summary.sjCount} SJ</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {summary.hasHold && <span className="badge badge-warning"><span className="badge-dot" /> Ada hold</span>}
+                {summary.hasBillable && <span className="badge badge-success"><span className="badge-dot" /> Siap ditagih</span>}
+            </div>
+        </div>
+    );
+}
 
 const getTripCashStatusMeta = (order: Order, deliveryOrders: DeliveryOrder[], voucherByDeliveryOrderRef: Map<string, DriverVoucher>): TripCashStatusMeta => {
     if (order.status === 'CANCELLED') {
@@ -82,6 +119,7 @@ export default function OrdersPage() {
     const [totalOrders, setTotalOrders] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ needDispatch: 0, inProgress: 0, onHold: 0 });
     const [tripCashStatusByOrderId, setTripCashStatusByOrderId] = useState<Record<string, TripCashStatusMeta>>({});
+    const [orderDocumentSummaryByOrderId, setOrderDocumentSummaryByOrderId] = useState<Record<string, OrderDocumentSummary>>({});
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
@@ -148,6 +186,7 @@ export default function OrdersPage() {
             const pageOrders = ordersPayload.data || [];
             const pageOrderIds = pageOrders.map(item => item._id).filter(Boolean);
             let nextTripCashStatusByOrderId: Record<string, TripCashStatusMeta> = {};
+            let nextOrderDocumentSummaryByOrderId: Record<string, OrderDocumentSummary> = {};
 
             if (pageOrderIds.length > 0) {
                 const deliveryOrders = await fetchAdminCollectionData<DeliveryOrder[]>(
@@ -180,6 +219,12 @@ export default function OrdersPage() {
                         getTripCashStatusMeta(order, deliveryOrdersByOrderRef.get(order._id) || [], voucherByDeliveryOrderRef),
                     ])
                 );
+                nextOrderDocumentSummaryByOrderId = Object.fromEntries(
+                    pageOrders.map(order => [
+                        order._id,
+                        buildOrderDocumentSummary(deliveryOrdersByOrderRef.get(order._id) || []),
+                    ])
+                );
             }
 
             const nextQueueCounts = matchingOrders.reduce(
@@ -199,6 +244,7 @@ export default function OrdersPage() {
             setServices(serviceRows || []);
             setQueueCounts(nextQueueCounts);
             setTripCashStatusByOrderId(nextTripCashStatusByOrderId);
+            setOrderDocumentSummaryByOrderId(nextOrderDocumentSummaryByOrderId);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
         } finally {
@@ -338,6 +384,7 @@ export default function OrdersPage() {
                                 <th>Customer</th>
                                 <th>Pickup</th>
                                 <th>Kategori Armada</th>
+                                <th>Dokumen</th>
                                 <th>Status</th>
                                 <th>Status Bon</th>
                                 <th>Tindak Lanjut</th>
@@ -355,14 +402,14 @@ export default function OrdersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalOrders === 0 ? (
                                 <tr>
-                                    <td colSpan={9}>
+                                    <td colSpan={10}>
                                         <div className="empty-state">
                                             <Package size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada order</div>
@@ -386,6 +433,11 @@ export default function OrdersPage() {
                                             <td>{order.customerName}</td>
                                             <td>{order.pickupAddress || '-'}</td>
                                             <td>{getServiceLabel(order)}</td>
+                                            <td>
+                                                <Link href={`/orders/${order._id}#order-surat-jalan-section`} style={{ color: 'inherit' }}>
+                                                    {renderOrderDocumentSummary(orderDocumentSummaryByOrderId[order._id])}
+                                                </Link>
+                                            </td>
                                             <td>
                                                 <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
                                                     <span className="badge-dot" />
@@ -455,6 +507,14 @@ export default function OrdersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kategori Armada</span>
                                         <span className="mobile-record-value">{getServiceLabel(order)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Dokumen</span>
+                                        <span className="mobile-record-value">
+                                            <Link href={`/orders/${order._id}#order-surat-jalan-section`} style={{ color: 'inherit' }}>
+                                                {renderOrderDocumentSummary(orderDocumentSummaryByOrderId[order._id])}
+                                            </Link>
+                                        </span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Status Bon</span>
