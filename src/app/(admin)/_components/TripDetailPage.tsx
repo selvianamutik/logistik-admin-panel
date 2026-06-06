@@ -5959,7 +5959,7 @@ export default function TripDetailPage() {
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <PageBackButton href="/trips" />
                     <div>
-                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                             {displayTripNumber}
                             <span className={`badge badge-${displayStatusMeta.color}`}>
                                 <span className="badge-dot" /> {displayStatusMeta.label}
@@ -6120,7 +6120,7 @@ export default function TripDetailPage() {
                                 ? `Trip sudah ditutup admin${doData.tripClosedByAdminName ? ` oleh ${doData.tripClosedByAdminName}` : ''}. Tambah SJ dan edit muatan SJ dikunci sampai trip dibuka kembali.`
                                 : 'Trip masih terbuka. Admin masih bisa menambah SJ baru walaupun seluruh SJ sebelumnya sudah selesai.'}
                         </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <div className="detail-action-group" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
                                 <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
                                     <Truck size={14} /> Edit Trip / Armada
@@ -6172,7 +6172,7 @@ export default function TripDetailPage() {
                 <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Uang Jalan Trip</span>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <div className="detail-action-group" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {canAddLinkedTripCashExpense && (
                                 <button className="btn btn-secondary btn-sm" onClick={openTripCashExpenseModal}>
                                     <Plus size={14} /> Biaya Lain-lain

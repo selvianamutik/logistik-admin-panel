@@ -727,6 +727,7 @@ a:hover {
   border-radius: var(--radius-lg);
   background: var(--color-white);
   box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .mobile-record-header {
@@ -734,6 +735,7 @@ a:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .mobile-record-title {
@@ -741,6 +743,8 @@ a:hover {
   font-weight: 700;
   color: var(--color-gray-900);
   line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .mobile-record-subtitle {
@@ -773,7 +777,9 @@ a:hover {
 .mobile-record-value {
   font-size: var(--font-size-sm);
   color: var(--color-gray-700);
+  min-width: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .mobile-record-actions {
@@ -788,6 +794,54 @@ a:hover {
 
 .mobile-card-list {
   display: none;
+}
+
+.mobile-data-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.mobile-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.mobile-card-title {
+  min-width: 0;
+  color: var(--color-gray-900);
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mobile-card-body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-gray-700);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.mobile-card-body > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mobile-card-body .btn {
+  width: fit-content;
 }
 
 /* ── Buttons ── */
@@ -1145,6 +1199,9 @@ a:hover {
   font-weight: 700;
   color: var(--color-gray-900);
   line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kpi-sub {
@@ -1829,6 +1886,7 @@ tbody td {
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 /* ── Toast ── */
@@ -2229,6 +2287,16 @@ tbody td {
   font-size: var(--font-size-sm);
   color: var(--color-gray-800);
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.detail-value > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .detail-row {
@@ -2241,6 +2309,13 @@ tbody td {
 .detail-item {
   flex: 1;
   min-width: min(100%, 240px);
+}
+
+.detail-action-group {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .trip-cargo-group-list {
@@ -3491,6 +3566,13 @@ details[open] > summary .foldable-chevron {
     align-items: stretch;
   }
 
+  .table-toolbar-left > .form-select,
+  .table-toolbar-left > .form-input,
+  .table-toolbar-left > .btn {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
   .table-toolbar-right {
     width: 100%;
     justify-content: flex-start;
@@ -3577,6 +3659,18 @@ details[open] > summary .foldable-chevron {
     display: none;
   }
 
+  .modal-footer {
+    flex-wrap: wrap;
+    align-items: stretch;
+    padding: var(--space-4);
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 min(12rem, 100%);
+    min-width: 0;
+    justify-content: center;
+  }
+
   .mobile-record-list {
     display: grid;
     gap: var(--space-3);
@@ -3585,6 +3679,12 @@ details[open] > summary .foldable-chevron {
   .mobile-card-list {
     display: grid;
     gap: var(--space-3);
+  }
+
+  .mobile-record-actions .btn,
+  .mobile-record-actions .table-action-btn {
+    flex: 1 1 calc(50% - var(--space-2));
+    min-width: 0;
   }
 
   table {
@@ -3602,6 +3702,18 @@ details[open] > summary .foldable-chevron {
 
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-action-group {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-action-group .btn,
+  .detail-action-group .table-action-btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .trip-cargo-group-grid {
@@ -3684,14 +3796,42 @@ details[open] > summary .foldable-chevron {
     grid-template-columns: 44px minmax(0, 1fr) 44px;
   }
 
+  .detail-action-group {
+    grid-template-columns: 1fr;
+  }
+
   .mobile-record-header,
-  .mobile-record-actions {
+  .mobile-card-header {
     flex-direction: column;
     align-items: stretch;
   }
 
+  .mobile-record-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .mobile-record-actions .btn,
+  .mobile-record-actions .table-action-btn,
+  .mobile-card-body .btn {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+    justify-content: center;
+  }
+
   .mobile-record-meta {
     grid-template-columns: 1fr;
+  }
+
+  .modal-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modal-footer .btn {
+    width: 100%;
   }
 
   .statement-line-row,

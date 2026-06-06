@@ -335,6 +335,15 @@ export default function TripsPage() {
                                     <div className="text-muted text-sm">{renderTripCargoSummary(item)}</div>
                                     <div>
                                         Bon: <span className={`badge badge-${bonStatusMeta.color}`}><span className="badge-dot" /> {bonStatusMeta.label}</span>
+                                        {voucher?.bonNumber && (
+                                            <div style={{ marginTop: 6 }}>
+                                                {canOpenDriverVoucherPage ? (
+                                                    <Link href={`/driver-vouchers/${voucher._id}`}>{voucher.bonNumber}</Link>
+                                                ) : (
+                                                    <span>{voucher.bonNumber}</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

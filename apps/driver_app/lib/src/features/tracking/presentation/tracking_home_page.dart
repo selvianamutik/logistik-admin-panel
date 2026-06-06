@@ -3737,6 +3737,8 @@ class _VoucherInfoGrid extends StatelessWidget {
                         const SizedBox(height: 5),
                         Text(
                           item.value,
+                          softWrap: true,
+                          overflow: TextOverflow.visible,
                           style: TextStyle(
                             color: item.color ?? scheme.onSurface,
                             fontSize: 14,
@@ -3934,13 +3936,23 @@ class _VoucherSummaryLine extends StatelessWidget {
           Expanded(
             child: Text(
               label,
+              softWrap: true,
               style: TextStyle(
                 color: scheme.onSurface.withValues(alpha: 0.64),
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              softWrap: true,
+              overflow: TextOverflow.visible,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
         ],
       ),
     );
@@ -4050,7 +4062,15 @@ class _VoucherHistoryRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text(amount, style: const TextStyle(fontWeight: FontWeight.w800)),
+          Flexible(
+            child: Text(
+              amount,
+              textAlign: TextAlign.right,
+              softWrap: true,
+              overflow: TextOverflow.visible,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
         ],
       ),
     );

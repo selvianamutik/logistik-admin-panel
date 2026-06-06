@@ -25,6 +25,7 @@
     "audit:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts",
     "audit:delivery-order-actual-edit-permissions": "npx tsx --conditions react-server scripts/audit-delivery-order-actual-edit-permissions.ts",
     "audit:role-access-e2e": "npx tsx --conditions react-server scripts/audit-role-access-e2e.ts",
+    "cleanup:audit-users": "npx tsx --conditions react-server scripts/cleanup-audit-role-users.ts",
     "repair:delivery-order-sj-invariants": "npx tsx scripts/audit-delivery-order-sj-invariants.ts --fix",
     "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
     "audit:driver-approval-corrections-flow": "npx tsx --conditions react-server scripts/audit-driver-approval-corrections-flow.ts",

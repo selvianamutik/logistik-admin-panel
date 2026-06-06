@@ -75,12 +75,19 @@ export default function DriverVouchersPage() {
     const isPeriodReady = isFinancePeriodRangeReady(periodMode, dateRange.startDate, dateRange.endDate);
     const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
-    const buildVoucherQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+    const buildVoucherQuery = useCallback((
+        targetPage = page,
+        targetPageSize = DEFAULT_PAGE_SIZE,
+        options: { statusOverride?: string; countOnly?: boolean } = {}
+    ) => {
         const params = new URLSearchParams({
             entity: 'driver-vouchers',
             page: String(targetPage),
             pageSize: String(targetPageSize),
         });
+        if (options.countOnly) {
+            params.set('countOnly', '1');
+        }
         if (dateSortDir) {
             params.set('sortField', 'issuedDate');
             params.set('sortDir', dateSortDir);
@@ -92,8 +99,9 @@ export default function DriverVouchersPage() {
             params.set('searchFields', 'bonNumber,driverName,doNumber');
         }
         const filter: Record<string, unknown> = {};
-        if (statusFilter) {
-            filter.status = statusFilter;
+        const effectiveStatus = options.statusOverride ?? statusFilter;
+        if (effectiveStatus) {
+            filter.status = effectiveStatus;
         }
         const dateFilter = buildFinanceDateFilter(dateRange.startDate, dateRange.endDate);
         if (periodMode !== 'all' && dateFilter) {
@@ -105,25 +113,12 @@ export default function DriverVouchersPage() {
         return params.toString();
     }, [dateRange.endDate, dateRange.startDate, dateSortDir, page, periodMode, search, statusFilter]);
 
-    const fetchAllMatchingVouchers = useCallback(async () => {
-        const pageSize = 200;
-        let currentPage = 1;
-        let total = 0;
-        const allItems: DriverVoucher[] = [];
-
-        do {
-            const payload = await fetchAdminListPayload<DriverVoucher>(
-                `/api/data?${buildVoucherQuery(currentPage, pageSize)}`,
-                'Gagal memuat uang jalan trip'
-            );
-            const nextItems = (payload.data || []) as DriverVoucher[];
-            total = payload.meta?.total || nextItems.length;
-            allItems.push(...nextItems);
-            if (nextItems.length === 0) break;
-            currentPage += 1;
-        } while (allItems.length < total);
-
-        return allItems;
+    const countVouchersByStatus = useCallback(async (status: DriverVoucher['status']) => {
+        const payload = await fetchAdminListPayload<DriverVoucher>(
+            `/api/data?${buildVoucherQuery(1, 1, { statusOverride: status, countOnly: true })}`,
+            'Gagal memuat ringkasan uang jalan trip'
+        );
+        return payload.meta?.total || 0;
     }, [buildVoucherQuery]);
 
     const loadVouchers = useCallback(async () => {
@@ -135,24 +130,26 @@ export default function DriverVouchersPage() {
                 setQueueCounts({ issued: 0, draft: 0, settled: 0 });
                 return;
             }
-            const [listPayload, matchingVouchers] = await Promise.all([
+            const [listPayload, issuedCount, draftCount, settledCount] = await Promise.all([
                 fetchAdminListPayload<DriverVoucher>(`/api/data?${buildVoucherQuery()}`, 'Gagal memuat uang jalan trip'),
-                fetchAllMatchingVouchers(),
+                countVouchersByStatus('ISSUED'),
+                countVouchersByStatus('DRAFT'),
+                countVouchersByStatus('SETTLED'),
             ]);
 
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);
             setQueueCounts({
-                issued: matchingVouchers.filter(voucher => voucher.status === 'ISSUED').length,
-                draft: matchingVouchers.filter(voucher => voucher.status === 'DRAFT').length,
-                settled: matchingVouchers.filter(voucher => voucher.status === 'SETTLED').length,
+                issued: issuedCount,
+                draft: draftCount,
+                settled: settledCount,
             });
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat uang jalan trip');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildVoucherQuery, fetchAllMatchingVouchers, isPeriodReady]);
+    }, [addToast, buildVoucherQuery, countVouchersByStatus, isPeriodReady]);
 
     useEffect(() => {
         void loadVouchers();
@@ -272,11 +269,7 @@ export default function DriverVouchersPage() {
                                 <th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
                                 <th>No. DO Internal</th>
                                 <th>Rute</th>
-                                <th>Bon Pertama</th>
-                                <th>Total Bon Tambahan</th>
                                 <th>Total Diberikan</th>
-                                <th>Biaya Lain-lain</th>
-                                <th>Upah Borongan</th>
                                 <th>Total Biaya</th>
                                 <th>Penyelesaian Uang Jalan</th>
                                 <th>Status</th>
@@ -288,14 +281,14 @@ export default function DriverVouchersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {Array.from({ length: 15 }).map((_, j) => (
+                                        {Array.from({ length: 11 }).map((_, j) => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalItems === 0 ? (
                                 <tr>
-                                    <td colSpan={15}>
+                                    <td colSpan={11}>
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
@@ -307,8 +300,6 @@ export default function DriverVouchersPage() {
                                 items.map(v => {
                                     const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                                     const {
-                                        totalSpent,
-                                        driverFeeAmount,
                                         totalClaimAmount,
                                         initialCashGiven,
                                         topUpAmount,
@@ -347,11 +338,7 @@ export default function DriverVouchersPage() {
                                             <td className="text-muted">{formatDate(v.issuedDate)}</td>
                                             <td>{v.doNumber || '-'}</td>
                                             <td className="text-muted">{routeLabel}</td>
-                                            <td>{formatCurrency(initialCashGiven)}</td>
-                                            <td>{formatCurrency(topUpAmount)}</td>
                                             <td className="font-medium">{formatCurrency(totalIssuedAmount)}</td>
-                                            <td>{formatCurrency(totalSpent)}</td>
-                                            <td>{formatCurrency(driverFeeAmount)}</td>
                                             <td className="font-medium">{formatCurrency(totalClaimAmount)}</td>
                                             <td
                                                 className="font-medium"

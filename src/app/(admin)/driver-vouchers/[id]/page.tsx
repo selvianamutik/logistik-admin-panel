@@ -876,12 +876,12 @@ export default function DriverVoucherDetailPage() {
             </CollapsibleCard>
 
             <div className="card">
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h3 className="card-title">Catat Biaya Lain-lain ({items.length})</h3>
                     {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={openAddItemModal}><Plus size={14} /> Tambah Biaya Lain-lain</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
-                    <div className="table-wrapper">
+                    <div className="table-wrapper table-desktop-only">
                         <table>
                             <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && canManageVoucherItems && <th>Aksi</th>}</tr></thead>
                             <tbody>
@@ -923,6 +923,64 @@ export default function DriverVoucherDetailPage() {
                                 {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA LAIN-LAIN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && canManageVoucherItems && <td />}</tr>}
                             </tbody>
                         </table>
+                    </div>
+                    <div className="mobile-record-list" style={{ padding: 'var(--space-4)' }}>
+                        {items.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada biaya lain-lain aktual</div>
+                                <div className="mobile-record-subtitle">Biaya trip yang dipakai supir akan muncul di sini setelah dicatat.</div>
+                            </div>
+                        ) : (
+                            <>
+                                {items.map((item, index) => (
+                                    <div key={item._id} className="mobile-record-card">
+                                        <div className="mobile-record-header">
+                                            <div>
+                                                <div className="mobile-record-title">Biaya #{index + 1}</div>
+                                                <div className="mobile-record-subtitle">{item.expenseDate ? formatDate(item.expenseDate) : '-'}</div>
+                                            </div>
+                                            <span className="badge badge-gray">{item.category}</span>
+                                        </div>
+                                        <div className="mobile-record-meta">
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Deskripsi</span>
+                                                <span className="mobile-record-value">{item.description || '-'}</span>
+                                            </div>
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Jumlah</span>
+                                                <span className="mobile-record-value font-semibold">{formatCurrency(item.amount)}</span>
+                                            </div>
+                                        </div>
+                                        {!isSettled && canManageVoucherItems && (
+                                            <div className="mobile-record-actions">
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => openEditItemModal(item)}
+                                                    disabled={deletingItemId === item._id || savingItem}
+                                                >
+                                                    <Pencil size={14} /> Edit
+                                                </button>
+                                                <button
+                                                    className="btn btn-danger btn-sm"
+                                                    onClick={() => handleDeleteItem(item._id)}
+                                                    disabled={deletingItemId === item._id}
+                                                >
+                                                    <Trash2 size={14} /> Hapus
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                <div className="mobile-record-card">
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Total Biaya Lain-lain</span>
+                                            <span className="mobile-record-value font-semibold">{formatCurrency(operationalSpent)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

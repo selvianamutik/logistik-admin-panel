@@ -1617,7 +1617,7 @@ export default function OrderDetailPage() {
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <PageBackButton href="/orders" />
                     <div>
-                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                             {order.masterResi}
                             <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
                                 <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label}
@@ -1687,7 +1687,7 @@ export default function OrderDetailPage() {
                     <div className="progress-bar">
                         <div className={`progress-bar-fill ${progress === 100 ? 'success' : ''}`} style={{ width: `${progress}%` }} />
                     </div>
-                    <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-500)' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem 1rem', marginTop: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-500)', flexWrap: 'wrap' }}>
                         <span style={{ color: 'var(--color-success)' }}>
                             {formatCargoSummary({
                                 qtyKoli: totalDeliveredActualCargo.qtyKoli,

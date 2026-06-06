@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../layout';
+import { useApp, useToast } from '../layout';
 import { Plus, Search, Eye, Edit, Trash2, Package } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
@@ -12,6 +12,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData, fetchAdminListPayload } from '@/lib/api/admin-client';
 import type { DeliveryOrder, DriverVoucher, Order, Service } from '@/lib/types';
 import { getDeliveryOrderHoldCargoSummary, hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
+import { hasPageAccess } from '@/lib/rbac';
 
 type TripCashStatusCode = 'NO_DO' | 'NEEDS_BON' | 'BON_DRAFT' | 'BON_ISSUED' | 'BON_SETTLED' | 'NOT_REQUIRED';
 type TripCashStatusMeta = { code: TripCashStatusCode; label: string; color: string };
@@ -20,6 +21,10 @@ type OrderDocumentSummary = {
     sjCount: number;
     hasHold: boolean;
     hasBillable: boolean;
+};
+type OrderVoucherSummary = {
+    total: number;
+    vouchers: Array<Pick<DriverVoucher, '_id' | 'bonNumber'>>;
 };
 const ORDER_STATUS_FILTER_OPTIONS = Object.entries(ORDER_STATUS_MAP).filter(([status]) => status !== 'ON_HOLD');
 
@@ -106,8 +111,35 @@ const getNextActionLabel = (order: Order, tripCashStatus?: TripCashStatusMeta) =
     }
 };
 
+function renderOrderVoucherLinks(summary: OrderVoucherSummary | undefined, canOpenDriverVoucherPage: boolean) {
+    if (!summary || summary.vouchers.length === 0) return null;
+    const visibleVouchers = summary.vouchers.slice(0, 3);
+    const hiddenCount = summary.total - visibleVouchers.length;
+
+    return (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            {visibleVouchers.map(voucher => (
+                canOpenDriverVoucherPage ? (
+                    <Link
+                        key={voucher._id}
+                        href={`/driver-vouchers/${voucher._id}`}
+                        className="font-mono"
+                        style={{ color: 'var(--color-primary)' }}
+                    >
+                        {voucher.bonNumber}
+                    </Link>
+                ) : (
+                    <span key={voucher._id} className="font-mono">{voucher.bonNumber}</span>
+                )
+            ))}
+            {hiddenCount > 0 && <span className="text-muted text-sm">+{hiddenCount} bon</span>}
+        </div>
+    );
+}
+
 export default function OrdersPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [orders, setOrders] = useState<Order[]>([]);
     const [services, setServices] = useState<Service[]>([]);
@@ -120,9 +152,11 @@ export default function OrdersPage() {
     const [queueCounts, setQueueCounts] = useState({ needDispatch: 0, inProgress: 0, onHold: 0 });
     const [tripCashStatusByOrderId, setTripCashStatusByOrderId] = useState<Record<string, TripCashStatusMeta>>({});
     const [orderDocumentSummaryByOrderId, setOrderDocumentSummaryByOrderId] = useState<Record<string, OrderDocumentSummary>>({});
+    const [orderVoucherSummaryByOrderId, setOrderVoucherSummaryByOrderId] = useState<Record<string, OrderVoucherSummary>>({});
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
+    const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
 
     const buildOrdersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -187,6 +221,7 @@ export default function OrdersPage() {
             const pageOrderIds = pageOrders.map(item => item._id).filter(Boolean);
             let nextTripCashStatusByOrderId: Record<string, TripCashStatusMeta> = {};
             let nextOrderDocumentSummaryByOrderId: Record<string, OrderDocumentSummary> = {};
+            let nextOrderVoucherSummaryByOrderId: Record<string, OrderVoucherSummary> = {};
 
             if (pageOrderIds.length > 0) {
                 const deliveryOrders = await fetchAdminCollectionData<DeliveryOrder[]>(
@@ -225,6 +260,24 @@ export default function OrdersPage() {
                         buildOrderDocumentSummary(deliveryOrdersByOrderRef.get(order._id) || []),
                     ])
                 );
+                nextOrderVoucherSummaryByOrderId = Object.fromEntries(
+                    pageOrders.map(order => {
+                        const orderDeliveryOrders = deliveryOrdersByOrderRef.get(order._id) || [];
+                        const vouchersForOrder = orderDeliveryOrders
+                            .map(item => voucherByDeliveryOrderRef.get(item._id))
+                            .filter(Boolean) as DriverVoucher[];
+                        return [
+                            order._id,
+                            {
+                                total: vouchersForOrder.length,
+                                vouchers: vouchersForOrder.map(voucher => ({
+                                    _id: voucher._id,
+                                    bonNumber: voucher.bonNumber,
+                                })),
+                            },
+                        ];
+                    })
+                );
             }
 
             const nextQueueCounts = matchingOrders.reduce(
@@ -245,6 +298,7 @@ export default function OrdersPage() {
             setQueueCounts(nextQueueCounts);
             setTripCashStatusByOrderId(nextTripCashStatusByOrderId);
             setOrderDocumentSummaryByOrderId(nextOrderDocumentSummaryByOrderId);
+            setOrderVoucherSummaryByOrderId(nextOrderVoucherSummaryByOrderId);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
         } finally {
@@ -449,6 +503,7 @@ export default function OrdersPage() {
                                                     <span className="badge-dot" />
                                                     {tripCashStatus?.label || 'Belum dicek'}
                                                 </span>
+                                                {renderOrderVoucherLinks(orderVoucherSummaryByOrderId[order._id], canOpenDriverVoucherPage)}
                                             </td>
                                             <td>
                                                 <span style={{ fontWeight: 500 }}>{getNextActionLabel(order, tripCashStatus)}</span>
@@ -518,11 +573,12 @@ export default function OrdersPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Status Bon</span>
-                                        <span className="mobile-record-value">
+                                        <div className="mobile-record-value">
                                             <span className={`badge badge-${tripCashStatus?.color || 'gray'}`}>
                                                 <span className="badge-dot" /> {tripCashStatus?.label || 'Belum dicek'}
                                             </span>
-                                        </span>
+                                            {renderOrderVoucherLinks(orderVoucherSummaryByOrderId[order._id], canOpenDriverVoucherPage)}
+                                        </div>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
