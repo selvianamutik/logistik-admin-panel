@@ -148,10 +148,10 @@ export default function NotaDetailPage() {
         paidPercent,
     } = buildInvoiceDetailSummary({ nota, payments, adjustments });
     const accountMap = buildBankAccountMap(bankAccounts);
-    const canManageInvoice = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
-    const canDeleteInvoice = user ? hasPermission(user.role, 'freightNotas', 'delete') : false;
-    const canExportInvoice = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
-    const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
+    const canManageInvoice = user ? hasPermission(user.role, 'invoices', 'update') : false;
+    const canDeleteInvoice = user ? hasPermission(user.role, 'invoices', 'delete') : false;
+    const canExportInvoice = user ? hasPermission(user.role, 'invoices', 'export') : false;
+    const canPrintInvoice = user ? hasPermission(user.role, 'invoices', 'print') : false;
     const canManageOverpaymentRefund = canManageInvoice;
     const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const isVoidedInvoice = nota?.status === 'VOID';
@@ -681,6 +681,27 @@ export default function NotaDetailPage() {
                 </div>
             </div>
 
+            {canManageInvoice && !canReviseInvoice && !isVoidedInvoice && (
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.65rem',
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '0.55rem',
+                        border: '1px solid var(--color-border)',
+                        background: 'var(--color-warning-light)',
+                        color: 'var(--color-warning)',
+                        marginBottom: '0.75rem',
+                    }}
+                >
+                    <Pencil size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ color: 'var(--text-primary)', fontSize: '0.86rem', lineHeight: 1.45 }}>
+                        Invoice ini sudah punya pembayaran, refund, atau klaim/potongan. Koreksi nominal uang masuk dari Riwayat Pembayaran, dan buat invoice baru kalau ada SJ tambahan yang perlu ditagih.
+                    </div>
+                </div>
+            )}
+
             <div className="detail-grid" style={{ alignItems: 'start' }}>
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Detail Invoice</span></div>
@@ -796,7 +817,7 @@ export default function NotaDetailPage() {
                                             <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                 {canManageInvoice && !isVoidedInvoice && !p.receiptRef && (
                                                     <button className="table-action-btn" onClick={() => openEditPaymentModal(p)} disabled={paying}>
-                                                        <Pencil size={13} /> Edit
+                                                        <Pencil size={13} /> Koreksi
                                                     </button>
                                                 )}
                                                 {canPrintInvoice && <button className="table-action-btn" onClick={() => void handlePrintPaymentReceipt(p)}>
@@ -897,7 +918,16 @@ export default function NotaDetailPage() {
                                             <td>{it.barang || '-'}</td>
                                     <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                             <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, volumeM3: it.volumeM3 || 0, billingMode, includeCanonical: false })}</td>
-                                            <td>{formatCurrency(it.tarip || 0)}</td>
+                                            <td>
+                                                <div>{formatCurrency(it.tarip || 0)}</div>
+                                                <span
+                                                    className={`badge badge-${it.taripSource === 'MASTER' ? 'success' : 'warning'}`}
+                                                    title={it.customerBillingRateName || undefined}
+                                                    style={{ marginTop: '0.25rem' }}
+                                                >
+                                                    {it.taripSource === 'MASTER' ? 'Master' : 'Manual'}
+                                                </span>
+                                            </td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.plt || '-'}</td>
                                             <td className="text-muted">{it.pc || '-'}</td>
@@ -923,7 +953,7 @@ export default function NotaDetailPage() {
             {canManageInvoice && showPayModal && (
                 <div className="modal-overlay" onClick={closePaymentModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">{editingPaymentId ? 'Edit Pembayaran Invoice' : 'Catat Pembayaran Invoice'}</h3><button className="modal-close" onClick={closePaymentModal} disabled={paying}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editingPaymentId ? 'Koreksi Penerimaan Invoice' : 'Catat Pembayaran Invoice'}</h3><button className="modal-close" onClick={closePaymentModal} disabled={paying}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>{editingPaymentId ? 'Maksimum Koreksi' : 'Sisa Invoice'}</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(maxPaymentAmount)}</div></div>
@@ -966,7 +996,7 @@ export default function NotaDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={closePaymentModal} disabled={paying}>Batal</button>
-                            <button className="btn btn-success" onClick={handleSavePayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Invoice'}</button>
+                            <button className="btn btn-success" onClick={handleSavePayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : editingPaymentId ? 'Simpan Koreksi Penerimaan' : 'Simpan Pembayaran Invoice'}</button>
                         </div>
                     </div>
                 </div>

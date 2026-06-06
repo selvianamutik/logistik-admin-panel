@@ -50,6 +50,11 @@ const documentStorePath = path.join(process.cwd(), 'src/lib/repositories/documen
 const documentStoreSource = fs.readFileSync(documentStorePath, 'utf8');
 const reportsSupportPath = path.join(process.cwd(), 'src/lib/reports-support.ts');
 const reportsSupportSource = fs.readFileSync(reportsSupportPath, 'utf8');
+const dataQuerySupportPath = path.join(process.cwd(), 'src/lib/api/data-query-support.ts');
+const dataQuerySupportSource = fs.readFileSync(dataQuerySupportPath, 'utf8');
+const invoiceListPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/invoices/page.tsx'), 'utf8');
+const invoiceCreatePageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/invoices/new/page.tsx'), 'utf8');
+const bankAccountDetailPageSource = fs.readFileSync(path.join(process.cwd(), 'src/app/(admin)/bank-accounts/[id]/page.tsx'), 'utf8');
 const accountingLedgerMigrationPath = path.join(process.cwd(), 'supabase/migrations/0015_relational_accounting_ledger.sql');
 const accountingLedgerMigrationSource = fs.readFileSync(accountingLedgerMigrationPath, 'utf8').toLowerCase();
 const accountingRevisionMigrationPath = path.join(process.cwd(), 'supabase/migrations/0016_accounting_journal_revision_unique_index.sql');
@@ -718,6 +723,72 @@ assert(
         reportsSupportSource.includes('const totalNotaIssued = activeFreightNotas') &&
         reportsSupportSource.includes('const totalNotaOutstanding = activeFreightNotas'),
     'Laporan keuangan harus mengecualikan invoice VOID dari total terbit dan outstanding walaupun data dipanggil langsung.'
+);
+assert(
+    bankAccountDetailPageSource.includes('`/api/data?entity=${entity}&id=${encodeURIComponent(id)}`') &&
+        !bankAccountDetailPageSource.includes('.filter(id => /^nota-/i.test(id))'),
+    'Detail rekening/kas harus bisa membuka link invoice UUID dari mutasi bank; jangan membatasi invoiceRef hanya format lama nota-.'
+);
+assert(
+    dataQuerySupportSource.includes('function filterRequestsFreightNotaStatus') &&
+        dataQuerySupportSource.includes("const includeVoidedNotas = filterRequestsFreightNotaStatus(filterObj, 'VOID');") &&
+        dataQuerySupportSource.includes('const visibleNotaRows = includeVoidedNotas ? notaRows : notaRows.filter(isActiveFreightNota);') &&
+        dataQuerySupportSource.includes("if (operator === 'in')") &&
+        dataQuerySupportSource.includes('Array.isArray(operatorValue) && operatorValue.includes(actualValue as never)') &&
+        dataQuerySupportSource.includes('applyDerivedFreightNotaStatus(visibleNotaRows, paymentTotalsByInvoice, invoiceRefundsByRef)') &&
+        invoiceListPageSource.includes('if (nota.status === \'VOID\')') &&
+        invoiceListPageSource.includes('<option value="">Semua Status Aktif</option>'),
+    'Daftar invoice harus default menampilkan status aktif saja, tetapi filter Dibatalkan tetap bisa mengambil invoice VOID secara eksplisit.'
+);
+assert(
+    invoiceCreatePageSource.includes("taripSource: 'MANUAL'") &&
+        invoiceCreatePageSource.includes("taripSource === 'MASTER'") &&
+        invoiceCreatePageSource.includes('customerBillingRateSnapshot') &&
+        invoiceCreatePageSource.includes('applyMasterRateToRow') &&
+        invoiceCreatePageSource.includes('Tarif master untuk baris ini belum ditemukan') &&
+        financeWorkflowSource.includes('taripSource') &&
+        financeWorkflowSource.includes('customerBillingRateSnapshot'),
+    'Buat/revisi invoice harus menyimpan snapshot sumber tarif dan menjaga override manual agar tidak diam-diam ditimpa master data.'
+);
+assert(
+    invoiceCreatePageSource.includes('async (): Promise<InvoiceReferenceData>') &&
+        invoiceCreatePageSource.includes('ensureInvoiceReferenceData') &&
+        invoiceCreatePageSource.includes('ensureCustomerBillingRates') &&
+        invoiceCreatePageSource.includes("fetchAllAdminCollectionData<Order>('/api/data?entity=orders'") &&
+        invoiceCreatePageSource.includes("fetchAllAdminCollectionData<DeliveryOrderItem>('/api/data?entity=delivery-order-items'") &&
+        invoiceCreatePageSource.includes("fetchAllAdminCollectionData<CustomerBillingRate>") &&
+        !invoiceCreatePageSource.includes("fetchAdminCollectionData<Order[]>('/api/data?entity=orders'") &&
+        !invoiceCreatePageSource.includes("fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items'") &&
+        !invoiceCreatePageSource.includes("fetchAdminCollectionData<CustomerBillingRate[]>('/api/data?entity=customer-billing-rates'"),
+    'Halaman buat/revisi invoice tidak boleh mengambil order, item DO, semua tarif, dan pemakaian invoice secara luas saat initial load; data berat harus lazy saat dibutuhkan.'
+);
+assert(
+    invoiceCreatePageSource.includes('const [revisionBlock, setRevisionBlock]') &&
+        invoiceCreatePageSource.includes("fetchAllAdminCollectionData<Payment>") &&
+        invoiceCreatePageSource.includes("fetchAllAdminCollectionData<CustomerOverpaymentRefund>") &&
+        invoiceCreatePageSource.includes('Invoice Tidak Bisa Direvisi Penuh') &&
+        invoiceCreatePageSource.includes('Buat Tagihan Susulan') &&
+        financeWorkflowSource.includes('Invoice tidak bisa direvisi setelah ada pembayaran, refund, atau klaim/potongan aktif'),
+    'Direct URL revisi invoice harus diblokir jelas sebelum form terbuka ketika invoice sudah punya pembayaran, refund, atau klaim/potongan.'
+);
+assert(
+    rbacSource.includes('const INVOICE_PERMISSIONS') &&
+        rbacSource.includes("return module === 'freightNotas' ? 'invoices' : module;") &&
+        rbacSource.includes('invoices: INVOICE_PERMISSIONS') &&
+        rbacSource.includes('freightNotas: INVOICE_PERMISSIONS') &&
+        rbacSource.includes("{ label: 'Invoice', href: '/invoices', icon: 'Receipt', module: 'invoices' }") &&
+        !rbacSource.includes("{ label: 'Invoice', href: '/invoices', icon: 'Receipt', module: 'freightNotas' }") &&
+        proxySource.includes("{ path: '/invoices', module: 'invoices' }") &&
+        !proxySource.includes("{ path: '/invoices', module: 'freightNotas' }") &&
+        source.includes("payments: 'invoices'") &&
+        source.includes("'customer-receipts': 'invoices'") &&
+        source.includes("'customer-overpayment-refunds': 'invoices'") &&
+        source.includes("'invoice-adjustments': 'invoices'") &&
+        source.includes("'freight-notas': 'invoices'") &&
+        source.includes("'freight-nota-items': 'invoices'") &&
+        invoiceListPageSource.includes("hasPermission(user.role, 'invoices', 'create')") &&
+        invoiceListPageSource.includes("hasPermission(user.role, 'invoices', 'update')"),
+    'Akses invoice harus memakai modul canonical invoices; freightNotas hanya alias kompatibilitas agar API, proxy, sidebar, dan tombol UI tidak pecah role-nya.'
 );
 assert(
     reportsSupportSource.includes("function isInvoiceOverpaymentRefund") &&

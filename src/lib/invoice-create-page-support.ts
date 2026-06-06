@@ -30,6 +30,10 @@ export interface NotaItemRow {
     beratKg: number;
     volumeM3?: number;
     tarip: number;
+    taripSource?: 'MASTER' | 'MANUAL';
+    customerBillingRateRef?: string;
+    customerBillingRateName?: string;
+    customerBillingRateSnapshot?: number;
     uangRp: number;
     ket: string;
     plt: string;
@@ -55,6 +59,7 @@ export function createEmptyNotaRow(): NotaItemRow {
         beratKg: 0,
         volumeM3: 0,
         tarip: 0,
+        taripSource: 'MANUAL',
         uangRp: 0,
         ket: '',
         plt: '',

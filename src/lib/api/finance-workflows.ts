@@ -2566,6 +2566,13 @@ export async function handleFreightNotaCreate(
                 const beratKg = normalizeNumber(row.beratKg);
                 const volumeM3 = normalizeNumber(row.volumeM3 ?? 0, { maxFractionDigits: 3 });
                 const tarip = normalizeCurrencyNumber(row.tarip);
+                const taripSourceInput = normalizeOptionalText(row.taripSource);
+                const taripSource = taripSourceInput === 'MASTER' || taripSourceInput === 'MANUAL'
+                    ? taripSourceInput
+                    : undefined;
+                const customerBillingRateRef = normalizeOptionalText(row.customerBillingRateRef);
+                const customerBillingRateName = normalizeOptionalText(row.customerBillingRateName);
+                const customerBillingRateSnapshot = normalizeCurrencyNumber(row.customerBillingRateSnapshot);
                 const collie = parseOptionalStrictNotaRowNumber(
                     row.collie,
                 'Collie pada baris invoice tidak valid',
@@ -2610,6 +2617,12 @@ export async function handleFreightNotaCreate(
                     beratKg,
                     volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
                     tarip,
+                    taripSource,
+                    customerBillingRateRef: taripSource === 'MASTER' ? customerBillingRateRef : undefined,
+                    customerBillingRateName: taripSource === 'MASTER' ? customerBillingRateName : undefined,
+                    customerBillingRateSnapshot: taripSource === 'MASTER' && Number.isFinite(customerBillingRateSnapshot) && customerBillingRateSnapshot > 0
+                        ? customerBillingRateSnapshot
+                        : undefined,
                     uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
                     ...normalizeFreightNotaLineMeta(row),
@@ -3414,6 +3427,10 @@ export async function handleFreightNotaCreate(
             beratKg: row.beratKg,
             volumeM3: row.volumeM3,
             tarip: row.tarip,
+            taripSource: row.taripSource,
+            customerBillingRateRef: row.customerBillingRateRef,
+            customerBillingRateName: row.customerBillingRateName,
+            customerBillingRateSnapshot: row.customerBillingRateSnapshot,
             uangRp: row.uangRp,
             ket: row.ket,
             plt: row.plt,
@@ -3501,6 +3518,13 @@ export async function handleFreightNotaUpdate(
                 const beratKg = normalizeNumber(row.beratKg);
                 const volumeM3 = normalizeNumber(row.volumeM3 ?? 0, { maxFractionDigits: 3 });
                 const tarip = normalizeCurrencyNumber(row.tarip);
+                const taripSourceInput = normalizeOptionalText(row.taripSource);
+                const taripSource = taripSourceInput === 'MASTER' || taripSourceInput === 'MANUAL'
+                    ? taripSourceInput
+                    : undefined;
+                const customerBillingRateRef = normalizeOptionalText(row.customerBillingRateRef);
+                const customerBillingRateName = normalizeOptionalText(row.customerBillingRateName);
+                const customerBillingRateSnapshot = normalizeCurrencyNumber(row.customerBillingRateSnapshot);
 
             assertIsoDate(date, 'Tanggal baris invoice');
                 if (!normalizeText(row.noSJ) || !normalizeText(row.tujuan)) {
@@ -3537,6 +3561,12 @@ export async function handleFreightNotaUpdate(
                     beratKg,
                     volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
                     tarip: Number.isFinite(tarip) && tarip > 0 ? tarip : 0,
+                    taripSource,
+                    customerBillingRateRef: taripSource === 'MASTER' ? customerBillingRateRef : undefined,
+                    customerBillingRateName: taripSource === 'MASTER' ? customerBillingRateName : undefined,
+                    customerBillingRateSnapshot: taripSource === 'MASTER' && Number.isFinite(customerBillingRateSnapshot) && customerBillingRateSnapshot > 0
+                        ? customerBillingRateSnapshot
+                        : undefined,
                     uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
                     ...normalizeFreightNotaLineMeta(row),
@@ -4190,6 +4220,10 @@ export async function handleFreightNotaUpdate(
             beratKg: row.beratKg,
             volumeM3: row.volumeM3,
             tarip: row.tarip,
+            taripSource: row.taripSource,
+            customerBillingRateRef: row.customerBillingRateRef,
+            customerBillingRateName: row.customerBillingRateName,
+            customerBillingRateSnapshot: row.customerBillingRateSnapshot,
             uangRp: row.uangRp,
             ket: row.ket,
             plt: row.plt,

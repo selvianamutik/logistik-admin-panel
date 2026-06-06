@@ -811,6 +811,24 @@ function isActiveFreightNota(nota: { status?: string | null }) {
     return nota.status !== 'VOID';
 }
 
+function filterRequestsFreightNotaStatus(filterObj: Record<string, unknown>, status: string) {
+    const requestedStatus = filterObj.status;
+    if (requestedStatus === status) {
+        return true;
+    }
+    if (Array.isArray(requestedStatus)) {
+        return requestedStatus.includes(status);
+    }
+    if (requestedStatus && typeof requestedStatus === 'object' && !Array.isArray(requestedStatus)) {
+        const statusOperators = requestedStatus as Record<string, unknown>;
+        return statusOperators.eq === status || (
+            Array.isArray(statusOperators.in) &&
+            statusOperators.in.includes(status)
+        );
+    }
+    return false;
+}
+
 export function applyDerivedDriverVoucherFinancials<T extends {
     initialCashGiven?: number | string | null;
     topUpCount?: number | string | null;
@@ -1104,6 +1122,9 @@ function matchesScalarFilter(actualValue: unknown, expectedValue: unknown) {
             if (operatorValue === '' || operatorValue === null || operatorValue === undefined) {
                 return true;
             }
+            if (operator === 'in') {
+                return Array.isArray(operatorValue) && operatorValue.includes(actualValue as never);
+            }
             const comparison = compareFilterValues(actualValue, operatorValue);
             if (operator === 'eq') return comparison === 0;
             if (operator === 'neq') return comparison !== 0;
@@ -1189,8 +1210,10 @@ export async function getFreightNotaList(params: {
     }
 
     const notaRows = await listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {});
-    const activeNotaRows = notaRows.filter(isActiveFreightNota);
-    const notaIds = activeNotaRows
+    const filterObj = params.filterObj ?? {};
+    const includeVoidedNotas = filterRequestsFreightNotaStatus(filterObj, 'VOID');
+    const visibleNotaRows = includeVoidedNotas ? notaRows : notaRows.filter(isActiveFreightNota);
+    const notaIds = visibleNotaRows
         .map(nota => nota._id)
         .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
     const [paymentRows, refundRows] = await Promise.all([
@@ -1210,11 +1233,10 @@ export async function getFreightNotaList(params: {
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
     const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
     const search = params.search?.trim().toLowerCase() || '';
-    const filterObj = params.filterObj ?? {};
     const orFilters = params.orFilters ?? [];
     const definedFields = params.definedFields ?? [];
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
-    const withDerivedStatus = applyDerivedFreightNotaStatus(activeNotaRows, paymentTotalsByInvoice, invoiceRefundsByRef);
+    const withDerivedStatus = applyDerivedFreightNotaStatus(visibleNotaRows, paymentTotalsByInvoice, invoiceRefundsByRef);
 
     let filtered = withDerivedStatus.filter(nota =>
             matchesFreightNotaFilter(
@@ -1818,7 +1840,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     }
 
     const canViewOrders = hasPageAccess(session.role, 'orders');
-    const canViewInvoices = hasPermission(session.role, 'freightNotas', 'view');
+    const canViewInvoices = hasPermission(session.role, 'invoices', 'view');
     const canViewTripCash = hasPermission(session.role, 'driverVouchers', 'view');
     const canViewFleet = hasPermission(session.role, 'incidents', 'view') || hasPermission(session.role, 'maintenance', 'view');
     const canSeeBorongan = hasPermission(session.role, 'driverBorongans', 'view');

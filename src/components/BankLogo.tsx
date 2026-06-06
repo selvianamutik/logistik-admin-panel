@@ -1,39 +1,14 @@
 import { getBankPreset } from '@/lib/bank-account-page-support';
 
-export default function BankLogo({ name }: { name: string }) {
+export default function BankLogo({ name, size = 40 }: { name: string; size?: number }) {
   const preset = getBankPreset(name);
-  if (preset.logo) {
-    return (
-      <div
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: "0.5rem",
-          background: "#fff",
-          border: "1px solid #e2e8f0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          padding: 4,
-          flexShrink: 0,
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={preset.logo}
-          alt={name}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
-      </div>
-    );
-  }
+  const initials = (name || preset.label || "Bank").trim().slice(0, 3).toUpperCase();
 
   return (
     <div
       style={{
-        width: 40,
-        height: 40,
+        width: size,
+        height: size,
         borderRadius: "0.5rem",
         background: preset.gradient,
         color: "#fff",
@@ -41,10 +16,14 @@ export default function BankLogo({ name }: { name: string }) {
         alignItems: "center",
         justifyContent: "center",
         fontWeight: 800,
+        fontSize: Math.max(12, size * 0.32),
         flexShrink: 0,
+        boxShadow: `0 2px 8px ${preset.color}30`,
       }}
+      aria-label={name}
+      title={name}
     >
-      {name.slice(0, 3).toUpperCase()}
+      {initials}
     </div>
   );
 }

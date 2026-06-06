@@ -45,14 +45,14 @@ type BankTransactionSummary = {
     totalTransactions: number;
 };
 
-const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
-    CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)', logo: '' },
-    BCA: { color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png' },
-    MANDIRI: { color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png' },
-    BRI: { color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/BANK_BRI_logo.svg/200px-Bank_BRI_logo.svg.png' },
-    BNI: { color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/5/55/BNI_logo.svg/200px-BNI_logo.svg.png' },
-    BSI: { color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Bank_Syariah_Indonesia.svg/200px-Bank_Syariah_Indonesia.svg.png' },
-    DEFAULT: { color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)', logo: '' },
+const BANK_STYLES: Record<string, { color: string; gradient: string }> = {
+    CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)' },
+    BCA: { color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)' },
+    MANDIRI: { color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)' },
+    BRI: { color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)' },
+    BNI: { color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)' },
+    BSI: { color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)' },
+    DEFAULT: { color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)' },
 };
 
 function isCashAccount(account: Pick<BankAccount, 'accountType' | 'systemKey'>) {
@@ -60,22 +60,12 @@ function isCashAccount(account: Pick<BankAccount, 'accountType' | 'systemKey'>) 
 }
 
 function getBankInfo(name: string) {
-    const key = Object.keys(BANK_LOGOS).find(bank => bank !== 'DEFAULT' && name.toUpperCase().includes(bank));
-    return BANK_LOGOS[key || 'DEFAULT'];
+    const key = Object.keys(BANK_STYLES).find(bank => bank !== 'DEFAULT' && name.toUpperCase().includes(bank));
+    return BANK_STYLES[key || 'DEFAULT'];
 }
 
 function BankDetailLogo({ name, size = 48 }: { name: string; size?: number }) {
     const info = getBankInfo(name);
-    const [err, setErr] = useState(false);
-
-    if (info.logo && !err) {
-        return (
-            <div style={{ width: size, height: size, borderRadius: '0.6rem', background: '#fff', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', padding: size * 0.08 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={info.logo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={() => setErr(true)} />
-            </div>
-        );
-    }
 
     return (
         <div style={{ width: size, height: size, borderRadius: '0.6rem', background: info.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: size * 0.32, flexShrink: 0, boxShadow: `0 2px 8px ${info.color}40` }}>
@@ -101,7 +91,7 @@ async function fetchEntityByIds<T extends { _id: string }>(entity: string, ids: 
 
     const rows = await Promise.all(
         uniqueIds.map(id =>
-            fetchAdminData<T | null>(`/api/data?entity=${entity}&id=${id}`, `Gagal memuat relasi ${entity}`).catch(() => null)
+            fetchAdminData<T | null>(`/api/data?entity=${entity}&id=${encodeURIComponent(id)}`, `Gagal memuat relasi ${entity}`).catch(() => null)
         )
     );
     return rows.filter((row) => Boolean(row?._id)) as T[];
@@ -287,7 +277,7 @@ export default function BankAccountDetailPage() {
                     [
                         ...paymentRows.map(payment => payment.invoiceRef || ''),
                         ...refundRows.map(refund => refund.sourceInvoiceRef || ''),
-                    ].filter(id => /^nota-/i.test(id))
+                    ]
                 );
 
                 setTransactions(transactionRows);
@@ -366,7 +356,7 @@ export default function BankAccountDetailPage() {
     }
 
     const cashAccount = isCashAccount(account);
-    const bankInfo = cashAccount ? BANK_LOGOS.CASH : getBankInfo(account.bankName);
+    const bankInfo = cashAccount ? BANK_STYLES.CASH : getBankInfo(account.bankName);
     const invoiceBankAccountRefs = Array.isArray(company?.invoiceSettings?.invoiceBankAccountRefs)
         ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : [];

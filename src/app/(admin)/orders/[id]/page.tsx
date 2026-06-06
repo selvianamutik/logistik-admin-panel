@@ -163,8 +163,8 @@ export default function OrderDetailPage() {
     const loadedReferenceSignatureRef = useRef<string>('');
     const loadedVehicleOptionsRef = useRef(false);
     const loadedTripPlanSupportRef = useRef(false);
-    const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
-    const canViewFreightNotas = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
+    const canCreateInvoice = user ? hasPermission(user.role, 'invoices', 'create') : false;
+    const canViewFreightNotas = user ? hasPermission(user.role, 'invoices', 'view') : false;
     const canManageOrderTrips = user ? hasPermission(user.role, 'orders', 'update') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;

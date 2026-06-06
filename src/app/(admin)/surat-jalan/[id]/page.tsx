@@ -190,7 +190,7 @@ export default function SuratJalanDetailPage() {
     const canOpenOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenInvoicePage = user ? hasPageAccess(user.role, 'invoices') : false;
-    const canViewFreightNotas = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
+    const canViewFreightNotas = user ? hasPermission(user.role, 'invoices', 'view') : false;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canEditSuratJalan = canManageDeliveryStatus;
     const currentPath = pathname || `/surat-jalan/${encodeURIComponent(id)}`;

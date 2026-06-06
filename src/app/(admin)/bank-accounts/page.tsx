@@ -213,8 +213,16 @@ export default function BankAccountsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.bankName || !form.accountNumber) {
-      addToast("error", "Nama bank dan nomor rekening wajib");
+    const normalizedForm = {
+      ...form,
+      bankName: form.bankName.trim(),
+      accountNumber: form.accountNumber.trim(),
+      accountHolder: form.accountHolder.trim(),
+      notes: form.notes.trim(),
+    };
+
+    if (!normalizedForm.bankName || !normalizedForm.accountNumber || !normalizedForm.accountHolder) {
+      addToast("error", "Nama bank, nomor rekening, dan atas nama wajib diisi");
       return;
     }
 
@@ -225,14 +233,14 @@ export default function BankAccountsPage() {
           data: {
             id: editAccount._id,
             updates: {
-              bankName: form.bankName,
-              accountNumber: form.accountNumber,
-              accountHolder: form.accountHolder,
-              notes: form.notes,
+              bankName: normalizedForm.bankName,
+              accountNumber: normalizedForm.accountNumber,
+              accountHolder: normalizedForm.accountHolder,
+              notes: normalizedForm.notes,
             },
           },
         }
-      : { entity: "bank-accounts", data: { ...form, active: true } };
+      : { entity: "bank-accounts", data: { ...normalizedForm, active: true } };
 
     setSavingAccount(true);
     try {
@@ -821,13 +829,16 @@ export default function BankAccountsPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Atas Nama</label>
+                  <label className="form-label">
+                    Atas Nama <span className="required">*</span>
+                  </label>
                   <input
                     className="form-input"
                     value={form.accountHolder}
                     onChange={(event) =>
                       setForm({ ...form, accountHolder: event.target.value })
                     }
+                    placeholder="Nama pemilik rekening"
                   />
                 </div>
               </div>

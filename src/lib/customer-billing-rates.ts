@@ -1,13 +1,18 @@
 import type { FreightNotaBillingMode } from './types';
 
 type CustomerBillingRateLike = {
+    _id?: string;
+    _type?: string;
     customerRef?: string;
+    customerName?: string;
     basis?: string;
     rate?: number;
     active?: boolean;
     serviceRef?: string;
+    serviceName?: string;
     routeFrom?: string;
     routeTo?: string;
+    notes?: string;
 };
 
 function normalizeText(value: unknown) {

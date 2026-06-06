@@ -209,10 +209,10 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'surat-jalan-records': 'deliveryOrders',
     'surat-jalan-record-items': 'deliveryOrders',
     'tracking-logs': 'deliveryOrders',
-    payments: 'freightNotas',
-    'customer-receipts': 'freightNotas',
-    'customer-overpayment-refunds': 'freightNotas',
-    'invoice-adjustments': 'freightNotas',
+    payments: 'invoices',
+    'customer-receipts': 'invoices',
+    'customer-overpayment-refunds': 'invoices',
+    'invoice-adjustments': 'invoices',
     expenses: 'expenses',
     vehicles: 'vehicles',
     maintenances: 'maintenance',
@@ -226,10 +226,10 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'driver-vouchers': 'driverVouchers',
     'driver-voucher-disbursements': 'driverVouchers',
     'driver-voucher-items': 'driverVouchers',
-    'freight-notas': 'freightNotas',
-    'freight-nota-items': 'freightNotas',
-    invoices: 'freightNotas',
-    'invoice-items': 'freightNotas',
+    'freight-notas': 'invoices',
+    'freight-nota-items': 'invoices',
+    invoices: 'invoices',
+    'invoice-items': 'invoices',
     'driver-borongans': 'driverBorongans',
     'driver-borogan-items': 'driverBorongans',
     'driver-borongan-items': 'driverBorongans',
@@ -869,7 +869,7 @@ export async function GET(request: Request) {
     }
 
     if (entity === 'customer-overpayments') {
-        if (!hasPermission(session.role, 'freightNotas', 'view')) {
+        if (!hasPermission(session.role, 'invoices', 'view')) {
             return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {

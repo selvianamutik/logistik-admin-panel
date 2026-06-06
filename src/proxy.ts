@@ -22,7 +22,7 @@ const INTERNAL_PATH_MODULES: InternalPathAccess[] = [
     { path: '/trips', module: 'deliveryOrders' },
     { path: '/surat-jalan', module: 'deliveryOrders' },
     { path: '/delivery-orders', module: 'deliveryOrders' },
-    { path: '/invoices', module: 'freightNotas' },
+    { path: '/invoices', module: 'invoices' },
     { path: '/employees', module: 'employees' },
     { path: '/attendance', module: 'attendance' },
     { path: '/suppliers', module: 'suppliers' },
@@ -79,6 +79,12 @@ function getRequiredModuleAction(pathname: string): keyof ModulePermissions {
         return 'update';
     }
     return 'view';
+}
+
+function redirectToAccessDeniedDashboard(request: NextRequest) {
+    const targetUrl = new URL('/dashboard', request.url);
+    targetUrl.searchParams.set('access', 'denied');
+    return NextResponse.redirect(targetUrl);
 }
 
 async function getLiveSessionUser(
@@ -207,7 +213,7 @@ export async function proxy(request: NextRequest) {
             : true;
 
         if (targetAccess && !hasAccess) {
-            return NextResponse.redirect(new URL('/dashboard', request.url));
+            return redirectToAccessDeniedDashboard(request);
         }
 
         const response = NextResponse.next();

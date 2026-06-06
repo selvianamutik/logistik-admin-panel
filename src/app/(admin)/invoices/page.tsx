@@ -107,10 +107,10 @@ export default function NotaListPage() {
     const [refundAmount, setRefundAmount] = useState(0);
     const [refundBankRef, setRefundBankRef] = useState('');
     const [refundNote, setRefundNote] = useState('');
-    const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
-    const canCreateReceipt = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
-    const canExportInvoices = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
-    const canPrintInvoices = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
+    const canCreateInvoice = user ? hasPermission(user.role, 'invoices', 'create') : false;
+    const canCreateReceipt = user ? hasPermission(user.role, 'invoices', 'update') : false;
+    const canExportInvoices = user ? hasPermission(user.role, 'invoices', 'export') : false;
+    const canPrintInvoices = user ? hasPermission(user.role, 'invoices', 'print') : false;
     const canManageOverpayments = canCreateReceipt;
     const canOpenCustomers = user ? hasPageAccess(user.role, 'customers') : false;
     const dateRange = useMemo(
@@ -237,6 +237,9 @@ export default function NotaListPage() {
             parseWholeMoneyLike(nota.totalPaidEffective ?? matchingPaymentTotals[nota._id] ?? 0);
         const derivedSummary = matchingNotas.reduce(
             (acc, nota) => {
+                if (nota.status === 'VOID') {
+                    return acc;
+                }
                 const paidAmount = getEffectivePaidAmount(nota);
                 const derivedStatus = deriveReceivableStatus(nota, paidAmount);
                 acc.filteredNetTotal += getReceivableNetAmount(nota);
@@ -907,7 +910,7 @@ export default function NotaListPage() {
                     <div className="table-toolbar-left finance-filter-toolbar">
                         <div className="table-search finance-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari invoice, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                         <select className="form-select finance-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                            <option value="">Semua Status</option>
+                            <option value="">Semua Status Aktif</option>
                             {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
                         <select className="form-select finance-filter" value={periodMode} onChange={event => setPeriodMode(event.target.value as FinancePeriodMode)}>

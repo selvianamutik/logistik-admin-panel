@@ -66,6 +66,12 @@ const OWNER_FULL: ModulePermissions = {
     print: true,
 };
 
+const INVOICE_PERMISSIONS: Partial<Record<EffectiveUserRole, ModulePermissions>> = {
+    OWNER: OWNER_FULL,
+    FINANCE: OWNER_FULL,
+    OPERASIONAL: { ...DENY_ALL, view: true, print: true },
+};
+
 export const INTERNAL_USER_ROLE_OPTIONS: InternalUserRole[] = [
     'OWNER',
     'OPERASIONAL',
@@ -75,6 +81,10 @@ export const INTERNAL_USER_ROLE_OPTIONS: InternalUserRole[] = [
 
 export function normalizeUserRole(role: UserRole): EffectiveUserRole {
     return role === 'ADMIN' ? 'OPERASIONAL' : role;
+}
+
+function normalizeAppModule(module: AppModule): AppModule {
+    return module === 'freightNotas' ? 'invoices' : module;
 }
 
 const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, ModulePermissions>>> = {
@@ -121,11 +131,7 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
         FINANCE: { ...DENY_ALL, view: true, print: true },
         ARMADA: { ...DENY_ALL, view: true, print: true },
     },
-    invoices: {
-        OWNER: OWNER_FULL,
-        FINANCE: OWNER_FULL,
-        OPERASIONAL: { ...DENY_ALL, view: true, print: true },
-    },
+    invoices: INVOICE_PERMISSIONS,
     customers: {
         OWNER: OWNER_FULL,
         OPERASIONAL: OWNER_FULL,
@@ -209,11 +215,7 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
         OPERASIONAL: OWNER_FULL,
         FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
-    freightNotas: {
-        OWNER: OWNER_FULL,
-        OPERASIONAL: { ...DENY_ALL, view: true, print: true },
-        FINANCE: OWNER_FULL,
-    },
+    freightNotas: INVOICE_PERMISSIONS,
     driverBorongans: {
         OWNER: OWNER_FULL,
     },
@@ -226,7 +228,7 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
 
 export function hasPermission(role: UserRole, module: AppModule, action: keyof ModulePermissions): boolean {
     const normalizedRole = normalizeUserRole(role);
-    const modulePerms = permissionMatrix[module];
+    const modulePerms = permissionMatrix[normalizeAppModule(module)];
     if (!modulePerms) return false;
     const rolePerms = modulePerms[normalizedRole];
     if (!rolePerms) return false;
@@ -235,18 +237,19 @@ export function hasPermission(role: UserRole, module: AppModule, action: keyof M
 
 export function getModulePermissions(role: UserRole, module: AppModule): ModulePermissions {
     const normalizedRole = normalizeUserRole(role);
-    return permissionMatrix[module]?.[normalizedRole] || DENY_ALL;
+    return permissionMatrix[normalizeAppModule(module)]?.[normalizedRole] || DENY_ALL;
 }
 
 export function hasPageAccess(role: UserRole, module: AppModule): boolean {
     const normalizedRole = normalizeUserRole(role);
-    if (module === 'orders' && (normalizedRole === 'FINANCE' || normalizedRole === 'ARMADA')) {
+    const normalizedModule = normalizeAppModule(module);
+    if (normalizedModule === 'orders' && (normalizedRole === 'FINANCE' || normalizedRole === 'ARMADA')) {
         return false;
     }
-    if (module === 'driverBorongans' && normalizedRole !== 'OWNER') {
+    if (normalizedModule === 'driverBorongans' && normalizedRole !== 'OWNER') {
         return false;
     }
-    return hasPermission(role, module, 'view');
+    return hasPermission(role, normalizedModule, 'view');
 }
 
 export function filterExpensesByRole(expenses: Expense[], role: UserRole): Expense[] {
@@ -320,7 +323,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
         {
             label: 'Invoice & Kas',
             items: [
-                { label: 'Invoice', href: '/invoices', icon: 'Receipt', module: 'freightNotas' },
+                { label: 'Invoice', href: '/invoices', icon: 'Receipt', module: 'invoices' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
                 { label: 'Laporan Keuangan', href: '/accounting/statements', icon: 'BarChart3', module: 'reports' },
                 { label: 'Jurnal Umum', href: '/accounting/journals', icon: 'ScrollText', module: 'reports' },

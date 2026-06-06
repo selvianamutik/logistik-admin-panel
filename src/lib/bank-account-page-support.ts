@@ -20,43 +20,37 @@ export type BankTransferFormState = {
 
 export const BANK_PRESETS: Record<
   string,
-  { label: string; color: string; gradient: string; logo: string }
+  { label: string; color: string; gradient: string }
 > = {
   CASH: {
     label: "Kas Tunai",
     color: "#14532d",
     gradient: "linear-gradient(135deg, #14532d 0%, #16a34a 100%)",
-    logo: "",
   },
   BCA: {
     label: "BCA",
     color: "#003b7b",
     gradient: "linear-gradient(135deg, #003b7b 0%, #0060c7 100%)",
-    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png",
   },
   Mandiri: {
     label: "Mandiri",
     color: "#003868",
     gradient: "linear-gradient(135deg, #003868 0%, #005ba5 100%)",
-    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png",
   },
   BRI: {
     label: "BRI",
     color: "#00529c",
     gradient: "linear-gradient(135deg, #00529c 0%, #0078d4 100%)",
-    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/BANK_BRI_logo.svg/200px-BANK_BRI_logo.svg.png",
   },
   BNI: {
     label: "BNI",
     color: "#e35205",
     gradient: "linear-gradient(135deg, #e35205 0%, #f97316 100%)",
-    logo: "https://upload.wikimedia.org/wikipedia/id/thumb/5/55/BNI_logo.svg/200px-BNI_logo.svg.png",
   },
   OTHER: {
     label: "Lainnya",
     color: "#6b7280",
     gradient: "linear-gradient(135deg, #374151 0%, #6b7280 100%)",
-    logo: "",
   },
 };
 

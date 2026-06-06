@@ -982,6 +982,10 @@ export interface FreightNotaItem {
   beratKg: number;
   volumeM3?: number;
   tarip: number;
+  taripSource?: 'MASTER' | 'MANUAL';
+  customerBillingRateRef?: string;
+  customerBillingRateName?: string;
+  customerBillingRateSnapshot?: number;
   uangRp: number;
   ket?: string;
   plt?: string;

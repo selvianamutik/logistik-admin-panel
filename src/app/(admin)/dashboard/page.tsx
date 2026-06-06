@@ -10,13 +10,22 @@ import { getDashboardNotaNetAmount, getRecentNotaAction, getRecentOrderAction, t
 import { formatCurrency, formatDate, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import { useSearchParams } from 'next/navigation';
 
 export default function DashboardPage() {
     const { user } = useApp();
     const { addToast } = useToast();
+    const searchParams = useSearchParams();
+    const accessDenied = searchParams.get('access') === 'denied';
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (accessDenied) {
+            addToast('error', 'Akses halaman dibatasi untuk role akun ini');
+        }
+    }, [accessDenied, addToast]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -120,7 +129,7 @@ export default function DashboardPage() {
     const canSeeFinancialTotals = user ? (user.role === 'OWNER' || user.role === 'FINANCE') : false;
     const canViewOrders = user ? hasPageAccess(user.role, 'orders') : false;
     const canViewDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'view') : false;
-    const canViewInvoices = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
+    const canViewInvoices = user ? hasPermission(user.role, 'invoices', 'view') : false;
     const canViewIncidents = user ? hasPermission(user.role, 'incidents', 'view') : false;
     const canViewMaintenance = user ? hasPermission(user.role, 'maintenance', 'view') : false;
     const canViewTripCash = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
@@ -132,6 +141,27 @@ export default function DashboardPage() {
                     <h1 className="page-title">Dashboard</h1>
                 </div>
             </div>
+
+            {accessDenied && (
+                <div
+                    className="card"
+                    style={{
+                        border: '1px solid #f59e0b',
+                        background: '#fffbeb',
+                        marginBottom: '1rem',
+                    }}
+                >
+                    <div className="card-body" style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        <AlertTriangle size={20} style={{ color: '#b45309', flexShrink: 0, marginTop: 2 }} />
+                        <div>
+                            <div style={{ fontWeight: 700, color: '#92400e' }}>Akses halaman dibatasi</div>
+                            <div style={{ color: '#78350f', fontSize: '0.9rem', marginTop: '0.2rem' }}>
+                                Role akun ini tidak punya izin membuka halaman tersebut.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* KPI Cards */}
             <div className="kpi-grid">
