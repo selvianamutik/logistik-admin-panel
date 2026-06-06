@@ -1739,7 +1739,7 @@ export async function handleCustomerOverpaymentRefund(
     }
     if (amount > openRefundableAmount) {
         return NextResponse.json(
-            { error: `Nominal refund melebihi kelebihan bayar terbuka (${openRefundableAmount})` },
+            { error: `Nominal refund melebihi kelebihan bayar terbuka (${formatAuditMoney(openRefundableAmount)})` },
             { status: 400 }
         );
     }
@@ -1747,7 +1747,7 @@ export async function handleCustomerOverpaymentRefund(
     const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankAcc.currentBalance, amount);
     if (nextBalance < 0) {
         return NextResponse.json(
-            { error: `Saldo ${bankAcc.bankName} tidak cukup untuk refund. Saldo tersedia ${startingBalance}` },
+            { error: `Saldo ${bankAcc.bankName} tidak cukup untuk refund. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
             { status: 409 }
         );
     }
@@ -1862,7 +1862,7 @@ export async function handleBankTransfer(
     const { startingBalance: fromStartingBalance, nextBalance: fromBalance } = computeLedgerDebitBalance(fromAcc.currentBalance, amount);
     if (fromBalance < 0) {
         return NextResponse.json(
-            { error: `Saldo ${fromAcc.bankName} tidak cukup untuk transfer. Saldo tersedia ${fromStartingBalance}` },
+            { error: `Saldo ${fromAcc.bankName} tidak cukup untuk transfer. Saldo tersedia ${formatAuditMoney(fromStartingBalance)}` },
             { status: 409 }
         );
     }
@@ -2419,7 +2419,7 @@ export async function handleExpenseCreate(
         const { startingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(bankAcc.currentBalance, amount);
         if (newBalance < 0) {
             return NextResponse.json(
-                { error: `Saldo ${bankAcc.bankName} tidak cukup untuk pengeluaran. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${bankAcc.bankName} tidak cukup untuk pengeluaran. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }

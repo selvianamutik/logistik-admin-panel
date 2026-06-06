@@ -22,6 +22,8 @@ import type { BankAccount, DriverBorongan, DriverVoucher, Expense, ExpenseCatego
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { isManualExpenseCategory } from '@/lib/expense-category-scope';
 
+type ExpensePaymentMode = 'paid' | 'payable';
+
 type ExpenseCategoryTotal = {
     name: string;
     total: number;
@@ -59,6 +61,7 @@ const DEFAULT_EXPENSE_FORM = () => ({
     note: '',
     description: '',
     privacyLevel: 'internal' as 'internal' | 'ownerOnly',
+    paymentMode: 'paid' as ExpensePaymentMode,
     bankAccountRef: '',
     bankAccountName: '',
 });
@@ -254,13 +257,15 @@ export default function ExpensesPage() {
         [dateFrom, dateTo, monthIndex, periodMode, year]
     );
     const isValidDateRange = Boolean(dateRange.startDate && dateRange.endDate && dateRange.startDate <= dateRange.endDate);
+    const isPaidNow = form.paymentMode === 'paid';
+    const hasValidPaymentAccount = Boolean(form.bankAccountRef && accountMap.has(form.bankAccountRef));
     const isFormValid = Boolean(
         form.categoryRef
         && manualCategories.some(category => category._id === form.categoryRef)
         && form.date
         && /^\d{4}-\d{2}-\d{2}$/.test(form.date)
         && Number(form.amount) > 0
-        && (!form.bankAccountRef || accountMap.has(form.bankAccountRef))
+        && (form.paymentMode === 'payable' || hasValidPaymentAccount)
     );
 
     useEffect(() => {
@@ -411,16 +416,26 @@ export default function ExpensesPage() {
             addToast('error', 'Kategori ini tidak boleh dipakai untuk pengeluaran manual');
             return;
         }
-        if (form.bankAccountRef && !accountMap.has(form.bankAccountRef)) {
-            addToast('error', 'Rekening/kas tidak valid');
+        if (isPaidNow && !hasValidPaymentAccount) {
+            addToast('error', 'Pilih rekening/kas yang dipakai untuk membayar');
             return;
         }
         setSaving(true);
         try {
+            const { paymentMode, bankAccountRef, bankAccountName, ...expenseFormData } = form;
+            const expenseData: Record<string, unknown> = {
+                ...expenseFormData,
+                categoryName: category?.name || '',
+            };
+            if (paymentMode === 'paid') {
+                expenseData.bankAccountRef = bankAccountRef;
+                expenseData.bankAccountName = bankAccountName;
+            }
+
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'expenses', data: { ...form, categoryName: category?.name || '' } }),
+                body: JSON.stringify({ entity: 'expenses', data: expenseData }),
             });
             const payload = await res.json();
             if (!res.ok) {
@@ -740,12 +755,30 @@ export default function ExpensesPage() {
                                 <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><FormattedNumberInput allowDecimal={false} value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} disabled={saving} placeholder="Ketik nominal pengeluaran" /></div>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={event => setForm({ ...form, note: event.target.value })} disabled={saving} /></div>
-                            <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas</label>
-                                <select className="form-select" value={form.bankAccountRef} onChange={event => {
+                            <div className="form-group"><label className="form-label">Status Pembayaran <span className="required">*</span></label>
+                                <select className="form-select" value={form.paymentMode} onChange={event => {
+                                    const nextMode = event.target.value as ExpensePaymentMode;
+                                    setForm(current => ({
+                                        ...current,
+                                        paymentMode: nextMode,
+                                        ...(nextMode === 'payable' ? { bankAccountRef: '', bankAccountName: '' } : {}),
+                                    }));
+                                }} disabled={saving}>
+                                    <option value="paid">Sudah dibayar dari rekening/kas</option>
+                                    <option value="payable">Belum dibayar (catat hutang biaya)</option>
+                                </select>
+                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>
+                                    {isPaidNow
+                                        ? 'Saldo rekening/kas akan langsung berkurang.'
+                                        : 'Tidak mengurangi kas sekarang; masuk catatan hutang biaya.'}
+                                </div>
+                            </div>
+                            <div className="form-group"><label className="form-label">Rekening / Kas Pembayaran {isPaidNow && <span className="required">*</span>}</label>
+                                <select className="form-select" value={isPaidNow ? form.bankAccountRef : ''} onChange={event => {
                                     const account = bankAccounts.find(item => item._id === event.target.value);
                                     setForm({ ...form, bankAccountRef: event.target.value, bankAccountName: account?.bankName || '' });
-                                }} disabled={saving}>
-                                    <option value="">-- Tidak dipilih --</option>
+                                }} disabled={saving || !isPaidNow}>
+                                    <option value="">{isPaidNow ? 'Pilih rekening/kas' : 'Tidak dipakai karena belum dibayar'}</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
                             </div>

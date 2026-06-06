@@ -114,7 +114,7 @@ export default function BankAccountDetailPage() {
     });
     const [relatedPayments, setRelatedPayments] = useState<Array<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>>([]);
     const [relatedRefunds, setRelatedRefunds] = useState<Array<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>>([]);
-    const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>>([]);
+    const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef' | 'relatedMaintenanceRef'>>>([]);
     const [relatedPurchases, setRelatedPurchases] = useState<Array<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>>([]);
     const [relatedFreightNotas, setRelatedFreightNotas] = useState<Array<Pick<FreightNota, '_id'>>>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -133,6 +133,7 @@ export default function BankAccountDetailPage() {
     const canOpenDriverBorongans = user ? hasPageAccess(user.role, 'driverBorongans') : false;
     const canOpenVehicles = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenIncidents = user ? hasPageAccess(user.role, 'incidents') : false;
+    const canOpenMaintenance = user ? hasPageAccess(user.role, 'maintenance') : false;
     const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
     const dateRange = useMemo(
         () => getFinancePeriodDateRange({ mode: periodMode, monthIndex, year, dateFrom, dateTo }),
@@ -264,7 +265,7 @@ export default function BankAccountDetailPage() {
                     'customer-overpayment-refunds',
                     transactionRows.map(transaction => transaction.relatedOverpaymentRefundRef || '')
                 );
-                const expenseRows = await fetchEntityByIds<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>(
+                const expenseRows = await fetchEntityByIds<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef' | 'relatedMaintenanceRef'>>(
                     'expenses',
                     transactionRows.map(transaction => transaction.relatedExpenseRef || '')
                 );
@@ -568,6 +569,7 @@ export default function BankAccountDetailPage() {
                           canOpenDriverBorongans,
                           canOpenVehicles,
                           canOpenIncidents,
+                          canOpenMaintenance,
                           canOpenPurchases,
                         },
                       });
@@ -630,6 +632,7 @@ export default function BankAccountDetailPage() {
                         canOpenDriverBorongans,
                         canOpenVehicles,
                         canOpenIncidents,
+                        canOpenMaintenance,
                         canOpenPurchases,
                       },
                     });

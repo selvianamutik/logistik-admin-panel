@@ -156,6 +156,10 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+function formatAuditMoney(amount: number) {
+    return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
 async function getDeliveryOrderBillingMutationLockMessage(id: string, label = 'SJ/barang') {
     const hasNotaReference = (await listDocumentsByFilter<{ _id: string; notaRef?: string; status?: string }>('freightNotaItem', {
         doRef: id,
@@ -2801,7 +2805,7 @@ export async function handleDeliveryOrderCancelTrip(
         );
         if (nextBalance < 0) {
             return NextResponse.json(
-                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }
@@ -2914,7 +2918,7 @@ export async function handleDeliveryOrderCancelTrip(
         );
         if (newBalance < 0) {
             return NextResponse.json(
-                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }
@@ -3085,7 +3089,7 @@ export async function handleOrderTripPlanCancel(
         );
         if (nextBalance < 0) {
             return NextResponse.json(
-                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }
@@ -3123,7 +3127,7 @@ export async function handleOrderTripPlanCancel(
         );
         if (newBalance < 0) {
             return NextResponse.json(
-                { error: `Rencana trip sudah dibatalkan, tetapi saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${startingBalance}` },
+                { error: `Rencana trip sudah dibatalkan, tetapi saldo ${cancelExpenseBankAccount.bankName} tidak cukup untuk biaya batal trip. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }

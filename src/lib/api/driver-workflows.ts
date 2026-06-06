@@ -116,6 +116,10 @@ type VoucherBankTransaction = {
     relatedVoucherRef?: string;
 };
 
+function formatAuditMoney(amount: number) {
+    return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
 function getExpenseCategoryKey(value: unknown) {
     return (normalizeOptionalText(value) || '').toLowerCase();
 }
@@ -730,7 +734,7 @@ export async function handleBoronganPayment(
         const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankAccount.currentBalance, derivedTotalAmount);
         if (nextBalance < 0) {
             return NextResponse.json(
-                { error: `Saldo ${bankAccount.bankName} tidak cukup untuk pembayaran borongan. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${bankAccount.bankName} tidak cukup untuk pembayaran borongan. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }
@@ -1074,7 +1078,7 @@ export async function handleDriverVoucherCreate(
     const { startingBalance: issueStartingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(issueBank.currentBalance, cashGiven);
     if (newBalance < 0) {
         return NextResponse.json(
-            { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${issueStartingBalance}` },
+            { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${formatAuditMoney(issueStartingBalance)}` },
             { status: 409 }
         );
     }
@@ -1225,7 +1229,7 @@ export async function handleDriverVoucherTopUp(
     const { startingBalance: bankStartingBalance, nextBalance: nextBankBalance } = computeLedgerDebitBalance(bank.currentBalance, amount);
     if (nextBankBalance < 0) {
         return NextResponse.json(
-            { error: `Saldo ${bank.bankName} tidak cukup untuk tambahan bon. Saldo tersedia ${bankStartingBalance}` },
+            { error: `Saldo ${bank.bankName} tidak cukup untuk tambahan bon. Saldo tersedia ${formatAuditMoney(bankStartingBalance)}` },
             { status: 409 }
         );
     }
@@ -1804,7 +1808,7 @@ export async function handleDriverVoucherDisbursementUpdate(
             const nextSameBankBalance = oldBankBalanceAfterReversal - amount;
             if (nextSameBankBalance < 0) {
                 return NextResponse.json(
-                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${oldBankBalanceAfterReversal}` },
+                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${formatAuditMoney(oldBankBalanceAfterReversal)}` },
                     { status: 409 }
                 );
             }
@@ -1814,7 +1818,7 @@ export async function handleDriverVoucherDisbursementUpdate(
             newBankFinalBalance = readLedgerBalance(newBank.currentBalance) - amount;
             if (newBankFinalBalance < 0) {
                 return NextResponse.json(
-                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${readLedgerBalance(newBank.currentBalance)}` },
+                    { error: `Saldo ${newBank.bankName} tidak cukup untuk perubahan tambahan bon. Saldo tersedia ${formatAuditMoney(readLedgerBalance(newBank.currentBalance))}` },
                     { status: 409 }
                 );
             }
@@ -2107,7 +2111,7 @@ export async function handleDriverVoucherSettlement(
         if (!alreadyPostedSettlementTransaction && balance < 0 && nextBankBalance < 0) {
             const { startingBalance } = computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount);
             return NextResponse.json(
-                { error: `Saldo ${settlementBank.bankName} tidak cukup untuk penyelesaian uang jalan. Saldo tersedia ${startingBalance}` },
+                { error: `Saldo ${settlementBank.bankName} tidak cukup untuk penyelesaian uang jalan. Saldo tersedia ${formatAuditMoney(startingBalance)}` },
                 { status: 409 }
             );
         }
@@ -2208,7 +2212,7 @@ export async function handleDriverVoucherIssueRepair(
     const { startingBalance: repairStartingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(bank.currentBalance, initialAmount);
     if (newBalance < 0) {
         return NextResponse.json(
-            { error: `Saldo ${bank.bankName} tidak cukup untuk rekonsiliasi pencairan bon. Saldo tersedia ${repairStartingBalance}` },
+            { error: `Saldo ${bank.bankName} tidak cukup untuk rekonsiliasi pencairan bon. Saldo tersedia ${formatAuditMoney(repairStartingBalance)}` },
             { status: 409 }
         );
     }

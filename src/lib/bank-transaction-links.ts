@@ -17,6 +17,7 @@ type TransactionLinkPermissions = {
   canOpenDriverBorongans?: boolean;
   canOpenVehicles?: boolean;
   canOpenIncidents?: boolean;
+  canOpenMaintenance?: boolean;
   canOpenPurchases?: boolean;
 };
 
@@ -41,7 +42,7 @@ export function buildExpenseLookup(
   expenses: Array<
     Pick<
       Expense,
-      "_id" | "voucherRef" | "boronganRef" | "relatedVehicleRef" | "relatedIncidentRef"
+      "_id" | "voucherRef" | "boronganRef" | "relatedVehicleRef" | "relatedIncidentRef" | "relatedMaintenanceRef"
     >
   >,
 ) {
@@ -75,7 +76,7 @@ export function resolveBankTransactionSourceLink(params: {
     string,
     Pick<
       Expense,
-      "_id" | "voucherRef" | "boronganRef" | "relatedVehicleRef" | "relatedIncidentRef"
+      "_id" | "voucherRef" | "boronganRef" | "relatedVehicleRef" | "relatedIncidentRef" | "relatedMaintenanceRef"
     >
   >;
   purchasesById?: Map<
@@ -182,6 +183,14 @@ export function resolveBankTransactionSourceLink(params: {
       return {
         href: `/fleet/incidents/${expense.relatedIncidentRef}`,
         label: "Buka Insiden",
+      };
+    }
+    if (expense?.relatedMaintenanceRef && permissions?.canOpenMaintenance) {
+      return {
+        href: expense.relatedVehicleRef
+          ? `/fleet/maintenance?vehicleRef=${expense.relatedVehicleRef}`
+          : "/fleet/maintenance",
+        label: "Buka Maintenance",
       };
     }
     if (expense?.relatedVehicleRef && permissions?.canOpenVehicles) {
