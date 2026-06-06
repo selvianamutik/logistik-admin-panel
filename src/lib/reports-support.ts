@@ -291,7 +291,7 @@ export function buildProfitLossExportRows(
     const revenueRefundRows = filteredOverpaymentRefunds.filter(isInvoiceOverpaymentRefund);
     return [
         ...filteredPayments.map(item => ({
-            tipe: 'Pendapatan',
+            tipe: 'Kas Masuk',
             tanggal: item.date,
             deskripsi: item.note || 'Pembayaran customer',
             jumlah: parseWholeMoneyLike(item.amount),
@@ -303,7 +303,7 @@ export function buildProfitLossExportRows(
             jumlah: -parseWholeMoneyLike(item.amount),
         })),
         ...filteredExpenses.map(item => ({
-            tipe: 'Pengeluaran',
+            tipe: 'Kas Keluar',
             tanggal: item.date,
             deskripsi: item.note || item.categoryName || '-',
             jumlah: -parseWholeMoneyLike(item.amount),

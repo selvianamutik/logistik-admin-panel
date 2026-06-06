@@ -12,6 +12,7 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
 import type {
     AccountingAccountType,
     BankAccount,
@@ -181,6 +182,45 @@ async function buildJournalNumber(entryDate: string, existing?: JournalEntry | n
     return formatJournalNumber(entryDate, maxSequence + 1);
 }
 
+function isDuplicateJournalNumberError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return /entry_number|journal_entries_entry_number|duplicate key|unique constraint|23505/i.test(message);
+}
+
+async function createJournalEntryWithRetry(entryDoc: JournalEntry, entryDate: string) {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const nextEntry = {
+            ...entryDoc,
+            entryNumber: await buildJournalNumber(entryDate),
+        };
+        try {
+            await createDocument(nextEntry as unknown as { _type: string; [key: string]: unknown });
+            return nextEntry;
+        } catch (error) {
+            lastError = error;
+            if (!isDuplicateJournalNumberError(error)) {
+                throw error;
+            }
+            clearRelationalReadCache();
+        }
+    }
+
+    throw lastError instanceof Error
+        ? lastError
+        : new Error('Gagal membuat nomor jurnal yang unik');
+}
+
+function resolveExpenseEntity(expense: Expense) {
+    if (expense.relatedVehicleRef) return { entityRef: expense.relatedVehicleRef, entityType: 'vehicle' };
+    if (expense.voucherRef) return { entityRef: expense.voucherRef, entityType: 'driverVoucher' };
+    if (expense.relatedIncidentRef) return { entityRef: expense.relatedIncidentRef, entityType: 'incident' };
+    if (expense.relatedMaintenanceRef) return { entityRef: expense.relatedMaintenanceRef, entityType: 'maintenance' };
+    if (expense.boronganRef) return { entityRef: expense.boronganRef, entityType: 'driverBorongan' };
+    if (expense.relatedDeliveryOrderRef) return { entityRef: expense.relatedDeliveryOrderRef, entityType: 'deliveryOrder' };
+    return { entityRef: undefined, entityType: undefined };
+}
+
 function sameOptionalText(left: unknown, right: unknown) {
     return String(left || '') === String(right || '');
 }
@@ -282,12 +322,11 @@ export async function postJournalEntry(
         }
 
         const entryId = `journal-${crypto.randomUUID()}`;
-        const entryNumber = await buildJournalNumber(input.entryDate);
         const now = new Date().toISOString();
         const entryDoc: JournalEntry = {
             _id: entryId,
             _type: 'journalEntry',
-            entryNumber,
+            entryNumber: '',
             entryDate: input.entryDate,
             memo: input.memo,
             sourceType: input.sourceType,
@@ -303,7 +342,7 @@ export async function postJournalEntry(
             postedByName: session.name,
         };
 
-        await createDocument(entryDoc as unknown as { _type: string; [key: string]: unknown });
+        const createdEntry = await createJournalEntryWithRetry(entryDoc, input.entryDate);
 
         for (const [index, line] of resolvedLines.entries()) {
             const account = line.accountDocument;
@@ -325,7 +364,7 @@ export async function postJournalEntry(
             await createDocument(lineDoc as unknown as { _type: string; [key: string]: unknown });
         }
 
-        return entryDoc;
+        return createdEntry;
     } catch (error) {
         if (isMissingAccountingStorageError(error)) {
             console.warn('[accounting] jurnal dilewati karena tabel akuntansi belum tersedia', error);
@@ -538,6 +577,7 @@ export async function postExpenseJournal(
     bankAccount?: BankAccountSummary | null,
 ) {
     const amount = cleanLineAmount(expense.amount);
+    const expenseEntity = resolveExpenseEntity(expense);
     await postJournalEntry(session, {
         entryDate: expense.date,
         memo: expense.description || expense.note || `Pengeluaran ${expense.categoryName || ''}`.trim(),
@@ -549,8 +589,8 @@ export async function postExpenseJournal(
             {
                 account: resolveExpenseAccount(expense),
                 debit: amount,
-                entityRef: expense.relatedVehicleRef || expense.voucherRef || expense.relatedIncidentRef || expense.relatedMaintenanceRef,
-                entityType: expense.relatedVehicleRef ? 'vehicle' : expense.voucherRef ? 'driverVoucher' : undefined,
+                entityRef: expenseEntity.entityRef,
+                entityType: expenseEntity.entityType,
             },
             {
                 account: bankAccount ? resolveCashBankAccount(bankAccount) : 'accrued_expense',

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import {
@@ -26,6 +26,47 @@ import {
 import type { ChartOfAccount, JournalEntry, JournalLine } from "@/lib/types";
 
 type LedgerPeriodMode = Exclude<FinancePeriodMode, "all">;
+const JOURNAL_LINE_ENTRY_ID_BATCH_SIZE = 75;
+
+function buildAccountingEntryUrl(endDate: string) {
+  const params = new URLSearchParams({
+    entity: "journal-entries",
+    sortField: "entryDate",
+    sortDir: "asc",
+    filter: JSON.stringify({ entryDate: { lte: endDate } }),
+  });
+  return `/api/data?${params.toString()}`;
+}
+
+function buildJournalLinesUrl(entryIds: string[]) {
+  const params = new URLSearchParams({
+    entity: "journal-lines",
+    sortField: "lineNumber",
+    sortDir: "asc",
+    filter: JSON.stringify({ journalEntryRef: entryIds }),
+  });
+  return `/api/data?${params.toString()}`;
+}
+
+async function fetchJournalLinesByEntryIds(entryIds: string[]) {
+  if (entryIds.length === 0) return [];
+
+  const batches: string[][] = [];
+  for (let index = 0; index < entryIds.length; index += JOURNAL_LINE_ENTRY_ID_BATCH_SIZE) {
+    batches.push(entryIds.slice(index, index + JOURNAL_LINE_ENTRY_ID_BATCH_SIZE));
+  }
+
+  const batchRows = await Promise.all(
+    batches.map(batch =>
+      fetchAllAdminCollectionData<JournalLine>(
+        buildJournalLinesUrl(batch),
+        "Gagal memuat detail jurnal",
+      )
+    )
+  );
+
+  return batchRows.flat();
+}
 
 export default function LedgerPage() {
   const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
@@ -38,33 +79,6 @@ export default function LedgerPage() {
   const [dateFrom, setDateFrom] = useState(getDefaultFinanceCustomDateFrom());
   const [dateTo, setDateTo] = useState(getDefaultFinanceCustomDateTo());
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const [accountRows, entryRows, lineRows] = await Promise.all([
-          fetchAllAdminCollectionData<ChartOfAccount>(
-            "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
-            "Gagal memuat akun",
-          ),
-          fetchAllAdminCollectionData<JournalEntry>(
-            "/api/data?entity=journal-entries&sortField=entryDate&sortDir=asc",
-            "Gagal memuat jurnal",
-          ),
-          fetchAllAdminCollectionData<JournalLine>(
-            "/api/data?entity=journal-lines&sortField=lineNumber&sortDir=asc",
-            "Gagal memuat detail jurnal",
-          ),
-        ]);
-        setAccounts(accountRows || []);
-        setEntries((entryRows || []).filter(entry => entry.status !== "VOID"));
-        setLines(lineRows || []);
-      } finally {
-        setLoading(false);
-      }
-    }
-    void load();
-  }, []);
 
   const yearOptions = useMemo(() => {
     const years = new Set<number>([...getFinancePeriodYearOptions(year), year]);
@@ -84,6 +98,39 @@ export default function LedgerPage() {
     () => buildFinancePeriodLabel({ mode: periodMode, monthIndex, year, startDate: period.startDate, endDate: period.endDate }),
     [monthIndex, period.endDate, period.startDate, periodMode, year],
   );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (!isPeriodReady) {
+        setEntries([]);
+        setLines([]);
+        return;
+      }
+      const [accountRows, entryRows] = await Promise.all([
+        fetchAllAdminCollectionData<ChartOfAccount>(
+          "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
+          "Gagal memuat akun",
+        ),
+        fetchAllAdminCollectionData<JournalEntry>(
+          buildAccountingEntryUrl(period.endDate),
+          "Gagal memuat jurnal",
+        ),
+      ]);
+      const postedEntries = (entryRows || []).filter(entry => entry.status !== "VOID");
+      const entryIds = postedEntries.map(entry => entry._id).filter(Boolean);
+      const lineRows = await fetchJournalLinesByEntryIds(entryIds);
+      setAccounts(accountRows || []);
+      setEntries(postedEntries);
+      setLines(lineRows || []);
+    } finally {
+      setLoading(false);
+    }
+  }, [isPeriodReady, period.endDate]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const periodLines = useMemo(
     () => isPeriodReady ? getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate) : [],

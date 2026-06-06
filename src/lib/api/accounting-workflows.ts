@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { formatJournalNumber, normalizeLedgerAmount } from '@/lib/accounting';
+import { assertAccountingPeriodOpen } from '@/lib/api/accounting-period-lock';
 import {
     createDocument,
     getAllDocuments,
@@ -8,7 +9,8 @@ import {
     listDocumentsByFilter,
     updateDocument,
 } from '@/lib/repositories/document-store';
-import type { ChartOfAccount, JournalEntry, JournalLine } from '@/lib/types';
+import { clearRelationalReadCache } from '@/lib/supabase-relational';
+import type { AccountingPeriod, ChartOfAccount, JournalEntry, JournalLine } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -69,6 +71,34 @@ async function buildManualJournalNumber(entryDate: string) {
     return formatJournalNumber(entryDate, maxSequence + 1);
 }
 
+function isDuplicateJournalNumberError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return /entry_number|journal_entries_entry_number|duplicate key|unique constraint|23505/i.test(message);
+}
+
+async function createManualJournalEntryWithRetry(entryDoc: JournalEntry, entryDate: string) {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const nextEntry = {
+            ...entryDoc,
+            entryNumber: await buildManualJournalNumber(entryDate),
+        };
+        try {
+            await createDocument(nextEntry as unknown as { _type: string; [key: string]: unknown });
+            return nextEntry;
+        } catch (error) {
+            lastError = error;
+            if (!isDuplicateJournalNumberError(error)) {
+                throw error;
+            }
+            clearRelationalReadCache();
+        }
+    }
+    throw lastError instanceof Error
+        ? lastError
+        : new Error('Gagal membuat nomor jurnal yang unik');
+}
+
 function normalizeManualLines(value: unknown) {
     if (!Array.isArray(value)) {
         throw new Error('Detail jurnal wajib diisi');
@@ -103,6 +133,14 @@ export async function handleManualJournalCreate(
     const memo = normalizeText(data.memo);
     if (!memo) {
         return NextResponse.json({ error: 'Memo jurnal wajib diisi' }, { status: 400 });
+    }
+    try {
+        await assertAccountingPeriodOpen(entryDate, 'Jurnal manual');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Periode akuntansi sudah dikunci' },
+            { status: 409 },
+        );
     }
 
     let normalizedLines: ReturnType<typeof normalizeManualLines>;
@@ -169,11 +207,10 @@ export async function handleManualJournalCreate(
     const entryId = `manual-journal-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const sourceNumber = normalizeOptionalText(data.sourceNumber);
-    const entryNumber = await buildManualJournalNumber(entryDate);
     const entryDoc: JournalEntry = {
         _id: entryId,
         _type: 'journalEntry',
-        entryNumber,
+        entryNumber: '',
         entryDate,
         memo,
         sourceType: 'MANUAL_JOURNAL',
@@ -189,7 +226,7 @@ export async function handleManualJournalCreate(
         postedByName: session.name,
     };
 
-    await createDocument(entryDoc as unknown as { _type: string; [key: string]: unknown });
+    const createdEntry = await createManualJournalEntryWithRetry(entryDoc, entryDate);
     for (const [index, line] of resolvedLines.entries()) {
         const lineDoc: JournalLine = {
             _id: `manual-journal-line-${crypto.randomUUID()}`,
@@ -207,8 +244,8 @@ export async function handleManualJournalCreate(
         await createDocument(lineDoc as unknown as { _type: string; [key: string]: unknown });
     }
 
-    await addAuditLog(session, 'CREATE', 'journal-entries', entryId, `Jurnal manual ${entryNumber} dibuat`);
-    return NextResponse.json({ data: entryDoc });
+    await addAuditLog(session, 'CREATE', 'journal-entries', entryId, `Jurnal manual ${createdEntry.entryNumber} dibuat`);
+    return NextResponse.json({ data: createdEntry });
 }
 
 export async function handleManualJournalVoid(
@@ -240,6 +277,14 @@ export async function handleManualJournalVoid(
     if (activeDuplicates.filter(item => item.status !== 'VOID').length > 1) {
         return NextResponse.json({ error: 'Ada lebih dari satu jurnal manual aktif untuk referensi ini. Audit dulu sebelum dibatalkan.' }, { status: 409 });
     }
+    try {
+        await assertAccountingPeriodOpen(entry.entryDate, 'Pembatalan jurnal manual');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Periode akuntansi sudah dikunci' },
+            { status: 409 },
+        );
+    }
 
     const updated = await updateDocument(id, {
         status: 'VOID',
@@ -249,5 +294,81 @@ export async function handleManualJournalVoid(
     }, 'journalEntry');
 
     await addAuditLog(session, 'VOID', 'journal-entries', id, `Jurnal manual ${entry.entryNumber} dibatalkan`);
+    return NextResponse.json({ data: updated });
+}
+
+export async function handleAccountingPeriodClose(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn,
+) {
+    const period = normalizeText(data.period);
+    const startDate = normalizeText(data.startDate);
+    const endDate = normalizeText(data.endDate);
+
+    if (!period) {
+        return NextResponse.json({ error: 'Periode wajib diisi' }, { status: 400 });
+    }
+    try {
+        assertIsoDate(startDate, 'Tanggal awal periode');
+        assertIsoDate(endDate, 'Tanggal akhir periode');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Tanggal periode tidak valid' },
+            { status: 400 },
+        );
+    }
+    if (startDate > endDate) {
+        return NextResponse.json({ error: 'Tanggal awal periode tidak boleh melebihi tanggal akhir' }, { status: 400 });
+    }
+
+    const existing = (await listDocumentsByFilter<AccountingPeriod>('accountingPeriod', { period }))[0] || null;
+    const now = new Date().toISOString();
+    const patch = {
+        period,
+        startDate,
+        endDate,
+        status: 'CLOSED' as const,
+        closedAt: now,
+        closedBy: session._id,
+        closedByName: session.name,
+    };
+
+    const documentId = existing?._id || `accounting-period-${period.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const updated = existing
+        ? await updateDocument(documentId, patch, 'accountingPeriod')
+        : await createDocument({
+            _id: documentId,
+            _type: 'accountingPeriod',
+            ...patch,
+        });
+
+    await addAuditLog(session, 'UPDATE', 'accounting-periods', documentId, `Periode ${period} dikunci`);
+    return NextResponse.json({ data: updated });
+}
+
+export async function handleAccountingPeriodOpen(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn,
+) {
+    const period = normalizeText(data.period);
+    if (!period) {
+        return NextResponse.json({ error: 'Periode wajib diisi' }, { status: 400 });
+    }
+
+    const existing = (await listDocumentsByFilter<AccountingPeriod>('accountingPeriod', { period }))[0] || null;
+    if (!existing) {
+        return NextResponse.json({ error: 'Periode belum pernah dikunci' }, { status: 404 });
+    }
+
+    const updated = await updateDocument(existing._id, {
+        status: 'OPEN',
+        closedAt: null,
+        closedBy: null,
+        closedByName: null,
+    }, 'accountingPeriod');
+
+    await addAuditLog(session, 'UPDATE', 'accounting-periods', existing._id, `Periode ${period} dibuka kembali`);
     return NextResponse.json({ data: updated });
 }

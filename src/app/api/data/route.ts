@@ -24,9 +24,16 @@ import {
 } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import {
+    handleAccountingPeriodClose,
+    handleAccountingPeriodOpen,
     handleManualJournalCreate,
     handleManualJournalVoid,
 } from '@/lib/api/accounting-workflows';
+import { assertAccountingPeriodOpen } from '@/lib/api/accounting-period-lock';
+import {
+    sanitizeJournalEntriesForRole,
+    sanitizeJournalLinesForRole,
+} from '@/lib/api/accounting-privacy';
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
@@ -158,10 +165,11 @@ import {
 } from '@/lib/api/response-derivations';
 import { getProjectedDocumentRead } from '@/lib/api/projected-document-reads';
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
 import { getDataServiceErrorInfo } from '@/lib/service-errors';
-import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, OrderTripPlan, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, JournalEntry, JournalLine, Order, OrderTripPlan, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -295,7 +303,9 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'create-maintenance-follow-up' ||
         action === 'record-maintenance-handling' ||
         action === 'complete-with-materials'
-        || action === 'install-to-slot'
+        || action === 'install-to-slot' ||
+        action === 'close-period' ||
+        action === 'open-period'
     ) {
         return 'update';
     }
@@ -369,6 +379,10 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
         return role === 'OWNER' || role === 'FINANCE';
     }
 
+    if (entity === 'accounting-periods' && (action === 'close-period' || action === 'open-period')) {
+        return role === 'OWNER' || role === 'FINANCE';
+    }
+
     return null;
 }
 
@@ -383,6 +397,111 @@ function forbidModuleAccess(session: Session, entity: string, action: keyof Modu
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+const ACCOUNTING_LOCKED_ENTITIES = new Set([
+    'bank-accounts',
+    'bank-transactions',
+    'customer-overpayment-refunds',
+    'customer-receipts',
+    'driver-voucher-disbursements',
+    'driver-vouchers',
+    'expenses',
+    'freight-notas',
+    'invoice-adjustments',
+    'journal-entries',
+    'maintenances',
+    'payments',
+    'purchase-payments',
+    'purchases',
+    'stock-movements',
+]);
+
+const ACCOUNTING_DATE_FIELDS = [
+    'entryDate',
+    'date',
+    'issueDate',
+    'receiptDate',
+    'receiveDate',
+    'paymentDate',
+    'movementDate',
+    'issuedDate',
+    'settledDate',
+    'serviceDate',
+    'completedDate',
+    'orderDate',
+];
+
+function normalizeApiDateValue(value: unknown) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? value
+        : '';
+}
+
+function normalizeOptionalId(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function getBusinessDateForApiGuard() {
+    return getBusinessDateValue();
+}
+
+function extractAccountingDateCandidates(data: Record<string, unknown>) {
+    return ACCOUNTING_DATE_FIELDS
+        .map(field => normalizeApiDateValue(data[field]))
+        .filter(Boolean);
+}
+
+function shouldLoadExistingAccountingDate(entity: string, action: string | undefined) {
+    return Boolean(
+        action === 'update' ||
+        action === 'delete' ||
+        action === 'void' ||
+        action === 'void-manual' ||
+        action === 'update-with-items' ||
+        action === 'update-pph23' ||
+        action === 'update-tax-invoice' ||
+        (entity === 'payments' && action === 'update') ||
+        (entity === 'driver-voucher-disbursements' && (action === 'update' || action === 'delete')) ||
+        (entity === 'driver-voucher-items' && (action === 'update' || action === 'delete'))
+    );
+}
+
+function shouldFallbackToBusinessDate(entity: string, action: string | undefined) {
+    return Boolean(
+        entity === 'bank-accounts' ||
+        (entity === 'driver-vouchers' && (action === 'settle' || action === 'repair-issue-ledger')) ||
+        (entity === 'stock-movements' && (!action || action === 'create')) ||
+        (entity === 'expenses' && (!action || action === 'create'))
+    );
+}
+
+async function assertMutationAccountingPeriodOpen(
+    entity: string,
+    docType: string,
+    action: string | undefined,
+    data: Record<string, unknown>,
+) {
+    if (entity === 'accounting-periods' || !ACCOUNTING_LOCKED_ENTITIES.has(entity)) {
+        return;
+    }
+
+    const candidates = extractAccountingDateCandidates(data);
+    const id = normalizeOptionalId(data.id) || normalizeOptionalId(data._id);
+    if (candidates.length === 0 && id && shouldLoadExistingAccountingDate(entity, action)) {
+        const existing = await getDocumentById<Record<string, unknown>>(id, docType);
+        if (existing) {
+            candidates.push(...extractAccountingDateCandidates(existing));
+        }
+    }
+
+    if (candidates.length === 0 && shouldFallbackToBusinessDate(entity, action)) {
+        candidates.push(getBusinessDateForApiGuard());
+    }
+
+    for (const dateValue of [...new Set(candidates)]) {
+        await assertAccountingPeriodOpen(dateValue, 'Perubahan data');
+    }
 }
 
 function normalizeAuditActorRole(value: unknown) {
@@ -1094,6 +1213,14 @@ export async function GET(request: Request) {
                 item = visibleExpense as unknown as Record<string, unknown>;
             }
 
+            if (entity === 'journal-entries') {
+                item = (await sanitizeJournalEntriesForRole([item as unknown as JournalEntry], session.role))[0] as unknown as Record<string, unknown>;
+            }
+
+            if (entity === 'journal-lines') {
+                item = (await sanitizeJournalLinesForRole([item as unknown as JournalLine], session.role))[0] as unknown as Record<string, unknown>;
+            }
+
             if (entity === 'users') {
                 item = sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>;
             }
@@ -1494,6 +1621,14 @@ export async function GET(request: Request) {
             items = filterExpensesByRole(items as unknown as Expense[], session.role) as unknown as Record<string, unknown>[];
         }
 
+        if (entity === 'journal-entries') {
+            items = await sanitizeJournalEntriesForRole(items as unknown as JournalEntry[], session.role) as unknown as Record<string, unknown>[];
+        }
+
+        if (entity === 'journal-lines') {
+            items = await sanitizeJournalLinesForRole(items as unknown as JournalLine[], session.role) as unknown as Record<string, unknown>[];
+        }
+
         if (entity === 'vehicles' && session.role !== 'OWNER') {
             items = (items as unknown as Vehicle[]).map(item => sanitizeVehicleForRole(item, session.role)) as unknown as Record<string, unknown>[];
         }
@@ -1617,9 +1752,18 @@ export async function POST(request: Request) {
 
         const docType = DOCUMENT_TYPE_MAP[entity];
         const isCreateAction = !action || action === 'create';
+        await assertMutationAccountingPeriodOpen(entity, docType, action, data);
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
             return await handleBoronganPayment(session, data, addAuditLog);
+        }
+
+        if (entity === 'accounting-periods' && action === 'close-period') {
+            return await handleAccountingPeriodClose(session, data, addAuditLog);
+        }
+
+        if (entity === 'accounting-periods' && action === 'open-period') {
+            return await handleAccountingPeriodOpen(session, data, addAuditLog);
         }
 
         if (entity === 'journal-entries' && action === 'create-manual') {

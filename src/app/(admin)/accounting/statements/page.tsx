@@ -1,7 +1,7 @@
 "use client";
 
 import { Printer } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import {
@@ -25,11 +25,13 @@ import {
   type FinancePeriodMode,
 } from "@/lib/finance-period";
 import { escapePrintHtml, openBrandedPrint } from "@/lib/print";
-import type { ChartOfAccount, CompanyProfile, JournalEntry, JournalLine } from "@/lib/types";
-import { useToast } from "../../layout";
+import { hasPermission } from "@/lib/rbac";
+import type { AccountingPeriod, ChartOfAccount, CompanyProfile, JournalEntry, JournalLine } from "@/lib/types";
+import { useApp, useToast } from "../../layout";
 
 type StatementTab = "profit-loss" | "balance-sheet";
 type PeriodMode = Exclude<FinancePeriodMode, "all">;
+const JOURNAL_LINE_ENTRY_ID_BATCH_SIZE = 75;
 
 const MONTH_NAMES = FINANCE_PERIOD_MONTH_NAMES;
 
@@ -276,7 +278,62 @@ const accountingStatementPrintStyles = `
   }
 `;
 
+function buildAccountingPeriodKey(periodMode: PeriodMode, month: number, year: number) {
+  if (periodMode === "custom") return "";
+  if (periodMode === "year") return `YEAR-${year}`;
+  return `MONTH-${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
+function buildAccountingEntryUrl(endDate: string) {
+  const params = new URLSearchParams({
+    entity: "journal-entries",
+    sortField: "entryDate",
+    sortDir: "asc",
+    filter: JSON.stringify({ entryDate: { lte: endDate } }),
+  });
+  return `/api/data?${params.toString()}`;
+}
+
+function buildJournalLinesUrl(entryIds: string[]) {
+  const params = new URLSearchParams({
+    entity: "journal-lines",
+    sortField: "lineNumber",
+    sortDir: "asc",
+    filter: JSON.stringify({ journalEntryRef: entryIds }),
+  });
+  return `/api/data?${params.toString()}`;
+}
+
+async function fetchJournalLinesByEntryIds(entryIds: string[]) {
+  if (entryIds.length === 0) return [];
+
+  const batches: string[][] = [];
+  for (let index = 0; index < entryIds.length; index += JOURNAL_LINE_ENTRY_ID_BATCH_SIZE) {
+    batches.push(entryIds.slice(index, index + JOURNAL_LINE_ENTRY_ID_BATCH_SIZE));
+  }
+
+  const batchRows = await Promise.all(
+    batches.map(batch =>
+      fetchAllAdminCollectionData<JournalLine>(
+        buildJournalLinesUrl(batch),
+        "Gagal memuat detail jurnal",
+      )
+    )
+  );
+
+  return batchRows.flat();
+}
+
+function buildAccountingPeriodUrl(periodKey: string) {
+  const params = new URLSearchParams({
+    entity: "accounting-periods",
+    filter: JSON.stringify({ period: periodKey }),
+  });
+  return `/api/data?${params.toString()}`;
+}
+
 export default function AccountingStatementsPage() {
+  const { user } = useApp();
   const { addToast } = useToast();
   const defaultPeriod = useMemo(() => getDefaultFinancePeriod(), []);
   const [tab, setTab] = useState<StatementTab>("profit-loss");
@@ -289,39 +346,9 @@ export default function AccountingStatementsPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [lines, setLines] = useState<JournalLine[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
+  const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const [accountRows, entryRows, lineRows, companyProfile] = await Promise.all([
-          fetchAllAdminCollectionData<ChartOfAccount>(
-            "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
-            "Gagal memuat akun perkiraan",
-          ),
-          fetchAllAdminCollectionData<JournalEntry>(
-            "/api/data?entity=journal-entries&sortField=entryDate&sortDir=asc",
-            "Gagal memuat jurnal",
-          ),
-          fetchAllAdminCollectionData<JournalLine>(
-            "/api/data?entity=journal-lines&sortField=lineNumber&sortDir=asc",
-            "Gagal memuat detail jurnal",
-          ),
-          fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat profil perusahaan").catch(() => null),
-        ]);
-        setAccounts(accountRows || []);
-        setEntries((entryRows || []).filter(entry => entry.status !== "VOID"));
-        setLines(lineRows || []);
-        setCompany(companyProfile || null);
-      } catch (error) {
-        addToast("error", error instanceof Error ? error.message : "Gagal memuat laporan keuangan");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void load();
-  }, [addToast]);
+  const [periodSaving, setPeriodSaving] = useState(false);
 
   const yearOptions = useMemo(() => {
     const years = new Set<number>([...getFinancePeriodYearOptions(year), defaultPeriod.year, year]);
@@ -337,10 +364,59 @@ export default function AccountingStatementsPage() {
     [dateFrom, dateTo, month, periodMode, year],
   );
   const isPeriodReady = isFinancePeriodRangeReady(periodMode, period.startDate, period.endDate);
+  const periodKey = useMemo(() => buildAccountingPeriodKey(periodMode, month, year), [month, periodMode, year]);
+  const canManagePeriod = user ? hasPermission(user.role, "reports", "update") : false;
   const periodLabel = useMemo(
     () => buildFinancePeriodLabel({ mode: periodMode, monthIndex: month, year, startDate: period.startDate, endDate: period.endDate }),
     [month, period.endDate, period.startDate, periodMode, year],
   );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (!isPeriodReady) {
+        setEntries([]);
+        setLines([]);
+        setAccountingPeriod(null);
+        return;
+      }
+
+      const [accountRows, entryRows, companyProfile, periodRows] = await Promise.all([
+        fetchAllAdminCollectionData<ChartOfAccount>(
+          "/api/data?entity=chart-of-accounts&sortField=code&sortDir=asc",
+          "Gagal memuat akun perkiraan",
+        ),
+        fetchAllAdminCollectionData<JournalEntry>(
+          buildAccountingEntryUrl(period.endDate),
+          "Gagal memuat jurnal",
+        ),
+        fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat profil perusahaan").catch(() => null),
+        periodKey
+          ? fetchAllAdminCollectionData<AccountingPeriod>(
+            buildAccountingPeriodUrl(periodKey),
+            "Gagal memuat status periode",
+          ).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      const postedEntries = (entryRows || []).filter(entry => entry.status !== "VOID");
+      const entryIds = postedEntries.map(entry => entry._id).filter(Boolean);
+      const lineRows = await fetchJournalLinesByEntryIds(entryIds);
+
+      setAccounts(accountRows || []);
+      setEntries(postedEntries);
+      setLines(lineRows || []);
+      setCompany(companyProfile || null);
+      setAccountingPeriod((periodRows || [])[0] || null);
+    } catch (error) {
+      addToast("error", error instanceof Error ? error.message : "Gagal memuat laporan keuangan");
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast, isPeriodReady, period.endDate, periodKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const periodLines = useMemo(
     () => isPeriodReady ? getJournalLinesForPeriod(entries, lines, period.startDate, period.endDate) : [],
@@ -363,6 +439,41 @@ export default function AccountingStatementsPage() {
   const assetRows = balanceSummaries.filter(row => row.account.accountType === "ASSET" && row.balance !== 0);
   const liabilityRows = balanceSummaries.filter(row => row.account.accountType === "LIABILITY" && row.balance !== 0);
   const equityRows = balanceSummaries.filter(row => row.account.accountType === "EQUITY" && row.balance !== 0);
+  const isCurrentPeriodClosed = accountingPeriod?.status === "CLOSED";
+
+  const handleTogglePeriodLock = async () => {
+    if (!periodKey || !isPeriodReady) {
+      addToast("error", "Periode custom belum bisa dikunci. Pilih bulanan atau tahunan.");
+      return;
+    }
+    setPeriodSaving(true);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "accounting-periods",
+          action: isCurrentPeriodClosed ? "open-period" : "close-period",
+          data: {
+            period: periodKey,
+            startDate: period.startDate,
+            endDate: period.endDate,
+          },
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        addToast("error", payload.error || "Gagal mengubah status periode");
+        return;
+      }
+      addToast("success", isCurrentPeriodClosed ? "Periode dibuka kembali" : "Periode dikunci");
+      await load();
+    } catch {
+      addToast("error", "Gagal mengubah status periode");
+    } finally {
+      setPeriodSaving(false);
+    }
+  };
 
   const handlePrint = () => {
     if (!isPeriodReady) {
@@ -457,11 +568,29 @@ export default function AccountingStatementsPage() {
           <h1 className="page-title">Laporan Keuangan</h1>
         </div>
         <div className="page-actions">
+          {canManagePeriod && periodKey && (
+            <button
+              className={`btn ${isCurrentPeriodClosed ? "btn-secondary" : "btn-primary"} btn-sm`}
+              onClick={handleTogglePeriodLock}
+              disabled={periodSaving || !isPeriodReady}
+            >
+              {periodSaving
+                ? "Memproses..."
+                : isCurrentPeriodClosed
+                  ? "Buka Periode"
+                  : "Kunci Periode"}
+            </button>
+          )}
           <button className="btn btn-secondary btn-sm" onClick={handlePrint}>
             <Printer size={15} /> Print
           </button>
         </div>
       </div>
+      {isCurrentPeriodClosed && (
+        <div className="info-banner" style={{ marginBottom: "1rem" }}>
+          <div className="info-banner-text">Periode {periodLabel} sedang dikunci. Revisi transaksi pada tanggal ini akan ditolak sampai periode dibuka kembali.</div>
+        </div>
+      )}
 
       <div className="page-toolbar">
         <div className="page-toolbar-main">

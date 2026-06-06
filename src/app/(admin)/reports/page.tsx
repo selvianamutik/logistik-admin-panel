@@ -279,8 +279,8 @@ export default function ReportsPage() {
             { header: "Deskripsi", key: "deskripsi", width: 35 },
             { header: "Jumlah", key: "jumlah", width: 18 },
           ],
-          `laba-rugi-${periodLabel.replace(/\s/g, "-")}`,
-          "Laba Rugi",
+          `kas-operasional-${periodLabel.replace(/\s/g, "-")}`,
+          "Kas Operasional",
         );
       } else {
         const rows = buildCashflowExportRows(
@@ -318,11 +318,11 @@ export default function ReportsPage() {
     try {
       const isPnl = tab === "pnl";
       openBrandedPrint({
-        title: isPnl ? "Laporan Laba Rugi" : "Laporan Arus Kas",
+        title: isPnl ? "Ringkasan Kas Operasional" : "Laporan Arus Kas",
         subtitle: periodLabel,
         company,
         bodyHtml: isPnl
-          ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>${filteredOverpaymentRefunds.length > 0 ? `<tr><td style="padding-left:1.5rem">Refund kelebihan bayar invoice (${filteredOverpaymentRefunds.length}x)</td><td class="r d">-${fmtN(filteredOverpaymentRefunds.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>` : ""}<tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
+          ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Kas Masuk</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Kas Keluar</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Selisih Kas</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>KAS MASUK</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>${filteredOverpaymentRefunds.length > 0 ? `<tr><td style="padding-left:1.5rem">Refund kelebihan bayar invoice (${filteredOverpaymentRefunds.length}x)</td><td class="r d">-${fmtN(filteredOverpaymentRefunds.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>` : ""}<tr class="b" style="border-top:2px solid #e2e8f0"><td>KAS KELUAR</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>SELISIH KAS</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
           : `<div class="stats-row">${Object.entries(cashFlowByBank)
               .map(
                 ([, value]) =>
@@ -364,7 +364,7 @@ export default function ReportsPage() {
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">Laporan Keuangan</h1>
+          <h1 className="page-title">Kas Operasional</h1>
         </div>
         <div className="page-actions">
           <button
@@ -388,7 +388,7 @@ export default function ReportsPage() {
               className={`segmented-tab ${tab === "pnl" ? "active" : ""}`}
               onClick={() => setTab("pnl")}
             >
-              <DollarSign size={14} /> Laba Rugi
+              <DollarSign size={14} /> Kas Operasional
             </button>
             <button
               className={`segmented-tab ${tab === "cashflow" ? "active" : ""}`}
@@ -475,21 +475,21 @@ export default function ReportsPage() {
           <div className="responsive-stat-grid" style={{ marginBottom: "1.5rem" }}>
             {[
               {
-                label: "Pendapatan",
+                label: "Kas Masuk",
                 value: formatCurrency(totalRevenue),
                 note: `${filteredPayments.length} pembayaran`,
                 color: "var(--color-success)",
               },
               {
-                label: "Pengeluaran",
+                label: "Kas Keluar",
                 value: formatCurrency(totalExpense),
                 note: `${filteredExpenses.length} transaksi`,
                 color: "var(--color-danger)",
               },
               {
-                label: "Laba Bersih",
+                label: "Selisih Kas",
                 value: `${netProfit >= 0 ? "+" : ""}${formatCurrency(netProfit)}`,
-                note: `Margin ${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : "0"}%`,
+                note: `${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : "0"}% dari kas masuk`,
                 color:
                   netProfit >= 0
                     ? "var(--color-success)"
@@ -873,7 +873,7 @@ export default function ReportsPage() {
           <div className="detail-grid">
             <div className="card">
               <div className="card-header">
-                <span className="card-header-title">Laporan Laba Rugi</span>
+                <span className="card-header-title">Ringkasan Kas Operasional</span>
               </div>
               <div className="card-body" style={{ padding: 0 }}>
                 <div
@@ -1001,7 +1001,7 @@ export default function ReportsPage() {
             <div className="card">
               <div className="card-header">
                 <span className="card-header-title">
-                  Pengeluaran per Kategori
+                  Kas Keluar per Kategori
                 </span>
               </div>
               <div className="card-body">
