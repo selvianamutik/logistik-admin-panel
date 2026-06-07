@@ -26,7 +26,7 @@ import {
     isFinancePeriodRangeReady,
     type FinancePeriodMode,
 } from '@/lib/finance-period';
-import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
+import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 import { useApp, useToast } from '../layout';
@@ -55,6 +55,50 @@ const getNextInvoiceAction = (status: string, nota: FreightNota, remainingAmount
 
 const parseWholeMoneyLike = (value: unknown) =>
     Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+
+function mergeFreightNotas(...groups: FreightNota[][]) {
+    const byId = new Map<string, FreightNota>();
+    groups.flat().forEach(nota => {
+        if (nota._id) byId.set(nota._id, nota);
+    });
+    return [...byId.values()];
+}
+
+function sortInvoiceRows(rows: FreightNota[], dateSortDir: SortDirection | null) {
+    if (dateSortDir) {
+        const direction = dateSortDir === 'asc' ? 1 : -1;
+        return [...rows].sort((left, right) => {
+            const dateCompare = String(left.issueDate || '').localeCompare(String(right.issueDate || '')) * direction;
+            if (dateCompare !== 0) return dateCompare;
+            return String(left.notaNumber || '').localeCompare(String(right.notaNumber || '')) * direction;
+        });
+    }
+
+    const statusRank: Record<string, number> = { UNPAID: 0, PARTIAL: 1, PAID: 2, VOID: 99 };
+    return [...rows].sort((left, right) => {
+        const statusCompare = (statusRank[left.status] ?? 99) - (statusRank[right.status] ?? 99);
+        if (statusCompare !== 0) return statusCompare;
+        const dateCompare = String(left.issueDate || '').localeCompare(String(right.issueDate || ''));
+        if (dateCompare !== 0) return dateCompare;
+        return String((right as { _createdAt?: string })._createdAt || '').localeCompare(String((left as { _createdAt?: string })._createdAt || ''));
+    });
+}
+
+function filterInvoiceRowsForCurrentView(rows: FreightNota[], params: {
+    statusFilter: string;
+    periodMode: FinancePeriodMode;
+    dateFrom?: string;
+    dateTo?: string;
+}) {
+    return rows.filter(nota => {
+        if (params.statusFilter && nota.status !== params.statusFilter) return false;
+        if (params.periodMode !== 'all' && params.dateFrom && params.dateTo) {
+            const issueDate = nota.issueDate || '';
+            if (issueDate < params.dateFrom || issueDate > params.dateTo) return false;
+        }
+        return true;
+    });
+}
 
 export default function NotaListPage() {
     const router = useRouter();
@@ -175,6 +219,46 @@ export default function NotaListPage() {
         return allItems;
     }, [buildInvoicesQuery]);
 
+    const fetchReceiptSearchInvoiceRefs = useCallback(async (keyword: string) => {
+        const searchKeyword = keyword.trim();
+        if (!searchKeyword) return [] as string[];
+
+        const searchQuery = encodeURIComponent(searchKeyword);
+        const [directPaymentRows, receiptRows] = await Promise.all([
+            fetchAllAdminCollectionData<Payment>(
+                `/api/data?entity=payments&q=${searchQuery}&searchFields=receiptNumber`,
+                'Gagal memuat pembayaran berdasarkan nomor receipt'
+            ).catch(() => []),
+            fetchAllAdminCollectionData<CustomerReceipt>(
+                `/api/data?entity=customer-receipts&q=${searchQuery}&searchFields=receiptNumber,customerName`,
+                'Gagal memuat penerimaan berdasarkan nomor receipt'
+            ).catch(() => []),
+        ]);
+
+        const receiptIds = receiptRows.map(receipt => receipt._id).filter(Boolean);
+        const receiptPaymentRows = receiptIds.length > 0
+            ? await fetchAllAdminCollectionData<Payment>(
+                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ receiptRef: receiptIds }))}`,
+                'Gagal memuat alokasi penerimaan'
+            ).catch(() => [])
+            : [];
+
+        return [...new Set(
+            [...directPaymentRows, ...receiptPaymentRows]
+                .map(payment => payment.invoiceRef)
+                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        )];
+    }, []);
+
+    const fetchInvoicesByIds = useCallback(async (invoiceRefs: string[]) => {
+        const ids = [...new Set(invoiceRefs.filter(Boolean))];
+        if (ids.length === 0) return [] as FreightNota[];
+        return fetchAllAdminCollectionData<FreightNota>(
+            `/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: ids }))}`,
+            'Gagal memuat invoice dari receipt'
+        );
+    }, []);
+
     useEffect(() => {
         const nextSearch = searchParams.get('q') || '';
         setSearch(current => (current === nextSearch ? current : nextSearch));
@@ -197,16 +281,35 @@ export default function NotaListPage() {
             });
             return;
         }
-        const [notaPayload, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
+        const [notaPayload, baseMatchingNotas, receiptSearchInvoiceRefs, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
             fetchAdminListPayload<FreightNota>(`/api/data?${buildInvoicesQuery()}`, 'Gagal memuat invoice'),
             fetchAllMatchingInvoices(),
+            search.trim() ? fetchReceiptSearchInvoiceRefs(search.trim()) : Promise.resolve([] as string[]),
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
             fetchAllAdminCollectionData<CustomerOverpayment>('/api/data?entity=customer-overpayments&sortPreset=work-queue', 'Gagal memuat kelebihan bayar customer'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
             fetchCompanyProfile().catch(() => null),
         ]);
 
-        const notaRows = (notaPayload.data || []) as FreightNota[];
+        const receiptSearchNotas = receiptSearchInvoiceRefs.length > 0
+            ? await fetchInvoicesByIds(receiptSearchInvoiceRefs)
+            : [];
+        const matchingNotas = sortInvoiceRows(
+            filterInvoiceRowsForCurrentView(
+                mergeFreightNotas(baseMatchingNotas, receiptSearchNotas),
+                {
+                    statusFilter,
+                    periodMode,
+                    dateFrom: dateRange.startDate,
+                    dateTo: dateRange.endDate,
+                }
+            ),
+            dateSortDir
+        );
+        const shouldUseMergedSearchRows = search.trim() && receiptSearchInvoiceRefs.length > 0;
+        const notaRows = shouldUseMergedSearchRows
+            ? matchingNotas.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE)
+            : (notaPayload.data || []) as FreightNota[];
         const matchingNotaIdList = matchingNotas.map(nota => nota._id).filter(Boolean);
         let matchingPaymentRows: Payment[] = [];
 
@@ -287,7 +390,7 @@ export default function NotaListPage() {
 
         setItems(notaRows);
         setPayments(paymentRows);
-        setTotalInvoices(notaPayload.meta?.total || 0);
+        setTotalInvoices(shouldUseMergedSearchRows ? matchingNotas.length : notaPayload.meta?.total || 0);
         setSummary({
             ...derivedSummary,
             overpaymentTotal: derivedOverpaymentTotal,
@@ -297,7 +400,7 @@ export default function NotaListPage() {
         setQueueOverpayments(matchingOverpayments);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
-    }, [buildInvoicesQuery, fetchAllMatchingInvoices, isPeriodReady, search]);
+    }, [buildInvoicesQuery, dateRange.endDate, dateRange.startDate, dateSortDir, fetchAllMatchingInvoices, fetchInvoicesByIds, fetchReceiptSearchInvoiceRefs, isPeriodReady, page, periodMode, search, statusFilter]);
 
     useEffect(() => {
         reloadData()

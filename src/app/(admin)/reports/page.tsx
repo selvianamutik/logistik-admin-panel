@@ -15,6 +15,7 @@ import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import {
   buildExpenseLookup,
+  buildCustomerReceiptLookup,
   buildPaymentLookup,
   buildPurchaseLookup,
   buildRefundLookup,
@@ -45,6 +46,7 @@ import type {
   BankAccount,
   BankTransaction,
   CompanyProfile,
+  CustomerReceipt,
   CustomerOverpaymentRefund,
   DriverVoucher,
   Expense,
@@ -67,6 +69,7 @@ export default function ReportsPage() {
   const { addToast } = useToast();
   const [tab, setTab] = useState<Tab>("pnl");
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [customerReceipts, setCustomerReceipts] = useState<CustomerReceipt[]>([]);
   const [overpaymentRefunds, setOverpaymentRefunds] = useState<CustomerOverpaymentRefund[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -121,6 +124,7 @@ export default function ReportsPage() {
       defaultBusinessYear,
       year,
       ...payments.map(item => extractYearFromDate(item.date)),
+      ...customerReceipts.map(item => extractYearFromDate(item.date)),
       ...overpaymentRefunds.map(item => extractYearFromDate(item.date)),
       ...expenses.map(item => extractYearFromDate(item.date)),
       ...purchases.map(item => extractYearFromDate(item.orderDate)),
@@ -133,6 +137,7 @@ export default function ReportsPage() {
     return Array.from({ length: maxYear - minYear + 1 }, (_, index) => maxYear - index);
   }, [
     bankTransactions,
+    customerReceipts,
     defaultBusinessYear,
     driverVouchers,
     expenses,
@@ -146,9 +151,10 @@ export default function ReportsPage() {
   useEffect(() => {
     async function loadReportData() {
       try {
-        const [pay, refunds, exp, purchaseRows, nota, vouchers, banks, txs, companyProfile] =
+        const [pay, receipts, refunds, exp, purchaseRows, nota, vouchers, banks, txs, companyProfile] =
           await Promise.all([
             fetchAllAdminCollectionData<Payment>("/api/data?entity=payments", "Gagal memuat payments"),
+            fetchAllAdminCollectionData<CustomerReceipt>("/api/data?entity=customer-receipts", "Gagal memuat penerimaan customer"),
             fetchAllAdminCollectionData<CustomerOverpaymentRefund>("/api/data?entity=customer-overpayment-refunds", "Gagal memuat refund kelebihan bayar"),
             fetchAllAdminCollectionData<Expense>("/api/data?entity=expenses", "Gagal memuat expenses"),
             fetchAllAdminCollectionData<Purchase>("/api/data?entity=purchases", "Gagal memuat pembelian"),
@@ -159,6 +165,7 @@ export default function ReportsPage() {
             fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat company").catch(() => null),
           ]);
         setPayments(pay || []);
+        setCustomerReceipts(receipts || []);
         setOverpaymentRefunds(refunds || []);
         setExpenses(exp || []);
         setPurchases(purchaseRows || []);
@@ -218,6 +225,7 @@ export default function ReportsPage() {
     dateTo,
   });
   const paymentsById = useMemo(() => buildPaymentLookup(payments), [payments]);
+  const receiptsById = useMemo(() => buildCustomerReceiptLookup(customerReceipts), [customerReceipts]);
   const refundsById = useMemo(
     () => buildRefundLookup(overpaymentRefunds),
     [overpaymentRefunds],
@@ -1216,6 +1224,7 @@ export default function ReportsPage() {
                       const sourceLink = resolveBankTransactionSourceLink({
                         transaction: item,
                         paymentsById,
+                        receiptsById,
                         refundsById,
                         expensesById,
                         purchasesById,
@@ -1318,6 +1327,7 @@ export default function ReportsPage() {
                   const sourceLink = resolveBankTransactionSourceLink({
                     transaction: item,
                     paymentsById,
+                    receiptsById,
                     refundsById,
                     expensesById,
                     purchasesById,

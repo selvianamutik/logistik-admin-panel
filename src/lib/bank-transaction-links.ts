@@ -1,5 +1,6 @@
 import type {
   BankTransaction,
+  CustomerReceipt,
   CustomerOverpaymentRefund,
   Expense,
   Payment,
@@ -38,6 +39,12 @@ export function buildRefundLookup(
   return new Map(refunds.map((refund) => [refund._id, refund]));
 }
 
+export function buildCustomerReceiptLookup(
+  receipts: Array<Pick<CustomerReceipt, "_id" | "receiptNumber">>,
+) {
+  return new Map(receipts.map((receipt) => [receipt._id, receipt]));
+}
+
 export function buildExpenseLookup(
   expenses: Array<
     Pick<
@@ -59,12 +66,14 @@ export function resolveBankTransactionSourceLink(params: {
   transaction: Pick<
     BankTransaction,
     | "relatedPaymentRef"
+    | "relatedReceiptRef"
     | "relatedExpenseRef"
     | "relatedVoucherRef"
     | "relatedOverpaymentRefundRef"
     | "relatedPurchaseRef"
   >;
   paymentsById?: Map<string, Pick<Payment, "_id" | "invoiceRef" | "receiptNumber">>;
+  receiptsById?: Map<string, Pick<CustomerReceipt, "_id" | "receiptNumber">>;
   refundsById?: Map<
     string,
     Pick<
@@ -89,6 +98,7 @@ export function resolveBankTransactionSourceLink(params: {
   const {
     transaction,
     paymentsById,
+    receiptsById,
     refundsById,
     expensesById,
     purchasesById,
@@ -113,6 +123,23 @@ export function resolveBankTransactionSourceLink(params: {
           : "Buka Invoice",
       };
     }
+  }
+
+  if (
+    transaction.relatedReceiptRef &&
+    receiptsById?.has(transaction.relatedReceiptRef) &&
+    permissions?.canOpenInvoices
+  ) {
+    const receipt = receiptsById.get(transaction.relatedReceiptRef);
+    const query = encodeURIComponent(
+      receipt?.receiptNumber || transaction.relatedReceiptRef,
+    );
+    return {
+      href: `/invoices?q=${query}`,
+      label: receipt?.receiptNumber
+        ? `Buka Penerimaan ${receipt.receiptNumber}`
+        : "Buka Penerimaan Customer",
+    };
   }
 
   if (

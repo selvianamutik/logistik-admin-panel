@@ -13,6 +13,7 @@ import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildExpenseLookup,
+    buildCustomerReceiptLookup,
     buildPaymentLookup,
     buildPurchaseLookup,
     buildRefundLookup,
@@ -34,7 +35,7 @@ import {
     isFinancePeriodRangeReady,
     type FinancePeriodMode,
 } from '@/lib/finance-period';
-import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerReceipt, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 const BANK_TRANSACTION_PAGE_SIZE = DEFAULT_PAGE_SIZE;
@@ -113,6 +114,7 @@ export default function BankAccountDetailPage() {
         totalTransactions: 0,
     });
     const [relatedPayments, setRelatedPayments] = useState<Array<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>>([]);
+    const [relatedReceipts, setRelatedReceipts] = useState<Array<Pick<CustomerReceipt, '_id' | 'receiptNumber'>>>([]);
     const [relatedRefunds, setRelatedRefunds] = useState<Array<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>>([]);
     const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef' | 'relatedMaintenanceRef'>>>([]);
     const [relatedPurchases, setRelatedPurchases] = useState<Array<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>>([]);
@@ -147,6 +149,7 @@ export default function BankAccountDetailPage() {
     const yearOptions = useMemo(() => getFinancePeriodYearOptions(year), [year]);
 
     const paymentsById = useMemo(() => buildPaymentLookup(relatedPayments), [relatedPayments]);
+    const receiptsById = useMemo(() => buildCustomerReceiptLookup(relatedReceipts), [relatedReceipts]);
     const refundsById = useMemo(() => buildRefundLookup(relatedRefunds), [relatedRefunds]);
     const expensesById = useMemo(() => buildExpenseLookup(relatedExpenses), [relatedExpenses]);
     const purchasesById = useMemo(() => buildPurchaseLookup(relatedPurchases), [relatedPurchases]);
@@ -246,6 +249,7 @@ export default function BankAccountDetailPage() {
                     setTransactions([]);
                     setTransactionTotal(0);
                     setRelatedPayments([]);
+                    setRelatedReceipts([]);
                     setRelatedRefunds([]);
                     setRelatedExpenses([]);
                     setRelatedPurchases([]);
@@ -260,6 +264,10 @@ export default function BankAccountDetailPage() {
                 const paymentRows = await fetchEntityByIds<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>(
                     'payments',
                     transactionRows.map(transaction => transaction.relatedPaymentRef || '')
+                );
+                const receiptRows = await fetchEntityByIds<Pick<CustomerReceipt, '_id' | 'receiptNumber'>>(
+                    'customer-receipts',
+                    transactionRows.map(transaction => transaction.relatedReceiptRef || '')
                 );
                 const refundRows = await fetchEntityByIds<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>(
                     'customer-overpayment-refunds',
@@ -284,6 +292,7 @@ export default function BankAccountDetailPage() {
                 setTransactions(transactionRows);
                 setTransactionTotal(payload.meta?.total ?? transactionRows.length);
                 setRelatedPayments(paymentRows);
+                setRelatedReceipts(receiptRows);
                 setRelatedRefunds(refundRows);
                 setRelatedExpenses(expenseRows);
                 setRelatedPurchases(purchaseRows);
@@ -559,6 +568,7 @@ export default function BankAccountDetailPage() {
                                 const sourceLink = resolveBankTransactionSourceLink({
                                     transaction: tx,
                                     paymentsById,
+                        receiptsById,
                         refundsById,
                         expensesById,
                         purchasesById,
@@ -622,6 +632,7 @@ export default function BankAccountDetailPage() {
                         const sourceLink = resolveBankTransactionSourceLink({
                             transaction: tx,
                             paymentsById,
+                      receiptsById,
                       refundsById,
                       expensesById,
                       purchasesById,

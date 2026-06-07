@@ -14,6 +14,7 @@
     "audit:password-hashes": "node scripts/audit-password-hashes.mjs",
     "audit:accounting-integrity": "npx tsx --conditions react-server scripts/audit-accounting-integrity.ts",
     "audit:finance-integrity": "npx tsx --conditions react-server scripts/audit-finance-integrity.ts",
+    "audit:bank-invoice-journal-links": "npx tsx --conditions react-server scripts/audit-bank-invoice-journal-links.ts",
     "audit:accounting-privacy-period-flow": "npx tsx --conditions react-server scripts/audit-accounting-privacy-period-flow.ts",
     "audit:supplier-price-revision-stress": "npx tsx --conditions react-server scripts/audit-supplier-price-revision-stress.ts",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
