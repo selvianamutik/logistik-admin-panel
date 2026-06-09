@@ -25,7 +25,7 @@ async function testSuratJalanDestinationFix() {
   console.log('\n--- TEST CASE 1: Primary SJ (no shipper references) ---');
   const primaryDOs = doList.filter(d =>
     !d.shipperReferences?.length &&
-    d.actualDropPoints?.length > 0
+    (d.actualDropPoints?.length ?? 0) > 0
   );
 
   for (const d of primaryDOs.slice(0, 3)) {
@@ -66,7 +66,7 @@ async function testSuratJalanDestinationFix() {
   console.log('\n--- TEST CASE 2: Multi-SJ with shipperReferenceKey ---');
   const multiSJDOs = doList.filter(d =>
     d.shipperReferences?.length > 1 &&
-    d.actualDropPoints?.length > 0
+    (d.actualDropPoints?.length ?? 0) > 0
   );
 
   for (const d of multiSJDOs.slice(0, 3)) {
@@ -117,7 +117,7 @@ async function testSuratJalanDestinationFix() {
   // Test Case 3: Single SJ with multiple drop points (same destination repeated)
   console.log('\n--- TEST CASE 3: Single SJ with multiple drops ---');
   const multiDropDOs = doList.filter(d =>
-    d.actualDropPoints?.length >= 3 &&
+    (d.actualDropPoints?.length ?? 0) >= 3 &&
     (!d.shipperReferences?.length || d.shipperReferences.length === 1)
   );
 
