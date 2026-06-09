@@ -25,11 +25,13 @@ async function testEdgeCases() {
     shipperReferences: [
       {
         _key: 'ref-a',
+        sequence: 1,
         referenceNumber: 'SJ-A-001',
         receiverName: 'Customer A',
       },
       {
         _key: 'ref-b',
+        sequence: 2,
         referenceNumber: 'SJ-B-001',
         receiverName: 'Customer B',
       },
@@ -141,10 +143,12 @@ async function testEdgeCases() {
     shipperReferences: [
       {
         _key: 'ref-x',
+        sequence: 1,
         referenceNumber: 'SJ-X-001',
         receiverName: 'Customer X',
       },
       {
+        sequence: 2,
         referenceNumber: 'SJ-Y-001',
         receiverName: 'Customer Y',
       },
@@ -215,7 +219,6 @@ async function testEdgeCases() {
     orderRef: 'test-order-003',
     date: '2026-06-09',
     status: 'DELIVERED',
-    suratJalanNumber: 'SJ-PRIMARY-001',
     shipperReferences: [],
     actualDropPoints: [
       {
@@ -271,7 +274,6 @@ async function testEdgeCases() {
     orderRef: 'test-order-004',
     date: '2026-06-09',
     status: 'DELIVERED',
-    suratJalanNumber: 'SJ-STRESS-001',
     actualDropPoints: Array.from({ length: 10 }, (_, i) => ({
       _key: `drop-${i + 1}`,
       sequence: i + 1,

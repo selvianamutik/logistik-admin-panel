@@ -22,8 +22,8 @@ async function testLogicalConsistency() {
     date: '2026-06-09',
     status: 'DELIVERED',
     shipperReferences: [
-      { _key: 'ref-a', referenceNumber: 'SJ-A' },
-      { _key: 'ref-b', referenceNumber: 'SJ-B' },
+      { _key: 'ref-a', sequence: 1, referenceNumber: 'SJ-A' },
+      { _key: 'ref-b', sequence: 2, referenceNumber: 'SJ-B' },
     ],
     actualDropPoints: [
       { _key: 'd1', sequence: 1, stopType: 'DROP', shipperReferenceKey: 'ref-a', locationName: 'A1', qtyKoli: 5 },
@@ -115,7 +115,6 @@ async function testLogicalConsistency() {
     orderRef: 'test-order',
     date: '2026-06-09',
     status: 'DELIVERED',
-    suratJalanNumber: 'SJ-PRIMARY',
     actualDropPoints: [
       { _key: 'd1', sequence: 1, stopType: 'DROP', locationName: 'Primary 1', qtyKoli: 5 },
       { _key: 'd2', sequence: 2, stopType: 'DROP', locationName: 'Primary 2', qtyKoli: 3 },
@@ -151,7 +150,7 @@ async function testLogicalConsistency() {
     date: '2026-06-09',
     status: 'DELIVERED',
     shipperReferences: [
-      { _key: 'ref-x', referenceNumber: 'SJ-X' },
+      { _key: 'ref-x', sequence: 1, referenceNumber: 'SJ-X' },
     ],
     actualDropPoints: [
       { _key: 'd1', sequence: 1, stopType: 'DROP', locationName: 'Primary drop (should be ignored)', qtyKoli: 99 },
@@ -188,7 +187,7 @@ async function testLogicalConsistency() {
     date: '2026-06-09',
     status: 'DELIVERED',
     shipperReferences: [
-      { _key: 'ref-z', referenceNumber: 'SJ-Z-123' },
+      { _key: 'ref-z', sequence: 1, referenceNumber: 'SJ-Z-123' },
     ],
     actualDropPoints: [
       // This drop uses shipperReferenceNumber instead of shipperReferenceKey
