@@ -10,6 +10,7 @@ import { formatCargoSummary } from '@/lib/measurement';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
 import type { SuratJalanDocument } from '@/lib/trip-document-types';
+import { getSuratJalanActualDropDestinations, getSuratJalanDestination } from '@/lib/surat-jalan-destination';
 import { hasPageAccess } from '@/lib/rbac';
 import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { useApp, useToast } from '../layout';
@@ -25,11 +26,13 @@ function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
         row.masterResi,
         row.customerName,
         row.pickupAddress,
+        row.tripDestinationArea,
         row.receiverName,
         row.receiverCompany,
         row.receiverAddress,
         row.vehiclePlate,
         row.driverName,
+        ...getSuratJalanActualDropDestinations(row),
     ].some(value => String(value || '').toLowerCase().includes(needle));
 }
 
@@ -222,7 +225,7 @@ export default function SuratJalanPage() {
                                         <td>{canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}</td>
                                         <td>{row.customerName || '-'}</td>
                                         <td>{row.pickupAddress || '-'}</td>
-                                        <td>{row.receiverCompany || row.receiverName || row.receiverAddress || '-'}</td>
+                                        <td>{getSuratJalanDestination(row)}</td>
                                         <td>{row.itemCount} item<div className="text-muted text-sm">{formatCargoSummary(row.cargoSummary)}</div></td>
                                         <td>{formatCargoSummary(row.billableCargo)}</td>
                                         <td>{formatCargoSummary(row.holdCargo)}</td>
@@ -259,6 +262,7 @@ export default function SuratJalanPage() {
                                         {canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}
                                     </div>
                                     <div>{row.customerName || '-'}</div>
+                                    <div>Tujuan: {getSuratJalanDestination(row)}</div>
                                     <div>{row.itemCount} item | Masuk tagihan {formatCargoSummary(row.billableCargo)} | Ditahan {formatCargoSummary(row.holdCargo)}</div>
                                     <Link className="btn btn-secondary btn-sm" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link>
                                 </div>

@@ -134,6 +134,8 @@ export interface SuratJalanDocument {
     receiverName?: string;
     receiverCompany?: string;
     receiverAddress?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
     tripDate?: string;
     tripStatus?: TripStatus;
     vehiclePlate?: string;

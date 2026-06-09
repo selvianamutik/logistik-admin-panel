@@ -424,6 +424,8 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
         receiverName: reference?.receiverName || deliveryOrder.receiverName,
         receiverCompany: reference?.receiverCompany || deliveryOrder.receiverCompany,
         receiverAddress: reference?.receiverAddress || deliveryOrder.receiverAddress,
+        tripOriginArea: deliveryOrder.tripOriginArea,
+        tripDestinationArea: deliveryOrder.tripDestinationArea,
         tripDate: suratJalanDate,
         tripStatus: deriveSuratJalanDocumentStatus(deliveryOrder.status, {
             billableCargo: resolvedBillableCargo,
@@ -512,6 +514,8 @@ export function mapSuratJalanRecordToDocument(
         receiverName: suratJalanRecord.receiverName,
         receiverCompany: suratJalanRecord.receiverCompany,
         receiverAddress: suratJalanRecord.receiverAddress,
+        tripOriginArea: trip?.tripOriginArea,
+        tripDestinationArea: trip?.tripDestinationArea,
         tripDate: suratJalanRecord.tripDate,
         tripStatus: derivedTripStatus,
         vehiclePlate: suratJalanRecord.vehiclePlate || trip?.vehiclePlate,
