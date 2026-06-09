@@ -4,7 +4,7 @@ import {
     getDeliveryOrderReturnCargoSummary,
 } from './delivery-order-completion';
 import { parseFormattedNumberish } from '@/components/FormattedNumberInput.helpers';
-import type { DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, TrackingLog } from './types';
+import type { DeliveryActualDropPoint, DeliveryOrder, DeliveryOrderItem, DeliveryOrderShipperReference, TrackingLog } from './types';
 import type { CargoSummary, SuratJalanDocument, SuratJalanDocumentItem, SuratJalanItemRecord, SuratJalanRecord, Trip, TripRecord, TripShipperReferenceSummary, TripTrackingEvent } from './trip-document-types';
 import {
     formatInternalDeliveryOrderNumber,
@@ -46,7 +46,7 @@ function summarizeCargoSummaries(items: CargoSummary[]): CargoSummary {
     }), createCargoSummary());
 }
 
-function getReferenceIdentity(reference: DeliveryOrderShipperReference, fallbackIndex: number) {
+export function getReferenceIdentity(reference: DeliveryOrderShipperReference, fallbackIndex: number) {
     return reference._key || reference.referenceNumber || `reference-${fallbackIndex + 1}`;
 }
 
@@ -378,7 +378,8 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
     deliveryOrder: DeliveryOrder,
     deliveryOrderItems: DeliveryOrderItem[],
     reference: DeliveryOrderShipperReference | null,
-    index: number
+    index: number,
+    allActualDropPoints: DeliveryActualDropPoint[] = []
 ): SuratJalanDocument {
     const suratJalanNumber = reference?.referenceNumber || getPrimarySuratJalanNumber(deliveryOrder);
     const referenceKey = reference ? getReferenceIdentity(reference, index) : undefined;
@@ -400,6 +401,12 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
     const resolvedReturnCargo = hasCargo(returnCargo) ? returnCargo : fallbackReturnCargo;
     const holdPickupAddress = findHoldPickupAddressForItems(deliveryOrder, matchedItemRefs, referenceKey, suratJalanNumber);
     const suratJalanDate = reference?.date || deliveryOrder.date;
+    const sjActualDropPoints = allActualDropPoints.filter(drop => {
+        if (!referenceKey) {
+            return !drop.shipperReferenceKey && !drop.shipperReferenceNumber;
+        }
+        return drop.shipperReferenceKey === referenceKey || drop.shipperReferenceNumber === suratJalanNumber;
+    });
 
     return {
         _id: `${deliveryOrder._id}:${referenceKey || 'primary'}`,
@@ -430,6 +437,7 @@ function mapDeliveryOrderReferenceToSuratJalanDocument(
         billableCargo: resolvedBillableCargo,
         holdCargo: resolvedHoldCargo,
         returnCargo: resolvedReturnCargo,
+        actualDropPoints: sjActualDropPoints.length > 0 ? sjActualDropPoints : undefined,
     };
 }
 
@@ -439,10 +447,10 @@ export function mapDeliveryOrderToSuratJalanDocuments(
 ) {
     const references = deliveryOrder.shipperReferences || [];
     if (references.length === 0) {
-        return [mapDeliveryOrderReferenceToSuratJalanDocument(deliveryOrder, deliveryOrderItems, null, 0)];
+        return [mapDeliveryOrderReferenceToSuratJalanDocument(deliveryOrder, deliveryOrderItems, null, 0, deliveryOrder.actualDropPoints || [])];
     }
     return references.map((reference, index) =>
-        mapDeliveryOrderReferenceToSuratJalanDocument(deliveryOrder, deliveryOrderItems, reference, index)
+        mapDeliveryOrderReferenceToSuratJalanDocument(deliveryOrder, deliveryOrderItems, reference, index, deliveryOrder.actualDropPoints || [])
     );
 }
 
