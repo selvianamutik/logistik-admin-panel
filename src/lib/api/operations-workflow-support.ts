@@ -520,7 +520,11 @@ export async function normalizeDriverPayload(
     }
 
     if (!partial || hasOwnKey(data, 'address')) {
-        next.address = normalizeOptionalText(data.address);
+        // Use normalizeText instead of normalizeOptionalText to allow explicit clearing.
+        // normalizeOptionalText("") returns undefined, which skips the field in PATCH.
+        // We need to allow clearing: address: "" should become null in the database.
+        const address = normalizeText(data.address);
+        next.address = address || null;
     }
 
     if (!partial || hasOwnKey(data, 'active')) {

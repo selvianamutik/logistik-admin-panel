@@ -11,7 +11,6 @@ import {
 } from '@/lib/inventory';
 import {
     createDocument,
-    getAllDocuments,
     getDocumentById,
     listDocumentsByFilter,
     updateDocument,
@@ -39,6 +38,7 @@ import {
     normalizeText,
     type ApiSession,
 } from './data-helpers';
+import { recomputeBankLedgerBalancesForAccounts } from './bank-balance-helpers';
 import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 import {
     postPurchasePaymentJournal,
@@ -80,8 +80,13 @@ function buildPurchaseNumber(dateValue: string, sequence: number) {
 
 async function getNextPurchaseNumber(orderDate: string) {
     const period = orderDate.slice(0, 7).replace('-', '');
-    const existing = (await getAllDocuments<{ purchaseNumber?: string; orderDate?: string }>('purchase'))
-        .filter(row => typeof row.orderDate === 'string' && row.orderDate.startsWith(orderDate.slice(0, 7)));
+    // PERF: Filter by orderDate range at query level instead of fetching all purchases
+    const monthStart = `${period.slice(0, 4)}-${period.slice(4, 6)}-01`;
+    const monthEnd = `${period.slice(0, 4)}-${period.slice(4, 6)}-31`;
+    const existing = await listDocumentsByFilter<{ purchaseNumber?: string; orderDate?: string }>('purchase', {
+        orderDate__gte: monthStart,
+        orderDate__lte: monthEnd,
+    });
     const maxSequence = existing.reduce((max, row) => {
         const match = typeof row.purchaseNumber === 'string'
             ? row.purchaseNumber.match(/(\d{4})$/)
@@ -900,7 +905,8 @@ export async function handlePurchasePaymentCreate(
             relatedPurchasePaymentRef: paymentId,
             relatedPurchaseRef: bundle.purchase._id,
         });
-        await updateDocument(bankAccount._id, { currentBalance: ledger.nextBalance }, 'bankAccount');
+        // Bank balance update via recompute to ensure consistency
+        await recomputeBankLedgerBalancesForAccounts([bankAccount._id]);
         await updateDocument(bundle.purchase._id, {
             paidAmount: nextSummary.paidAmount,
             outstandingAmount: nextSummary.outstandingAmount,

@@ -171,12 +171,12 @@ export default function DashboardPage() {
                         <div className="kpi-content">
                             <div className="kpi-label">Total Order</div>
                             <div className="kpi-value">{data.orderStats.total}</div>
-                            <div className="kpi-sub">{data.orderStats.open} belum terkirim, {data.orderStats.partial} sebagian terkirim</div>
+                            <div className="kpi-sub">{data.orderStats.open} belum terkirim, {data.orderStats.partial} sebagian terkirim{data.orderStats.onHold > 0 ? `, ${data.orderStats.onHold} tertahan` : ''}</div>
                         </div>
                     </div>
                 </Link>}
 
-                {canViewDeliveryOrders && <Link href="/delivery-orders" style={{ textDecoration: 'none' }}>
+                {canViewDeliveryOrders && <Link href="/trips" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon secondary"><Truck size={24} /></div>
                         <div className="kpi-content">

@@ -43,7 +43,7 @@ check(
 );
 check(
   'warehouse stock/date plans are validated before warehouse stock mutation loop',
-  before(operations, 'const warehousePlans = warehouseItems.map', 'for (const { item, input, nextStockQty'),
+  before(operations, 'for (const [index, item] of warehouseItems.entries())', 'freshItem = await loadStandardWarehouseItemForIncident'),
 );
 check(
   'warehouse mode posts MAINTENANCE_USAGE stock movement',

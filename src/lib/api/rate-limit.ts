@@ -29,11 +29,6 @@ declare global {
 const localRateLimitCache = globalThis.__logistikRateLimitCache ?? new Map<string, LocalRateLimitBucket>();
 globalThis.__logistikRateLimitCache = localRateLimitCache;
 
-function buildRateLimitDocId(key: string) {
-    const hash = createHash('sha256').update(key).digest('hex');
-    return `${RATE_LIMIT_DOC_TYPE}.${hash}`;
-}
-
 function getBucketCount(bucket: PersistedRateLimitBucket | null) {
     return typeof bucket?.count === 'number' && Number.isFinite(bucket.count) && bucket.count > 0
         ? bucket.count
@@ -147,17 +142,13 @@ function clearLocalRateLimitBucket(docId: string) {
     localRateLimitCache.delete(docId);
 }
 
-export function getRequestIp(request: Request) {
-    const forwardedFor = request.headers.get('x-forwarded-for');
-    if (forwardedFor) {
-        return forwardedFor.split(',')[0]?.trim() || 'unknown';
-    }
-
-    return request.headers.get('x-real-ip') || 'unknown';
+function buildRateLimitDocIdWithPrefix(prefix: string, key: string) {
+    const hash = createHash('sha256').update(key).digest('hex');
+    return `${prefix}-${RATE_LIMIT_DOC_TYPE}.${hash}`;
 }
 
-export async function recordLoginAttempt(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
-    const docId = buildRateLimitDocId(key);
+async function recordAttempt(prefix: string, key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+    const docId = buildRateLimitDocIdWithPrefix(prefix, key);
 
     for (let attemptIndex = 0; attemptIndex < MAX_MUTATION_RETRIES; attemptIndex += 1) {
         const now = Date.now();
@@ -229,11 +220,11 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
         }
     }
 
-    throw new Error('Tidak dapat memperbarui rate limit login setelah beberapa percobaan.');
+    throw new Error(`Tidak dapat memperbarui rate limit ${prefix} setelah beberapa percobaan.`);
 }
 
-export async function clearFailedAttempts(key: string) {
-    const docId = buildRateLimitDocId(key);
+async function clearAttempt(prefix: string, key: string) {
+    const docId = buildRateLimitDocIdWithPrefix(prefix, key);
     clearLocalRateLimitBucket(docId);
     const bucket = await getRateLimitBucket(docId);
     if (!bucket?.id) {
@@ -248,4 +239,29 @@ export async function clearFailedAttempts(key: string) {
         }
         throw error;
     }
+}
+
+export function getRequestIp(request: Request) {
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    if (forwardedFor) {
+        return forwardedFor.split(',')[0]?.trim() || 'unknown';
+    }
+
+    return request.headers.get('x-real-ip') || 'unknown';
+}
+
+export async function recordLoginAttempt(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+    return recordAttempt('login', key, limit, windowMs);
+}
+
+export async function recordRefreshAttempt(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+    return recordAttempt('refresh', key, limit, windowMs);
+}
+
+export async function clearFailedAttempts(key: string) {
+    return clearAttempt('login', key);
+}
+
+export async function clearRefreshAttempts(key: string) {
+    return clearAttempt('refresh', key);
 }

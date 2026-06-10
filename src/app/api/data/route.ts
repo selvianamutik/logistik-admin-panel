@@ -174,8 +174,8 @@ import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentR
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
-const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
+const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs', 'driver-borongans', 'driver-borongan-items']);
+const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories', 'driver-borongans', 'driver-borongan-items']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
 const PROJECTED_READ_ENTITIES = new Set(['trips', 'surat-jalan', 'surat-jalan-items', 'trip-tracking', 'trip-detail', 'surat-jalan-detail', 'trip-detail-references']);
 type ReceiptResponseShape = Record<string, unknown> & {
@@ -239,7 +239,6 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     invoices: 'invoices',
     'invoice-items': 'invoices',
     'driver-borongans': 'driverBorongans',
-    'driver-borogan-items': 'driverBorongans',
     'driver-borongan-items': 'driverBorongans',
     'driver-scores': 'driverScores',
     users: 'userManagement',

@@ -34,6 +34,22 @@ export async function fetchAdminListPayload<T>(
     return fetchAdminPayload<{ data?: T[]; meta?: { total?: number } }>(url, fallbackMessage);
 }
 
+/**
+ * Fetch a single page of admin collection data (no auto-pagination).
+ * Use this for pages that handle pagination on the client side.
+ */
+export async function fetchAdminPageData<T>(
+    url: string,
+    fallbackMessage: string,
+    page: number = 1,
+    pageSize: number = DEFAULT_REFERENCE_PAGE_SIZE
+): Promise<{ data?: T[]; meta?: { total?: number } }> {
+    const resolvedUrl = new URL(url, 'http://localhost');
+    resolvedUrl.searchParams.set('page', String(page));
+    resolvedUrl.searchParams.set('pageSize', String(pageSize));
+    return fetchAdminListPayload<T>(`${resolvedUrl.pathname}${resolvedUrl.search}`, fallbackMessage);
+}
+
 export async function fetchAdminCollectionData<T>(
     url: string,
     fallbackMessage: string,

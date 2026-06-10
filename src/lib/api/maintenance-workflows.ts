@@ -31,6 +31,7 @@ import {
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
+import { recomputeBankLedgerBalancesForAccounts } from './bank-balance-helpers';
 import { postExpenseJournal, postStockMovementJournal } from './accounting-posting';
 import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 
@@ -305,7 +306,8 @@ export async function createMaintenanceLaborExpense(input: {
             relatedExpenseRef: expenseDoc._id,
         };
         await createDocument(bankTransactionDoc as unknown as { _type: string; [key: string]: unknown });
-        await updateDocument(input.bankAccount._id, { currentBalance: input.nextBankBalance }, 'bankAccount');
+        // Bank balance update via recompute to ensure consistency
+        await recomputeBankLedgerBalancesForAccounts([input.bankAccount._id]);
     }
 
     await postExpenseJournal(input.session, expenseDoc, input.bankAccount);
@@ -397,10 +399,12 @@ export async function handleMaintenanceComplete(
                     { status: 400 }
                 );
             }
-            const currentStockQty = Math.max(parseInventoryQuantity(item.currentStockQty ?? 0), 0);
+            // Re-read current stock to prevent race condition with concurrent maintenance/incident
+            const freshItem = await loadWarehouseItemSnapshot(item._id);
+            const currentStockQty = Math.max(parseInventoryQuantity(freshItem.currentStockQty ?? 0), 0);
             if (currentStockQty < materialInput.quantity) {
                 return NextResponse.json(
-                    { error: `Stok ${item.itemCode} tidak cukup untuk dipakai maintenance` },
+                    { error: `Stok ${item.itemCode} tidak cukup untuk dipakai maintenance. Sisa: ${currentStockQty}, dibutuhkan: ${materialInput.quantity}` },
                     { status: 409 }
                 );
             }
@@ -408,7 +412,7 @@ export async function handleMaintenanceComplete(
             const unitCostSnapshot = unitCostSnapshots[index];
             const subtotalCost = Math.round(materialInput.quantity * unitCostSnapshot);
 
-            await updateDocument(item._id, { currentStockQty: nextStockQty });
+            await updateDocument(freshItem._id, { currentStockQty: nextStockQty });
 
             const movementDoc: StockMovement = {
                 _id: `stock-movement-${crypto.randomUUID()}`,
