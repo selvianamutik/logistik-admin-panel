@@ -31,7 +31,6 @@ import { findMatchingCustomerBillingRate } from '@/lib/customer-billing-rates';
 import { buildFreightNotaCoverageRowKeys, buildNotaRowsFromDeliveryOrder } from '@/lib/invoice-create-page-support';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
-    BankAccount,
     BankTransaction,
     CustomerOverpaymentRefund,
     CustomerReceipt,
@@ -68,6 +67,7 @@ import {
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
+import { recomputeBankLedgerBalancesForAccounts, bankTransactionOrderKey } from './bank-balance-helpers';
 import {
     INVOICE_ADJUSTMENT_KIND_SET,
     buildReceivablePatch,
@@ -343,47 +343,6 @@ function schedulePostedIncidentSettlementFollowUpReminder(params: {
         statusLabel: 'Sudah diposting',
         actionLabel,
     }));
-}
-
-function bankTransactionDelta(transaction: Pick<BankTransaction, 'amount' | 'type'>) {
-    const amount = normalizeWholeMoneyAmount(transaction.amount);
-    return transaction.type === 'DEBIT' || transaction.type === 'TRANSFER_OUT' ? -amount : amount;
-}
-
-function bankTransactionOrderKey(transaction: Pick<BankTransaction, '_id' | '_createdAt' | 'date'>) {
-    return `${transaction.date || ''} ${transaction._createdAt || ''} ${transaction._id}`;
-}
-
-async function recomputeBankLedgerBalancesForAccounts(accountRefs: Array<string | null | undefined>) {
-    const refs = [...new Set(accountRefs.filter((value): value is string => Boolean(value)))];
-    if (refs.length === 0) return;
-
-    const [accounts, transactions] = await Promise.all([
-        getAllDocuments<BankAccount>('bankAccount'),
-        getAllDocuments<BankTransaction>('bankTransaction'),
-    ]);
-    const accountById = new Map(accounts.map(account => [account._id, account]));
-
-    for (const accountRef of refs) {
-        const account = accountById.get(accountRef);
-        if (!account) continue;
-
-        let runningBalance = readLedgerBalance(account.initialBalance);
-        const accountTransactions = transactions
-            .filter(transaction => transaction.bankAccountRef === accountRef)
-            .sort((left, right) => bankTransactionOrderKey(left).localeCompare(bankTransactionOrderKey(right)));
-
-        for (const transaction of accountTransactions) {
-            runningBalance += bankTransactionDelta(transaction);
-            if (readLedgerBalance(transaction.balanceAfter) !== runningBalance) {
-                await updateDocument(transaction._id, { balanceAfter: runningBalance }, 'bankTransaction');
-            }
-        }
-
-        if (readLedgerBalance(account.currentBalance) !== runningBalance) {
-            await updateDocument(accountRef, { currentBalance: runningBalance }, 'bankAccount');
-        }
-    }
 }
 
 function normalizePph23SettingsInput(
@@ -825,7 +784,6 @@ export async function handlePaymentCreate(
     if ('error' in resolvedBank) return resolvedBank.error;
     const { bankAcc } = resolvedBank;
 
-    const nextTotalPaid = loaded.totalPaid + amount;
     const paymentNote = normalizeOptionalText(data.note);
     const paymentAttachmentUrl = normalizeOptionalText(data.attachmentUrl);
     const receiptNumber = await getNextNumber('receipt', paymentDate);
@@ -864,29 +822,53 @@ export async function handlePaymentCreate(
         amount,
         note: loaded.doc._type === 'freightNota' ? 'Pembayaran invoice ongkos' : 'Pembayaran arsip invoice',
     });
-    await updateReceivableSnapshot(loaded, nextTotalPaid, loaded.totalAdjustmentAmount);
+    await createDocument({
+        _id: bankTransactionId,
+        _type: 'bankTransaction',
+        bankAccountRef: bankAcc?._id || '',
+        bankAccountName: bankAcc?.bankName || '',
+        bankAccountNumber: bankAcc?.accountNumber || '',
+        type: 'CREDIT',
+        amount,
+        date: paymentDate,
+        description:
+            bankAcc?.accountType === 'CASH'
+                ? 'Pembayaran tunai masuk'
+                : loaded.doc._type === 'freightNota'
+                    ? 'Pembayaran invoice masuk'
+                    : 'Pembayaran arsip invoice masuk',
+        balanceAfter: bankAcc ? readLedgerBalance(bankAcc.currentBalance) + amount : 0,
+        relatedPaymentRef: paymentId,
+    });
 
+    // Race-condition guard: re-validate snapshot AFTER creating payment
+    // If concurrent payment was processed, this will detect overpay and rollback
+    const reloadedSnapshot = await loadReceivableSnapshot(invoiceRef);
+    if (!('error' in reloadedSnapshot)) {
+        const actualRemaining = reloadedSnapshot.remainingAmount;
+        if (actualRemaining < 0) {
+            // Concurrent payment caused overpay — rollback all created documents
+            const { deleteDocument } = await import('@/lib/repositories/document-store');
+            await deleteDocument(paymentId, 'payment');
+            await deleteDocument(incomeId, 'income');
+            await deleteDocument(bankTransactionId, 'bankTransaction');
+            return NextResponse.json(
+                { error: `Pembayaran tidak bisa diproses karena ada pembayaran lain yang sedang diproses. Sisa invoice netto sekarang: ${actualRemaining}` },
+                { status: 409 }
+            );
+        }
+        // Safe to update snapshot with fresh data
+        await updateDocument(
+            reloadedSnapshot.doc._id,
+            buildReceivablePatch(reloadedSnapshot, reloadedSnapshot.totalPaid + amount, reloadedSnapshot.totalAdjustmentAmount),
+            getReceivableDocumentType(reloadedSnapshot)
+        );
+    }
+
+    // Bank balance update via recompute to ensure consistency
+    // This eliminates drift that accumulates with manual read-then-write
     if (bankAcc) {
-        const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + amount;
-        await createDocument({
-            _id: bankTransactionId,
-            _type: 'bankTransaction',
-            bankAccountRef: bankAcc._id,
-            bankAccountName: bankAcc.bankName,
-            bankAccountNumber: bankAcc.accountNumber,
-            type: 'CREDIT',
-            amount,
-            date: paymentDate,
-            description:
-                bankAcc.accountType === 'CASH'
-                    ? 'Pembayaran tunai masuk'
-                    : loaded.doc._type === 'freightNota'
-                        ? 'Pembayaran invoice masuk'
-                        : 'Pembayaran arsip invoice masuk',
-            balanceAfter: nextBankBalance,
-            relatedPaymentRef: paymentId,
-        });
-        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
+        await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
     }
 
     await postPaymentJournal(session, paymentDoc, bankAcc, loaded.label);
@@ -1307,7 +1289,8 @@ export async function handleCustomerReceiptCreate(
             balanceAfter: nextBankBalance,
             relatedReceiptRef: receiptId,
         });
-        await updateDocument(bankAcc._id, { currentBalance: nextBankBalance }, 'bankAccount');
+        // Bank balance update via recompute to ensure consistency
+        await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
     }
 
     const createdPaymentIds: string[] = [];
@@ -1791,7 +1774,8 @@ export async function handleCustomerOverpaymentRefund(
         balanceAfter: nextBalance,
         relatedOverpaymentRefundRef: refundId,
     });
-    await updateDocument(bankAcc._id, { currentBalance: nextBalance }, 'bankAccount');
+    // Bank balance update via recompute to ensure consistency
+    await recomputeBankLedgerBalancesForAccounts([bankAcc._id]);
 
     if (receiptPatch) {
         await updateDocument(receiptPatch.receiptRef, buildCustomerReceiptOverpaymentPatch({
@@ -2457,7 +2441,8 @@ export async function handleExpenseCreate(
             relatedExpenseRef: expenseId,
         });
         await updateDocument(categoryRef, { updatedAt: now }, 'expenseCategory');
-        await updateDocument(selectedAccountRef, { currentBalance: newBalance }, 'bankAccount');
+        // Bank balance update via recompute to ensure consistency
+        await recomputeBankLedgerBalancesForAccounts([selectedAccountRef]);
         if (linkedIncident) await updateDocument(linkedIncident._id, { updatedAt: now }, 'incident');
         if (linkedMaintenance) await updateDocument(linkedMaintenance._id, { updatedAt: now }, 'maintenance');
         if (linkedVoucher) await updateDocument(linkedVoucher._id, { updatedAt: now }, 'driverVoucher');

@@ -1840,6 +1840,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     }
 
     const canViewOrders = hasPageAccess(session.role, 'orders');
+    const canViewDeliveryOrders = hasPermission(session.role, 'deliveryOrders', 'view');
     const canViewInvoices = hasPermission(session.role, 'invoices', 'view');
     const canViewTripCash = hasPermission(session.role, 'driverVouchers', 'view');
     const canViewFleet = hasPermission(session.role, 'incidents', 'view') || hasPermission(session.role, 'maintenance', 'view');
@@ -1860,18 +1861,21 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
                     (acc, row) => {
                         acc.total += 1;
                         if (row.status === 'OPEN') acc.open += 1;
-                        if (row.status === 'PARTIAL' || row.status === 'ON_HOLD') acc.partial += 1;
+                        if (row.status === 'PARTIAL') acc.partial += 1;
+                        if (row.status === 'ON_HOLD') acc.onHold += 1;
                         if (row.status === 'COMPLETE') acc.complete += 1;
                         return acc;
                     },
                     { total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }
                 ))
             : Promise.resolve({ total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }),
-        listDocumentFieldsByFilter<{ status?: string }>('deliveryOrder', ['status'], {})
-            .then(rows => ({
-                total: rows.length,
-                onDelivery: rows.filter(row => row.status === 'ON_DELIVERY').length,
-            })),
+        canViewDeliveryOrders
+            ? listDocumentFieldsByFilter<{ status?: string }>('deliveryOrder', ['status'], {})
+                .then(rows => ({
+                    total: rows.length,
+                    onDelivery: rows.filter(row => row.status === 'ON_DELIVERY').length,
+                }))
+            : Promise.resolve({ total: 0, onDelivery: 0 }),
         canViewInvoices
             ? listDocumentFieldsByFilter<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>(
                 'freightNota',

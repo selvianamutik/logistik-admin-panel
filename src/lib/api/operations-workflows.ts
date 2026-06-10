@@ -1142,26 +1142,37 @@ export async function handleIncidentMaintenanceHandlingCreate(
 
     try {
         if (sourceMode === 'WAREHOUSE_STOCK') {
+            // Re-read all warehouse items to get fresh stock data (prevent race condition)
             const warehouseItems = await Promise.all(
                 warehouseMaterialInputs.map(input => loadStandardWarehouseItemForIncident(input.warehouseItemRef))
             );
             const unitCostSnapshots = await Promise.all(warehouseItems.map(item => resolveWarehouseItemUnitCost(item)));
             const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap(warehouseItems.map(item => item._id));
-            const warehousePlans = warehouseItems.map((item, index) => {
+            const warehousePlans: Array<{
+                item: typeof warehouseItems[number];
+                input: typeof warehouseMaterialInputs[number];
+                nextStockQty: number;
+                unitCostSnapshot: number;
+                subtotalCost: number;
+            }> = [];
+
+            for (const [index, item] of warehouseItems.entries()) {
                 const input = warehouseMaterialInputs[index];
                 const latestStockMovementDate = latestStockMovementDates.get(item._id);
                 if (latestStockMovementDate && completedDate < latestStockMovementDate) {
                     throw new Error(`Tanggal penanganan tidak boleh lebih awal dari mutasi stok terakhir ${item.itemCode}`);
                 }
-                const currentStockQty = Math.max(parseInventoryQuantity(item.currentStockQty ?? 0), 0);
+                // Re-read fresh stock to prevent race condition with concurrent maintenance/incident
+                const freshItem = await loadStandardWarehouseItemForIncident(item._id);
+                const currentStockQty = Math.max(parseInventoryQuantity(freshItem.currentStockQty ?? 0), 0);
                 if (currentStockQty < input.quantity) {
-                    throw new Error(`Stok ${item.itemCode} tidak cukup untuk dipakai pada penanganan insiden`);
+                    throw new Error(`Stok ${item.itemCode} tidak cukup untuk dipakai pada penanganan insiden. Sisa: ${currentStockQty}, dibutuhkan: ${input.quantity}`);
                 }
                 const nextStockQty = currentStockQty - input.quantity;
                 const unitCostSnapshot = unitCostSnapshots[index];
                 const subtotalCost = Math.round(input.quantity * unitCostSnapshot);
-                return { item, input, nextStockQty, unitCostSnapshot, subtotalCost };
-            });
+                warehousePlans.push({ item: freshItem, input, nextStockQty, unitCostSnapshot, subtotalCost });
+            }
 
             for (const { item, input, nextStockQty, unitCostSnapshot, subtotalCost } of warehousePlans) {
                 await updateDocument(item._id, { currentStockQty: nextStockQty }, 'warehouseItem');

@@ -172,8 +172,15 @@ async function resolveAccount(systemKey: AccountingSystemKey) {
 async function buildJournalNumber(entryDate: string, existing?: JournalEntry | null) {
     if (existing?.entryNumber) return existing.entryNumber;
     const monthPrefix = entryDate.replace(/-/g, '').slice(0, 6);
-    const existingEntries = await getAllDocuments<JournalEntry>('journalEntry');
-    const maxSequence = existingEntries.reduce((max, entry) => {
+    // PERF: Filter by month prefix at query level to avoid fetching all entries
+    // Use date filter to limit scope to current month entries only
+    const monthStart = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-01`;
+    const monthEnd = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-31`;
+    const monthEntries = await listDocumentsByFilter<JournalEntry>('journalEntry', {
+        entryDate__gte: monthStart,
+        entryDate__lte: monthEnd,
+    });
+    const maxSequence = monthEntries.reduce((max, entry) => {
         const entryNumber = typeof entry.entryNumber === 'string' ? entry.entryNumber : '';
         if (!entryNumber.startsWith(`JRN-${monthPrefix}-`)) return max;
         const sequence = Number.parseInt(entryNumber.slice(`JRN-${monthPrefix}-`.length), 10);

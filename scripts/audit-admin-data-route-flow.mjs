@@ -185,7 +185,7 @@ const documentTypeEntities = Array.from(
     documentTypesSource.matchAll(/^\s*'?([a-z0-9-]+)'?:\s*'[^']+'/gm),
     match => match[1]
 );
-const intentionallyUnmappedEntities = new Set(['company', 'incomes']);
+const intentionallyUnmappedEntities = new Set(['company', 'incomes', 'driver-borogan-items']);
 for (const entity of documentTypeEntities) {
     if (intentionallyUnmappedEntities.has(entity)) {
         continue;

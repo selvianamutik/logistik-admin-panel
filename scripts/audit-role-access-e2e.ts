@@ -29,7 +29,7 @@ type ApiResult<T = unknown> = {
     };
 };
 
-const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3217').replace(/\/+$/, '');
+const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const REQUEST_TIMEOUT_MS = Number(process.env.AUDIT_REQUEST_TIMEOUT_MS || 60000);
 
 function assert(condition: unknown, message: string): asserts condition {

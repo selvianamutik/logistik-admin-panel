@@ -857,7 +857,7 @@ export default function NotaDetailPage() {
                                                 {canManageInvoice && (
                                                     <>
                                                         <button className="table-action-btn" onClick={() => openEditAdjustmentModal(adjustment)} disabled={Boolean(voidingAdjustmentId)}>Edit</button>
-                                                        <button className="table-action-btn" onClick={() => void handleDeleteAdjustment(adjustment._id)} disabled={voidingAdjustmentId === adjustment._id}>{voidingAdjustmentId === adjustment._id ? 'Memproses...' : 'Hapus'}</button>
+                                                        <button className="table-action-btn" onClick={() => void handleDeleteAdjustment(adjustment._id)} disabled={voidingAdjustmentId === adjustment._id}>{voidingAdjustmentId === adjustment._id ? 'Memproses...' : 'Batalkan'}</button>
                                                     </>
                                                 )}
                                             </div>

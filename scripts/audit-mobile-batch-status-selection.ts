@@ -16,7 +16,7 @@ type DriverDeliveryOrderResponse = DeliveryOrder & {
     driverSuratJalanRecords?: SuratJalanRecord[];
 };
 
-const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3217').replace(/\/+$/, '');
+const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const AUDIT_DATE = '2026-05-17';
 
 function assert(condition: unknown, message: string): asserts condition {

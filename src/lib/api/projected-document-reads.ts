@@ -249,6 +249,9 @@ function mergeSuratJalanDocumentWithLiveCargo(
         billableCargo: liveDocument.billableCargo,
         holdCargo: liveDocument.holdCargo,
         returnCargo: liveDocument.returnCargo,
+        actualDropPoints: liveDocument.actualDropPoints || document.actualDropPoints,
+        tripOriginArea: liveDocument.tripOriginArea || document.tripOriginArea,
+        tripDestinationArea: liveDocument.tripDestinationArea || document.tripDestinationArea,
     };
 }
 

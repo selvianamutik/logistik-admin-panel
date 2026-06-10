@@ -36,6 +36,7 @@ import {
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
+import { recomputeBankLedgerBalancesForAccounts } from './bank-balance-helpers';
 import {
     computeDriverVoucherTotals,
     getDriverVoucherInitialCash,
@@ -787,7 +788,8 @@ export async function handleBoronganPayment(
             balanceAfter: newBalance,
             relatedExpenseRef: expenseId,
         });
-        await updateDocument(bankAccountRef, { currentBalance: newBalance }, 'bankAccount');
+        // Bank balance update via recompute to ensure consistency
+        await recomputeBankLedgerBalancesForAccounts([bankAccountRef]);
     }
     await postExpenseJournal(session, expenseDoc, bankAccount);
 
@@ -1147,7 +1149,8 @@ export async function handleDriverVoucherCreate(
         balanceAfter: newBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(issueBankRef, { currentBalance: newBalance }, 'bankAccount');
+    // Bank balance update via recompute to ensure consistency
+    await recomputeBankLedgerBalancesForAccounts([issueBankRef]);
     if (linkedVehicle) {
         await updateDocument(linkedVehicle._id, { updatedAt: now }, 'vehicle');
     }
@@ -1263,7 +1266,8 @@ export async function handleDriverVoucherTopUp(
         balanceAfter: nextBankBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(bankAccountRef, { currentBalance: nextBankBalance }, 'bankAccount');
+    // Bank balance update via recompute to ensure consistency
+    await recomputeBankLedgerBalancesForAccounts([bankAccountRef]);
     await updateDocument(voucherId, {
         totalIssuedAmount: nextIssuedAmount,
         topUpCount: nextTopUpCount,
@@ -1800,7 +1804,6 @@ export async function handleDriverVoucherDisbursementUpdate(
     let reversalTransactionId: string | undefined;
     let newTransactionId = disbursement.bankTransactionRef;
     const oldBankBalanceAfterReversal = readLedgerBalance(oldBank.currentBalance) + previousAmount;
-    let oldBankFinalBalance = oldBankBalanceAfterReversal;
     let newBankFinalBalance = readLedgerBalance(newBank.currentBalance);
 
     if (hasBankLedgerChange) {
@@ -1812,7 +1815,6 @@ export async function handleDriverVoucherDisbursementUpdate(
                     { status: 409 }
                 );
             }
-            oldBankFinalBalance = nextSameBankBalance;
             newBankFinalBalance = nextSameBankBalance;
         } else {
             newBankFinalBalance = readLedgerBalance(newBank.currentBalance) - amount;
@@ -1855,15 +1857,11 @@ export async function handleDriverVoucherDisbursementUpdate(
             relatedVoucherRef: initialDisbursement.voucherRef,
             replacesBankTransactionRef: disbursement.bankTransactionRef,
         });
-
-        if (bankAccountRef === disbursement.bankAccountRef) {
-            await updateDocument(bankAccountRef, { currentBalance: newBankFinalBalance }, 'bankAccount');
-        } else {
-            await Promise.all([
-                updateDocument(disbursement.bankAccountRef, { currentBalance: oldBankFinalBalance }, 'bankAccount'),
-                updateDocument(bankAccountRef, { currentBalance: newBankFinalBalance }, 'bankAccount'),
-            ]);
-        }
+        // Bank balance update via recompute to ensure consistency
+        const affectedAccounts = bankAccountRef === disbursement.bankAccountRef
+            ? [bankAccountRef]
+            : [disbursement.bankAccountRef, bankAccountRef];
+        await recomputeBankLedgerBalancesForAccounts(affectedAccounts);
     }
 
     const nextIssuedAmount = Math.max(
@@ -2029,9 +2027,6 @@ export async function handleDriverVoucherSettlement(
     const existingVoucherTransactions = await listDocumentsByFilter<VoucherBankTransaction>('bankTransaction', { relatedVoucherRef: voucherId });
 
     for (const item of state.items) {
-        if (item.linkedExpenseRef) {
-            continue;
-        }
         const expenseCategory = resolveExpenseCategory(expenseCategories, item.category);
         if (!expenseCategory) {
             return NextResponse.json(
@@ -2041,11 +2036,23 @@ export async function handleDriverVoucherSettlement(
         }
         const expenseAmount = normalizeCurrencyNumber(item.amount);
         const expenseDescription = item.description || `Pengeluaran uang jalan trip ${state.voucher.bonNumber}`;
-        if (hasMatchingVoucherExpense(existingVoucherExpenses, expenseCategory.name || item.category, expenseAmount, expenseDescription)) {
+
+        // If already linked to an expense, skip creating new one
+        if (item.linkedExpenseRef) {
             continue;
         }
+
+        // Check for existing expense with same key (idempotency via category+amount+description)
+        if (hasMatchingVoucherExpense(existingVoucherExpenses, expenseCategory.name || item.category, expenseAmount, expenseDescription)) {
+            // Mark as linked to prevent duplicate creation on re-settlement
+            await updateDocument(item._id, { linkedExpenseRef: 'pending' }, 'driverVoucherItem');
+            continue;
+        }
+
+        // Create new expense
+        const expenseId = crypto.randomUUID();
         await createDocument({
-            _id: crypto.randomUUID(),
+            _id: expenseId,
             _type: 'expense',
             categoryRef: expenseCategory._id,
             categoryName: expenseCategory.name || item.category,
@@ -2060,6 +2067,9 @@ export async function handleDriverVoucherSettlement(
             relatedVehiclePlate: state.voucher.vehiclePlate,
             voucherRef: voucherId,
         });
+
+        // Link the voucher item to the created expense
+        await updateDocument(item._id, { linkedExpenseRef: expenseId }, 'driverVoucherItem');
     }
 
     if (driverFeeAmount > 0) {
@@ -2129,7 +2139,8 @@ export async function handleDriverVoucherSettlement(
                 balanceAfter: nextBankBalance,
                 relatedVoucherRef: voucherId,
             });
-            await updateDocument(settlementBankRef, { currentBalance: nextBankBalance }, 'bankAccount');
+            // Bank balance update via recompute to ensure consistency
+            await recomputeBankLedgerBalancesForAccounts([settlementBankRef]);
         }
     }
 
@@ -2230,7 +2241,8 @@ export async function handleDriverVoucherIssueRepair(
         balanceAfter: newBalance,
         relatedVoucherRef: voucherId,
     });
-    await updateDocument(issueBankRef, { currentBalance: newBalance }, 'bankAccount');
+    // Bank balance update via recompute to ensure consistency
+    await recomputeBankLedgerBalancesForAccounts([issueBankRef]);
     await updateDocument(voucherId, {
         issueBankRef,
         issueBankName: bank.bankName,

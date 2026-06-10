@@ -14,7 +14,7 @@ import { clearRelationalReadCache } from '../src/lib/supabase-relational';
 import type { DeliveryOrder, DeliveryOrderItem } from '../src/lib/types';
 import type { SuratJalanRecord } from '../src/lib/trip-document-types';
 
-const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3217').replace(/\/+$/, '');
+const BASE_URL = (process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const suffix = Date.now().toString().slice(-6);
 const ids: Array<[string, string]> = [];
 const driverId = `audit-add-sj-driver-${suffix}`;

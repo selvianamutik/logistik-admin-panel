@@ -34,6 +34,7 @@ import {
     normalizeText,
     type ApiSession,
 } from './data-helpers';
+import { recomputeBankLedgerBalancesForAccounts } from './bank-balance-helpers';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
@@ -2959,7 +2960,8 @@ export async function handleDeliveryOrderCancelTrip(
                 balanceAfter: newBalance,
                 relatedExpenseRef: cancelExpenseRef,
             });
-            await updateDocument(cancelExpenseBankAccountRef, { currentBalance: newBalance }, 'bankAccount');
+            // Bank balance update via recompute to ensure consistency
+            await recomputeBankLedgerBalancesForAccounts([cancelExpenseBankAccountRef]);
             await updateDocument(cancelExpenseCategoryDoc._id, { updatedAt: timestamp }, 'expenseCategory');
             if (deliveryOrder.vehicleRef) {
                 await updateDocument(deliveryOrder.vehicleRef, { updatedAt: timestamp }, 'vehicle');
@@ -3166,7 +3168,8 @@ export async function handleOrderTripPlanCancel(
                 balanceAfter: newBalance,
                 relatedExpenseRef: cancelExpenseRef,
             });
-            await updateDocument(cancelExpenseBankAccountRef, { currentBalance: newBalance }, 'bankAccount');
+            // Bank balance update via recompute to ensure consistency
+            await recomputeBankLedgerBalancesForAccounts([cancelExpenseBankAccountRef]);
             await updateDocument(cancelExpenseCategoryDoc._id, { updatedAt: timestamp }, 'expenseCategory');
             if (tripPlan.vehicleRef) {
                 await updateDocument(tripPlan.vehicleRef, { updatedAt: timestamp }, 'vehicle');

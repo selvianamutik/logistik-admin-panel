@@ -5,14 +5,22 @@ import Link from 'next/link';
 import { FileText, Search } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
-import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminPageData } from '@/lib/api/admin-client';
 import { formatCargoSummary } from '@/lib/measurement';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { DO_STATUS_MAP, formatDate } from '@/lib/utils';
 import type { SuratJalanDocument } from '@/lib/trip-document-types';
+import { getSuratJalanActualDropDestinations, getSuratJalanDestination } from '@/lib/surat-jalan-destination';
 import { hasPageAccess } from '@/lib/rbac';
 import { buildAdminLoadNotice, getAdminErrorMessage, type AdminLoadNotice } from '@/lib/admin-access-messages';
 import { useApp, useToast } from '../layout';
+
+/**
+ * Maximum items to fetch for the initial load.
+ * This balances performance with UX - enough for meaningful filtering,
+ * but not so many that it causes timeout on large datasets.
+ */
+const MAX_INITIAL_FETCH = 500;
 
 type SuratJalanConditionFilter = '' | 'has-hold' | 'billable' | 'not-billable' | 'multi-sj' | 'unfinished' | 'completed';
 
@@ -25,11 +33,13 @@ function matchesSuratJalanSearch(row: SuratJalanDocument, search: string) {
         row.masterResi,
         row.customerName,
         row.pickupAddress,
+        row.tripDestinationArea,
         row.receiverName,
         row.receiverCompany,
         row.receiverAddress,
         row.vehiclePlate,
         row.driverName,
+        ...getSuratJalanActualDropDestinations(row),
     ].some(value => String(value || '').toLowerCase().includes(needle));
 }
 
@@ -45,6 +55,7 @@ export default function SuratJalanPage() {
     const { user } = useApp();
     const { addToast } = useToast();
     const [rows, setRows] = useState<SuratJalanDocument[]>([]);
+    const [totalRows, setTotalRows] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadNotice, setLoadNotice] = useState<AdminLoadNotice | null>(null);
     const [search, setSearch] = useState('');
@@ -64,14 +75,20 @@ export default function SuratJalanPage() {
                 sortField: 'tripDate',
                 sortDir: dateSortDir,
             });
-            const documents = await fetchAllAdminCollectionData<SuratJalanDocument>(
+            // Fetch single page with reasonable limit for initial load
+            // This prevents timeout on large datasets while maintaining UX
+            const payload = await fetchAdminPageData<SuratJalanDocument>(
                 `/api/data?${params.toString()}`,
-                'Gagal memuat surat jalan'
+                'Gagal memuat surat jalan',
+                1,
+                MAX_INITIAL_FETCH
             );
-            setRows(documents || []);
+            setRows(payload.data || []);
+            setTotalRows(payload.meta?.total || payload.data?.length || 0);
         } catch (error) {
             const message = getAdminErrorMessage(error, 'Gagal memuat surat jalan');
             setRows([]);
+            setTotalRows(0);
             setLoadNotice(buildAdminLoadNotice(
                 message,
                 'Surat Jalan',
@@ -115,11 +132,14 @@ export default function SuratJalanPage() {
         }),
         [conditionFilter, rows, search, statusFilter, tripSjCountByTripRef]
     );
+    // Client-side pagination on the fetched (filtered) data
     const pageRows = filteredRows.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
     const multiSjTripCount = useMemo(() => {
         return Array.from(tripSjCountByTripRef.values()).filter(count => count > 1).length;
     }, [tripSjCountByTripRef]);
     const holdRowCount = rows.filter(row => hasCargoSummaryValue(row.holdCargo)).length;
+    // Track if we fetched a limited dataset (for showing notice to user)
+    const isDataLimited = totalRows > rows.length;
 
     return (
         <div>
@@ -134,7 +154,8 @@ export default function SuratJalanPage() {
                     <div className="kpi-icon info"><FileText size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Dokumen SJ</div>
-                        <div className="kpi-value">{rows.length}</div>
+                        <div className="kpi-value">{totalRows >0 ? totalRows : rows.length}</div>
+                        {isDataLimited && <div className="text-muted text-sm">Menampilkan {rows.length} teratas</div>}
                     </div>
                 </div>
                 <div className="kpi-card">
@@ -222,7 +243,7 @@ export default function SuratJalanPage() {
                                         <td>{canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}</td>
                                         <td>{row.customerName || '-'}</td>
                                         <td>{row.pickupAddress || '-'}</td>
-                                        <td>{row.receiverCompany || row.receiverName || row.receiverAddress || '-'}</td>
+                                        <td>{getSuratJalanDestination(row)}</td>
                                         <td>{row.itemCount} item<div className="text-muted text-sm">{formatCargoSummary(row.cargoSummary)}</div></td>
                                         <td>{formatCargoSummary(row.billableCargo)}</td>
                                         <td>{formatCargoSummary(row.holdCargo)}</td>
@@ -259,6 +280,7 @@ export default function SuratJalanPage() {
                                         {canOpenSourceOrderPage && row.orderRef ? <Link href={`/orders/${row.orderRef}`}>{row.masterResi || '-'}</Link> : (row.masterResi || '-')}
                                     </div>
                                     <div>{row.customerName || '-'}</div>
+                                    <div>Tujuan: {getSuratJalanDestination(row)}</div>
                                     <div>{row.itemCount} item | Masuk tagihan {formatCargoSummary(row.billableCargo)} | Ditahan {formatCargoSummary(row.holdCargo)}</div>
                                     <Link className="btn btn-secondary btn-sm" href={`/surat-jalan/${encodeURIComponent(row._id)}`}>Lihat Dokumen</Link>
                                 </div>

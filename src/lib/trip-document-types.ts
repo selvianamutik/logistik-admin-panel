@@ -2,6 +2,7 @@ import type {
     Customer,
     CustomerProduct,
     CustomerRecipient,
+    DeliveryActualDropPoint,
     DeliveryOrder,
     DeliveryOrderItem,
     DOStatus,
@@ -133,6 +134,8 @@ export interface SuratJalanDocument {
     receiverName?: string;
     receiverCompany?: string;
     receiverAddress?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
     tripDate?: string;
     tripStatus?: TripStatus;
     vehiclePlate?: string;
@@ -142,6 +145,7 @@ export interface SuratJalanDocument {
     billableCargo: CargoSummary;
     holdCargo: CargoSummary;
     returnCargo: CargoSummary;
+    actualDropPoints?: DeliveryActualDropPoint[];
 }
 
 export interface SuratJalanRecord {
