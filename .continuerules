@@ -1,0 +1,23 @@
+# Proyek: Next.js + Audit
+# Jangan pernah ubah file konfigurasi environment
+# Jangan expose secret atau API key
+# Selalu gunakan TypeScript strict mode
+# Audit trail: setiap perubahan harus traceable
+# Ikuti pola folder src/app (App Router)
+# Gunakan server actions untuk data mutation
+
+Always use context7 MCP when referencing documentation for Next.js, 
+React, Prisma, or any other library. Fetch docs automatically without 
+being explicitly asked.
+
+# Folder Exclusion Rules
+# IMPORTANT: Exclude these folders from all operations (search, grep, analysis)
+# - apps/           : Flutter project (162 files) - not relevant for Next.js admin panel
+# - node_modules/   : Dependencies (36,440 files) - causes VS Code freeze
+# Only scan relevant Next.js application code in src/, public/, and root configs
+
+When performing any file operations (grep_search, file_glob_search, ls recursive):
+- NEVER include apps/ folder
+- NEVER include node_modules/ folder
+- Focus on: src/, public/, .continue/, and root config files
+- Example: Use patterns like 'src/**/*.tsx' instead of '**/*.tsx'

@@ -1,0 +1,39 @@
+{
+  "models": [
+    {
+      "title": "Claude Sonnet 4.5 (OpenAgentic)",
+      "provider": "openai",
+      "model": "claude-sonnet-4.5",
+      "apiBase": "https://openagentic.id/api/v1",
+      "apiKey": "sk-41b9b6321c6137e8ce9ca3e11f2e3dfb3c6713a3a3a572b785cbc4a1b8039726"
+    },
+    {
+      "title": "Claude Opus 4.6 (OpenAgentic)",
+      "provider": "openai",
+      "model": "claude-opus-4.6",
+      "apiBase": "https://openagentic.id/api/v1",
+      "apiKey": "sk-41b9b6321c6137e8ce9ca3e11f2e3dfb3c6713a3a3a572b785cbc4a1b8039726"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Autocomplete",
+    "provider": "openai",
+    "model": "claude-sonnet-4.5",
+    "apiBase": "https://openagentic.id/api/v1",
+    "apiKey": "sk-41b9b6321c6137e8ce9ca3e11f2e3dfb3c6713a3a3a572b785cbc4a1b8039726"
+  },
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "@upstash/context7-mcp@latest"],
+          "env": {
+            "CONTEXT7_API_KEY": "ctx7sk-464957ba-80c4-447b-ad5c-5f5bed1eb2bd"
+          }
+        }
+      }
+    ]
+  }
+}

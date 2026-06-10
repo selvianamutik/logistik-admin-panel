@@ -1,0 +1,8 @@
+mcpServers:
+  - name: context7
+    command: npx
+    args:
+      - "-y"
+      - "@upstash/context7-mcp@latest"
+    env:
+      CONTEXT7_API_KEY: "ctx7sk-464957ba-80c4-447b-ad5c-5f5bed1eb2bd"
