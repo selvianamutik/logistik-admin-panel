@@ -76,6 +76,7 @@ AGENTS.md
 RTK.md
 # Audit scripts (run standalone via npx tsx, not part of build)
 scripts/audit/
+scripts/audit-*.ts
 scripts/debug-*.ts
 
 # Vitest tests (run via npm test, not part of build)
