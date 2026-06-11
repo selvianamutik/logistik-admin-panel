@@ -169,11 +169,12 @@ async function resolveAccount(systemKey: AccountingSystemKey) {
     return account;
 }
 
-async function buildJournalNumber(entryDate: string, existing?: JournalEntry | null) {
-    if (existing?.entryNumber) return existing.entryNumber;
+/**
+ * Build journal number after collision - starts from lastAttemptedSequence + 1
+ * to avoid reusing a number that just caused a collision.
+ */
+async function buildJournalNumberAfterCollision(entryDate: string, lastAttemptedSequence: number) {
     const monthPrefix = entryDate.replace(/-/g, '').slice(0, 6);
-    // PERF: Filter by month prefix at query level to avoid fetching all entries
-    // Use date filter to limit scope to current month entries only
     const monthStart = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-01`;
     const monthEnd = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-31`;
     const monthEntries = await listDocumentsByFilter<JournalEntry>('journalEntry', {
@@ -186,7 +187,13 @@ async function buildJournalNumber(entryDate: string, existing?: JournalEntry | n
         const sequence = Number.parseInt(entryNumber.slice(`JRN-${monthPrefix}-`.length), 10);
         return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
     }, 0);
-    return formatJournalNumber(entryDate, maxSequence + 1);
+    // After collision, MUST start from max+1 to avoid stale reads
+    return formatJournalNumber(entryDate, Math.max(maxSequence + 1, lastAttemptedSequence + 1));
+}
+
+async function buildJournalNumber(entryDate: string, existing?: JournalEntry | null) {
+    if (existing?.entryNumber) return existing.entryNumber;
+    return buildJournalNumberAfterCollision(entryDate, 0);
 }
 
 function isDuplicateJournalNumberError(error: unknown) {
@@ -196,10 +203,21 @@ function isDuplicateJournalNumberError(error: unknown) {
 
 async function createJournalEntryWithRetry(entryDoc: JournalEntry, entryDate: string) {
     let lastError: unknown = null;
+    let lastAttemptedSequence = 0;
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
+        // After collision, rebuild from collision point to avoid stale reads
+        const entryNumber = attempt === 0
+            ? await buildJournalNumber(entryDate)
+            : await buildJournalNumberAfterCollision(entryDate, lastAttemptedSequence);
+
+        // Track sequence for next retry
+        const match = entryNumber.match(/JRN-\d{6}-(\d+)/);
+        lastAttemptedSequence = match ? Number.parseInt(match[1], 10) : lastAttemptedSequence + 1;
+
         const nextEntry = {
             ...entryDoc,
-            entryNumber: await buildJournalNumber(entryDate),
+            entryNumber,
         };
         try {
             await createDocument(nextEntry as unknown as { _type: string; [key: string]: unknown });
@@ -210,6 +228,7 @@ async function createJournalEntryWithRetry(entryDoc: JournalEntry, entryDate: st
                 throw error;
             }
             clearRelationalReadCache();
+            // After collision, rebuild number from current max to avoid stale reads
         }
     }
 
