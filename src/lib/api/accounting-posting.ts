@@ -176,10 +176,14 @@ async function resolveAccount(systemKey: AccountingSystemKey) {
 async function buildJournalNumberAfterCollision(entryDate: string, lastAttemptedSequence: number) {
     const monthPrefix = entryDate.replace(/-/g, '').slice(0, 6);
     const monthStart = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-01`;
-    const monthEnd = `${monthPrefix.slice(0, 4)}-${monthPrefix.slice(4, 6)}-31`;
+    const monthEnd = new Date(Date.UTC(Number(monthPrefix.slice(0, 4)), Number(monthPrefix.slice(4, 6)), 0))
+        .toISOString()
+        .slice(0, 10);
     const monthEntries = await listDocumentsByFilter<JournalEntry>('journalEntry', {
-        entryDate__gte: monthStart,
-        entryDate__lte: monthEnd,
+        entryDate: {
+            gte: monthStart,
+            lte: monthEnd,
+        },
     });
     const maxSequence = monthEntries.reduce((max, entry) => {
         const entryNumber = typeof entry.entryNumber === 'string' ? entry.entryNumber : '';

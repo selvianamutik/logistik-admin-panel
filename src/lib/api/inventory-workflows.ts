@@ -82,11 +82,32 @@ async function getNextPurchaseNumber(orderDate: string) {
     const period = orderDate.slice(0, 7).replace('-', '');
     // PERF: Filter by orderDate range at query level instead of fetching all purchases
     const monthStart = `${period.slice(0, 4)}-${period.slice(4, 6)}-01`;
-    const monthEnd = `${period.slice(0, 4)}-${period.slice(4, 6)}-31`;
+    const monthEnd = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(4, 6)), 0))
+        .toISOString()
+        .slice(0, 10);
+
+    console.log('\n==============================')
+    console.log('[PURCHASE DEBUG] Generate Purchase Number');
+    console.log('orderDate:', orderDate);
+    console.log('period:', period);
+    console.log('monthStart:', monthStart);
+    console.log('monthEnd:', monthEnd);
+
     const existing = await listDocumentsByFilter<{ purchaseNumber?: string; orderDate?: string }>('purchase', {
-        orderDate__gte: monthStart,
-        orderDate__lte: monthEnd,
+        orderDate: {
+            gte: monthStart,
+            lte: monthEnd,
+        },
     });
+
+    console.log('[PURCHASE DEBUG] existing purchases:', JSON.stringify(existing, null, 2));
+    console.log('[PURCHASE DEBUG] existing length:', existing.length);
+
+    existing.forEach((row, index) => {
+        console.log(`[PURCHASE DEBUG] row ${index}:`, JSON.stringify(row, null, 2));
+        console.log(`[PURCHASE DEBUG] row ${index} purchaseNumber:`, row.purchaseNumber);
+    });
+
     const maxSequence = existing.reduce((max, row) => {
         const match = typeof row.purchaseNumber === 'string'
             ? row.purchaseNumber.match(/(\d{4})$/)
@@ -94,7 +115,15 @@ async function getNextPurchaseNumber(orderDate: string) {
         const parsed = match ? Number.parseInt(match[1], 10) : 0;
         return parsed > max ? parsed : max;
     }, 0);
-    return buildPurchaseNumber(`${period.slice(0, 4)}-${period.slice(4, 6)}-01`, maxSequence + 1);
+
+    console.log('[PURCHASE DEBUG] maxSequence:', maxSequence);
+
+    const generatedNumber = buildPurchaseNumber(`${period.slice(0, 4)}-${period.slice(4, 6)}-01`, maxSequence + 1);
+
+    console.log('[PURCHASE DEBUG] generatedNumber:', generatedNumber);
+    console.log('==============================\n');
+
+    return generatedNumber;
 }
 
 async function loadPurchaseBundle(purchaseId: string) {
@@ -436,7 +465,18 @@ export async function handlePurchaseCreate(
             updatedAt: new Date().toISOString(),
         };
 
+        console.log('\n==============================');
+        console.log('[PURCHASE DEBUG] Creating Purchase');
+        console.log('[PURCHASE DEBUG] purchaseNumber:', purchaseNumber);
+        console.log('[PURCHASE DEBUG] purchase payload:', JSON.stringify(purchaseDoc, null, 2));
+        console.log('==============================\n');
+
         await createDocument(purchaseDoc as unknown as { _type: string; [key: string]: unknown });
+
+        console.log('\n==============================');
+        console.log('[PURCHASE DEBUG] Purchase Created Successfully');
+        console.log('[PURCHASE DEBUG] purchaseNumber:', purchaseNumber);
+        console.log('==============================\n');
         await Promise.all([
             updateDocument(supplier._id, { updatedAt: purchaseDoc.updatedAt }, 'supplier'),
             ...itemSnapshots.map(item => updateDocument(item._id, { updatedAt: purchaseDoc.updatedAt }, 'warehouseItem')),

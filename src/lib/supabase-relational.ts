@@ -1443,6 +1443,8 @@ function buildFilterParams(
     config: RelationalConfig,
     filterObj: Record<string, unknown>,
 ) {
+    console.log('[FILTER DEBUG] filterObj:', JSON.stringify(filterObj, null, 2));
+    
     const params = new URLSearchParams();
 
     for (const [field, expected] of Object.entries(filterObj)) {
@@ -1450,8 +1452,14 @@ function buildFilterParams(
             continue;
         }
 
+        console.log('[FILTER DEBUG] field:', field);
+        
         const column = getColumnName(config, field);
+        
+        console.log('[FILTER DEBUG] column:', column);
+        
         if (!column) {
+            console.log('[FILTER DEBUG] COLUMN NOT FOUND:', field);
             return null;
         }
 
@@ -1497,6 +1505,8 @@ function buildFilterParams(
 
         params.set(column, `eq.${formatServerFilterValue(expected)}`);
     }
+
+    console.log('[FILTER DEBUG] generated params:', params.toString());
 
     return params;
 }
