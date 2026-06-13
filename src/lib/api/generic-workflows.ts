@@ -3041,7 +3041,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
         }
         try {
-            Object.assign(newDoc, normalizeBankAccountPayload(data));
+            Object.assign(newDoc, await normalizeBankAccountPayload(data));
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
